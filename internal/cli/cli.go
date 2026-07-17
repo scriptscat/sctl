@@ -1,100 +1,98 @@
-// Package cli 定义 sctl 的 cobra 子命令。serve 引导一个 cago 应用并挂载桥接
-// Component;其余命令为连接既有 daemon 的轻量客户端或纯本地操作。
+// Package cli 定义 sctl 的 cobra 子命令。serve 引导一个 cago 应用并挂载桥接 Component;
+// 其余命令是驱动常驻 daemon 的本机内部控制客户端(见 internal/control),或纯本地操作。
 //
-// 日志约定:全局 stderr logger 已由 cmd/sctl 的 PersistentPreRunE 初始化,子命令
-// 直接用 logger.Ctx(cmd.Context()) 记录诊断信息;stdout 仅用于用户可读结果 / --json。
+// 输出约定:stdout 只承载用户可读结果 / --json 结构化输出 / MCP 协议(sctl mcp);诊断日志一律
+// 走全局 stderr/文件 logger(cmd/sctl 的 PersistentPreRunE 已初始化)。
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
-	"log"
+	"os"
 
-	"github.com/cago-frame/cago"
-	"github.com/cago-frame/cago/configs"
-	"github.com/cago-frame/cago/pkg/logger"
 	"github.com/spf13/cobra"
-	"go.uber.org/zap"
 
-	"github.com/scriptscat/sctl/internal/bridge"
-	"github.com/scriptscat/sctl/internal/protocol"
+	"github.com/scriptscat/sctl/internal/logging"
 )
 
 // Version 由 goreleaser 通过 -ldflags 注入。
 var Version = "0.0.0-dev"
 
-// NewServeCmd 引导 cago 应用并挂载桥接 Component。
-//
-// 不使用 component.Core():cago 的 Core 把日志写 stdout,而桥接 daemon 未来可能由
-// `sctl mcp` 自动拉起、其 stdout 需保持洁净;日志已由全局 stderr logger 承载。
-func NewServeCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "serve",
-		Short: "运行桥接 daemon(WS server,仅监听 127.0.0.1)",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			cfg, err := configs.NewConfig("sctl")
-			if err != nil {
-				log.Fatalf("加载配置失败: %v", err)
-			}
-			logger.Ctx(ctx).Info("启动 sctl serve", zap.String("version", Version))
-			return cago.New(ctx, cfg).
-				RegistryCancel(bridge.Component(Version)).
-				Start()
-		},
-	}
+// 全局标志(绑定为包级变量,任意子命令直接读取)。
+var (
+	jsonOutput bool
+	logLevel   string
+)
+
+// 退出码约定(设计文档 §3.1):写动词按用户决策映射,其余错误统一 exitError。
+const (
+	exitOK       = 0
+	exitRejected = 1 // 用户在浏览器确认页拒绝
+	exitVoided   = 2 // 作废 / 超时 / Ctrl-C 取消 / 扩展断开
+	exitError    = 3 // 其余错误(校验失败、NOT_FOUND、连接失败、内部错误…)
+)
+
+// ExitError 携带自定义退出码,由 cmd/sctl 的 main 解包为 os.Exit。Message 非空时打印到 stderr。
+type ExitError struct {
+	Code    int
+	Message string
 }
 
-// NewMcpCmd 以 stdio 运行 MCP server;daemon 未运行时自动拉起。
-func NewMcpCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "mcp",
-		Short: "以 stdio 运行 MCP server(daemon 未运行时自动拉起)",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// 提醒:此命令的 stdout 是 MCP 协议通道,严禁写入日志/普通输出。
-			logger.Ctx(cmd.Context()).Info("启动 sctl mcp(stdio)")
-			return fmt.Errorf("mcp: 尚未实现")
-		},
-	}
-}
+func (e *ExitError) Error() string { return e.Message }
 
-// NewPairCmd 生成一次性配对码并等待扩展完成互信。
-func NewPairCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "pair",
-		Short: "生成一次性配对码,与 ScriptCat 扩展建立互信",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			logger.Ctx(cmd.Context()).Info("发起扩展配对")
-			return fmt.Errorf("pair: 尚未实现")
-		},
-	}
-}
-
-// NewStatusCmd 查询 daemon 与扩展连接状态。
-func NewStatusCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "status",
-		Short: "查看 daemon 与扩展连接状态",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			logger.Ctx(cmd.Context()).Debug("查询 daemon 状态")
-			return fmt.Errorf("status: 尚未实现")
-		},
-	}
-}
-
-// NewVersionCmd 打印版本与协议信息。
-func NewVersionCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "version",
-		Short: "打印版本与协议信息",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			p, err := protocol.Load()
-			if err != nil {
-				logger.Ctx(cmd.Context()).Error("加载内嵌协议失败", zap.Error(err))
-				return err
-			}
-			// 结果写 stdout(用户可读),诊断走 stderr logger。
-			fmt.Printf("sctl %s (protocol v%d, min daemon %s)\n", Version, p.ProtocolVersion, p.Versions.MinDaemonVersion)
+// NewRootCmd 组装 sctl 根命令:全局 --log-level / --json 标志,并挂载全部子命令。
+func NewRootCmd() *cobra.Command {
+	root := &cobra.Command{
+		Use:           "sctl",
+		Short:         "ScriptCat 控制工具:本地桥接 daemon、MCP server 与脚本管理命令",
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			logging.Setup(logLevel)
 			return nil
 		},
 	}
+	root.PersistentFlags().StringVar(&logLevel, "log-level", "info", "日志级别 debug|info|warn|error(始终输出到 stderr)")
+	root.PersistentFlags().BoolVar(&jsonOutput, "json", false, "以 JSON 输出结构化结果(供脚本消费)")
+	root.AddCommand(
+		newServeCmd(),
+		newMcpCmd(),
+		newPairCmd(),
+		newStatusCmd(),
+		newVersionCmd(),
+		newScriptsCmd(),
+		newInstallCmd(),
+		newToggleCmd(true),
+		newToggleCmd(false),
+		newRmCmd(),
+	)
+	return root
+}
+
+// printResultJSON 把桥接返回的原始结果 JSON 原样美化打印到 stdout(--json 路径)。
+func printResultJSON(raw json.RawMessage) error {
+	var buf []byte
+	var pretty any
+	if err := json.Unmarshal(raw, &pretty); err != nil {
+		// 非法 JSON 时原样输出,避免吞掉信息。
+		buf = raw
+	} else {
+		b, err := json.MarshalIndent(pretty, "", "  ")
+		if err != nil {
+			return err
+		}
+		buf = b
+	}
+	fmt.Fprintln(os.Stdout, string(buf))
+	return nil
+}
+
+// printValueJSON 把任意值以美化 JSON 打印到 stdout。
+func printValueJSON(v any) error {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(os.Stdout, string(b))
+	return nil
 }

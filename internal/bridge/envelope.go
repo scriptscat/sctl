@@ -44,10 +44,12 @@ const (
 
 // 常用错误码(全集见 protocol.json errorCodes;此处仅列 daemon 侧会主动产生的)。
 const (
-	errUnauthenticated = "UNAUTHENTICATED"
-	errInternal        = "INTERNAL_ERROR"
-	errRateLimited     = "RATE_LIMITED"
-	errOperationExpired = "OPERATION_EXPIRED"
+	errInvalidRequest    = "INVALID_REQUEST"
+	errUnauthenticated   = "UNAUTHENTICATED"
+	errInsufficientScope = "INSUFFICIENT_SCOPE"
+	errInternal          = "INTERNAL_ERROR"
+	errRateLimited       = "RATE_LIMITED"
+	errOperationExpired  = "OPERATION_EXPIRED"
 )
 
 // --- payload 结构 ---

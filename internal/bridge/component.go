@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 
 	"github.com/cago-frame/cago/configs"
 	"github.com/cago-frame/cago/pkg/gogo"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/scriptscat/sctl/internal/auth"
 	"github.com/scriptscat/sctl/internal/config"
+	"github.com/scriptscat/sctl/internal/control"
 	"github.com/scriptscat/sctl/internal/protocol"
 )
 
@@ -51,6 +53,11 @@ func (b *bridgeComponent) StartCancel(ctx context.Context, cancel context.Cancel
 		// 缺 bridge 段时退回协议默认端口,而不是直接失败。
 		logger.Ctx(ctx).Warn("读取 bridge 配置失败,回退协议默认地址", zap.Error(err))
 	}
+	// SCTL_BRIDGE_ADDR 覆盖配置/默认:daemon 与前端(control.resolveBaseURL)读同一环境变量,
+	// 保证自动拉起时 serve 绑定的地址正是前端要连的地址(自定义端口 / 多实例场景)。
+	if envAddr := os.Getenv("SCTL_BRIDGE_ADDR"); envAddr != "" {
+		b.cfg.Address = envAddr
+	}
 	if b.cfg.Address == "" {
 		b.cfg.Address = defaultAddress(p.Transport.DefaultPort)
 	}
@@ -76,6 +83,19 @@ func (b *bridgeComponent) StartCancel(ctx context.Context, cancel context.Cancel
 	}
 	b.listener = ln
 	logger.Ctx(ctx).Info("桥接 daemon 开始监听", zap.String("address", ln.Addr().String()), zap.Int("protocolVersion", p.ProtocolVersion))
+
+	// 绑定成功后(端口竞态胜出者才走到这里)再生成并落盘控制令牌,避免失败方覆盖胜出者的令牌。
+	// 令牌先于 server goroutine 就绪:前端一旦看到 /control/health 200,令牌文件必已写好。
+	token, err := control.NewControlToken()
+	if err != nil {
+		logger.Ctx(ctx).Error("生成控制令牌失败", zap.Error(err))
+		return err
+	}
+	b.srv.SetControlToken(token)
+	if err := control.WriteControlToken(token); err != nil {
+		logger.Ctx(ctx).Error("写入控制令牌失败", zap.Error(err))
+		return err
+	}
 
 	// cago 同步调用 StartCancel,server 类组件须起 goroutine 后立即返回,否则 Start()
 	// 的信号注册跑不到、SIGINT 会死锁(对齐 cago 的 mux.HTTP 写法)。

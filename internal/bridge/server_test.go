@@ -21,11 +21,11 @@ import (
 
 // testHarness 承载一个运行中的 daemon 与用于对拍的密码学助手/存储。
 type testHarness struct {
-	srv     *Server
-	crypto  *auth.Crypto
-	keys    *auth.KeyStore
-	url     string
-	proto   *protocol.Protocol
+	srv    *Server
+	crypto *auth.Crypto
+	keys   *auth.KeyStore
+	url    string
+	proto  *protocol.Protocol
 }
 
 func startTestServer(t *testing.T) *testHarness {

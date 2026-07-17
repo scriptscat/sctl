@@ -3,38 +3,27 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
-
 	"github.com/scriptscat/sctl/internal/cli"
-	"github.com/scriptscat/sctl/internal/logging"
 )
 
 func main() {
-	var logLevel string
-	root := &cobra.Command{
-		Use:           "sctl",
-		Short:         "ScriptCat 控制工具:本地桥接 daemon、MCP server 与脚本管理命令",
-		SilenceUsage:  true,
-		SilenceErrors: true,
-		// 在任何子命令逻辑前初始化全局 stderr logger(stdout 留给 MCP 协议与 --json 输出)。
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			logging.Setup(logLevel)
-			return nil
-		},
+	root := cli.NewRootCmd()
+	err := root.Execute()
+	if err == nil {
+		return
 	}
-	root.PersistentFlags().StringVar(&logLevel, "log-level", "info", "日志级别 debug|info|warn|error(始终输出到 stderr)")
-	root.AddCommand(
-		cli.NewServeCmd(),
-		cli.NewMcpCmd(),
-		cli.NewPairCmd(),
-		cli.NewStatusCmd(),
-		cli.NewVersionCmd(),
-	)
-	if err := root.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+	// 写动词以 ExitError 携带自定义退出码(0 批准 / 1 拒绝 / 2 作废 / 3 其他)。
+	var ee *cli.ExitError
+	if errors.As(err, &ee) {
+		if ee.Message != "" {
+			fmt.Fprintln(os.Stderr, "error:", ee.Message)
+		}
+		os.Exit(ee.Code)
 	}
+	fmt.Fprintln(os.Stderr, "error:", err)
+	os.Exit(1)
 }

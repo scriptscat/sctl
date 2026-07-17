@@ -91,6 +91,9 @@ type Server struct {
 	clientPairTTL    time.Duration
 	maxFrameBytes    int64
 
+	// controlToken 是本机内部控制 API 的鉴权凭据(由 daemon 绑定端口后注入,空则控制 API 全拒)。
+	controlToken string
+
 	mu             sync.Mutex
 	conns          map[*conn]struct{}
 	active         *conn
@@ -130,10 +133,19 @@ func NewServer(version string, p *protocol.Protocol, keys *auth.KeyStore, client
 	}
 }
 
+// SetControlToken 注入本机内部控制 API 的鉴权凭据。须在 Serve 前调用;空令牌下控制 API 全拒。
+func (s *Server) SetControlToken(token string) {
+	s.mu.Lock()
+	s.controlToken = token
+	s.mu.Unlock()
+}
+
 // Serve 在给定 listener 上运行 WS 服务,阻塞至 ctx 取消后优雅停机。
+// 同一 listener 上还挂载了本机内部控制 API(/control/*,独立路径),供 sctl mcp / CLI 动词驱动。
 func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	s.baseCtx, s.baseCancel = context.WithCancel(context.Background())
 	mux := http.NewServeMux()
+	s.registerControl(mux)
 	mux.HandleFunc("/", s.handleWS)
 	s.httpServer = &http.Server{Handler: mux}
 
