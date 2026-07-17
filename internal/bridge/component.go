@@ -5,12 +5,15 @@ package bridge
 import (
 	"context"
 	"fmt"
+	"net"
 
 	"github.com/cago-frame/cago/configs"
 	"github.com/cago-frame/cago/pkg/gogo"
 	"github.com/cago-frame/cago/pkg/logger"
 	"go.uber.org/zap"
 
+	"github.com/scriptscat/sctl/internal/auth"
+	"github.com/scriptscat/sctl/internal/config"
 	"github.com/scriptscat/sctl/internal/protocol"
 )
 
@@ -22,12 +25,16 @@ type Config struct {
 // bridgeComponent 实现 cago 的 ComponentCancel:Start 拉起 WS server,
 // server 意外退出时通过 cancel 终止整个应用。
 type bridgeComponent struct {
-	cfg Config
+	version  string
+	cfg      Config
+	srv      *Server
+	listener net.Listener
 }
 
 // Component 返回桥接 daemon 组件,注册到 cago 应用(用 RegistryCancel)。
-func Component() *bridgeComponent {
-	return &bridgeComponent{}
+// version 注入 hello 消息的 daemonVersion。
+func Component(version string) *bridgeComponent {
+	return &bridgeComponent{version: version}
 }
 
 func (b *bridgeComponent) Start(ctx context.Context, cfg *configs.Config) error {
@@ -47,17 +54,38 @@ func (b *bridgeComponent) StartCancel(ctx context.Context, cancel context.Cancel
 	if b.cfg.Address == "" {
 		b.cfg.Address = defaultAddress(p.Transport.DefaultPort)
 	}
-	logger.Ctx(ctx).Warn("桥接 daemon 为骨架,尚未监听 WS 端口(等待实现)",
-		zap.String("address", b.cfg.Address),
-		zap.Int("protocolVersion", p.ProtocolVersion),
-	)
+	// 仅允许绑定 loopback:非本机地址一律拒绝(§4 明确不做 Origin 判别,监听面必须收窄)。
+	if err := validateLoopback(b.cfg.Address); err != nil {
+		logger.Ctx(ctx).Error("拒绝在非 loopback 地址上监听", zap.String("address", b.cfg.Address), zap.Error(err))
+		return err
+	}
+
+	keys := auth.NewKeyStore(config.KeyFile())
+	clients, err := auth.NewClientStore(config.ClientsFile())
+	if err != nil {
+		logger.Ctx(ctx).Error("打开客户端存储失败", zap.Error(err))
+		return err
+	}
+	b.srv = NewServer(b.version, p, keys, clients, logger.Ctx(ctx))
+
+	// 同步 net.Listen 使绑定失败在启动阶段即暴露(cago 会 panic,符合 fail-fast 约定)。
+	ln, err := net.Listen("tcp", b.cfg.Address)
+	if err != nil {
+		logger.Ctx(ctx).Error("绑定 WS 监听端口失败", zap.String("address", b.cfg.Address), zap.Error(err))
+		return err
+	}
+	b.listener = ln
+	logger.Ctx(ctx).Info("桥接 daemon 开始监听", zap.String("address", ln.Addr().String()), zap.Int("protocolVersion", p.ProtocolVersion))
+
 	// cago 同步调用 StartCancel,server 类组件须起 goroutine 后立即返回,否则 Start()
 	// 的信号注册跑不到、SIGINT 会死锁(对齐 cago 的 mux.HTTP 写法)。
-	// TODO(task#8): 在此 goroutine 内绑定 127.0.0.1:<port> WS listener、认证握手、
-	//   envelope 路由、请求取消传播;listener 意外退出时调用 cancel() 终止应用。
 	gogo.Go(func() error {
-		<-ctx.Done()
-		logger.Ctx(ctx).Info("桥接 daemon 收到取消信号,准备退出")
+		// server 意外退出(非优雅停机)即终止整个应用。
+		if err := b.srv.Serve(ctx, ln); err != nil {
+			logger.Ctx(ctx).Error("WS server 异常退出", zap.Error(err))
+			cancel()
+			return err
+		}
 		return nil
 	})
 	return nil
@@ -67,6 +95,30 @@ func (b *bridgeComponent) CloseHandle() {
 	logger.Default().Info("桥接 daemon 已停止")
 }
 
+// Server 暴露底层 WS 服务,供未来 sctl mcp / CLI 动词发起 bridge 调用与配对。
+func (b *bridgeComponent) Server() *Server {
+	return b.srv
+}
+
 func defaultAddress(port int) string {
 	return fmt.Sprintf("127.0.0.1:%d", port)
+}
+
+// validateLoopback 校验监听地址的主机部分是 loopback(127.0.0.0/8、::1 或 localhost)。
+func validateLoopback(address string) error {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return fmt.Errorf("解析监听地址 %q: %w", address, err)
+	}
+	if host == "localhost" {
+		return nil
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return fmt.Errorf("监听地址主机 %q 非法或非 loopback", host)
+	}
+	if !ip.IsLoopback() {
+		return fmt.Errorf("拒绝非 loopback 监听地址 %q", host)
+	}
+	return nil
 }

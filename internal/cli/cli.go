@@ -38,7 +38,7 @@ func NewServeCmd() *cobra.Command {
 			}
 			logger.Ctx(ctx).Info("启动 sctl serve", zap.String("version", Version))
 			return cago.New(ctx, cfg).
-				RegistryCancel(bridge.Component()).
+				RegistryCancel(bridge.Component(Version)).
 				Start()
 		},
 	}

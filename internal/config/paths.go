@@ -39,3 +39,8 @@ func LogsDir() string {
 func KeyFile() string {
 	return filepath.Join(DataDir(), "pairing.key")
 }
+
+// ClientsFile 返回 MCP 客户端令牌存储的落盘路径(0600,令牌只存 SHA-256)。
+func ClientsFile() string {
+	return filepath.Join(DataDir(), "clients.json")
+}
