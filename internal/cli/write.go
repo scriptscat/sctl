@@ -21,7 +21,7 @@ func newInstallCmd() *cobra.Command {
 			if err != nil {
 				return &ExitError{Code: exitError, Message: err.Error()}
 			}
-			return dispatch(cmd, "scripts.install.request", input, func(result json.RawMessage) error {
+			return dispatchBlocking(cmd, "scripts.install.request", input, func(result json.RawMessage) error {
 				if jsonOutput {
 					return printResultJSON(result)
 				}
@@ -69,7 +69,7 @@ func newToggleCmd(enable bool) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			input := mustInput(map[string]any{"uuid": args[0], "enable": enable})
-			return dispatch(cmd, "scripts.toggle.request", input, func(result json.RawMessage) error {
+			return dispatchBlocking(cmd, "scripts.toggle.request", input, func(result json.RawMessage) error {
 				if jsonOutput {
 					return printResultJSON(result)
 				}
@@ -92,7 +92,7 @@ func newRmCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			input := mustInput(map[string]string{"uuid": args[0]})
-			return dispatch(cmd, "scripts.delete.request", input, func(result json.RawMessage) error {
+			return dispatchBlocking(cmd, "scripts.delete.request", input, func(result json.RawMessage) error {
 				if jsonOutput {
 					return printResultJSON(result)
 				}

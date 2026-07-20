@@ -11,7 +11,11 @@
 //   - 无论哪种身份,写操作仍需过扩展侧人工审批(第二道闸门)。
 package control
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/scriptscat/sctl/internal/audit"
+)
 
 // 控制 API 路径。健康检查故意不鉴权(仅暴露「端口开着」这一威胁模型已接受的信息)。
 const (
@@ -66,11 +70,13 @@ type HealthResult struct {
 	Version string `json:"version"`
 }
 
-// StatusResult 是 /control/status 的响应体:daemon 与扩展连接概览。
+// StatusResult 是 /control/status 的响应体:daemon 与扩展连接概览,附守卫侧安全事件。
 type StatusResult struct {
-	DaemonVersion string `json:"daemonVersion"`
-	ExtConnected  bool   `json:"extConnected"`
-	ClientCount   int    `json:"clientCount"`
+	DaemonVersion string        `json:"daemonVersion"`
+	ExtConnected  bool          `json:"extConnected"`
+	ClientCount   int           `json:"clientCount"`
+	SecurityCount int           `json:"securityCount"`
+	Security      []audit.Event `json:"security,omitempty"`
 }
 
 // WhoamiResult 是 /control/whoami 的响应体:解析 MCP 客户端令牌得到的授权信息。

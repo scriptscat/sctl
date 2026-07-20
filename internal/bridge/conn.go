@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/scriptscat/sctl/internal/audit"
 	"github.com/scriptscat/sctl/internal/auth"
 )
 
@@ -34,6 +35,21 @@ type conn struct {
 	key []byte // 握手确立的长期共享密钥 K(会话建立后)
 }
 
+// authError 是被守卫判定为安全信号的握手失败,携带审计分类。handleWS 据此统一记录一次,
+// 避免在各失败点散落审计调用而漏记;不带此类型的失败(密钥读写等本地故障)不进审计。
+type authError struct {
+	evType audit.Type
+	reason audit.Reason
+	err    error
+}
+
+func (e *authError) Error() string { return e.err.Error() }
+func (e *authError) Unwrap() error { return e.err }
+
+func authFail(evType audit.Type, reason audit.Reason, format string, args ...any) *authError {
+	return &authError{evType: evType, reason: reason, err: fmt.Errorf(format, args...)}
+}
+
 // handshake 执行每连接一次的双向 HMAC 挑战应答(会话或配对模式),须在 authTimeout 内完成。
 func (c *conn) handshake() error {
 	s := c.srv
@@ -50,15 +66,18 @@ func (c *conn) handshake() error {
 
 	env, err := c.readEnvelope(ctx)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return authFail(audit.TypeHandshakeFailed, audit.ReasonTimeout, "等待 auth.response 超时: %w", err)
+		}
 		return fmt.Errorf("读取 auth.response: %w", err)
 	}
 	// 握手完成前,除 auth.response 外的任何消息导致立即断开(§3)。
 	if env.Type != typeAuthResponse {
-		return fmt.Errorf("握手期收到非 auth.response 消息: %s", env.Type)
+		return authFail(audit.TypeHandshakeFailed, audit.ReasonProtocol, "握手期收到非 auth.response 消息: %s", env.Type)
 	}
 	var resp authResponsePayload
 	if err := json.Unmarshal(env.Payload, &resp); err != nil {
-		return fmt.Errorf("解析 auth.response: %w", err)
+		return authFail(audit.TypeHandshakeFailed, audit.ReasonProtocol, "解析 auth.response: %w", err)
 	}
 
 	switch resp.Mode {
@@ -67,7 +86,7 @@ func (c *conn) handshake() error {
 	case modePairing:
 		return c.handshakePairing(ctx, nonceD, resp)
 	default:
-		return fmt.Errorf("未知握手模式: %q", resp.Mode)
+		return authFail(audit.TypeHandshakeFailed, audit.ReasonProtocol, "未知握手模式: %q", resp.Mode)
 	}
 }
 
@@ -82,7 +101,7 @@ func (c *conn) handshakeSession(ctx context.Context, nonceD string, resp authRes
 		return errors.New("尚未配对,无长期密钥")
 	}
 	if !s.crypto.VerifyExtHMAC(auth.ModeSession, key, nonceD, resp.NonceE, resp.HMAC) {
-		return errors.New("会话握手 HMAC 校验失败")
+		return authFail(audit.TypeHandshakeFailed, audit.ReasonHMACMismatch, "会话握手 HMAC 校验失败")
 	}
 	okMAC := s.crypto.DaemonHMAC(auth.ModeSession, key, nonceD, resp.NonceE)
 	if err := c.sendCtx(ctx, typeAuthOK, uuid.NewString(), authOKPayload{HMAC: okMAC}); err != nil {
@@ -96,11 +115,11 @@ func (c *conn) handshakeSession(ctx context.Context, nonceD string, resp authRes
 func (c *conn) handshakePairing(ctx context.Context, nonceD string, resp authResponsePayload) error {
 	s := c.srv
 	if !s.pairAttempts.Allow("ext-pairing") {
-		return errors.New("配对尝试过于频繁")
+		return authFail(audit.TypePairingRateLimited, audit.ReasonPairExhausted, "配对尝试过于频繁")
 	}
 	code, err := s.activePairingCode()
 	if err != nil {
-		return err
+		return authFail(audit.TypePairingFailed, audit.ReasonPairExpired, "%w", err)
 	}
 	kpMac, kpEnc, err := s.crypto.DerivePairingKeys(code)
 	if err != nil {
@@ -108,7 +127,7 @@ func (c *conn) handshakePairing(ctx context.Context, nonceD string, resp authRes
 	}
 	if !s.crypto.VerifyExtHMAC(auth.ModePairing, kpMac, nonceD, resp.NonceE, resp.HMAC) {
 		s.failPairingAttempt()
-		return errors.New("配对握手 HMAC 校验失败")
+		return authFail(audit.TypePairingFailed, audit.ReasonHMACMismatch, "配对握手 HMAC 校验失败")
 	}
 
 	k, err := auth.NewLongTermKey()

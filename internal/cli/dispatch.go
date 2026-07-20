@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/signal"
 
@@ -19,12 +20,26 @@ import (
 // exitVoided。桥接业务错误按 code 映射:USER_REJECTED→exitRejected,OPERATION_EXPIRED→exitVoided,
 // 其余→exitError。
 func dispatch(cmd *cobra.Command, action string, input json.RawMessage, onOK func(result json.RawMessage) error) error {
+	return dispatchAction(cmd, action, input, false, onOK)
+}
+
+// dispatchBlocking 与 dispatch 相同,但用于写动词:调用前告知用户正在等待浏览器裁决。
+func dispatchBlocking(cmd *cobra.Command, action string, input json.RawMessage, onOK func(result json.RawMessage) error) error {
+	return dispatchAction(cmd, action, input, true, onOK)
+}
+
+func dispatchAction(cmd *cobra.Command, action string, input json.RawMessage, blocking bool, onOK func(result json.RawMessage) error) error {
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt)
 	defer stop()
 
 	client, err := control.Dial(ctx)
 	if err != nil {
 		return &ExitError{Code: exitError, Message: err.Error()}
+	}
+	// 连上之后才提示,否则 daemon 不可用时会先报一句误导的「等待确认」。
+	// 走 stderr:stdout 只承载结果 / --json 输出(见包注释)。
+	if blocking {
+		fmt.Fprintln(os.Stderr, "等待浏览器确认…(可 Ctrl-C 取消并作废本次操作)")
 	}
 	res, err := client.Call(ctx, action, input)
 	if err != nil {

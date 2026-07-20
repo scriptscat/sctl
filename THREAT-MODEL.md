@@ -20,7 +20,7 @@ sctl 用**「loopback WS listener + 双向认证握手」**替换 Native Messagi
 
 | 威胁 | 对策 | 残余风险 |
 |---|---|---|
-| 网页 `new WebSocket("ws://127.0.0.1:8643")` 直连 daemon | 连接必须先完成双向 HMAC 握手才能收发业务消息;无凭据连接在挑战应答处必然失败,5s 超时断开、**不回显任何原因**(close 1008)。**不做 Origin 判别**——非浏览器进程可任意伪造 Origin,唯一闸门是握手本身 | 网页可探测到端口开放 |
+| 网页 `new WebSocket("ws://127.0.0.1:8643")` 直连 daemon | 连接必须先完成双向 HMAC 握手才能收发业务消息;无凭据连接在挑战应答处必然失败,5s 超时断开、**不回显任何原因**(close 1008)。**不做 Origin 判别**——非浏览器进程可任意伪造 Origin,唯一闸门是握手本身。失败尝试记入守卫侧审计(§6) | 网页可探测到端口开放 |
 | 网页 `fetch("http://127.0.0.1:8643/control/…")` 冒充本机前端 | 除 `/control/health` 外,所有控制 API 要求 `X-Sctl-Control-Token` 头,恒定时间比对 daemon 的 0600 令牌;网页读不到该文件即 401,动作根本不执行 | 端口/健康信息可被探测(见下) |
 | 本机进程抢占 8643 冒充 daemon,或冒充扩展连入 | 扩展 ↔ daemon **双向** HMAC-SHA-256 challenge-response(§PROTOCOL 3.1);长期密钥 K 来自一次性配对码,K 永不明文过线;nonce 每连接新生成,重放无效 | 见「同用户恶意进程」行 |
 | MCP 客户端(agent)越权 | 每客户端交互式配对(8 字符码双端核对)、token 只存 SHA-256、最小权限 scope、`tools/list` 按 scope 过滤(未授予的工具根本不注册)、每客户端读/写限流、单客户端撤销 + 全局 kill switch。daemon 持权威 token store,扩展镜像用于 UI 与二次校验 | scope 动态变更需重连兜底(v1 已知延后项) |
@@ -65,3 +65,22 @@ sctl 用**「loopback WS listener + 双向认证握手」**替换 Native Messagi
 
 三条铁律:**token 原文永不过线、不进日志、不进 URL**;审计事件**永不记录** token / 源码 / 含凭据的 URL;
 密钥落盘一律 0600、目录 0700、原子写(临时文件 + rename,无过宽权限窗口)。
+
+## 6. 守卫侧审计
+
+审计的权威存储在**扩展侧**(设置页的审计视图):已配对客户端做了什么,以那份记录为准。
+
+守卫侧只补扩展**看不到的那一段**——在扩展会话建立之前就被挡掉、因而不会产生任何扩展侧记录的事件:
+
+| 事件 | 触发 |
+|---|---|
+| `handshake.failed` | 握手 HMAC 校验失败 / 5s 超时 / 握手期发送非 `auth.response` 消息 |
+| `pairing.failed` | 配对握手 HMAC 失败,或无有效配对码 |
+| `pairing.rate_limited` | 配对尝试超过 5/分 |
+| `request.rate_limited` | 客户端读/写请求超限,在转发给扩展之前即被拒 |
+| `handshake.ok` / `client.revoked` | 会话建立 / 客户端被撤销 |
+
+查看:`sctl status` 给出按类型聚合的摘要行,`sctl status --json` 输出完整事件。
+
+边界:**只驻内存**(固定容量环形缓冲,daemon 重启即清空),不落盘——避免审计本身成为新的敏感文件。
+事件字段集是封闭的(时间 / 类型 / 客户端标识 / 原因分类),没有承载任意载荷的出口,以此保证 §5 的铁律。

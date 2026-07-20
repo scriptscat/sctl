@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/scriptscat/sctl/internal/audit"
 	"github.com/scriptscat/sctl/internal/control"
 	"github.com/scriptscat/sctl/internal/protocol"
 )
@@ -56,9 +58,26 @@ func newStatusCmd() *cobra.Command {
 				return printValueJSON(st)
 			}
 			fmt.Fprintf(os.Stdout, "daemon 版本: %s\n扩展已连接: %v\n已配对客户端数: %d\n", st.DaemonVersion, st.ExtConnected, st.ClientCount)
+			// 人读输出只给一行摘要,完整事件走 --json,避免刷屏淹没状态本身。
+			if summary := formatSecuritySummary(st.Security); summary != "" {
+				fmt.Fprintf(os.Stdout, "近期安全事件: %s\n", summary)
+			}
 			return nil
 		},
 	}
+}
+
+// formatSecuritySummary 把安全事件聚合成一行「类型×次数」摘要,无事件时返回空串。
+func formatSecuritySummary(events []audit.Event) string {
+	counts := audit.Summarize(events)
+	if len(counts) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(counts))
+	for _, c := range counts {
+		parts = append(parts, fmt.Sprintf("%s×%d", c.Type, c.Count))
+	}
+	return fmt.Sprintf("%d 条(%s)", len(events), strings.Join(parts, ", "))
 }
 
 // newVersionCmd 打印版本与协议信息。

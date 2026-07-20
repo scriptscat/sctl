@@ -53,10 +53,13 @@ func (s *Server) handleControlStatus(w http.ResponseWriter, _ *http.Request) {
 	s.mu.Lock()
 	extConnected := s.active != nil
 	s.mu.Unlock()
+	events := s.audit.Snapshot()
 	writeJSON(w, control.StatusResult{
 		DaemonVersion: s.version,
 		ExtConnected:  extConnected,
 		ClientCount:   len(s.clients.List()),
+		SecurityCount: len(events),
+		Security:      events,
 	})
 }
 

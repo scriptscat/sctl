@@ -14,10 +14,14 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/scriptscat/sctl/internal/audit"
 	"github.com/scriptscat/sctl/internal/auth"
 	"github.com/scriptscat/sctl/internal/protocol"
 	"github.com/scriptscat/sctl/internal/ratelimit"
 )
+
+// auditCapacity 是守卫侧安全事件环形缓冲的容量,对齐扩展侧 MCP_AUDIT_RING_BUFFER_SIZE。
+const auditCapacity = 500
 
 var (
 	// ErrNotConnected 表示当前没有已配对的扩展连接。
@@ -81,6 +85,8 @@ type Server struct {
 	clients *auth.ClientStore
 	log     *zap.Logger
 
+	audit *audit.Recorder
+
 	pairAttempts *ratelimit.Limiter
 	readLimit    *ratelimit.Limiter
 	writeLimit   *ratelimit.Limiter
@@ -119,6 +125,7 @@ func NewServer(version string, p *protocol.Protocol, keys *auth.KeyStore, client
 		keys:             keys,
 		clients:          clients,
 		log:              log,
+		audit:            audit.NewRecorder(auditCapacity, log),
 		pairAttempts:     ratelimit.NewLimiter(5, time.Minute),
 		readLimit:        ratelimit.NewLimiter(60, time.Minute),
 		writeLimit:       ratelimit.NewLimiter(10, time.Minute),
@@ -202,10 +209,16 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	if err := c.handshake(); err != nil {
 		// 认证失败统一以 1008 关闭,不回显原因(不给探测者信息,§3)。
 		s.log.Debug("握手失败,断开连接", zap.Error(err))
+		// 只有被守卫判定为安全信号的失败才进审计;本地故障(密钥读写失败等)不混入。
+		var ae *authError
+		if errors.As(err, &ae) {
+			s.audit.Record(audit.Event{Type: ae.evType, Reason: ae.reason})
+		}
 		c.close(websocket.StatusPolicyViolation, "")
 		return
 	}
 
+	s.audit.Record(audit.Event{Type: audit.TypeHandshakeOK})
 	s.setActive(c)
 	if err := c.send(typeHello, uuid.NewString(), helloPayload{DaemonVersion: s.version, ProtocolVersion: protocolV}); err != nil {
 		s.log.Debug("发送 hello 失败", zap.Error(err))
@@ -269,6 +282,8 @@ func (s *Server) Call(ctx context.Context, req BridgeRequest, write bool) (Bridg
 		limiter = s.writeLimit
 	}
 	if req.ClientID != "" && !limiter.Allow(req.ClientID) {
+		// 限流在转发前拦下,扩展侧不会有任何记录,守卫侧不记就完全无痕。
+		s.audit.Record(audit.Event{Type: audit.TypeRequestRateLimited, Client: req.ClientID})
 		return BridgeResponse{}, &BridgeError{Code: errRateLimited, Message: "rate limited"}
 	}
 
@@ -383,6 +398,7 @@ func (s *Server) handleClientRevoke(env Envelope) {
 	if !ok {
 		return
 	}
+	s.audit.Record(audit.Event{Type: audit.TypeClientRevoked, Client: p.ClientID})
 
 	s.mu.Lock()
 	active := s.active

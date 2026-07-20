@@ -23,7 +23,7 @@ CLI 动词(sctl scripts list / install …)───────┤
 | `sctl mcp [--name <label>]` | stdio MCP server;加载已配对身份、按 scope 过滤工具后提供服务(未运行时自动拉起 serve) |
 | `sctl mcp pair [--name <label>]` | 交互式配对该 MCP 实例:打印核对码,等待扩展批准,缓存铸造出的身份 |
 | `sctl pair` | 生成一次性配对码,与扩展建立互信 |
-| `sctl status` | daemon 与扩展连接状态(不自动拉起 daemon) |
+| `sctl status` | daemon 与扩展连接状态,附守卫侧安全事件摘要(不自动拉起 daemon) |
 | `sctl scripts list / info <uuid> / source <uuid>` | 读脚本(`source` 输出到 stdout,可重定向) |
 | `sctl install <url\|file>` | 请求安装脚本(URL 或本地文件;本地文件上送 staged code) |
 | `sctl enable / disable / rm <uuid>` | 写操作,阻塞等待浏览器人工确认 |
