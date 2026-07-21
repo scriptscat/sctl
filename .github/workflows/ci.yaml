@@ -1,0 +1,45 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test -race ./...
+
+  protocol-drift:
+    # protocol.json 是扩展与守卫共用的单一事实源(设计文档 §5):两份镜像一旦漂移,
+    # 双方对 action / scope / 限值的理解就会分叉,且只在运行时才暴露。这里做逐字节比对。
+    #
+    # 扩展侧该文件随 MCP 桥接 PR 合入 main 后此 job 才能通过;在那之前把仓库变量
+    # EXT_PROTOCOL_REF 指到对应 PR 分支。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: 拉取扩展侧协议镜像
+        env:
+          EXT_REF: ${{ vars.EXT_PROTOCOL_REF || 'main' }}
+        run: |
+          set -euo pipefail
+          url="https://raw.githubusercontent.com/scriptscat/scriptcat/${EXT_REF}/src/app/service/service_worker/mcp/protocol.json"
+          if ! curl -fsSL "$url" -o ext-protocol.json; then
+            echo "::error::拉取扩展侧 protocol.json 失败(ref=${EXT_REF})。扩展侧尚未合入时,请把仓库变量 EXT_PROTOCOL_REF 指到对应分支。"
+            exit 1
+          fi
+      - name: 比对协议单源
+        run: |
+          if ! diff -u ext-protocol.json protocol.json; then
+            echo "::error::protocol.json 与扩展侧镜像不一致,两侧须同步更新。"
+            exit 1
+          fi

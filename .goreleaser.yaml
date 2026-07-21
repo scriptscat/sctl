@@ -1,0 +1,46 @@
+version: 2
+
+project_name: sctl
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: sctl
+    main: ./cmd/sctl
+    binary: sctl
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    # 版本注入到 internal/cli.Version(sctl version / hello 的 daemonVersion 都读它)。
+    ldflags:
+      - -s -w -X github.com/scriptscat/sctl/internal/cli.Version={{ .Version }}
+
+archives:
+  - id: sctl
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - PROTOCOL.md
+      - THREAT-MODEL.md
+      - LICENSE*
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  draft: true
