@@ -29,7 +29,7 @@ CLI 动词(sctl scripts list / install …)───────┤
 | `sctl enable / disable / rm <uuid>` | 写操作,阻塞等待浏览器人工确认 |
 | `sctl version` | 版本与协议信息 |
 
-全局标志:`--json`(结构化输出,供脚本消费)、`--log-level`(日志始终走 stderr;`sctl mcp` 的 stdout 由 MCP 协议独占)。
+全局标志:`--json`(结构化输出,供脚本消费)、`--log-level`(日志走 stderr 与数据目录下的 `logs/`,绝不写 stdout;`sctl mcp` 的 stdout 由 MCP 协议独占)。
 
 ### 写操作阻塞语义与退出码
 
@@ -44,15 +44,10 @@ CLI 动词(sctl scripts list / install …)───────┤
 
 ## 文档
 
-| 文档 | 内容 |
-|---|---|
-| [AGENTS.md](./AGENTS.md) | 工程原则、架构速查、动手之前先读什么 |
-| [docs/README.md](./docs/README.md) | 全部文档索引与归属表 |
-| [docs/architecture.md](./docs/architecture.md) | 进程模型、目录结构、各包职责、依赖方向 |
-| [docs/protocol.md](./docs/protocol.md) | 扩展 ↔ daemon 的 WS 桥接协议 |
-| [docs/threat-model.md](./docs/threat-model.md) | 安全边界与取舍 |
-| [docs/development.md](./docs/development.md) | 构建、测试、静态检查、环境变量、版本门槛 |
-| [docs/verification.md](./docs/verification.md) | 怎么确认改动真的能用 |
+- [`AGENTS.md`](./AGENTS.md) —— 贡献者与 AI 代理的入口页:工程原则、架构速览,以及做某类改动前先读哪份文档。
+- [`docs/README.md`](./docs/README.md) —— 全部文档的索引兼归属表(架构、协议、威胁模型、开发、验证、文档维护)。
+
+索引只在 `docs/README.md` 维护一份;这里不复制一遍,免得两处漂移。
 
 ## License
 

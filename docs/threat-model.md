@@ -1,86 +1,113 @@
-# sctl 威胁模型(桥接 daemon + 本机控制 API)
+# sctl Threat Model (bridge daemon + local control API)
 
-> 状态:随 sctl v0.1 daemon/CLI/MCP 实现同步。常量权威见 [`internal/pkg/protocol/protocol.json`](../internal/pkg/protocol/protocol.json),协议语义见
-> [`protocol.md`](./protocol.md)。本文只讲安全边界与取舍;英文版后补。
+> Status: kept in sync with the sctl v0.1 daemon/CLI/MCP implementation. The authority for constants is
+> [`internal/pkg/protocol/protocol.json`](../internal/pkg/protocol/protocol.json), and the protocol semantics
+> are in [`protocol.md`](./protocol.md). This document covers only the security boundary and its trade-offs.
 
-## 1. 定位与总体取舍
+## 1. Positioning and overall trade-offs
 
-sctl 用**「loopback WS listener + 双向认证握手」**替换 Native Messaging 版重构的**「无 listener」**方案。
-被有意交换掉的核心卖点是「本机无任何 TCP listener」,换来的是零新增浏览器权限、零安装器、单二进制分发。
-因此必须正面重建边界:恶意网页从「无入口」变为「能看到端口开放、握手失败即断」。
+sctl replaces the **"no listener"** design of the Native Messaging rewrite with a **"loopback WS listener plus
+a mutual authentication handshake"**. The selling point deliberately traded away is "no TCP listener on the
+host at all"; what it buys is zero new browser permissions, no installer, and single-binary distribution. The
+boundary therefore has to be rebuilt head-on: for a malicious web page the situation moves from "no entry
+point" to "can see that the port is open, and gets disconnected when the handshake fails".
 
-**信任锚点只有两个:**
-- 扩展 ↔ daemon 之间的**长期共享密钥 K**(一次性配对码派生下发,永不明文过线);
-- 本机前端(`sctl mcp` / CLI 动词)→ daemon 之间的**控制令牌**(daemon 绑定端口后写入 0600 文件,只有同用户进程能读)。
+**There are only two trust anchors:**
+- the **long-term shared key K** between the extension and the daemon (derived from and delivered via a
+  one-time pairing code, never in plaintext over the wire);
+- the **control token** between the local frontend (`sctl mcp` / CLI verbs) and the daemon (written to a 0600
+  file once the daemon has bound its port; only same-user processes can read it).
 
-**贯穿始终的第二道闸门:** 一切写操作(安装/启停/删除)与源码披露最终由**浏览器中的人工审批**裁决;
-即使本机恶意进程拿到控制令牌调用 sctl,写入仍需用户在扩展确认页点批准。
+**The second gate, present throughout:** every write operation (install / toggle / delete) and every source
+disclosure is ultimately decided by **human approval in the browser**; even if a malicious local process gets
+the control token and calls sctl, the write still needs the user to press approve on the extension's
+confirmation page.
 
-## 2. 攻击面与对策
+## 2. Attack surface and countermeasures
 
-| 威胁 | 对策 | 残余风险 |
+| Threat | Countermeasure | Residual risk |
 |---|---|---|
-| 网页 `new WebSocket("ws://127.0.0.1:8643")` 直连 daemon | 连接必须先完成双向 HMAC 握手才能收发业务消息;无凭据连接在挑战应答处必然失败,5s 超时断开、**不回显任何原因**(close 1008)。**不做 Origin 判别**——非浏览器进程可任意伪造 Origin,唯一闸门是握手本身。失败尝试记入守卫侧审计(§6) | 网页可探测到端口开放 |
-| 网页 `fetch("http://127.0.0.1:8643/control/…")` 冒充本机前端 | 除 `/control/health` 外,所有控制 API 要求 `X-Sctl-Control-Token` 头,恒定时间比对 daemon 的 0600 令牌;网页读不到该文件即 401,动作根本不执行 | 端口/健康信息可被探测(见下) |
-| 本机进程抢占 8643 冒充 daemon,或冒充扩展连入 | 扩展 ↔ daemon **双向** HMAC-SHA-256 challenge-response(§PROTOCOL 3.1);长期密钥 K 来自一次性配对码,K 永不明文过线;nonce 每连接新生成,重放无效 | 见「同用户恶意进程」行 |
-| MCP 客户端(agent)越权 | 每客户端交互式配对(8 字符码双端核对)、token 只存 SHA-256、最小权限 scope、`tools/list` 按 scope 过滤(未授予的工具根本不注册)、每客户端读/写限流、单客户端撤销 + 全局 kill switch。daemon 持权威 token store,扩展镜像用于 UI 与二次校验 | scope 动态变更需重连兜底(v1 已知延后项) |
-| 写操作被滥用(安装恶意脚本 / 批量删除) | 两阶段确认 + 批准瞬间 TOCTOU 复核(staged `contentHash`、目标 `existingCodeHash`、客户端未撤销)+ 新装脚本默认禁用;调用纯阻塞,请求方断开即作废。「直接允许」是显式安全降级开关(UI 琥珀警示) | 「直接允许」下写入不再人工确认——用户自担 |
-| 源码泄露 | 源码披露是独立 scope + 每客户端/每脚本首次披露需人工批准(读隐私,不豁免于写策略);脚本可控文本恒以结构化数据返回(`contentTrust: untrusted-user-script-source`),不得拼入工具描述 | CLI(`sctl scripts source`)对披露豁免——见下 |
-| 端口存在性被扫描发现 | 接受:扩展是 client、读不到发现文件,须固定默认端口 8643;由认证兜底 | 端口开放可见 |
-| 同用户恶意进程读 daemon 密钥文件 / 控制令牌(0600) | **不设防**——拥有同用户完整权限的进程已越过任何本地方案的能力边界 | 见 §3 明确非目标 |
+| A web page connects straight to the daemon with `new WebSocket("ws://127.0.0.1:8643")` | A connection must complete the mutual HMAC handshake before it can send or receive any business message; a connection without credentials necessarily fails at the challenge-response step and is disconnected on the 5s timeout **with no reason echoed back** (close 1008). **No Origin check** — a non-browser process can forge any Origin, so the handshake itself is the only gate. Failed attempts are recorded in the daemon-side audit (§6) | A page can probe that the port is open |
+| A web page impersonates the local frontend with `fetch("http://127.0.0.1:8643/control/…")` | Apart from `/control/health`, every control API requires an `X-Sctl-Control-Token` header, compared in constant time against the daemon's 0600 token; a web page cannot read that file, so it gets a 401 and the action never runs at all | Port / health information can be probed (see below) |
+| A local process grabs 8643 to impersonate the daemon, or connects in while impersonating the extension | **Mutual** HMAC-SHA-256 challenge-response between the extension and the daemon ([protocol.md](./protocol.md) §3.1); the long-term key K comes from a one-time pairing code and never travels in plaintext; nonces are regenerated per connection, so replays are useless | See the "malicious same-user process" row |
+| An MCP client (agent) exceeds its privileges | Interactive pairing per client (an 8-character code checked on both ends), only the SHA-256 of the token is stored, least-privilege scopes, `tools/list` filtered by scope (an ungranted tool is never registered at all), per-client read/write rate limits, single-client revocation plus a global kill switch. The daemon holds the authoritative token store; the extension's mirror is for the UI and the second check | A dynamic scope change needs a reconnect as a fallback (a known v1 deferral) |
+| Write operations are abused (installing a malicious script / bulk deletion) | Two-phase confirmation plus a TOCTOU re-check at the moment of approval (staged `contentHash`, target `existingCodeHash`, client not revoked), plus newly installed scripts disabled by default; calls are purely blocking, so a requester disconnect voids them. "Always-allow" is an explicit security-downgrade switch (amber warning in the UI) | Under "always-allow" a write is no longer confirmed by a human — the user takes that risk |
+| Source code leaks | Source disclosure is a separate scope, and the first disclosure per client and per script needs human approval (reading is a privacy matter and is not exempted by the write policy); script-controlled text is always returned as structured data (`contentTrust: untrusted-user-script-source`) and must never be concatenated into a tool description | The CLI (`sctl scripts source`) is exempt from disclosure — see below |
+| The port's existence is found by scanning | Accepted: the extension is the client and cannot read a discovery file, so the default port 8643 has to be fixed; authentication is the backstop | The open port is visible |
+| A malicious same-user process reads the daemon key file / control token (0600) | **Explicit non-goal** — a process holding the user's full privileges is already past the capability boundary of any local scheme | See the explicit non-goals in §3 |
 
-## 3. 明确的非目标(不设防)
+## 3. Explicit non-goals
 
-- **同用户完整权限的本机恶意进程**:能读 `pairing.key` / `control.token`(均 0600)、能 ptrace 本用户进程。
-  任何纯本地方案都挡不住它;写操作的浏览器人工审批是唯一仍然生效的缓解(除非用户开了「直接允许」)。
-- **`sctl scripts source` 的披露豁免**:CLI 由用户在自己终端亲手输入,能运行 sctl 的进程也能读密钥文件,
-  对 CLI 豁免披露不增加攻击面。MCP 客户端(经 `sctl mcp`)的源码读取**不豁免**,照常触发披露审批。
-- **内建 `sctl-cli` 身份**:CLI 动词以全量 scope、不配对运行,不出现在扩展「已配对客户端」列表、不可单独撤销
-  (与桥接开关同生命周期)。其信任等价于「持有控制令牌 = 同用户进程」;写操作仍过浏览器审批。
-- **明文 `ws://` 与远程**:仅允许 loopback;daemon 拒绝绑定非 loopback 地址。远程 `wss://`(TLS + 服务器身份)
-  是后续独立设计,v1 不实现。
+- **A malicious local process with the user's full privileges**: it can read `pairing.key` / `control.token`
+  (both 0600) and can ptrace this user's processes. No purely local scheme can stop it; browser-side human
+  approval of write operations is the only mitigation still in effect (unless the user turned on
+  "always-allow").
+- **The disclosure exemption for `sctl scripts source`**: the CLI is typed by the user in their own terminal,
+  and any process able to run sctl can also read the key file, so exempting the CLI from disclosure adds no
+  attack surface. Source reads by MCP clients (through `sctl mcp`) are **not** exempt and trigger disclosure
+  approval as usual.
+- **The built-in `sctl-cli` identity**: CLI verbs run with the full scope set and without pairing; they do not
+  appear in the extension's "paired clients" list and cannot be revoked individually (their lifecycle is that
+  of the bridge toggle). The trust it carries is exactly "holding the control token = a same-user process";
+  write operations still go through browser approval.
+- **Plaintext `ws://` and remote access**: loopback only; the daemon refuses to bind a non-loopback address.
+  Remote `wss://` (TLS plus server identity) is a separate later design and is not implemented in v1.
 
-## 4. 控制通道(本机内部连接)专述
+## 4. The control channel (internal local connection) in detail
 
-`sctl mcp` / CLI 动词与 daemon 是**独立进程**,经 daemon listener 上的 `/control/*` HTTP/JSON API 通信
-(与扩展 WS 面同端口、独立路径)。安全属性:
+`sctl mcp` / CLI verbs and the daemon are **separate processes** that talk over the `/control/*` HTTP/JSON API
+on the daemon's listener (same port as the extension WS surface, separate path). Security properties:
 
-- **唯一传输闸门 = 控制令牌**:daemon 绑定端口**成功后**才生成并写入 0600 令牌文件(端口竞态的失败方不写,
-  不会覆盖胜出者);前端见到 `/control/health` 200 即知令牌已就绪。
-- **两个身份维度**:控制令牌(必带,证明同用户)+ 可选 MCP 客户端令牌(带上即受该客户端 scope 限制、可撤销;
-  不带即内建 `sctl-cli` 全量身份)。
-- **写操作零豁免**:控制令牌只证明「本机同用户」,不绕过浏览器人工审批。恶意本机进程即便持有控制令牌,
-  写入仍需用户在扩展点批准(除非「直接允许」)。
-- **健康检查不鉴权**:只回 `{ok, version}`,不泄露密钥/脚本/客户端信息;等价于「端口开放可探测」这一已接受风险。
-- **断开即作废**:前端请求(HTTP 连接)断开 → daemon 请求 ctx 取消 → 向扩展发 `bridge.cancel` 作废在途写操作。
+- **The only transport gate is the control token**: the daemon generates and writes the 0600 token file only
+  **after** it has successfully bound the port (the loser of a port race does not write, so it cannot
+  overwrite the winner's file); once the frontend sees a 200 from `/control/health` it knows the token is
+  ready.
+- **Two identity dimensions**: the control token (always required, proving same-user) plus an optional MCP
+  client token (supplying it constrains the call to that client's scopes and makes it revocable; omitting it
+  means the built-in `sctl-cli` full identity).
+- **No exemption for writes**: the control token only proves "same user on this host", it does not bypass
+  browser-side human approval. Even holding the control token, a malicious local process still needs the user
+  to press approve in the extension before a write happens (unless "always-allow" is on).
+- **The health check is unauthenticated**: it returns only `{ok, version}` and leaks no key, script, or client
+  information; it is equivalent to the already-accepted risk that an open port is probeable.
+- **Disconnect voids the request**: the frontend request (HTTP connection) drops → the daemon's request ctx is
+  cancelled → `bridge.cancel` is sent to the extension to void the in-flight write operation.
 
-## 5. 落盘凭据一览
+## 5. Credentials persisted to disk
 
-| 文件 | 权限 | 内容 | 泄露影响 |
+| File | Mode | Contents | Impact if leaked |
 |---|---|---|---|
-| `<dataDir>/pairing.key` | 0600 | 扩展配对长期密钥 K(hex) | 可冒充扩展连入 daemon;仍受写审批约束 |
-| `<dataDir>/control.token` | 0600 | 本机控制通道令牌(每次 serve 启动新生成) | 可冒充本机前端调用控制 API;写入仍需浏览器审批 |
-| `<dataDir>/clients.json` | 0600 | MCP 客户端记录;token 只存 SHA-256 | 无法还原 token 原文;可读到 clientId/scope/时间戳 |
-| `<dataDir>/mcp-clients/<name>.json` | 0600 | 某 `sctl mcp` 实例缓存的已配对身份(含 token 原文) | 可冒充该 MCP 客户端(受其 scope 限制、可被扩展撤销) |
+| `<dataDir>/pairing.key` | 0600 | The extension's long-term pairing key K (hex) | Allows impersonating the extension when connecting to the daemon; still bound by write approval |
+| `<dataDir>/control.token` | 0600 | The local control-channel token (regenerated on every serve start) | Allows impersonating the local frontend to call the control API; writes still need browser approval |
+| `<dataDir>/clients.json` | 0600 | MCP client records; only the SHA-256 of a token is stored | The token plaintext cannot be recovered; clientId/scope/timestamps are readable |
+| `<dataDir>/mcp-clients/<name>.json` | 0600 | The paired identity cached by one `sctl mcp` instance (including the token plaintext) | Allows impersonating that MCP client (limited to its scopes, revocable from the extension) |
 
-三条铁律:**token 原文永不过线、不进日志、不进 URL**;审计事件**永不记录** token / 源码 / 含凭据的 URL;
-密钥落盘一律 0600、目录 0700、原子写(临时文件 + rename,无过宽权限窗口)。
+Three iron rules: **a token's plaintext never goes over the wire, never enters a log, never enters a URL**;
+audit events **never record** a token, source code, or a URL containing credentials; keys are always persisted
+to disk as 0600 in a 0700 directory and written atomically (temp file plus rename, no window with overly wide
+permissions).
 
-## 6. 守卫侧审计
+## 6. Daemon-side audit
 
-审计的权威存储在**扩展侧**(设置页的审计视图):已配对客户端做了什么,以那份记录为准。
+The authoritative audit store lives on the **extension side** (the audit view in the settings page): what a
+paired client did is determined by that record.
 
-守卫侧只补扩展**看不到的那一段**——在扩展会话建立之前就被挡掉、因而不会产生任何扩展侧记录的事件:
+The daemon side only fills in the part the extension **cannot see** — events that were blocked before an
+extension session was ever established and therefore leave no extension-side record at all:
 
-| 事件 | 触发 |
+| Event | Trigger |
 |---|---|
-| `handshake.failed` | 握手 HMAC 校验失败 / 5s 超时 / 握手期发送非 `auth.response` 消息 |
-| `pairing.failed` | 配对握手 HMAC 失败,或无有效配对码 |
-| `pairing.rate_limited` | 配对尝试超过 5/分 |
-| `request.rate_limited` | 客户端读/写请求超限,在转发给扩展之前即被拒 |
-| `handshake.ok` / `client.revoked` | 会话建立 / 客户端被撤销 |
+| `handshake.failed` | Handshake HMAC verification failed / the 5s timeout elapsed / a non-`auth.response` message was sent during the handshake |
+| `pairing.failed` | The pairing handshake HMAC failed, or there was no valid pairing code |
+| `pairing.rate_limited` | Pairing attempts exceeded 5 per minute |
+| `request.rate_limited` | A client's read/write requests went over the limit and were rejected before being forwarded to the extension |
+| `handshake.ok` / `client.revoked` | A session was established / a client was revoked |
 
-查看:`sctl status` 给出按类型聚合的摘要行,`sctl status --json` 输出完整事件。
+To view: `sctl status` prints one summary line aggregated by type, and `sctl status --json` outputs the full
+events.
 
-边界:**只驻内存**(固定容量环形缓冲,daemon 重启即清空),不落盘——避免审计本身成为新的敏感文件。
-事件字段集是封闭的(时间 / 类型 / 客户端标识 / 原因分类),没有承载任意载荷的出口,以此保证 §5 的铁律。
+Boundary: the queryable store is **in memory only** (a fixed-capacity ring buffer, cleared whenever the daemon
+restarts). Every event is additionally emitted once as a structured `warn` log line, so it also lands in
+`<dataDir>/logs/sctl.log` (0600 in a 0700 directory) with the rest of the daemon's logs. What keeps that safe
+is the closed event field set — time / type / client identifier / reason category, with no outlet for an
+arbitrary payload — which is what enforces the iron rules of §5 on both outlets.

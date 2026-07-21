@@ -66,7 +66,7 @@ func (b *daemonComponent) StartCancel(ctx context.Context, cancel context.Cancel
 	if b.cfg.Address == "" {
 		b.cfg.Address = defaultAddress(p.Transport.DefaultPort)
 	}
-	// 仅允许绑定 loopback:非本机地址一律拒绝(§4 明确不做 Origin 判别,监听面必须收窄)。
+	// 仅允许绑定 loopback:非本机地址一律拒绝(docs/protocol.md §8 明确不做 Origin 判别,监听面必须收窄)。
 	if err := validateLoopback(b.cfg.Address); err != nil {
 		logger.Ctx(ctx).Error("拒绝在非 loopback 地址上监听", zap.String("address", b.cfg.Address), zap.Error(err))
 		return err

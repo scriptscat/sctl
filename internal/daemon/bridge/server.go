@@ -159,7 +159,8 @@ func (s *Server) shutdown() {
 	})
 }
 
-// handleWS 接受一条 WS 连接并驱动其握手与消息循环。故意不做 Origin 判别(§4)。
+// handleWS 接受一条 WS 连接并驱动其握手与消息循环。故意不做 Origin 判别(docs/protocol.md §8:
+// 非浏览器进程可伪造任意 Origin,握手才是唯一闸门)。
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 	if err != nil {

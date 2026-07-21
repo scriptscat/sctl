@@ -1,75 +1,87 @@
-# 验证
+# Verification
 
-单测全绿只证明**你断言过的那些行为**成立,不证明这个改动真的能用。这份文档管的是后者:
-说"修好了 / 能用了"之前,得先有真实输出作证据。
+Green unit tests only prove **the behaviors you asserted** — not that the change actually works. This document
+owns the latter: before saying "fixed" or "it works", you need real output as evidence.
 
-## 顺序:先廉价信号,再驱动真东西
+## Order: cheap signals first, then drive the real thing
 
 ```bash
-go build ./... && go vet ./...          # 编不过就没有后面的事
+go build ./... && go vet ./...          # nothing else matters if it doesn't compile
 go test ./... -race
 golangci-lint run ./...
 ```
 
-这一组过了,再花时间起进程。反过来做只是在用慢反馈调编译错误。
+Only once this set passes is it worth spending time starting processes. Doing it the other way round is just
+debugging compile errors through a slow feedback loop.
 
-## 驱动真实 daemon
+## Driving a real daemon
 
-`SCTL_DATA_DIR` 与 `SCTL_BRIDGE_ADDR`(定义见 [development.md](./development.md#环境变量))让你在
-隔离的数据目录与端口上起一份 daemon,不碰日常使用的那份:
+`SCTL_DATA_DIR` and `SCTL_BRIDGE_ADDR` (defined in
+[development.md](./development.md#environment-variables)) let you start a daemon on an isolated data directory
+and port without touching the one you use day to day:
 
 ```bash
 go build -o sctl ./cmd/sctl
 export SCTL_DATA_DIR=$(mktemp -d) SCTL_BRIDGE_ADDR=127.0.0.1:18643
-./sctl serve &                 # 起 daemon(写下 control.token)
-./sctl status                  # 扩展未连接时应如实报告
-./sctl scripts list            # 无扩展连接 → 「扩展未连接」错误,退出码 3
+./sctl serve &                 # start the daemon (writes control.token)
+./sctl status                  # should report truthfully that no extension is connected
+./sctl scripts list            # no extension connected → "extension not connected" error, exit code 3
 ```
 
-覆盖**引发这次改动的那些边界**:改了退出码映射就把每个码都打一遍,改了配对窗口就把过期那条路走一遍。
-只跑 happy path 等于没验。
+Cover **the boundaries that motivated the change**: if you touched exit-code mapping, exercise every code; if
+you touched the pairing window, walk the expiry path too. Running only the happy path is not verification.
 
-联调真实扩展前注意版本门槛(见 [development.md](./development.md#版本门槛)):默认 `go build`
-出来的 `0.0.0-dev` 低于 `minDaemonVersion`,会被扩展直接判为版本过旧并断开。
+Mind the version floor before integrating with a real extension (see
+[development.md](./development.md#version-floor)): the `0.0.0-dev` produced by a plain `go build` is below
+`minDaemonVersion` and the extension will reject it as too old and disconnect.
 
-## 一次性脚本,不是新的测试套件
+## One-shot end-to-end verification, not a new test suite
 
-验证脚本写在 git 忽略的 `scratch/` 下,用完即弃:
+One-shot verification scripts and their evidence go under the git-ignored `e2e/scratch/`, one directory per
+scenario, and are discarded after use:
 
 ```text
-scratch/<场景名>/run.sh      # 一次性驱动脚本
-scratch/<场景名>/report.md   # 跑了什么、看到了什么、结论
-scratch/<场景名>/*.log       # 原始输出
+e2e/scratch/<scenario>/
+├── run.sh                    # one-shot driver script
+├── report.md                 # what was run, what was observed, the conclusion
+└── *.log                     # raw output
 ```
 
-- **不要**为了验一件事去跑整套重测试;也**不要**顺手把 scratch 脚本留成永久用例。
-- 确实值得长期守护的行为,单独判断一次,再作为**正式的**测试提交——那是一个独立决定,不是验证的副产品。
-- 证据留在 `scratch/` 里,在 PR 或对话里引用;别把日志粘贴进版本库。
+- **Don't** run the entire heavy test suite just to check one thing, and **don't** casually leave a scratch
+  script behind as a permanent case.
+- A behavior genuinely worth guarding long-term is a separate decision: judge it once, then commit it as a
+  **proper** test. It is not a by-product of verification.
+- `e2e/scratch/` never enters version control. Reference the conclusions from your local `report.md` in the PR
+  or the conversation; don't commit or paste raw logs.
 
-## 复现是修复的第一步
+## Reproduction is step one of a fix
 
-修 bug 的顺序是:先在 `scratch/` 里写出能稳定复现的脚本(**证明这个 bug 存在**),
-再把它收敛成一个失败的正式测试,最后才动手改代码。
+The order for fixing a bug is: first write a script under `e2e/scratch/` that reproduces it reliably
+(**proving the bug exists**), then narrow that into a failing committed test, and only then change code.
 
-scratch 复现**不能**替代那个要提交的失败测试——它只负责回答"这事儿是真的吗",
-提交的测试才负责回答"以后还会不会再犯"。
+A scratch reproduction **cannot** replace the failing test you are going to commit — it only answers "is this
+real?", while the committed test answers "will it happen again?".
 
-复现不出来,就如实说复现不出来并停下。修一个没被证实存在的问题,通常只是把真正的成因埋得更深。
+If it doesn't reproduce, say so plainly and stop. Fixing a problem that was never confirmed to exist usually
+just buries the real cause deeper.
 
-## 驱动不了的界面,看它的副作用
+## Surfaces you can't drive: watch their side effects
 
-浏览器扩展那一侧点不了,但它的每一次决策都会在守卫侧留下痕迹。可观测的出口有:
+You cannot click through the browser-extension side, but every decision it makes leaves a trace on the daemon
+side. The observable outlets are:
 
-- `./sctl status` —— 扩展是否连接、已配对客户端数、近期安全事件摘要;
-- 审计事件(`internal/pkg/audit`)—— 握手、配对、撤销、拒绝都会记录;
-- `--log-level` 调高后的 stderr 日志;
-- `$SCTL_DATA_DIR` 下的落盘状态(密钥、客户端存储)。
+- `./sctl status` — whether the extension is connected, how many clients are paired, a summary of recent
+  security events;
+- audit events (`internal/pkg/audit`) — handshakes, pairing, revocation, and rejections are all recorded;
+- stderr logs with `--log-level` turned up;
+- on-disk state under `$SCTL_DATA_DIR` (keys, client store).
 
-需要人在浏览器里点的全链路(配对 → list → 源码披露 → 安装审批 → 撤销 → kill switch)
-属于跨仓库联调,要等扩展侧构建就绪后按主仓库的验证文档进行;本仓库这边先把上面这些副作用核对清楚。
+The full chain that needs a human clicking in the browser (pair → list → source disclosure → install approval
+→ revoke → kill switch) is cross-repository integration work. It waits until the extension-side build is ready
+and then follows the verification doc in the main repository; on this side, check the side effects above first.
 
-## 声称完成之前
+## Before claiming completion
 
-- 跑过的命令和它们的真实输出,而不是"应该没问题";
-- 测试挂了就说挂了,附上输出;跳过了哪一步就说跳过了哪一步;
-- 确实做完并验过的,直接陈述,不用加含糊的限定词。
+- Report the commands you ran and their real output, not "it should be fine";
+- If a test failed, say it failed and attach the output; if you skipped a step, say which one;
+- For what you genuinely finished and verified, state it plainly, without vague hedging.

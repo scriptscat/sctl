@@ -1,100 +1,126 @@
-# sctl 工程约定
+# Repository Guidelines
 
-这是入口页,只放**不可协商的原则**与**指路**;细节各有归属文档,别在这里复制一份。
+This file is the entry point for AI coding agents and contributors working on sctl.
 
-每条原则目前都靠**评审**守住。
+> **It is the single source of truth relative to `CLAUDE.md`** — `CLAUDE.md` only contains `@AGENTS.md` and
+> re-imports this file; don't split guidance between the two. Everything beyond engineering principles and the
+> architecture quick-map is owned by the docs linked below (ownership table in
+> [`docs/README.md`](./docs/README.md)) — cross-link them, don't copy their content here.
 
-## 原则
+> **Before writing any code, read [`docs/development.md`](./docs/development.md)** — build and test commands,
+> static analysis, environment variables, the version floor, branches, CI, and releases.
 
-### 先复现,再修
+> **Before changing package structure, adding a package, or altering dependency direction, read
+> [`docs/architecture.md`](./docs/architecture.md)** — process model, directory layout, per-package
+> responsibilities, dependency direction.
 
-**评审。** 报上来的 bug 先亲手复现、拿到失败证据,再写一个失败的测试把它钉住,最后才动手修。
-顺序不能颠倒:从假设出发的修复经常在修一个不存在的问题,同时把真正的成因埋得更深。
-复现不出来就如实说复现不出来并停下——「看起来显然」不是例外,一行的改动也不是。
-一次性复现脚本怎么写见 [docs/verification.md](./docs/verification.md)。
+> **Before changing the envelope, actions, limits, or handshake, read
+> [`docs/protocol.md`](./docs/protocol.md)** — `internal/pkg/protocol/protocol.json` is the single source of
+> truth shared with the extension and both sides must stay in sync; the doc only explains semantics, and the
+> json wins on conflict.
 
-### 测试先行
+> **Before touching authentication, keys, pairing, or auditing, read
+> [`docs/threat-model.md`](./docs/threat-model.md)** — security boundaries, attack surface, accepted
+> trade-offs, and the inventory of credentials on disk.
 
-**评审。** 先写失败的测试,再写实现。测试名说的是**行为**(「扩展未连接时 list 返回退出码 3」),
-不是实现细节(「调用了 dispatch」)。测试挂了就改代码,不是改测试。
-没有意义的测试(同义反复、只断言 mock、纯转发)直接删——但删之前逐个对着源码确认它确实没在保护什么。
+> **Before claiming a change "actually works", read [`docs/verification.md`](./docs/verification.md)** — how to
+> write one-shot verification scripts under `e2e/scratch/`, what counts as evidence, and which side effects to
+> inspect for surfaces you cannot drive.
 
-### 修根因,不修症状
+> **Before adding, rewriting, or reviewing any documentation, read
+> [`docs/doc-maintenance.md`](./docs/doc-maintenance.md)** — ownership rules and truth discipline
+> (*if you can't `git grep` it on this branch, don't write it down*).
 
-**评审。** 不用 `//nolint` 掩盖报错、不吞 error、不为了让某个分支闭嘴而加空判断。
-`//nolint` 必须写明具体规则与理由(`nolintlint` 强制),而理由得是「这里确实是规则的例外」,
-不能是「让它过」。
+## Project Overview
 
-### 边界校验,内部不设防
-
-**评审。** 不可信数据进入的地方(WS 信封、`/control/*` 请求、扩展下发的 payload、命令行参数)必须校验;
-可信的内部层之间不要再加 `if x == nil` 兜底、不要吞 error、不要留「以防万一」的运行时垫片。
-守不住的假设应该 panic 或返回 error,而不是被一个永远不会命中的判断掩盖——
-那个判断只会让真正会命中的 bug 更难发现。
-
-### 按进程角色分层,依赖只往下走
-
-**评审。** `client/`(请求侧)与 `daemon/`(守卫侧)互不依赖,
-跨进程只经 `/control/*`;`internal/pkg/` 是两侧共享层,只能被上层依赖;`bridge` 不感知 HTTP 控制面。
-唯一的例外是守卫侧单向引用 `client/control` 里的共享 DTO。
-方向一旦被抄近路打破,两个进程角色就会在编译期焊死,再想拆开只能重写。
-
-### 敏感文件只走一处落盘
-
-**评审。** 长期密钥、控制令牌、客户端存储都用 `internal/pkg/fsutil.WriteFileAtomic`。
-非原子写会在崩溃时留下截断内容,直接 `os.WriteFile` 还会漏掉 0600 权限位。
-
-### stdout 只属于 CLI
-
-**评审。** stdout 是 `sctl mcp` 的 JSON-RPC 通道,守卫侧与库层往里写一个字节就会污染 MCP 报文。
-诊断信息一律用 `internal/pkg/logging`(恒走 stderr)。
-
-### 用既有扩展点扩展
-
-**评审。** 新动作先进 `protocol.json`(两侧共用的事实源);新动词复用 `internal/cli/dispatch.go` 的
-`dispatch` / `dispatchBlocking` 骨架,而不是各自重写连接、取消与退出码映射;新的 `/control/*` 处理器
-挂在 `internal/daemon/component.go` 的路由组装处。依赖从构造函数注入,面向窄接口而不是具体类型
-(`controlapi.Bridge` 就是这个模式的样板)。不要在共享代码里按类型字符串分支。
-
-### 先复用,再造轮子
-
-**评审。** 写新 helper 前先 `git grep` 一遍有没有现成的。同一段逻辑第二次出现时就抽出来——
-一处概念一处实现,修一次就到处都对。但也别为假想的需求提前抽象。
-
-### 改动范围自律
-
-**评审。** 修 bug 就只碰这个 bug 需要的文件。顺手把光标底下过期的注释或说错的文档改对,算在范围内;
-顺手重构、批量改名,不算。
-
-### 注释写「为什么」
-
-**评审。** 注释说的是代码表达不了的约束与理由(为什么是 0600、为什么这里必须先解引用符号链接)。
-复述步骤的注释会被删掉。同理:不留死代码,不留注释掉的代码块,不留 `// 已移除` 标记——git 记得。
-
-### 文档不说没有的事
-
-**评审。** 声称仓库里有某个文件、函数、标志之前,先用 `git grep` / `git ls-files` 在当前分支上验一遍。
-纪律与一次性校验块见 [docs/doc-maintenance.md](./docs/doc-maintenance.md)。
-
-## 架构速查
+sctl is ScriptCat's local control tool: a bridge daemon, an MCP server, and script management commands,
+shipped as a single cross-platform binary. Go, built on the [cago](https://github.com/cago-frame/cago)
+framework and [cobra](https://github.com/spf13/cobra).
 
 ```text
-sctl mcp / CLI 动词  ──/control/* HTTP──▶  sctl serve(daemon)  ──WS──▶  ScriptCat 扩展(审批权威端)
-internal/client/            internal/daemon/                     internal/pkg/(两侧共享)
+sctl mcp / CLI verbs  ──/control/* HTTP──▶  sctl serve (daemon)  ──WS──▶  ScriptCat extension (approval authority)
+internal/client/             internal/daemon/                      internal/pkg/ (shared by both sides)
 ```
 
-权威始终在扩展侧:daemon 不自行批准任何写操作,只转发并阻塞等待浏览器里的人工决策。
+The authority always lives on the extension side: the daemon approves no write on its own — it forwards the
+request and blocks until a human decides in the browser. Full process model and package responsibilities are
+in [`docs/architecture.md`](./docs/architecture.md).
 
-## 动手之前先读
+## Engineering Principles
 
-| 你要做的事 | 先读 |
-|---|---|
-| 改包结构、加新包、调依赖方向 | [docs/architecture.md](./docs/architecture.md) |
-| 改信封 / 动作 / 限值 / 握手 | [docs/protocol.md](./docs/protocol.md) —— `protocol.json` 是与扩展共用的单一事实源,两侧须同步 |
-| 碰鉴权、密钥、配对、审计 | [docs/threat-model.md](./docs/threat-model.md) |
-| 构建、跑测试、发版 | [docs/development.md](./docs/development.md) |
-| 确认改动"真的能用" | [docs/verification.md](./docs/verification.md) |
-| 写文档、改文档 | [docs/doc-maintenance.md](./docs/doc-maintenance.md) |
+These are non-negotiable, regardless of what the owning docs say about mechanics. All of them are held by
+review today; the one exception is called out in the item itself.
 
-提交前至少跑一遍 `go build ./... && go vet ./... && go test ./... -race && golangci-lint run ./...`;
-声称"修好了 / 通过了"之前必须有真实输出作证据,见 [docs/verification.md](./docs/verification.md)。
+- **Reproduce before you fix.** Reproduce a reported bug yourself and capture the failing evidence, then pin it
+  down with a failing test, and only then change code. The order is not negotiable: a fix that starts from an
+  assumption often repairs a problem that never existed while burying the real cause deeper. If it doesn't
+  reproduce, say so plainly and stop — "it's obviously wrong" is not an exception, and neither is a one-line
+  change. How to reproduce and what counts as evidence are in
+  [`docs/verification.md`](./docs/verification.md).
+
+- **Tests first.** Write the failing test before the implementation. Test names state **behavior** ("list
+  returns exit code 3 when the extension is not connected"), not implementation detail ("calls dispatch"). When
+  a test fails, fix the code, not the test. Delete meaningless tests outright — tautologies, tests that only
+  assert a mock, pure pass-throughs — but confirm against the source, one by one, that each really protects
+  nothing before deleting it.
+
+- **Fix root causes, not symptoms.** No `//nolint` to paper over a diagnostic, no swallowed errors, no empty
+  branch added just to silence something. A `//nolint` must name the specific rule and give a reason — that
+  much is mechanically enforced by `nolintlint` in `.golangci.yaml` — but whether the reason is a genuine
+  exception rather than "make it pass" is still something only review can judge.
+
+- **Validate at boundaries, don't second-guess internally.** Everywhere untrusted data enters — WS envelopes,
+  `/control/*` requests, payloads from the extension, command-line arguments — must be validated. Between
+  trusted internal layers, add no `if x == nil` fallbacks, no swallowed errors, no "just in case" runtime
+  shims. An assumption you cannot hold should panic or return an error rather than be masked by a branch that
+  never fires — that branch only makes the bug that *does* fire harder to find.
+
+- **Layer by process role; dependencies point one way.** `client/` (request side) and `daemon/` (guard side) do
+  not depend on each other and communicate across processes only through `/control/*`. `internal/pkg/` is the
+  shared layer and may only be depended upon from above. `bridge` knows nothing about the HTTP control plane.
+  The single exception is the guard side referencing `client/control` one-way. Once a shortcut breaks the
+  direction, the two process roles are welded together at compile time and separating them again means a
+  rewrite. The current dependency graph and the reason for the exception are in
+  [`docs/architecture.md`](./docs/architecture.md).
+
+- **Sensitive files hit disk in exactly one place.** Long-term keys, the control token, and the client store
+  all go through `internal/pkg/fsutil.WriteFileAtomic`. A non-atomic write leaves truncated content behind on a
+  crash, and a bare `os.WriteFile` also loses the 0600 permission bits. The inventory of credentials on disk is
+  in [`docs/threat-model.md`](./docs/threat-model.md).
+
+- **stdout belongs to the CLI alone.** stdout carries `sctl mcp`'s JSON-RPC channel; a single byte written
+  there by the daemon side or a library corrupts MCP frames. Diagnostics always go through
+  `internal/pkg/logging`, which writes to stderr plus the log files under the data directory — never stdout.
+
+- **Extend through the existing extension points.** A new action lands in `protocol.json` first. A new verb
+  reuses the `dispatch` / `dispatchBlocking` skeleton in `internal/cli/dispatch.go` instead of re-implementing
+  connection, cancellation, and exit-code mapping. A new `/control/*` handler is registered in
+  `controlapi.Handler.Register`, on the mux that `internal/daemon/component.go` assembles. Inject dependencies
+  through constructors and depend on narrow
+  interfaces rather than concrete types — `controlapi.Bridge` is the template for that pattern. Never branch on
+  a type string in shared code.
+
+- **Reuse before you rebuild.** `git grep` for an existing helper before writing a new one. Extract a shared
+  implementation the second time the same logic appears — one concept, one implementation, so a single fix
+  lands everywhere. But don't pre-abstract for hypothetical needs: three repeated lines beat a premature
+  generic helper.
+
+- **Stay in scope.** A bug fix touches only the files that bug requires. Correcting a stale comment or an
+  incorrect doc line right under your cursor is in scope; drive-by refactors and rename sweeps are not.
+
+- **Comments explain "why"; no dead code.** A comment states a constraint or reason the code cannot express —
+  why 0600, why the symlink must be resolved first here. Comments that restate the steps get deleted. Likewise:
+  no dead code, no commented-out blocks, no `// removed` markers — git remembers.
+
+- **Documentation doesn't claim what isn't there.** Before asserting that a file, function, or flag exists,
+  verify it on the current branch with `git grep` / `git ls-files`. The discipline and the per-claim
+  verification table are in [`docs/doc-maintenance.md`](./docs/doc-maintenance.md).
+
+## Before You Commit
+
+```bash
+go build ./... && go vet ./... && go test ./... -race && golangci-lint run ./...
+```
+
+Never claim "fixed" or "passing" without real output as evidence — see
+[`docs/verification.md`](./docs/verification.md).

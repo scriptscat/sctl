@@ -54,7 +54,8 @@ type TypeCount struct {
 }
 
 // Recorder 是固定容量的事件环形缓冲,同时把每条事件结构化输出到日志。
-// 只驻内存:daemon 重启即清空,避免落盘审计成为新的敏感文件。
+// 可查询的这份只驻内存(daemon 重启即清空);日志那份随 <dataDir>/logs 落盘,
+// 两个出口都靠上面封闭的字段集合保证不含敏感内容。
 type Recorder struct {
 	mu     sync.Mutex
 	cap    int

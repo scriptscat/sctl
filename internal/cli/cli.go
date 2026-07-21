@@ -15,7 +15,7 @@ import (
 	"github.com/scriptscat/sctl/internal/pkg/logging"
 )
 
-// Version / Commit / BuildDate 由 goreleaser 通过 -ldflags 注入(见 .goreleaser.yaml)。
+// Version / Commit / BuildDate 由发布工作流通过 -ldflags 注入。
 // 源码构建时保留 dev 占位值,便于区分“自己 go build 的”与“发布产物”。
 var (
 	Version   = "0.0.0-dev"

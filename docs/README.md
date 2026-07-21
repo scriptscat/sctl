@@ -1,21 +1,28 @@
-# sctl 文档
+# sctl Documentation Index
 
-入口页是仓库根的 [AGENTS.md](../AGENTS.md):工程原则与"动手之前先读什么"。这里是全部文档的索引。
+The entry point is [`AGENTS.md`](../AGENTS.md) at the repository root: engineering principles, the
+architecture quick-map, and the routing rules for which doc to read before which kind of change. This file is
+the index of everything, and doubles as the **ownership table**.
 
-## 归属表
+Each fact is expanded in exactly one doc; everywhere else cross-links to it. The reasoning and the
+verification method are in [`doc-maintenance.md`](./doc-maintenance.md).
 
-每条事实只在它的归属文档里展开,其他地方一律交叉链接过来(理由见 [doc-maintenance.md](./doc-maintenance.md))。
-
-| 文档 | 独占的事实 |
+| Doc | Owns |
 |---|---|
-| [architecture.md](./architecture.md) | 进程模型、目录结构、各包职责、依赖方向 |
-| [protocol.md](./protocol.md) | 扩展 ↔ daemon 的 WS 桥接协议(信封、握手、动作、限值) |
-| [threat-model.md](./threat-model.md) | 安全边界、攻击面与取舍 |
-| [development.md](./development.md) | 构建与测试命令、静态检查、环境变量、版本门槛、分支/CI/发布 |
-| [verification.md](./verification.md) | 怎么确认一个改动"真的能用":证据、一次性脚本、复现 |
-| [doc-maintenance.md](./doc-maintenance.md) | 文档的真实性纪律与落地前校验块 |
+| [`../AGENTS.md`](../AGENTS.md) | Engineering principles and the architecture quick-map. Single source of truth relative to `CLAUDE.md`, which only `@`-imports it. |
+| [`architecture.md`](./architecture.md) | Process model, directory layout, per-package responsibilities, dependency direction. **Read before changing package structure or dependency direction.** |
+| [`protocol.md`](./protocol.md) | The extension ↔ daemon WS bridge protocol: envelope, handshake, actions, limits, error codes. **Read before changing the protocol.** |
+| [`threat-model.md`](./threat-model.md) | Security boundaries, attack surface and trade-offs, credentials on disk, daemon-side auditing. **Read before touching auth, keys, pairing, or auditing.** |
+| [`development.md`](./development.md) | Build and test commands, static analysis, environment variables, the version floor, branches / CI / releases. **Read before writing code.** |
+| [`verification.md`](./verification.md) | How to confirm a change "actually works": evidence, one-shot scripts under `e2e/scratch/`, reproduction discipline. **Read before claiming something is fixed.** |
+| [`doc-maintenance.md`](./doc-maintenance.md) | Documentation ownership rules, truth discipline, and the per-claim verification table. **Read before changing docs.** |
 
-## 单一事实源
+Readers who want to *write* user scripts should go to [docs.scriptcat.org](https://docs.scriptcat.org/)
+instead; this directory targets sctl contributors and maintainers only.
 
-- 协议常量的唯一权威是 [`internal/pkg/protocol/protocol.json`](../internal/pkg/protocol/protocol.json);
-  它是[扩展主仓库](https://github.com/scriptscat/scriptcat)那份的镜像,CI 的 `protocol-drift` job 逐字节比对两者。
+## Single source of truth
+
+- The only authority for protocol constants is
+  [`internal/pkg/protocol/protocol.json`](../internal/pkg/protocol/protocol.json). It mirrors the copy in the
+  [extension repository](https://github.com/scriptscat/scriptcat); how the two are kept from drifting is in
+  [development.md](./development.md#protocol-single-source).

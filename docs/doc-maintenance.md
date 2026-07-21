@@ -1,77 +1,104 @@
-# 文档维护
+# Documentation Maintenance
 
-## 一个事实只有一个归属文档
+> **Read this before adding, rewriting, or reviewing any documentation** — [`AGENTS.md`](../AGENTS.md),
+> everything under `docs/`, the Markdown in `.github/`, and any package-local README that may appear later.
+> Don't work from a fixed list: run `git ls-files '*.md'` to discover the current set. This guide has two
+> jobs: keep the doc set **organized** (links resolve, the index is current, facts aren't duplicated), and
+> keep every claim **true for the current branch**.
 
-每条事实(某个端口、某条退出码、某个版本号)只在**一份**文档里展开,
-其余地方交叉链接过去。复制到两处的事实一定会漂移,而且通常要等到有人照着错的那份做事才暴露。
-归属表见 [README.md](./README.md)。
+## Why this guide exists
 
-## 真实性纪律
+Documentation describes living code, so the following failure modes recur. All of them have actually happened
+in this repository:
 
-**当前分支上 `git grep` 不到的东西,就不要写进文档。**
+- **Dangling references left behind by a rename.** After the top-level `PROTOCOL.md` / `THREAT-MODEL.md` moved
+  into `docs/` and were renamed, 15 code comments pointing at `PROTOCOL §4` or "the iron rules of
+  THREAT-MODEL" lost their target — plus 5 more pointing at `设计文档 §3.1`, a design document that never
+  entered this repository at all, leaving readers with nothing to check.
+- **A plan written as the present, or the present written as a plan.** The header of `docs/protocol.md` said
+  for a long time "final destination: this document is rewritten as `docs/protocol.md` in the sctl repo" —
+  while it already *was* that file. `README.md` described the license as "planned to match the main repo
+  (GPL-3.0), confirm before release" while the full GPL-3.0 text was already sitting in `LICENSE`.
+- **Comments describing an imagined future.** `internal/daemon/component.go` used to expose a `Server()`
+  accessor commented "for **future** use by `sctl mcp` / CLI verbs making bridge calls" — with zero callers
+  anywhere in the repository, since the real path goes through the narrow `controlapi.Bridge` interface.
+- **Uncommitted work looking like shipped work.** Docs written on a refactor branch, or scripts not yet
+  `git add`ed, all show up under `rg` / `ls` and get written down as established fact.
 
-验证一律用 git 感知的命令:
+## One fact, one owning doc
+
+Each fact — a port, an exit code, a version number — is expanded in exactly **one** doc; everywhere else
+cross-links to it. A fact copied into two places will drift, and usually only surfaces once someone acts on
+the wrong copy. The ownership table is in [README.md](./README.md), which doubles as the index.
+
+When you move a fact, move it to the doc that **owns** it and cross-link — don't copy. When you rename or move
+a file, update the index and every doc referencing it **in the same change**.
+
+## Truth discipline
+
+**If you can't `git grep` it on the current branch, don't write it down.**
+
+Always verify with git-aware commands:
 
 ```bash
-git grep -n "someSymbol"          # 而不是 rg
-git ls-files 'internal/**/*.go'   # 而不是 ls / find
+git grep -n "someSymbol"          # not rg
+git ls-files 'internal/**/*.go'   # not ls / find
 git ls-tree -r --name-only HEAD
 ```
 
-`rg` / `ls` / `find` 会连**未跟踪**的本地文件一起匹配,于是还没合入的东西看上去像是已经发布了——
-这是文档说谎最常见的来源。
+`rg` / `ls` / `find` also match **untracked** local files, so work that hasn't landed yet looks as though it
+already shipped — exactly the fourth failure mode above. Anything not yet landed either stays in its own
+branch's docs or is explicitly marked as planned.
 
-所有数量词(「6 个交叉编译目标」「6 个 MCP 工具」)都要从权威源头数出来,不能凭记忆或抄前文。
+When code and docs change in the same PR, checking against the old `HEAD` is not enough — check against **the
+tree that will exist after the change lands**. Re-check after a rebase or conflict resolution: resolving a
+conflict can quietly reintroduce a stale fact or drop a doc update.
 
-## 发现不一致时
+## How to verify each kind of claim
 
-以**当前分支的代码**为准,改文档去对齐代码。除非代码确实是错的——那就改代码,并在说明里讲清楚。
+When a doc makes one of these claims, verify it accordingly. Every count must be **enumerated** from the
+authoritative source, never recalled from memory or copied from earlier prose.
 
-过期内容**直接删掉**,不要在上面叠加更正。一段「注:上面那句已不适用」只会让下一个读者两句都不敢信。
+| Claim in the docs | Verify with |
+|---|---|
+| A source file / directory exists | `git ls-files --error-unmatch internal/daemon/component.go` |
+| A function / type exists **under that exact name** | `git grep -n 'func WriteFileAtomic' -- internal` — renames are the #1 source of drift |
+| Dependency direction between packages | `go list -f '{{.ImportPath}} {{join .Imports " "}}' ./...` |
+| Protocol constants (port, timeouts, TTLs, limits, action set) | `internal/pkg/protocol/protocol.json` is the sole authority, shared with the extension; docs only explain semantics |
+| The version floor | `grep minDaemonVersion internal/pkg/protocol/protocol.json` |
+| "N MCP tools" | Count the `actions` keys in `protocol.json`, not the comment in `internal/client/mcpserver/tools.go` |
+| "N release artifacts" | The build matrix in `.github/workflows/release.yaml` |
+| Toolchain versions | `GOLANGCI_LINT_VERSION` in `.github/workflows/test.yaml` must match [development.md](./development.md) |
+| CLI subcommands / flags | `git grep -n 'Use:' -- internal/cli`, or just `./sctl --help` |
+| Exit codes | The `exitOK` / `exitRejected` / `exitVoided` / `exitError` constants in `internal/cli/cli.go` |
+| Which jobs CI runs | The `jobs:` section of `.github/workflows/test.yaml` |
+| A relative link's target exists | `git ls-files --error-unmatch <target>` — only tracked files count |
 
-改名 / 挪文件时,索引与所有引用它的文档在**同一次改动**里一起改完。
+When you introduce a new kind of concrete claim — another version number, another mirrored file — add a row to
+the table above. A claim type missing from the table will eventually lie without anyone noticing.
 
-## 落地前跑一遍
+## Cross-document consistency
 
-改动任何 Markdown 之前(或之后)整段贴进终端跑一遍,只关心它有没有输出:
+The same rule must not appear in two docs with **different** conditions. For any rule you touch, establish
+which doc owns it, when it triggers, what it requires, and whether it has a documented exception. When you
+change an upstream rule, confirm that the carve-out a downstream doc grants for it still holds.
 
-```bash
-set -u
-fail=0
+Absolute phrasing ("always", "must", "never", "all") most often hides an unwritten exception. When you see it,
+first confirm the absolute really has no exception, then decide whether to keep or loosen it — some absolutes
+are deliberate non-negotiables.
 
-# 1) 相对链接不能断,且指向的必须是被 git 跟踪的文件。
-#    用 git -C <文档所在目录> 解析,既跨平台又天然只认已跟踪文件。
-git ls-files '*.md' | while read -r f; do
-  dir=$(dirname "$f")
-  grep -oE '\]\(\.[^)]*\)' "$f" | sed -E 's/^\]\(//; s/\)$//; s/#.*$//' | while read -r link; do
-    [ -z "$link" ] && continue
-    git -C "$dir" ls-files --error-unmatch "$link" >/dev/null 2>&1 || echo "断链:$f -> $link"
-  done
-done
+## When you find a discrepancy
 
-# 2) golangci-lint 版本:CI 与开发文档必须是同一个。
-ci_ver=$(grep -oE 'GOLANGCI_LINT_VERSION: v[0-9.]+' .github/workflows/test.yaml | grep -oE 'v[0-9.]+')
-doc_ver=$(grep -oE 'golangci-lint@v[0-9.]+' docs/development.md | grep -oE 'v[0-9.]+' | sort -u)
-[ "$ci_ver" = "$doc_ver" ] || echo "golangci-lint 版本漂移:CI=$ci_ver 文档=$doc_ver"
+The **code on the current branch** wins; change the doc to match it. The exception is when the code is
+genuinely wrong — then fix the code and say so in the description.
 
-# 3) 版本门槛:文档里的数字必须等于 protocol.json 的权威值。
-proto_min=$(grep -oE '"minDaemonVersion": *"[^"]*"' internal/pkg/protocol/protocol.json | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-grep -q "当前 \`$proto_min\`" docs/development.md || echo "minDaemonVersion 漂移:protocol.json=$proto_min"
+Delete stale content **outright**; don't stack corrections on top of it. A line saying "note: the sentence
+above no longer applies" only leaves the next reader distrusting both. Don't preserve an old value as history
+with wording like "used to be" or "kept for compatibility", and don't demote it to a comment — git remembers.
 
-# 4) 文档里出现的 internal/ 路径必须真的被跟踪。
-git grep -ohE '\binternal/[A-Za-z0-9_/.-]+\.go\b' -- '*.md' | sort -u | while read -r p; do
-  git ls-files --error-unmatch "$p" >/dev/null 2>&1 || echo "文档引用了不存在的源文件:$p"
-done
+## Honest completion claims
 
-# 5) 反向:代码与 CI 注释里引用的文档也必须真的在仓库里。
-#    指向仓库外设计文档、或早已改名的根级 PROTOCOL.md / THREAT-MODEL.md 的「§X」引用,读者无从查证。
-git grep -nE '设计文档|PROTOCOL\.md|THREAT-MODEL|PROTOCOL §' -- '*.go' '*.yaml' '*.yml'
-git grep -ohE '\bdocs/[A-Za-z0-9_-]+\.md\b' -- '*.go' '*.yaml' '*.yml' | sort -u | while read -r p; do
-  git ls-files --error-unmatch "$p" >/dev/null 2>&1 || echo "注释引用了不存在的文档:$p"
-done
-
-echo "文档校验结束(以上无输出即通过)"
-```
-
-新增一类具体声明(又一个版本号、又一份镜像文件)时,给这个块补一条对应的检查——
-校验块覆盖不到的声明,迟早会悄悄说谎。
+Only say "fully checked", "verified", or "all fixed" when the evidence actually covers that scope. The
+accurate summary is usually narrower: which docs got a fact check and what backs it, versus which ones only
+got a structural pass or were deliberately left alone. A check you couldn't complete gets stated, not quietly
+skipped.
