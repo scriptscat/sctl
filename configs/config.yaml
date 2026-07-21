@@ -1,8 +1,0 @@
-bridge:
-    address: 127.0.0.1:8643
-debug: false
-env: PROD
-logger:
-    disableConsole: false
-    level: info
-source: ""
