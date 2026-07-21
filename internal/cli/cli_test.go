@@ -13,8 +13,8 @@ import (
 
 	. "github.com/smartystreets/goconvey/convey"
 
-	"github.com/scriptscat/sctl/internal/audit"
-	"github.com/scriptscat/sctl/internal/control"
+	"github.com/scriptscat/sctl/internal/client/control"
+	"github.com/scriptscat/sctl/internal/pkg/audit"
 )
 
 // stubDaemon 起一个假 daemon 控制端点:健康检查恒 200,/control/call 恒返回给定 CallResult,

@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 
-	"github.com/scriptscat/sctl/internal/bridge"
+	"github.com/scriptscat/sctl/internal/daemon"
 )
 
 // newServeCmd 引导 cago 应用并挂载桥接 Component。
@@ -30,7 +30,7 @@ func newServeCmd() *cobra.Command {
 			}
 			logger.Ctx(ctx).Info("启动 sctl serve", zap.String("version", Version))
 			return cago.New(ctx, cfg).
-				RegistryCancel(bridge.Component(Version)).
+				RegistryCancel(daemon.Component(Version)).
 				Start()
 		},
 	}

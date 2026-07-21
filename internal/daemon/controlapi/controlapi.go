@@ -1,0 +1,241 @@
+// Package controlapi 实现 daemon listener 上的本机内部控制 API(/control/*)。
+//
+// 它是守卫侧的 controller 层:只做协议转换(HTTP/JSON ↔ 桥接调用)、控制令牌与 MCP 客户端
+// 令牌的鉴权、scope 判定,一切有状态逻辑交给 Bridge。与扩展 WS 面共用同一 listener、走独立
+// 路径;除 /control/health 外均要求控制令牌。请求/响应 DTO 与前端共享,见 internal/client/control。
+package controlapi
+
+import (
+	"context"
+	"crypto/subtle"
+	"encoding/json"
+	"errors"
+	"net/http"
+
+	"go.uber.org/zap"
+
+	"github.com/scriptscat/sctl/internal/client/control"
+	"github.com/scriptscat/sctl/internal/daemon/bridge"
+	"github.com/scriptscat/sctl/internal/daemon/store"
+	"github.com/scriptscat/sctl/internal/pkg/audit"
+	"github.com/scriptscat/sctl/internal/pkg/protocol"
+)
+
+// Bridge 是控制 API 依赖的守卫侧能力面,由 *bridge.Server 实现。
+// 收窄到这几个方法既是为了让本包能独立测试,也是为了标明控制 API 不该碰 WS 连接状态。
+type Bridge interface {
+	Version() string
+	Action(name string) (protocol.Action, bool)
+	ExtConnected() bool
+	Clients() []store.ClientRecord
+	VerifyClient(token string) (store.ClientRecord, bool)
+	AuditSnapshot() []audit.Event
+	Call(ctx context.Context, req bridge.Request, write bool) (bridge.Response, error)
+	BeginExtPairing() (string, error)
+	BeginClientPairing(clientName string, scopes []string) (*bridge.ClientPairing, error)
+}
+
+// Handler 是控制 API 的处理器集合。
+type Handler struct {
+	bridge Bridge
+	token  string
+	log    *zap.Logger
+}
+
+// New 构造控制 API。token 是 daemon 绑定端口后落盘的 0600 控制令牌;空令牌下除健康检查外全拒。
+func New(b Bridge, token string, log *zap.Logger) *Handler {
+	if log == nil {
+		log = zap.NewNop()
+	}
+	return &Handler{bridge: b, token: token, log: log}
+}
+
+// Register 把控制 API 挂到 daemon listener 的 mux 上。
+func (h *Handler) Register(mux *http.ServeMux) {
+	mux.HandleFunc(control.PathHealth, h.health)
+	mux.HandleFunc(control.PathCall, h.guard(h.call))
+	mux.HandleFunc(control.PathWhoami, h.guard(h.whoami))
+	mux.HandleFunc(control.PathStatus, h.guard(h.status))
+	mux.HandleFunc(control.PathPairExt, h.guard(h.pairExt))
+	mux.HandleFunc(control.PathPairClient, h.guard(h.pairClient))
+}
+
+// guard 包装需要控制令牌的处理器:恒定时间校验 X-Sctl-Control-Token,不符即 401(无细节)。
+func (h *Handler) guard(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !h.authenticated(r) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
+}
+
+func (h *Handler) authenticated(r *http.Request) bool {
+	got := r.Header.Get(control.HeaderControlToken)
+	if h.token == "" || got == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(h.token), []byte(got)) == 1
+}
+
+func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, control.HealthResult{OK: true, Version: h.bridge.Version()})
+}
+
+func (h *Handler) status(w http.ResponseWriter, _ *http.Request) {
+	events := h.bridge.AuditSnapshot()
+	writeJSON(w, control.StatusResult{
+		DaemonVersion: h.bridge.Version(),
+		ExtConnected:  h.bridge.ExtConnected(),
+		ClientCount:   len(h.bridge.Clients()),
+		SecurityCount: len(events),
+		Security:      events,
+	})
+}
+
+// call 转发一次 bridge action:解析客户端身份与 scope,再驱动阻塞的 Bridge.Call。
+// 请求方(CLI/mcp)断开会取消 r.Context() → Call 向扩展发 bridge.cancel 作废操作。
+func (h *Handler) call(w http.ResponseWriter, r *http.Request) {
+	var req control.CallRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeControlError(w, bridge.CodeInvalidRequest, "请求体非法")
+		return
+	}
+	action, ok := h.bridge.Action(req.Action)
+	if !ok {
+		writeControlError(w, bridge.CodeInvalidRequest, "未知 action")
+		return
+	}
+
+	clientID := control.CLIClientID
+	if token := r.Header.Get(control.HeaderClientToken); token != "" {
+		rec, ok := h.bridge.VerifyClient(token)
+		if !ok {
+			writeControlError(w, bridge.CodeUnauthenticated, "MCP 客户端令牌无效或已撤销")
+			return
+		}
+		if !hasScope(rec.Scopes, action.Scope) {
+			writeControlError(w, bridge.CodeInsufficientScope, "客户端缺少所需 scope")
+			return
+		}
+		clientID = rec.ClientID
+	}
+
+	resp, err := h.bridge.Call(r.Context(), bridge.Request{
+		ClientID: clientID,
+		Action:   req.Action,
+		Input:    req.Input,
+	}, action.Write)
+	switch {
+	case err == nil:
+		res := control.CallResult{OK: resp.OK, Result: resp.Result}
+		if resp.Error != nil {
+			res.Error = &control.CallError{Code: resp.Error.Code, Message: resp.Error.Message}
+		}
+		writeJSON(w, res)
+	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		// 请求方已断开(Ctrl-C / 超时),连接已消失,无需再写响应。
+		return
+	case errors.Is(err, bridge.ErrNotConnected):
+		writeControlError(w, bridge.CodeInternal, "扩展未连接")
+	case errors.Is(err, bridge.ErrDisconnected):
+		writeControlError(w, bridge.CodeOperationExpired, "扩展连接已断开,操作作废")
+	default:
+		var be *bridge.Error
+		if errors.As(err, &be) {
+			writeControlError(w, be.Code, be.Message)
+			return
+		}
+		writeControlError(w, bridge.CodeInternal, "内部错误")
+	}
+}
+
+func (h *Handler) whoami(w http.ResponseWriter, r *http.Request) {
+	token := r.Header.Get(control.HeaderClientToken)
+	if token == "" {
+		writeControlError(w, bridge.CodeInvalidRequest, "缺少 MCP 客户端令牌")
+		return
+	}
+	rec, ok := h.bridge.VerifyClient(token)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	writeJSON(w, control.WhoamiResult{
+		ClientID:    rec.ClientID,
+		DisplayName: rec.DisplayName,
+		Scopes:      rec.Scopes,
+	})
+}
+
+func (h *Handler) pairExt(w http.ResponseWriter, _ *http.Request) {
+	display, err := h.bridge.BeginExtPairing()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, control.PairExtResult{Code: display})
+}
+
+// pairClient 以换行分隔 JSON 流驱动 MCP 客户端配对:先推「配对码」事件供终端展示,
+// 再阻塞等待扩展裁决后推「裁决」事件。请求方断开 → r.Context() 取消 → 配对随 TTL 作废。
+func (h *Handler) pairClient(w http.ResponseWriter, r *http.Request) {
+	var req control.PairClientRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "请求体非法", http.StatusBadRequest)
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "流式响应不受支持", http.StatusInternalServerError)
+		return
+	}
+
+	// 配对是流式响应,任何 pre-stream 失败都用非 200 HTTP 状态回,让前端 statusError 兜住。
+	handle, err := h.bridge.BeginClientPairing(req.ClientName, req.Scopes)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+
+	enc := json.NewEncoder(w)
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	if err := enc.Encode(control.PairClientEvent{Code: handle.Code}); err != nil {
+		h.log.Debug("推送配对码事件失败", zap.Error(err))
+		return
+	}
+	flusher.Flush()
+
+	d, err := handle.Await(r.Context())
+	if err != nil {
+		// 请求方断开或超时:不再推裁决,配对由 TTL 作废。
+		return
+	}
+	grant := control.PairClientGrant{Approved: d.Approved}
+	if d.Approved {
+		grant.ClientID = d.ClientID
+		grant.Token = d.Token
+		grant.Scopes = d.Scopes
+	}
+	_ = enc.Encode(control.PairClientEvent{Decision: &grant})
+	flusher.Flush()
+}
+
+func hasScope(scopes []string, want string) bool {
+	for _, s := range scopes {
+		if s == want {
+			return true
+		}
+	}
+	return false
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeControlError(w http.ResponseWriter, code, message string) {
+	writeJSON(w, control.CallResult{OK: false, Error: &control.CallError{Code: code, Message: message}})
+}

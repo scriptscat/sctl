@@ -1,5 +1,5 @@
 // sctl — ScriptCat 控制工具:本地桥接 daemon、MCP stdio server 与脚本管理命令。
-// 桥接协议见仓库根 PROTOCOL.md。
+// 桥接协议见 docs/protocol.md。
 package main
 
 import (

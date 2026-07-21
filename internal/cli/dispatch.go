@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/scriptscat/sctl/internal/control"
+	"github.com/scriptscat/sctl/internal/client/control"
 )
 
 // dispatch 是所有走桥接的动词的公共骨架:自动拉起并连上 daemon、以可被 Ctrl-C 取消的 ctx 发起

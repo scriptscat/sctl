@@ -12,10 +12,10 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 
-	"github.com/scriptscat/sctl/internal/control"
-	"github.com/scriptscat/sctl/internal/mcpidentity"
-	"github.com/scriptscat/sctl/internal/mcpserver"
-	"github.com/scriptscat/sctl/internal/protocol"
+	"github.com/scriptscat/sctl/internal/client/control"
+	"github.com/scriptscat/sctl/internal/client/identity"
+	"github.com/scriptscat/sctl/internal/client/mcpserver"
+	"github.com/scriptscat/sctl/internal/pkg/protocol"
 )
 
 // newMcpCmd 构造 `sctl mcp`(stdio MCP server)及其 `pair` 子命令。--name 为持久标志,两者共享,
@@ -64,7 +64,7 @@ func runMcpServe(cmd *cobra.Command, name string) error {
 		Caller:  client,
 	}
 
-	id, err := mcpidentity.Load(name)
+	id, err := identity.Load(name)
 	if err != nil {
 		logger.Ctx(ctx).Warn("读取 MCP 身份失败,以未配对模式启动", zap.Error(err))
 	} else if id != nil {
@@ -115,7 +115,7 @@ func runMcpPair(cmd *cobra.Command, name string) error {
 	if !grant.Approved {
 		return &ExitError{Code: exitRejected, Message: "配对被拒绝"}
 	}
-	if err := mcpidentity.Save(name, &mcpidentity.Identity{
+	if err := identity.Save(name, &identity.Identity{
 		ClientID: grant.ClientID,
 		Token:    grant.Token,
 		Scopes:   grant.Scopes,

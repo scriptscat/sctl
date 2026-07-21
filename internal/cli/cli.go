@@ -1,5 +1,5 @@
 // Package cli 定义 sctl 的 cobra 子命令。serve 引导一个 cago 应用并挂载桥接 Component;
-// 其余命令是驱动常驻 daemon 的本机内部控制客户端(见 internal/control),或纯本地操作。
+// 其余命令是驱动常驻 daemon 的本机内部控制客户端(见 internal/client/control),或纯本地操作。
 //
 // 输出约定:stdout 只承载用户可读结果 / --json 结构化输出 / MCP 协议(sctl mcp);诊断日志一律
 // 走全局 stderr/文件 logger(cmd/sctl 的 PersistentPreRunE 已初始化)。
@@ -12,11 +12,16 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/scriptscat/sctl/internal/logging"
+	"github.com/scriptscat/sctl/internal/pkg/logging"
 )
 
-// Version 由 goreleaser 通过 -ldflags 注入。
-var Version = "0.0.0-dev"
+// Version / Commit / BuildDate 由 goreleaser 通过 -ldflags 注入(见 .goreleaser.yaml)。
+// 源码构建时保留 dev 占位值,便于区分“自己 go build 的”与“发布产物”。
+var (
+	Version   = "0.0.0-dev"
+	Commit    = "none"
+	BuildDate = "unknown"
+)
 
 // 全局标志(绑定为包级变量,任意子命令直接读取)。
 var (
@@ -24,7 +29,8 @@ var (
 	logLevel   string
 )
 
-// 退出码约定(设计文档 §3.1):写动词按用户决策映射,其余错误统一 exitError。
+// 退出码约定(对外文档见 README.md「写操作阻塞语义与退出码」):写动词按用户决策映射,
+// 其余错误统一 exitError。
 const (
 	exitOK       = 0
 	exitRejected = 1 // 用户在浏览器确认页拒绝

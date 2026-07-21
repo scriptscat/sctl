@@ -1,2 +1,4 @@
 /sctl
 dist/
+# 一次性验证脚本与证据(见 docs/verification.md),永远不进版本库
+/scratch/

@@ -41,10 +41,8 @@ func newScriptsInfoCmd() *cobra.Command {
 		Short: "查看单个脚本的元数据",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return dispatch(cmd, "scripts.metadata.get", mustInput(map[string]string{"uuid": args[0]}), func(result json.RawMessage) error {
-				// 元数据结构由扩展定义,统一以美化 JSON 呈现(--json 与人读同源)。
-				return printResultJSON(result)
-			})
+			// 元数据结构由扩展定义,统一以美化 JSON 呈现(--json 与人读同源)。
+			return dispatch(cmd, "scripts.metadata.get", mustInput(map[string]string{"uuid": args[0]}), printResultJSON)
 		},
 	}
 }

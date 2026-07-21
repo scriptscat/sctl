@@ -5,22 +5,55 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  # 发布不允许被后续运行打断。
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
+  # 复用测试工作流的全部门禁(lint / test / 协议一致性),门禁不过不发布。
+  test:
+    uses: ./.github/workflows/test.yaml
+    permissions:
+      contents: read
+
   goreleaser:
+    needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # 创建 GitHub Release 并上传产物
+      id-token: write # 构建来源证明(build provenance)签名
+      attestations: write
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # changelog 与版本号推导需要完整历史
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
-      - uses: goreleaser/goreleaser-action@v6
+      - uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: 生成构建来源证明
+        # 只对 checksums.txt 签名即可:它覆盖了全部产物的 sha256,
+        # 用户先 `sha256sum -c` 再 `gh attestation verify checksums.txt` 就形成完整信任链。
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/checksums.txt
+      - name: 输出发布摘要
+        run: |
+          {
+            echo "## sctl ${GITHUB_REF_NAME} 发布产物"
+            echo
+            echo '```'
+            cat dist/checksums.txt
+            echo '```'
+            echo
+            echo "Release 以**草稿**形式创建,确认 changelog 后手动点击 Publish。"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,74 @@
+name: test
+
+on:
+  push:
+    branches: [main, "release/**"]
+  pull_request:
+  # 供 release 工作流复用:打 tag 发布前跑同一套门禁,避免两边规则漂移。
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # PR 上新提交会取消上一次运行;main / release 分支保留每次运行。
+  group: test-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    env:
+      # 与本地开发保持同一版本,避免"本地过 CI 挂"。升级时同步改 docs/development.md。
+      GOLANGCI_LINT_VERSION: v2.12.2
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test -race ./...
+
+  protocol-drift:
+    # protocol.json 是扩展与守卫共用的单一事实源(见 docs/protocol.md):两份镜像一旦漂移,
+    # 双方对 action / scope / 限值的理解就会分叉,且只在运行时才暴露。这里做逐字节比对。
+    #
+    # 扩展侧该文件随 MCP 桥接 PR 合入 main 后此 job 才能通过;在那之前把仓库变量
+    # EXT_PROTOCOL_REF 指到对应 PR 分支。
+    name: protocol-drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: 拉取扩展侧协议镜像
+        env:
+          EXT_REF: ${{ vars.EXT_PROTOCOL_REF || 'main' }}
+        run: |
+          set -euo pipefail
+          url="https://raw.githubusercontent.com/scriptscat/scriptcat/${EXT_REF}/src/app/service/service_worker/mcp/protocol.json"
+          if ! curl -fsSL "$url" -o ext-protocol.json; then
+            echo "::error::拉取扩展侧 protocol.json 失败(ref=${EXT_REF})。扩展侧尚未合入时,请把仓库变量 EXT_PROTOCOL_REF 指到对应分支。"
+            exit 1
+          fi
+      - name: 比对协议单源
+        run: |
+          if ! diff -u ext-protocol.json internal/pkg/protocol/protocol.json; then
+            echo "::error::protocol.json 与扩展侧镜像不一致,两侧须同步更新。"
+            exit 1
+          fi

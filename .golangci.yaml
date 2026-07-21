@@ -1,0 +1,52 @@
+version: "2"
+
+# 注意:golangci-lint 只分析当前 GOOS 下参与构建的文件,`_windows.go` 一类
+# 带构建标签的代码在 Linux 测试 CI 上不会被检查;跨平台产物由发布流程编译。
+
+linters:
+  default: standard # errcheck govet ineffassign staticcheck unused
+  enable:
+    - bodyclose # HTTP body 未关闭
+    - errorlint # %w / errors.Is 用法
+    - gocritic
+    - misspell
+    - nilerr # 拿到 err 却返回 nil
+    - nolintlint # //nolint 必须写明理由
+    - revive
+    - unconvert
+    - usestdlibvars
+    - whitespace
+  settings:
+    errcheck:
+      check-type-assertions: true
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    revive:
+      rules:
+        - name: exported
+          disabled: true # 内部包为主,不强制导出符号注释
+        - name: unused-parameter
+          disabled: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # 测试里大量 defer close / 断言,放宽噪音较大的检查。
+      - path: _test\.go
+        linters:
+          - bodyclose
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/scriptscat/sctl
