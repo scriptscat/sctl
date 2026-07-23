@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"net/http"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +17,7 @@ import (
 
 	"github.com/scriptscat/sctl/internal/daemon/auth"
 	"github.com/scriptscat/sctl/internal/daemon/store"
+	"github.com/scriptscat/sctl/internal/pkg/audit"
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
 )
 
@@ -35,9 +36,7 @@ func startTestServer(t *testing.T) *testHarness {
 	So(err, ShouldBeNil)
 	dir := t.TempDir()
 	keys := store.NewKeyStore(filepath.Join(dir, "pairing.key"))
-	clients, err := store.NewClientStore(filepath.Join(dir, "clients.json"))
-	So(err, ShouldBeNil)
-	srv := NewServer("0.1.0", p, keys, clients, zap.NewNop())
+	srv := NewServer("0.1.0", p, keys, zap.NewNop())
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	So(err, ShouldBeNil)
@@ -142,7 +141,7 @@ func TestPairingHandshakeFlow(t *testing.T) {
 		h := startTestServer(t)
 
 		Convey("配对码正确:下发的 K 可解出并已落盘 0600", func() {
-			display, err := h.srv.BeginExtPairing()
+			display, err := h.srv.BeginEnrollment()
 			So(err, ShouldBeNil)
 			So(display, ShouldContainSubstring, "-")
 
@@ -178,7 +177,7 @@ func TestPairingHandshakeFlow(t *testing.T) {
 		})
 
 		Convey("配对码错误:握手失败且不下发密钥", func() {
-			_, err := h.srv.BeginExtPairing()
+			_, err := h.srv.BeginEnrollment()
 			So(err, ShouldBeNil)
 			_, wrongEnc, _ := h.crypto.DerivePairingKeys("WRONGWRONG")
 			_ = wrongEnc
@@ -282,63 +281,51 @@ func TestBlockingCallAndCancel(t *testing.T) {
 	})
 }
 
-func TestClientPairingAndSync(t *testing.T) {
-	Convey("MCP 客户端配对与 client.sync 广播", t, func() {
+func TestOriginWhitelist(t *testing.T) {
+	Convey("Origin 白名单廉价挡掉普通网页直连(握手仍是真正闸门)", t, func() {
 		h := startTestServer(t)
-		key, _ := auth.NewLongTermKey()
-		So(h.keys.Save(key), ShouldBeNil)
-		e := h.doSessionHandshake(key)
 
-		Convey("扩展批准 → 铸造令牌、原文不过线、回推 client.sync 镜像", func() {
-			handle, err := h.srv.BeginClientPairing("Claude", []string{"scripts:list"})
-			So(err, ShouldBeNil)
-			So(handle.Code, ShouldNotBeBlank)
-
-			pr := e.read()
-			So(pr.Type, ShouldEqual, typePairRequest)
-			var prp pairRequestPayload
-			So(json.Unmarshal(pr.Payload, &prp), ShouldBeNil)
-			So(prp.ClientName, ShouldEqual, "Claude")
-			So(len(prp.Code), ShouldEqual, 8)
-
-			e.write(typePairDecision, uuid.NewString(), pairDecisionPayload{
-				PairingID:     prp.PairingID,
-				Approved:      true,
-				GrantedScopes: []string{"scripts:list"},
-			})
-
+		dialOrigin := func(origin string) error {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
-			d, err := handle.Await(ctx)
-			So(err, ShouldBeNil)
-			So(d.Approved, ShouldBeTrue)
-			So(d.ClientID, ShouldNotBeBlank)
-			So(d.Token, ShouldNotBeBlank)
+			ws, _, err := websocket.Dial(ctx, h.url, &websocket.DialOptions{
+				HTTPHeader: http.Header{"Origin": []string{origin}},
+			})
+			if ws != nil {
+				_ = ws.Close(websocket.StatusNormalClosure, "")
+			}
+			return err
+		}
 
-			sync := e.read()
-			So(sync.Type, ShouldEqual, typeClientSync)
-			var recs []store.ClientRecord
-			So(json.Unmarshal(sync.Payload, &recs), ShouldBeNil)
-			So(len(recs), ShouldEqual, 1)
-			So(recs[0].DisplayName, ShouldEqual, "Claude")
-			So(recs[0].TokenHash, ShouldEqual, store.HashToken(d.Token))
-			So(strings.Contains(string(sync.Payload), d.Token), ShouldBeFalse)
+		Convey("http(s):// 网页 Origin 被拒(WS 升级失败)", func() {
+			So(dialOrigin("http://evil.example"), ShouldNotBeNil)
 		})
 
-		Convey("扩展拒绝 → 不铸造令牌", func() {
-			handle, err := h.srv.BeginClientPairing("Codex", []string{"scripts:list"})
-			So(err, ShouldBeNil)
-			pr := e.read()
-			var prp pairRequestPayload
-			_ = json.Unmarshal(pr.Payload, &prp)
-			e.write(typePairDecision, uuid.NewString(), pairDecisionPayload{PairingID: prp.PairingID, Approved: false})
+		Convey("扩展 Origin(chrome-extension://)放行", func() {
+			So(dialOrigin("chrome-extension://abcdefghijklmnop"), ShouldBeNil)
+		})
 
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer cancel()
-			d, err := handle.Await(ctx)
-			So(err, ShouldBeNil)
-			So(d.Approved, ShouldBeFalse)
-			So(h.srv.clients.List(), ShouldBeEmpty)
+		Convey("无 Origin(非浏览器进程)放行,由握手兜底", func() {
+			e := dial(h.url)
+			So(e.read().Type, ShouldEqual, typeAuthChallenge)
+		})
+
+		Convey("被拒的网页连接记录为 origin.rejected 审计事件", func() {
+			_ = dialOrigin("http://evil.example")
+			deadline := time.Now().Add(3 * time.Second)
+			var found bool
+			for time.Now().Before(deadline) {
+				for _, ev := range h.srv.audit.Snapshot() {
+					if ev.Type == audit.TypeOriginRejected {
+						found = true
+					}
+				}
+				if found {
+					break
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			So(found, ShouldBeTrue)
 		})
 	})
 }

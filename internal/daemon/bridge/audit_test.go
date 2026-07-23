@@ -74,7 +74,7 @@ func TestAuditRecording(t *testing.T) {
 		})
 
 		Convey("配对握手 HMAC 失败记录为 pairing.failed", func() {
-			_, err := h.srv.BeginExtPairing()
+			_, err := h.srv.BeginEnrollment()
 			So(err, ShouldBeNil)
 			wrongMac, _, _ := h.crypto.DerivePairingKeys("WRONGCODE")
 
@@ -94,7 +94,7 @@ func TestAuditRecording(t *testing.T) {
 		})
 
 		Convey("配对尝试超过限流上限后记录为 pairing.rate_limited", func() {
-			_, err := h.srv.BeginExtPairing()
+			_, err := h.srv.BeginEnrollment()
 			So(err, ShouldBeNil)
 			wrongMac, _, _ := h.crypto.DerivePairingKeys("WRONGCODE")
 

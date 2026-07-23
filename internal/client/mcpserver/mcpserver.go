@@ -1,6 +1,9 @@
-// Package mcpserver 用官方 go-sdk 构建 sctl 的 stdio MCP server:把 6 个 bridge action 暴露成
-// MCP 工具、按客户端 scope 过滤 tools/list、并在阻塞等待(写审批 / 源码披露)期间周期发送
-// progress 通知(支持的客户端可借此续期工具超时)。
+// Package mcpserver 用官方 go-sdk 构建 sctl 的 stdio MCP server:把 protocol.json 定义的 bridge
+// action 暴露成 MCP 工具,并在阻塞等待(写审批 / 源码披露)期间周期发送 progress 通知(支持的
+// 客户端可借此续期工具超时)。
+//
+// 扁平信任:接入(enrollment)建立可信通道后,MCP agent 继承信任、无需各自配对,故 tools/list
+// 暴露全部工具;权威授权仍在扩展侧(写操作审批 / 源码披露闸门)。
 //
 // stdout 由 MCP 协议独占:本包绝不向 stdout 写任何东西,日志走全局 stderr/文件 logger。
 package mcpserver
@@ -26,30 +29,20 @@ type BridgeCaller interface {
 	Call(ctx context.Context, action string, input json.RawMessage) (control.CallResult, error)
 }
 
-// Deps 是构建 MCP server 所需依赖。Scopes 是当前客户端已授予的 scope,决定注册哪些工具;
-// Paired=false 表示尚未配对(注册零工具,并在 initialize instructions 中提示去配对)。
+// Deps 是构建 MCP server 所需依赖。扁平信任下不再按客户端 scope 过滤:注册 protocol.json 中
+// 定义了的全部工具。
 type Deps struct {
 	Name    string
 	Version string
 	Proto   *protocol.Protocol
-	Scopes  []string
 	Caller  BridgeCaller
-	Paired  bool
 }
 
-// New 按依赖构建 MCP server。tools/list 通过「只注册 scope 允许的工具」天然完成 scope 过滤。
+// New 按依赖构建 MCP server,注册 protocol.json 里定义的全部 bridge action 工具。
 func New(d Deps) *mcp.Server {
-	opts := &mcp.ServerOptions{}
-	if !d.Paired {
-		opts.Instructions = "此 sctl MCP server 尚未与 ScriptCat 扩展配对。请在终端运行 `sctl mcp pair`(可加 --name 区分配置)完成配对,然后重启本 server 即可使用脚本工具。"
-	}
-	srv := mcp.NewServer(&mcp.Implementation{Name: d.Name, Version: d.Version}, opts)
+	srv := mcp.NewServer(&mcp.Implementation{Name: d.Name, Version: d.Version}, &mcp.ServerOptions{})
 	for _, td := range toolDefs {
-		def, ok := d.Proto.Actions[td.action]
-		if !ok {
-			continue
-		}
-		if !hasScope(d.Scopes, def.Scope) {
+		if _, ok := d.Proto.Actions[td.action]; !ok {
 			continue
 		}
 		registerTool(srv, td, d.Caller)
@@ -137,13 +130,4 @@ func errorResult(e *control.CallError) *mcp.CallToolResult {
 		}
 	}
 	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: msg}}}
-}
-
-func hasScope(scopes []string, want string) bool {
-	for _, s := range scopes {
-		if s == want {
-			return true
-		}
-	}
-	return false
 }

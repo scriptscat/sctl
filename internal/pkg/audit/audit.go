@@ -22,10 +22,10 @@ type Type string
 const (
 	TypeHandshakeOK        Type = "handshake.ok"
 	TypeHandshakeFailed    Type = "handshake.failed"
+	TypeOriginRejected     Type = "origin.rejected"
 	TypePairingRateLimited Type = "pairing.rate_limited"
 	TypePairingFailed      Type = "pairing.failed"
 	TypeRequestRateLimited Type = "request.rate_limited"
-	TypeClientRevoked      Type = "client.revoked"
 )
 
 // Reason 是失败原因分类。刻意用固定枚举而非原始错误串,避免错误信息把敏感内容带进审计。

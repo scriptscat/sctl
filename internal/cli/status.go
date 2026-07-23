@@ -33,7 +33,7 @@ func newStatusCmd() *cobra.Command {
 			if jsonOutput {
 				return printValueJSON(st)
 			}
-			fmt.Fprintf(os.Stdout, "daemon 版本: %s\n扩展已连接: %v\n已配对客户端数: %d\n", st.DaemonVersion, st.ExtConnected, st.ClientCount)
+			fmt.Fprintf(os.Stdout, "daemon 版本: %s\n扩展已连接: %v\n", st.DaemonVersion, st.ExtConnected)
 			// 人读输出只给一行摘要,完整事件走 --json,避免刷屏淹没状态本身。
 			if summary := formatSecuritySummary(st.Security); summary != "" {
 				fmt.Fprintf(os.Stdout, "近期安全事件: %s\n", summary)

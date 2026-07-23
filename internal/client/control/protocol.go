@@ -3,12 +3,12 @@
 // HTTP/JSON 控制 API。它不是桥接协议(见 docs/protocol.md)的一部分——桥接协议只约定
 // 扩展 ↔ daemon 那条 WS 连接;控制 API 是同一二进制内部前端 → daemon 的私有通道。
 //
-// 信任模型(docs/threat-model.md §1 / §4):
+// 信任模型(docs/threat-model.md §1 / §4)——扁平信任:
 //   - 控制 API 的唯一传输闸门是「控制令牌」——daemon 绑定端口后写入 0600 文件、只有同用户
 //     进程能读。网页可以 new WebSocket / fetch 到该端口,但读不到令牌即被拒(防小人不防君子)。
-//   - 携带控制令牌但不带 MCP 客户端令牌 = 内建 `sctl-cli` 身份,全量 scope、不走配对、不可撤销。
-//   - 额外携带 MCP 客户端令牌 = 以该已配对客户端身份发起,受其 scope 限制、可被撤销。
-//   - 无论哪种身份,写操作仍需过扩展侧人工审批(第二道闸门)。
+//   - 带上控制令牌即拥有全部能力:CLI 与所有 MCP agent 经已接入的可信通道继承信任,不再逐客户端
+//     配对 / 铸令牌 / 撤销。可选的客户端标签仅用于审计归因,不构成授权。
+//   - 无论哪种调用方,写操作仍需过扩展侧人工审批、源码读取仍需过披露闸门(第二道闸门)。
 package control
 
 import (
@@ -19,23 +19,22 @@ import (
 
 // 控制 API 路径。健康检查故意不鉴权(仅暴露「端口开着」这一威胁模型已接受的信息)。
 const (
-	PathHealth     = "/control/health"
-	PathCall       = "/control/call"
-	PathPairClient = "/control/pair-client"
-	PathWhoami     = "/control/whoami"
-	PathPairExt    = "/control/pair-ext"
-	PathStatus     = "/control/status"
+	PathHealth = "/control/health"
+	PathCall   = "/control/call"
+	PathEnroll = "/control/enroll"
+	PathStatus = "/control/status"
 )
 
 // 控制 API 请求头。
 const (
 	// HeaderControlToken 携带 0600 控制令牌,证明调用方是同用户本机进程。所有非健康检查请求必带。
 	HeaderControlToken = "X-Sctl-Control-Token"
-	// HeaderClientToken 可选,携带某已配对 MCP 客户端令牌;带上即以该客户端身份(受限 scope)发起。
-	HeaderClientToken = "X-Sctl-Client-Token"
+	// HeaderClientLabel 可选,携带调用方自报的客户端标签(如 MCP 客户端名)。仅用于审计归因,
+	// 不构成授权;缺省即内建 CLI 身份标签。自报、未认证、可伪造——只入审计,不上审批界面。
+	HeaderClientLabel = "X-Sctl-Client"
 )
 
-// CLIClientID 是 CLI 动词使用的内建全量身份 clientId(桥接请求里回填,扩展侧特判为不可撤销全量)。
+// CLIClientID 是缺省客户端标签(bridge.request.clientId 回填,仅供扩展侧审计展示)。
 const CLIClientID = "sctl-cli"
 
 // CallRequest 是 /control/call 的请求体:转发一次 bridge action 调用。
@@ -74,40 +73,11 @@ type HealthResult struct {
 type StatusResult struct {
 	DaemonVersion string        `json:"daemonVersion"`
 	ExtConnected  bool          `json:"extConnected"`
-	ClientCount   int           `json:"clientCount"`
 	SecurityCount int           `json:"securityCount"`
 	Security      []audit.Event `json:"security,omitempty"`
 }
 
-// WhoamiResult 是 /control/whoami 的响应体:解析 MCP 客户端令牌得到的授权信息。
-type WhoamiResult struct {
-	ClientID    string   `json:"clientId"`
-	DisplayName string   `json:"displayName"`
-	Scopes      []string `json:"scopes"`
-}
-
-// PairExtResult 是 /control/pair-ext 的响应体:打开扩展配对窗口后返回展示形配对码。
-type PairExtResult struct {
+// EnrollResult 是 /control/enroll 的响应体:打开接入窗口后返回展示形配对码。
+type EnrollResult struct {
 	Code string `json:"code"`
-}
-
-// PairClientRequest 是 /control/pair-client 的请求体:发起一次 MCP 客户端配对。
-type PairClientRequest struct {
-	ClientName string   `json:"clientName"`
-	Scopes     []string `json:"scopes"`
-}
-
-// PairClientEvent 是 /control/pair-client 的流式事件(换行分隔 JSON):
-// 第一条只带 Code(供终端展示核对码),第二条带 Decision(扩展裁决 + 批准时的令牌)。
-type PairClientEvent struct {
-	Code     string           `json:"code,omitempty"`
-	Decision *PairClientGrant `json:"decision,omitempty"`
-}
-
-// PairClientGrant 是配对裁决:批准时携带铸造出的 clientId/token 与实际授予的 scope。
-type PairClientGrant struct {
-	Approved bool     `json:"approved"`
-	ClientID string   `json:"clientId,omitempty"`
-	Token    string   `json:"token,omitempty"`
-	Scopes   []string `json:"scopes,omitempty"`
 }

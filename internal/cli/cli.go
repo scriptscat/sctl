@@ -63,7 +63,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(
 		newServeCmd(),
 		newMcpCmd(),
-		newPairCmd(),
+		newConnectCmd(),
 		newStatusCmd(),
 		newVersionCmd(),
 		newScriptsCmd(),

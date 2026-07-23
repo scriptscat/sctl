@@ -17,7 +17,7 @@ const (
 	schemaInstall = `{"type":"object","properties":{"url":{"type":"string","description":"用户脚本 URL"},"code":{"type":"string","description":"用户脚本源码"}},"additionalProperties":false}`
 )
 
-// toolDefs 是全部 6 个 bridge action 的工具定义,顺序稳定。实际注册哪些由客户端 scope 过滤。
+// toolDefs 是全部 bridge action 的工具定义,顺序稳定,注册时按 protocol.json 是否定义该 action 过滤。
 var toolDefs = []toolDef{
 	{
 		action:      "scripts.list",
@@ -40,7 +40,7 @@ var toolDefs = []toolDef{
 	{
 		action:      "scripts.install.request",
 		name:        "scripts_install_request",
-		description: "请求安装一个用户脚本(url 与 code 二选一)。需在浏览器中人工确认;新装脚本默认禁用。",
+		description: "请求安装一个用户脚本(url 与 code 二选一)。需在浏览器中人工确认。",
 		inputSchema: schemaInstall,
 	},
 	{

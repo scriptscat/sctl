@@ -94,9 +94,4 @@ func (s *Server) handleBridgeResponse(env Envelope) {
 		return
 	}
 	pc.respCh <- resp
-	if pc.clientID != "" {
-		if err := s.clients.Touch(pc.clientID); err != nil {
-			s.log.Debug("刷新客户端 lastUsedAt 失败", zap.Error(err))
-		}
-	}
 }

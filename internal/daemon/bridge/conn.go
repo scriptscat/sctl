@@ -111,23 +111,24 @@ func (c *conn) handshakeSession(ctx context.Context, nonceD string, resp authRes
 	return nil
 }
 
-// handshakePairing 用配对码派生密钥完成首次配对握手,并以 AES-256-GCM 下发新长期密钥 K(§3.2)。
+// handshakePairing 用接入码派生密钥完成首次接入握手,并以 AES-256-GCM 下发新长期密钥 K(§3.2)。
+// 线上模式标识沿用 "pairing"(与扩展侧一致),语义即「接入 enrollment」。
 func (c *conn) handshakePairing(ctx context.Context, nonceD string, resp authResponsePayload) error {
 	s := c.srv
-	if !s.pairAttempts.Allow("ext-pairing") {
-		return authFail(audit.TypePairingRateLimited, audit.ReasonPairExhausted, "配对尝试过于频繁")
+	if !s.enrollAttempts.Allow("enrollment") {
+		return authFail(audit.TypePairingRateLimited, audit.ReasonPairExhausted, "接入尝试过于频繁")
 	}
-	code, err := s.activePairingCode()
+	code, err := s.activeEnrollmentCode()
 	if err != nil {
 		return authFail(audit.TypePairingFailed, audit.ReasonPairExpired, "%w", err)
 	}
 	kpMac, kpEnc, err := s.crypto.DerivePairingKeys(code)
 	if err != nil {
-		return fmt.Errorf("派生配对密钥: %w", err)
+		return fmt.Errorf("派生接入密钥: %w", err)
 	}
 	if !s.crypto.VerifyExtHMAC(auth.ModePairing, kpMac, nonceD, resp.NonceE, resp.HMAC) {
-		s.failPairingAttempt()
-		return authFail(audit.TypePairingFailed, audit.ReasonHMACMismatch, "配对握手 HMAC 校验失败")
+		s.failEnrollmentAttempt()
+		return authFail(audit.TypePairingFailed, audit.ReasonHMACMismatch, "接入握手 HMAC 校验失败")
 	}
 
 	k, err := auth.NewLongTermKey()
@@ -146,7 +147,7 @@ func (c *conn) handshakePairing(ctx context.Context, nonceD string, resp authRes
 	if err := s.keys.Save(k); err != nil {
 		return fmt.Errorf("持久化长期密钥: %w", err)
 	}
-	s.clearPairing()
+	s.clearEnrollment()
 	c.key = k
 	return nil
 }
@@ -167,10 +168,6 @@ func (c *conn) readLoop() {
 		switch env.Type {
 		case typeBridgeResponse:
 			c.srv.handleBridgeResponse(env)
-		case typePairDecision:
-			c.srv.handlePairDecision(env)
-		case typeClientRevoke:
-			c.srv.handleClientRevoke(env)
 		case typePing:
 			if err := c.send(typePong, env.RequestID, struct{}{}); err != nil {
 				c.log.Debug("回复 pong 失败", zap.Error(err))
@@ -208,12 +205,6 @@ func (c *conn) send(typ, requestID string, payload any) error {
 	ctx, cancel := context.WithTimeout(c.ctx, writeTimeout)
 	defer cancel()
 	return c.sendCtx(ctx, typ, requestID, payload)
-}
-
-func (c *conn) sendRaw(env Envelope) error {
-	ctx, cancel := context.WithTimeout(c.ctx, writeTimeout)
-	defer cancel()
-	return c.writeEnvelope(ctx, env)
 }
 
 // writeEnvelope 串行化写出(coder/websocket 同一时刻只允许一个写者)。

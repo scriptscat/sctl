@@ -3,8 +3,6 @@ package bridge
 import (
 	"encoding/json"
 	"fmt"
-
-	"github.com/scriptscat/sctl/internal/daemon/store"
 )
 
 // Envelope 是所有 WS 消息的统一信封(docs/protocol.md §2)。
@@ -18,7 +16,8 @@ type Envelope struct {
 // 协议版本常量。
 const protocolV = 1
 
-// envelope 类型(与 protocol.json envelopeTypes 一一对应)。
+// envelope 类型。扁平信任下 daemon 只主动收发下列子集;pair.*/client.* 仍在 protocol.json
+// envelopeTypes 中(常量单源不改),但本实现不再产生或处理,收到即按前向兼容忽略(§2)。
 const (
 	typeAuthChallenge  = "auth.challenge"
 	typeAuthResponse   = "auth.response"
@@ -27,10 +26,6 @@ const (
 	typeBridgeRequest  = "bridge.request"
 	typeBridgeResponse = "bridge.response"
 	typeBridgeCancel   = "bridge.cancel"
-	typePairRequest    = "pair.request"
-	typePairDecision   = "pair.decision"
-	typeClientRevoke   = "client.revoke"
-	typeClientSync     = "client.sync"
 	typePing           = "ping"
 	typePong           = "pong"
 	typeBridgeShutdown = "bridge.shutdown"
@@ -44,12 +39,10 @@ const (
 
 // 常用错误码(全集见 protocol.json errorCodes;此处仅列 daemon 侧会主动产生的)。
 const (
-	CodeInvalidRequest    = "INVALID_REQUEST"
-	CodeUnauthenticated   = "UNAUTHENTICATED"
-	CodeInsufficientScope = "INSUFFICIENT_SCOPE"
-	CodeInternal          = "INTERNAL_ERROR"
-	CodeRateLimited       = "RATE_LIMITED"
-	CodeOperationExpired  = "OPERATION_EXPIRED"
+	CodeInvalidRequest   = "INVALID_REQUEST"
+	CodeInternal         = "INTERNAL_ERROR"
+	CodeRateLimited      = "RATE_LIMITED"
+	CodeOperationExpired = "OPERATION_EXPIRED"
 )
 
 // --- payload 结构 ---
@@ -107,23 +100,6 @@ func (e *Error) Error() string {
 	return e.Code + ": " + e.Message
 }
 
-type pairRequestPayload struct {
-	PairingID       string   `json:"pairingId"`
-	ClientName      string   `json:"clientName"`
-	RequestedScopes []string `json:"requestedScopes"`
-	Code            string   `json:"code"`
-}
-
-type pairDecisionPayload struct {
-	PairingID     string   `json:"pairingId"`
-	Approved      bool     `json:"approved"`
-	GrantedScopes []string `json:"grantedScopes"`
-}
-
-type clientRevokePayload struct {
-	ClientID string `json:"clientId"`
-}
-
 // newEnvelope 组装一条信封,payload 为 nil 时省略该字段。
 func newEnvelope(typ, requestID string, payload any) (Envelope, error) {
 	env := Envelope{V: protocolV, Type: typ, RequestID: requestID}
@@ -135,12 +111,4 @@ func newEnvelope(typ, requestID string, payload any) (Envelope, error) {
 		env.Payload = raw
 	}
 	return env, nil
-}
-
-// clientSyncPayload 直接是客户端记录数组。
-func clientSyncEnvelope(records []store.ClientRecord) (Envelope, error) {
-	if records == nil {
-		records = []store.ClientRecord{}
-	}
-	return newEnvelope(typeClientSync, "", records)
 }

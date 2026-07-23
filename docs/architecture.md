@@ -34,29 +34,27 @@ configs/config.yaml         # cago config (bridge.address etc.; falls back to bu
 internal/cli/               # subcommand definitions; spans both sides, hence top level
   cli.go                    #   root command, global flags, JSON output helpers
   serve.go                  #   bootstraps the cago app and mounts the daemon Component
-  mcp.go                    #   sctl mcp / sctl mcp pair
-  pair.go status.go version.go
+  mcp.go                    #   sctl mcp (serves all tools; --name is an audit label)
+  connect.go status.go version.go
   scripts.go write.go       #   read verbs / write verbs
   dispatch.go               #   action forwarding and bridge error → exit code mapping
 
 internal/daemon/            # ── sctl serve side ──
   component.go              #   cago Component: assembles listener + bridge + controlapi
   bridge/                   #   WS service core
-    server.go               #     Server struct, Serve, handshake admission, connection registry
+    server.go               #     Server struct, Serve, Origin whitelist, handshake admission, connection registry
     conn.go                 #     single connection: handshake, read loop, send
     call.go                 #     action forwarding, pending-call table, bridge.cancel
-    pairing.go              #     extension pairing window and MCP client pairing
-    clients.go              #     client revocation and client.sync broadcast
+    pairing.go              #     extension enrollment window (out-of-band code → key K)
     envelope.go             #     envelope, payload structs, error codes
   controlapi/               #   /control/* handlers (controller role), depends on the narrow Bridge interface
-  auth/                     #   mutual HMAC handshake, pairing-code derivation (HKDF), key delivery (AES-GCM)
-  store/                    #   0600 persistence of long-term keys / client tokens (repository role)
+  auth/                     #   mutual HMAC handshake, enrollment-code derivation (HKDF), key delivery (AES-GCM)
+  store/                    #   0600 persistence of the long-term key K (repository role)
   ratelimit/                #   per-key sliding-window rate limiting
 
 internal/client/            # ── sctl mcp / CLI verb side ──
   control/                  #   control API client, shared DTOs, control token, detached auto-spawn
-  mcpserver/                #   go-sdk stdio MCP server: 6 tools, scope filtering, progress while waiting
-  identity/                 #   cached paired identity for an sctl mcp instance (0600)
+  mcpserver/                #   go-sdk stdio MCP server: all tools (flat trust), progress while waiting
 
 internal/pkg/               # ── shared by both sides ──
   protocol/                 #   protocol.json itself + embedded parsing

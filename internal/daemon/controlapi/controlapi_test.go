@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/google/uuid"
 	. "github.com/smartystreets/goconvey/convey"
 
 	"github.com/scriptscat/sctl/internal/client/control"
@@ -112,95 +111,52 @@ func TestControlWriteCancelPropagation(t *testing.T) {
 	})
 }
 
-func TestControlClientTokenScope(t *testing.T) {
-	Convey("携带 MCP 客户端令牌:scope 决定放行/拒绝", t, func() {
+func TestControlClientLabelForwarding(t *testing.T) {
+	Convey("扁平信任:控制令牌即全部能力,客户端标签只作审计归因", t, func() {
 		h := startTestServer(t)
 		key, err := newKeyAndSave(h)
 		So(err, ShouldBeNil)
 		e := h.doSessionHandshake(key)
 		base := h.httpBase()
 
-		_, token, _, err := h.clients.Mint("Claude", []string{"scripts:list"})
-		So(err, ShouldBeNil)
-
-		Convey("scope 命中的读调用被放行,并以真实 clientId 转发", func() {
-			ch := goPostControl(context.Background(), base, control.PathCall, testControlToken, token, control.CallRequest{Action: "scripts.list", Input: json.RawMessage(`{}`)})
+		Convey("带客户端标签的调用被放行,并以该标签作为 clientId 转发", func() {
+			ch := goPostControl(context.Background(), base, control.PathCall, testControlToken, "scriptcat-claude", control.CallRequest{Action: "scripts.list", Input: json.RawMessage(`{}`)})
 			req := e.read()
 			var br bridge.Request
 			So(json.Unmarshal(req.Payload, &br), ShouldBeNil)
-			So(br.ClientID, ShouldNotEqual, control.CLIClientID) // 真实 clientId,非内建
+			So(br.ClientID, ShouldEqual, "scriptcat-claude")
 			e.write(typeBridgeResponse, req.RequestID, bridge.Response{OK: true, Result: json.RawMessage(`{"scripts":[]}`)})
 			out := <-ch
 			So(out.err, ShouldBeNil)
 			So(decodeCall(out.resp).OK, ShouldBeTrue)
 		})
 
-		Convey("scope 缺失的写调用被 INSUFFICIENT_SCOPE 拒绝(不转发给扩展)", func() {
-			resp, err := postControl(context.Background(), base, control.PathCall, testControlToken, token, control.CallRequest{Action: "scripts.delete.request", Input: json.RawMessage(`{"uuid":"x"}`)})
-			So(err, ShouldBeNil)
-			res := decodeCall(resp)
-			So(res.OK, ShouldBeFalse)
-			So(res.Error.Code, ShouldEqual, "INSUFFICIENT_SCOPE")
-		})
-
-		Convey("无效客户端令牌 → UNAUTHENTICATED", func() {
-			resp, err := postControl(context.Background(), base, control.PathCall, testControlToken, "bogus", control.CallRequest{Action: "scripts.list", Input: json.RawMessage(`{}`)})
-			So(err, ShouldBeNil)
-			res := decodeCall(resp)
-			So(res.OK, ShouldBeFalse)
-			So(res.Error.Code, ShouldEqual, "UNAUTHENTICATED")
-		})
-
-		Convey("whoami 解析客户端令牌返回 scope", func() {
-			resp, err := postControl(context.Background(), base, control.PathWhoami, testControlToken, token, nil)
-			So(err, ShouldBeNil)
-			defer resp.Body.Close()
-			So(resp.StatusCode, ShouldEqual, http.StatusOK)
-			var who control.WhoamiResult
-			So(json.NewDecoder(resp.Body).Decode(&who), ShouldBeNil)
-			So(who.DisplayName, ShouldEqual, "Claude")
-			So(who.Scopes, ShouldResemble, []string{"scripts:list"})
+		Convey("无标签的写调用被放行,并以内建 sctl-cli 标签转发(授权在扩展审批闸门)", func() {
+			ch := goPostControl(context.Background(), base, control.PathCall, testControlToken, "", control.CallRequest{Action: "scripts.delete.request", Input: json.RawMessage(`{"uuid":"x"}`)})
+			req := e.read()
+			var br bridge.Request
+			So(json.Unmarshal(req.Payload, &br), ShouldBeNil)
+			So(br.ClientID, ShouldEqual, control.CLIClientID)
+			So(br.Action, ShouldEqual, "scripts.delete.request")
+			e.write(typeBridgeResponse, req.RequestID, bridge.Response{OK: true, Result: json.RawMessage(`{"uuid":"x","deleted":true}`)})
+			out := <-ch
+			So(out.err, ShouldBeNil)
+			So(decodeCall(out.resp).OK, ShouldBeTrue)
 		})
 	})
 }
 
-func TestControlPairClientStream(t *testing.T) {
-	Convey("控制 pair-client 流:先推配对码,扩展批准后推裁决", t, func() {
+func TestControlEnroll(t *testing.T) {
+	Convey("控制 enroll:打开接入窗口并返回展示形配对码", t, func() {
 		h := startTestServer(t)
-		key, err := newKeyAndSave(h)
-		So(err, ShouldBeNil)
-		e := h.doSessionHandshake(key)
 		base := h.httpBase()
 
-		// pair-client 是流式:Do 返回后先解出配对码事件(daemon 已同步向扩展推 pair.request)。
-		resp, err := postControl(context.Background(), base, control.PathPairClient, testControlToken, "",
-			control.PairClientRequest{ClientName: "Claude", Scopes: []string{"scripts:list"}})
+		resp, err := postControl(context.Background(), base, control.PathEnroll, testControlToken, "", struct{}{})
 		So(err, ShouldBeNil)
 		defer resp.Body.Close()
 		So(resp.StatusCode, ShouldEqual, http.StatusOK)
-		dec := json.NewDecoder(resp.Body)
-
-		var first control.PairClientEvent
-		So(dec.Decode(&first), ShouldBeNil)
-		So(first.Code, ShouldNotBeBlank)
-
-		// 扩展收到 pair.request,回批准裁决。
-		pr := e.read()
-		So(pr.Type, ShouldEqual, typePairRequest)
-		var prp pairRequestPayload
-		So(json.Unmarshal(pr.Payload, &prp), ShouldBeNil)
-		e.write(typePairDecision, uuid.NewString(), pairDecisionPayload{
-			PairingID:     prp.PairingID,
-			Approved:      true,
-			GrantedScopes: []string{"scripts:list"},
-		})
-
-		// 第二个事件是裁决,携带铸造出的 clientId/token。
-		var second control.PairClientEvent
-		So(dec.Decode(&second), ShouldBeNil)
-		So(second.Decision, ShouldNotBeNil)
-		So(second.Decision.Approved, ShouldBeTrue)
-		So(second.Decision.ClientID, ShouldNotBeBlank)
-		So(second.Decision.Token, ShouldNotBeBlank)
+		var res control.EnrollResult
+		So(json.NewDecoder(resp.Body).Decode(&res), ShouldBeNil)
+		So(res.Code, ShouldContainSubstring, "-")
 	})
 }

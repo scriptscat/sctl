@@ -19,7 +19,7 @@ This file is the entry point for AI coding agents and contributors working on sc
 > truth shared with the extension and both sides must stay in sync; the doc only explains semantics, and the
 > json wins on conflict.
 
-> **Before touching authentication, keys, pairing, or auditing, read
+> **Before touching authentication, keys, enrollment, or auditing, read
 > [`docs/threat-model.md`](./docs/threat-model.md)** — security boundaries, attack surface, accepted
 > trade-offs, and the inventory of credentials on disk.
 

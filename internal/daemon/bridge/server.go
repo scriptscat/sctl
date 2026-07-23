@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,32 +32,32 @@ var (
 
 // Server 是桥接 daemon 的 WS 服务核心:accept、双向认证握手、envelope 路由与阻塞写模型。
 // v1 只允许一个扩展实例:新完成握手的连接替换旧连接。
+//
+// 信任模型是扁平的:接入(enrollment)建立唯一长期密钥 K 即确立信任,CLI 与所有 MCP agent 都
+// 经这条可信通道继承信任,不再逐客户端配对/铸令牌/撤销(docs/threat-model.md)。
 type Server struct {
 	version string
 	proto   *protocol.Protocol
 	crypto  *auth.Crypto
 	keys    *store.KeyStore
-	clients *store.ClientStore
 	log     *zap.Logger
 
 	audit *audit.Recorder
 
-	pairAttempts *ratelimit.Limiter
-	readLimit    *ratelimit.Limiter
-	writeLimit   *ratelimit.Limiter
+	enrollAttempts *ratelimit.Limiter
+	readLimit      *ratelimit.Limiter
+	writeLimit     *ratelimit.Limiter
 
 	authTimeout      time.Duration
 	writeDecisionTTL time.Duration
-	extPairTTL       time.Duration
-	clientPairTTL    time.Duration
+	enrollTTL        time.Duration
 	maxFrameBytes    int64
 
-	mu             sync.Mutex
-	conns          map[*conn]struct{}
-	active         *conn
-	pending        map[string]*pendingCall
-	extPairing     *pendingExtPairing
-	clientPairings map[string]*pendingClientPairing
+	mu         sync.Mutex
+	conns      map[*conn]struct{}
+	active     *conn
+	pending    map[string]*pendingCall
+	enrollment *pendingEnrollment
 
 	httpServer   *http.Server
 	baseCtx      context.Context
@@ -65,7 +66,7 @@ type Server struct {
 }
 
 // NewServer 用协议常量与持久化后端构造服务。限流默认值取 docs/protocol.md §7(实现可调)。
-func NewServer(version string, p *protocol.Protocol, keys *store.KeyStore, clients *store.ClientStore, log *zap.Logger) *Server {
+func NewServer(version string, p *protocol.Protocol, keys *store.KeyStore, log *zap.Logger) *Server {
 	if log == nil {
 		log = zap.NewNop()
 	}
@@ -74,20 +75,17 @@ func NewServer(version string, p *protocol.Protocol, keys *store.KeyStore, clien
 		proto:            p,
 		crypto:           auth.NewCrypto(p),
 		keys:             keys,
-		clients:          clients,
 		log:              log,
 		audit:            audit.NewRecorder(auditCapacity, log),
-		pairAttempts:     ratelimit.NewLimiter(5, time.Minute),
+		enrollAttempts:   ratelimit.NewLimiter(5, time.Minute),
 		readLimit:        ratelimit.NewLimiter(60, time.Minute),
 		writeLimit:       ratelimit.NewLimiter(10, time.Minute),
 		authTimeout:      time.Duration(p.Limits.AuthTimeoutMs) * time.Millisecond,
 		writeDecisionTTL: time.Duration(p.Limits.WriteDecisionTtlMs) * time.Millisecond,
-		extPairTTL:       time.Duration(p.Limits.ExtPairingCodeTtlMs) * time.Millisecond,
-		clientPairTTL:    time.Duration(p.Limits.McpPairingTtlMs) * time.Millisecond,
+		enrollTTL:        time.Duration(p.Limits.ExtPairingCodeTtlMs) * time.Millisecond,
 		maxFrameBytes:    int64(p.Limits.MaxFrameBytes),
 		conns:            make(map[*conn]struct{}),
 		pending:          make(map[string]*pendingCall),
-		clientPairings:   make(map[string]*pendingClientPairing),
 	}
 }
 
@@ -159,9 +157,34 @@ func (s *Server) shutdown() {
 	})
 }
 
-// handleWS 接受一条 WS 连接并驱动其握手与消息循环。故意不做 Origin 判别(docs/protocol.md §8:
-// 非浏览器进程可伪造任意 Origin,握手才是唯一闸门)。
+// extensionOriginSchemes 是浏览器扩展页面(含 offscreen 文档)发起 WS 时 Origin 的合法前缀。
+// 浏览器盖章 Origin、页面 JS 无法伪造,据此廉价挡掉普通网页直连(docs/threat-model.md)。
+var extensionOriginSchemes = []string{"chrome-extension://", "moz-extension://", "safari-web-extension://"}
+
+// originAllowed 判定 WS 请求的 Origin 是否放行。空 Origin 放行:只有扩展经 WS 面接入,非浏览器
+// 进程(可伪造任意 Origin)由握手兜底;带 http(s):// 等网页 Origin 的连接直接拒。这是廉价前置
+// 过滤,不是唯一闸门。
+func originAllowed(origin string) bool {
+	if origin == "" {
+		return true
+	}
+	for _, scheme := range extensionOriginSchemes {
+		if strings.HasPrefix(origin, scheme) {
+			return true
+		}
+	}
+	return false
+}
+
+// handleWS 接受一条 WS 连接并驱动其握手与消息循环。Origin 白名单是廉价前置(挡网页),握手仍是
+// 真正的闸门(docs/protocol.md §8:非浏览器进程可伪造任意 Origin)。
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
+	if origin := r.Header.Get("Origin"); !originAllowed(origin) {
+		s.log.Debug("拒绝非扩展 Origin 的 WS 连接", zap.String("origin", origin))
+		s.audit.Record(audit.Event{Type: audit.TypeOriginRejected})
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 	if err != nil {
 		s.log.Warn("websocket accept 失败", zap.Error(err))
@@ -230,10 +253,4 @@ func (s *Server) setActive(c *conn) {
 	if old != nil && old != c {
 		old.close(websocket.StatusNormalClosure, "replaced by new connection")
 	}
-}
-
-func (s *Server) activeConn() *conn {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.active
 }

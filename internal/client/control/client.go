@@ -29,7 +29,7 @@ type Client struct {
 	http         *http.Client
 	base         string
 	controlToken string
-	clientToken  string // 可选:携带则以该已配对 MCP 客户端身份发起
+	clientLabel  string // 可选:调用方自报的客户端标签,仅用于审计归因(不构成授权)
 }
 
 // Dial 解析 daemon 地址、必要时自动拉起 daemon,并读取控制令牌返回可用客户端。
@@ -63,10 +63,10 @@ func dial(ctx context.Context, autoLaunch bool) (*Client, error) {
 	return c, nil
 }
 
-// WithClientToken 返回携带指定 MCP 客户端令牌的副本;后续调用以该客户端身份发起(受其 scope 限制)。
-func (c *Client) WithClientToken(token string) *Client {
+// WithClientLabel 返回携带指定审计标签的副本;后续调用把该标签随请求上报,仅供扩展侧审计归因。
+func (c *Client) WithClientLabel(label string) *Client {
 	cp := *c
-	cp.clientToken = token
+	cp.clientLabel = label
 	return &cp
 }
 
@@ -143,8 +143,8 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body []byt
 		return nil, err
 	}
 	req.Header.Set(HeaderControlToken, c.controlToken)
-	if c.clientToken != "" {
-		req.Header.Set(HeaderClientToken, c.clientToken)
+	if c.clientLabel != "" {
+		req.Header.Set(HeaderClientLabel, c.clientLabel)
 	}
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -181,27 +181,6 @@ func (c *Client) Call(ctx context.Context, action string, input json.RawMessage)
 	return res, nil
 }
 
-// Whoami 解析当前 MCP 客户端令牌对应的授权信息(clientId/displayName/scopes)。
-func (c *Client) Whoami(ctx context.Context) (WhoamiResult, error) {
-	req, err := c.newRequest(ctx, http.MethodGet, PathWhoami, nil)
-	if err != nil {
-		return WhoamiResult{}, err
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return WhoamiResult{}, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return WhoamiResult{}, statusError(resp)
-	}
-	var res WhoamiResult
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return WhoamiResult{}, err
-	}
-	return res, nil
-}
-
 // Status 查询 daemon 与扩展连接概览。
 func (c *Client) Status(ctx context.Context) (StatusResult, error) {
 	req, err := c.newRequest(ctx, http.MethodGet, PathStatus, nil)
@@ -223,9 +202,9 @@ func (c *Client) Status(ctx context.Context) (StatusResult, error) {
 	return res, nil
 }
 
-// PairExt 打开一次扩展配对窗口,返回展示形配对码(供用户填入扩展设置)。
-func (c *Client) PairExt(ctx context.Context) (string, error) {
-	req, err := c.newRequest(ctx, http.MethodPost, PathPairExt, []byte(`{}`))
+// Enroll 打开一次接入窗口,返回展示形配对码(供 sctl connect 在终端展示,用户输入扩展页面)。
+func (c *Client) Enroll(ctx context.Context) (string, error) {
+	req, err := c.newRequest(ctx, http.MethodPost, PathEnroll, []byte(`{}`))
 	if err != nil {
 		return "", err
 	}
@@ -237,62 +216,11 @@ func (c *Client) PairExt(ctx context.Context) (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return "", statusError(resp)
 	}
-	var res PairExtResult
+	var res EnrollResult
 	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
 		return "", err
 	}
 	return res.Code, nil
-}
-
-// PairClientSession 承载一次进行中的 MCP 客户端配对流:先 Code 展示核对码,再 Await 裁决。
-type PairClientSession struct {
-	body io.ReadCloser
-	dec  *json.Decoder
-}
-
-// PairClient 发起一次 MCP 客户端配对,阻塞至 daemon 回传首个「配对码」事件后返回。
-// 之后调用 Await 阻塞等待扩展裁决。ctx 取消会切断请求 → daemon 作废该配对。
-func (c *Client) PairClient(ctx context.Context, name string, scopes []string) (*PairClientSession, string, error) {
-	body, err := json.Marshal(PairClientRequest{ClientName: name, Scopes: scopes})
-	if err != nil {
-		return nil, "", err
-	}
-	req, err := c.newRequest(ctx, http.MethodPost, PathPairClient, body)
-	if err != nil {
-		return nil, "", err
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, "", err
-	}
-	if resp.StatusCode != http.StatusOK {
-		defer resp.Body.Close()
-		return nil, "", statusError(resp)
-	}
-	dec := json.NewDecoder(resp.Body)
-	var first PairClientEvent
-	if err := dec.Decode(&first); err != nil {
-		resp.Body.Close()
-		return nil, "", fmt.Errorf("读取配对码事件: %w", err)
-	}
-	if first.Code == "" {
-		resp.Body.Close()
-		return nil, "", errors.New("配对流首事件缺少配对码")
-	}
-	return &PairClientSession{body: resp.Body, dec: dec}, first.Code, nil
-}
-
-// Await 阻塞等待扩展的配对裁决;返回后会话关闭。
-func (s *PairClientSession) Await() (PairClientGrant, error) {
-	defer s.body.Close()
-	var ev PairClientEvent
-	if err := s.dec.Decode(&ev); err != nil {
-		return PairClientGrant{}, err
-	}
-	if ev.Decision == nil {
-		return PairClientGrant{}, errors.New("配对流缺少裁决事件")
-	}
-	return *ev.Decision, nil
 }
 
 // statusError 把非 200 控制响应转成带 body 摘要的错误(401 特别标注凭据问题)。

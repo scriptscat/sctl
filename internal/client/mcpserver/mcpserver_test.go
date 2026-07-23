@@ -71,31 +71,17 @@ func toolNames(res *mcp.ListToolsResult) []string {
 	return names
 }
 
-func TestToolsListScopeFilter(t *testing.T) {
-	Convey("tools/list 按客户端 scope 过滤", t, func() {
+func TestToolsListExposesAllTools(t *testing.T) {
+	Convey("扁平信任:tools/list 暴露 protocol.json 定义的全部工具(不再按 scope 过滤)", t, func() {
 		p := loadProto(t)
 		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
 
-		Convey("只有 scripts:list scope → 只暴露 scripts_list 一个工具", func() {
-			session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Scopes: []string{"scripts:list"}, Caller: caller, Paired: true}, nil)
-			res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
-			So(err, ShouldBeNil)
-			So(toolNames(res), ShouldResemble, []string{"scripts_list"})
-		})
-
-		Convey("授予全部 scope → 暴露全部 6 个工具", func() {
-			session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Scopes: p.Scopes, Caller: caller, Paired: true}, nil)
-			res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
-			So(err, ShouldBeNil)
-			So(len(res.Tools), ShouldEqual, 6)
-		})
-
-		Convey("未配对(无 scope)→ 零工具", func() {
-			session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Scopes: nil, Caller: caller, Paired: false}, nil)
-			res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
-			So(err, ShouldBeNil)
-			So(len(res.Tools), ShouldEqual, 0)
-		})
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+		So(err, ShouldBeNil)
+		So(len(res.Tools), ShouldEqual, len(p.Actions))
+		So(toolNames(res), ShouldContain, "scripts_list")
+		So(toolNames(res), ShouldContain, "scripts_delete_request")
 	})
 }
 
@@ -105,7 +91,7 @@ func TestToolCallResults(t *testing.T) {
 
 		Convey("成功 → 内容含结果 JSON,非 IsError", func() {
 			caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{"scripts":[]}`)}}
-			session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Scopes: []string{"scripts:list"}, Caller: caller, Paired: true}, nil)
+			session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
 			res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "scripts_list", Arguments: map[string]any{}})
 			So(err, ShouldBeNil)
 			So(res.IsError, ShouldBeFalse)
@@ -116,7 +102,7 @@ func TestToolCallResults(t *testing.T) {
 
 		Convey("桥接业务错误 → IsError 工具结果(模型可见)", func() {
 			caller := &fakeCaller{result: control.CallResult{OK: false, Error: &control.CallError{Code: "USER_REJECTED", Message: "用户拒绝"}}}
-			session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Scopes: p.Scopes, Caller: caller, Paired: true}, nil)
+			session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
 			res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "scripts_delete_request", Arguments: map[string]any{"uuid": "x"}})
 			So(err, ShouldBeNil)
 			So(res.IsError, ShouldBeTrue)
@@ -141,7 +127,7 @@ func TestBlockingProgressAndCancel(t *testing.T) {
 					progressCount.Add(1)
 				},
 			}
-			session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Scopes: p.Scopes, Caller: caller, Paired: true}, opts)
+			session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, opts)
 
 			resCh := make(chan *mcp.CallToolResult, 1)
 			go func() {
@@ -172,7 +158,7 @@ func TestBlockingProgressAndCancel(t *testing.T) {
 			block := make(chan struct{})
 			defer close(block)
 			caller := &fakeCaller{block: block}
-			session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Scopes: p.Scopes, Caller: caller, Paired: true}, nil)
+			session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
 
 			callCtx, cancel := context.WithCancel(context.Background())
 			errCh := make(chan error, 1)
@@ -201,23 +187,5 @@ func TestBlockingProgressAndCancel(t *testing.T) {
 			}
 			So(caller.sawCtx.Load(), ShouldBeTrue)
 		})
-	})
-}
-
-func TestUnpairedInstructions(t *testing.T) {
-	Convey("未配对时 initialize 提供配对指引", t, func() {
-		p := loadProto(t)
-		caller := &fakeCaller{}
-		// initialize 结果里的 instructions 由 client 侧 session 暴露。
-		srv := New(Deps{Name: "s", Version: "v0", Proto: p, Paired: false, Caller: caller})
-		st, ct := mcp.NewInMemoryTransports()
-		ctx := context.Background()
-		_, err := srv.Connect(ctx, st, nil)
-		So(err, ShouldBeNil)
-		client := mcp.NewClient(&mcp.Implementation{Name: "c", Version: "v0"}, nil)
-		session, err := client.Connect(ctx, ct, nil)
-		So(err, ShouldBeNil)
-		defer session.Close()
-		So(session.InitializeResult().Instructions, ShouldContainSubstring, "sctl mcp pair")
 	})
 }

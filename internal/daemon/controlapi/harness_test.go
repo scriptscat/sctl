@@ -39,8 +39,6 @@ const (
 	typeBridgeRequest  = "bridge.request"
 	typeBridgeResponse = "bridge.response"
 	typeBridgeCancel   = "bridge.cancel"
-	typePairRequest    = "pair.request"
-	typePairDecision   = "pair.decision"
 
 	modeSession = "session"
 )
@@ -59,27 +57,13 @@ type authOKPayload struct {
 	HMAC string `json:"hmac"`
 }
 
-type pairRequestPayload struct {
-	PairingID       string   `json:"pairingId"`
-	ClientName      string   `json:"clientName"`
-	RequestedScopes []string `json:"requestedScopes"`
-	Code            string   `json:"code"`
-}
-
-type pairDecisionPayload struct {
-	PairingID     string   `json:"pairingId"`
-	Approved      bool     `json:"approved"`
-	GrantedScopes []string `json:"grantedScopes"`
-}
-
 // testHarness 承载一个运行中的 daemon(WS 面 + 控制 API)与用于对拍的密码学助手/存储。
 type testHarness struct {
-	srv     *bridge.Server
-	crypto  *auth.Crypto
-	keys    *store.KeyStore
-	clients *store.ClientStore
-	url     string
-	proto   *protocol.Protocol
+	srv    *bridge.Server
+	crypto *auth.Crypto
+	keys   *store.KeyStore
+	url    string
+	proto  *protocol.Protocol
 }
 
 func startTestServer(t *testing.T) *testHarness {
@@ -88,9 +72,7 @@ func startTestServer(t *testing.T) *testHarness {
 	So(err, ShouldBeNil)
 	dir := t.TempDir()
 	keys := store.NewKeyStore(filepath.Join(dir, "pairing.key"))
-	clients, err := store.NewClientStore(filepath.Join(dir, "clients.json"))
-	So(err, ShouldBeNil)
-	srv := bridge.NewServer(testVersion, p, keys, clients, zap.NewNop())
+	srv := bridge.NewServer(testVersion, p, keys, zap.NewNop())
 
 	mux := http.NewServeMux()
 	New(srv, testControlToken, zap.NewNop()).Register(mux)
@@ -102,12 +84,11 @@ func startTestServer(t *testing.T) *testHarness {
 	go func() { _ = srv.Serve(ctx, ln, mux) }()
 
 	return &testHarness{
-		srv:     srv,
-		crypto:  auth.NewCrypto(p),
-		keys:    keys,
-		clients: clients,
-		url:     "ws://" + ln.Addr().String() + "/",
-		proto:   p,
+		srv:    srv,
+		crypto: auth.NewCrypto(p),
+		keys:   keys,
+		url:    "ws://" + ln.Addr().String() + "/",
+		proto:  p,
 	}
 }
 
@@ -183,8 +164,8 @@ func (h *testHarness) doSessionHandshake(key []byte) *extClient {
 	return e
 }
 
-// postControl 发起一次控制 API 请求(可选控制令牌 / MCP 客户端令牌)。body 为 nil 时用 GET。
-func postControl(ctx context.Context, base, path, controlToken, clientToken string, body any) (*http.Response, error) {
+// postControl 发起一次控制 API 请求(可选控制令牌 / 客户端标签)。body 为 nil 时用 GET。
+func postControl(ctx context.Context, base, path, controlToken, clientLabel string, body any) (*http.Response, error) {
 	var r io.Reader
 	method := http.MethodGet
 	if body != nil {
@@ -199,8 +180,8 @@ func postControl(ctx context.Context, base, path, controlToken, clientToken stri
 	if controlToken != "" {
 		req.Header.Set(control.HeaderControlToken, controlToken)
 	}
-	if clientToken != "" {
-		req.Header.Set(control.HeaderClientToken, clientToken)
+	if clientLabel != "" {
+		req.Header.Set(control.HeaderClientLabel, clientLabel)
 	}
 	return http.DefaultClient.Do(req)
 }
@@ -211,10 +192,10 @@ type callOut struct {
 }
 
 // goPostControl 在 goroutine 里发起(可能阻塞的)控制请求,把结果回传通道;断言留给测试 goroutine。
-func goPostControl(ctx context.Context, base, path, controlToken, clientToken string, body any) <-chan callOut {
+func goPostControl(ctx context.Context, base, path, controlToken, clientLabel string, body any) <-chan callOut {
 	ch := make(chan callOut, 1)
 	go func() {
-		resp, err := postControl(ctx, base, path, controlToken, clientToken, body)
+		resp, err := postControl(ctx, base, path, controlToken, clientLabel, body)
 		ch <- callOut{resp, err}
 	}()
 	return ch

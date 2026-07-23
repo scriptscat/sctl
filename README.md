@@ -20,9 +20,8 @@ CLI 动词(sctl scripts list / install …)───────┤
 | 命令 | 说明 |
 |---|---|
 | `sctl serve` | 运行桥接 daemon(cago 应用;WS 仅监听 loopback,并挂载控制 API) |
-| `sctl mcp [--name <label>]` | stdio MCP server;加载已配对身份、按 scope 过滤工具后提供服务(未运行时自动拉起 serve) |
-| `sctl mcp pair [--name <label>]` | 交互式配对该 MCP 实例:打印核对码,等待扩展批准,缓存铸造出的身份 |
-| `sctl pair` | 生成一次性配对码,与扩展建立互信 |
+| `sctl connect` | 生成一次性配对码,与扩展建立外部接入(只需一次;此后 CLI 与所有 MCP agent 都继承信任) |
+| `sctl mcp [--name <label>]` | stdio MCP server;经外部接入继承信任、暴露全部脚本工具(未运行时自动拉起 serve;`--name` 仅作审计标签) |
 | `sctl status` | daemon 与扩展连接状态,附守卫侧安全事件摘要(不自动拉起 daemon) |
 | `sctl scripts list / info <uuid> / source <uuid>` | 读脚本(`source` 输出到 stdout,可重定向) |
 | `sctl install <url\|file>` | 请求安装脚本(URL 或本地文件;本地文件上送 staged code) |
@@ -40,7 +39,7 @@ CLI 动词(sctl scripts list / install …)───────┤
 | 0 | 批准 / 成功 |
 | 1 | 用户拒绝(`USER_REJECTED`) |
 | 2 | 作废(超时 `OPERATION_EXPIRED` / Ctrl-C 取消 / 扩展断开) |
-| 3 | 其他错误(校验失败、`NOT_FOUND`、`INSUFFICIENT_SCOPE`、连接失败…) |
+| 3 | 其他错误(校验失败、`NOT_FOUND`、连接失败…) |
 
 ## 文档
 
