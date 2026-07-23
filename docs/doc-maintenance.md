@@ -6,25 +6,6 @@
 > jobs: keep the doc set **organized** (links resolve, the index is current, facts aren't duplicated), and
 > keep every claim **true for the current branch**.
 
-## Why this guide exists
-
-Documentation describes living code, so the following failure modes recur. All of them have actually happened
-in this repository:
-
-- **Dangling references left behind by a rename.** After the top-level `PROTOCOL.md` / `THREAT-MODEL.md` moved
-  into `docs/` and were renamed, 15 code comments pointing at `PROTOCOL §4` or "the iron rules of
-  THREAT-MODEL" lost their target — plus 5 more pointing at `设计文档 §3.1`, a design document that never
-  entered this repository at all, leaving readers with nothing to check.
-- **A plan written as the present, or the present written as a plan.** The header of `docs/protocol.md` said
-  for a long time "final destination: this document is rewritten as `docs/protocol.md` in the sctl repo" —
-  while it already *was* that file. `README.md` described the license as "planned to match the main repo
-  (GPL-3.0), confirm before release" while the full GPL-3.0 text was already sitting in `LICENSE`.
-- **Comments describing an imagined future.** `internal/daemon/component.go` used to expose a `Server()`
-  accessor commented "for **future** use by `sctl mcp` / CLI verbs making bridge calls" — with zero callers
-  anywhere in the repository, since the real path goes through the narrow `controlapi.Bridge` interface.
-- **Uncommitted work looking like shipped work.** Docs written on a refactor branch, or scripts not yet
-  `git add`ed, all show up under `rg` / `ls` and get written down as established fact.
-
 ## One fact, one owning doc
 
 Each fact — a port, an exit code, a version number — is expanded in exactly **one** doc; everywhere else
