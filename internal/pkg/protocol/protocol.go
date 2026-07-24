@@ -19,7 +19,7 @@ type Protocol struct {
 	ProtocolVersion int               `json:"protocolVersion"`
 	Transport       Transport         `json:"transport"`
 	Versions        Versions          `json:"versions"`
-	EnvelopeTypes   []string          `json:"envelopeTypes"`
+	EnvelopeTypes   EnvelopeTypes     `json:"envelopeTypes"`
 	Scopes          []string          `json:"scopes"`
 	Actions         map[string]Action `json:"actions"`
 	ErrorCodes      []string          `json:"errorCodes"`
@@ -32,6 +32,14 @@ type Transport struct {
 	DefaultURL  string `json:"defaultUrl"`
 	DefaultPort int    `json:"defaultPort"`
 	Frame       string `json:"frame"`
+}
+
+// EnvelopeTypes groups the wire envelope vocabulary into the protocol's two layers: session frames
+// carry the crypto handshake, version/liveness and session lifecycle (Layer 1); bridge frames are
+// the capability RPC tunnelled over the channel (Layer 2). See protocol.json "$comment.layering".
+type EnvelopeTypes struct {
+	Session []string `json:"session"`
+	Bridge  []string `json:"bridge"`
 }
 
 type Versions struct {

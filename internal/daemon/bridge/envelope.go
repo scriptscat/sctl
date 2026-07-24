@@ -16,8 +16,9 @@ type Envelope struct {
 // 协议版本常量。
 const protocolV = 1
 
-// envelope 类型。扁平信任下 daemon 只主动收发下列子集;pair.*/client.* 仍在 protocol.json
-// envelopeTypes 中(常量单源不改),但本实现不再产生或处理,收到即按前向兼容忽略(§2)。
+// envelope 类型。扁平信任把 pair.*/client.* 从 protocol.json envelopeTypes 中移除后,下列即
+// 全集:envelopeTypes.session(握手/存活/生命周期)+ envelopeTypes.bridge(能力 RPC)。未知
+// 类型按前向兼容忽略(§2)。
 const (
 	typeAuthChallenge  = "auth.challenge"
 	typeAuthResponse   = "auth.response"
