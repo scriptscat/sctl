@@ -20,7 +20,7 @@ func newVersionCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if jsonOutput {
+			if outputFormat == outputJSON {
 				return printValueJSON(map[string]any{
 					"version":          Version,
 					"commit":           Commit,

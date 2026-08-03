@@ -1,8 +1,8 @@
 // Package cli 定义 sctl 的 cobra 子命令。serve 引导一个 cago 应用并挂载桥接 Component;
 // 其余命令是驱动常驻 daemon 的本机内部控制客户端(见 internal/client/control),或纯本地操作。
 //
-// 输出约定:stdout 只承载用户可读结果 / --json 结构化输出 / MCP 协议(sctl mcp);诊断日志一律
-// 走全局 stderr/文件 logger(cmd/sctl 的 PersistentPreRunE 已初始化)。
+// 输出约定:stdout 只承载用户可读结果 / -o/--output 的结构化(json)或原始源码(source)输出 / MCP
+// 协议(sctl mcp);诊断日志一律走全局 stderr/文件 logger(cmd/sctl 的 PersistentPreRunE 已初始化)。
 package cli
 
 import (
@@ -25,8 +25,16 @@ var (
 
 // 全局标志(绑定为包级变量,任意子命令直接读取)。
 var (
-	jsonOutput bool
-	logLevel   string
+	outputFormat string
+	logLevel     string
+)
+
+// -o/--output 的合法取值。table 是默认的人读格式;source 仅在 `get <uuid>` 下合法
+// (由 NewRootCmd 的 PersistentPreRunE 统一把关),别处一律报错退出。
+const (
+	outputTable  = "table"
+	outputJSON   = "json"
+	outputSource = "source"
 )
 
 // 退出码约定(对外文档见 README.md「写操作阻塞语义与退出码」):写动词按用户决策映射,
@@ -55,22 +63,32 @@ func NewRootCmd() *cobra.Command {
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			logging.Setup(logLevel)
+			switch outputFormat {
+			case outputTable, outputJSON, outputSource:
+			default:
+				return &ExitError{Code: exitError, Message: fmt.Sprintf("invalid --output value %q: must be table, json or source", outputFormat)}
+			}
+			// -o source 只对 `get <uuid>` 有意义(原始源码到 stdout);其余命令的结果都不是单份
+			// 源码,允许会让用户以为拿到了源码却实际收到别的东西,所以在这里统一拒绝。
+			if outputFormat == outputSource && (cmd.Name() != "get" || len(stripResourceWord(args)) != 1) {
+				return &ExitError{Code: exitError, Message: `-o source is only valid for "sctl get <uuid>"`}
+			}
 			return nil
 		},
 	}
 	root.PersistentFlags().StringVar(&logLevel, "log-level", "info", "日志级别 debug|info|warn|error(始终输出到 stderr)")
-	root.PersistentFlags().BoolVar(&jsonOutput, "json", false, "以 JSON 输出结构化结果(供脚本消费)")
+	root.PersistentFlags().StringVarP(&outputFormat, "output", "o", outputTable, "output format: table|json|source (source only valid for \"get <uuid>\")")
 	root.AddCommand(
 		newServeCmd(),
 		newMcpCmd(),
 		newConnectCmd(),
 		newStatusCmd(),
 		newVersionCmd(),
-		newScriptsCmd(),
+		newGetCmd(),
 		newInstallCmd(),
 		newToggleCmd(true),
 		newToggleCmd(false),
-		newRmCmd(),
+		newDeleteCmd(),
 	)
 	return root
 }

@@ -20,7 +20,7 @@ func newStatusCmd() *cobra.Command {
 			ctx := cmd.Context()
 			client, err := control.Connect(ctx)
 			if err != nil {
-				if jsonOutput {
+				if outputFormat == outputJSON {
 					return printValueJSON(control.StatusResult{})
 				}
 				fmt.Fprintln(os.Stdout, "daemon 未运行")
@@ -30,7 +30,7 @@ func newStatusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if jsonOutput {
+			if outputFormat == outputJSON {
 				return printValueJSON(st)
 			}
 			fmt.Fprintf(os.Stdout, "daemon 版本: %s\n扩展已连接: %v\n", st.DaemonVersion, st.ExtConnected)
