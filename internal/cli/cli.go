@@ -54,7 +54,7 @@ type ExitError struct {
 
 func (e *ExitError) Error() string { return e.Message }
 
-// NewRootCmd 组装 sctl 根命令:全局 --log-level / --json 标志,并挂载全部子命令。
+// NewRootCmd 组装 sctl 根命令:全局 --log-level / -o|--output 标志,并挂载全部子命令。
 func NewRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "sctl",
@@ -93,7 +93,7 @@ func NewRootCmd() *cobra.Command {
 	return root
 }
 
-// printResultJSON 把桥接返回的原始结果 JSON 原样美化打印到 stdout(--json 路径)。
+// printResultJSON 把桥接返回的原始结果 JSON 原样美化打印到 stdout(-o json 路径)。
 func printResultJSON(raw json.RawMessage) error {
 	var buf []byte
 	var pretty any

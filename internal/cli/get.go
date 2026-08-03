@@ -21,7 +21,10 @@ func newGetCmd() *cobra.Command {
 		Short: "List installed scripts, or show one script (-o json for full metadata, -o source for raw code)",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if n := len(stripResourceWord(args)); n > 1 {
-				return fmt.Errorf("get accepts at most one uuid (after an optional resource word), got %d", n)
+				return &ExitError{
+					Code:    exitError,
+					Message: fmt.Sprintf("get accepts at most one uuid (after an optional resource word), got %d", n),
+				}
 			}
 			return nil
 		},
@@ -123,11 +126,13 @@ func printScriptTable(items []scriptSummary) error {
 
 func printScriptSource(result json.RawMessage) error {
 	var payload struct {
-		Code string `json:"code"`
+		// 指针以区分「没有 code 字段」与「code 是空串」——空行窗(--lines 开在空行上)返回的正是
+		// 空串,把它当成缺字段会把结果信封写进重定向出来的 .user.js。
+		Code *string `json:"code"`
 	}
-	if err := json.Unmarshal(result, &payload); err == nil && payload.Code != "" {
+	if err := json.Unmarshal(result, &payload); err == nil && payload.Code != nil {
 		// 源码原样输出(不加尾换行,忠实可重定向为 .user.js)。
-		_, err := os.Stdout.WriteString(payload.Code)
+		_, err := os.Stdout.WriteString(*payload.Code)
 		return err
 	}
 	// 无 code 字段时退回原样 JSON。

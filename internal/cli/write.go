@@ -66,15 +66,9 @@ func newToggleCmd(enable bool) *cobra.Command {
 	return &cobra.Command{
 		Use:   use,
 		Short: short,
-		Args: func(cmd *cobra.Command, args []string) error {
-			if n := len(stripResourceWord(args)); n != 1 {
-				return fmt.Errorf("%s requires exactly one uuid (after an optional resource word), got %d", cmd.Name(), n)
-			}
-			return nil
-		},
+		Args:  exactlyOneUUIDArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			args = stripResourceWord(args)
-			uuid := args[0]
+			uuid := stripResourceWord(args)[0]
 			input := mustInput(map[string]any{"uuid": uuid, "enable": enable})
 			return dispatchBlocking(cmd, "scripts.toggle.request", input, func(result json.RawMessage) error {
 				if outputFormat == outputJSON {
@@ -98,15 +92,9 @@ func newDeleteCmd() *cobra.Command {
 		Use:     "delete [scripts|script|sc] <uuid>",
 		Aliases: []string{"del"},
 		Short:   "请求删除脚本,阻塞至浏览器确认",
-		Args: func(cmd *cobra.Command, args []string) error {
-			if n := len(stripResourceWord(args)); n != 1 {
-				return fmt.Errorf("delete requires exactly one uuid (after an optional resource word), got %d", n)
-			}
-			return nil
-		},
+		Args:    exactlyOneUUIDArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			args = stripResourceWord(args)
-			uuid := args[0]
+			uuid := stripResourceWord(args)[0]
 			input := mustInput(map[string]string{"uuid": uuid})
 			return dispatchBlocking(cmd, "scripts.delete.request", input, func(result json.RawMessage) error {
 				if outputFormat == outputJSON {

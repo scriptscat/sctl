@@ -103,6 +103,15 @@ func stubDaemonCapturing(t *testing.T, result control.CallResult) *control.CallR
 	return captured
 }
 
+// uuidOfInput 取出 CLI 拼给桥接的 input 里的 uuid,用于断言资源词被吞掉之后下发的仍是真 uuid。
+func uuidOfInput(input json.RawMessage) string {
+	var in struct {
+		UUID string `json:"uuid"`
+	}
+	So(json.Unmarshal(input, &in), ShouldBeNil)
+	return in.UUID
+}
+
 // stubDaemonStatus 起一个假 daemon,/control/status 恒返回给定状态。
 func stubDaemonStatus(t *testing.T, st control.StatusResult) {
 	t.Helper()
@@ -246,10 +255,21 @@ func TestJSONOutput(t *testing.T) {
 
 func TestSourceToStdout(t *testing.T) {
 	Convey("get <uuid> -o source 把源码原样写 stdout", t, func() {
-		stubDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"code":"// ==UserScript==\n","contentTrust":"untrusted-user-script-source"}`)})
-		code, out := runCLI("get", "u1", "-o", "source")
-		So(code, ShouldEqual, exitOK)
-		So(out, ShouldEqual, "// ==UserScript==\n")
+		Convey("源码不加尾换行,可重定向为 .user.js", func() {
+			stubDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"code":"// ==UserScript==\n","contentTrust":"untrusted-user-script-source"}`)})
+			code, out := runCLI("get", "u1", "-o", "source")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "// ==UserScript==\n")
+		})
+
+		// --lines 开一个空行的窗口就会返回空 code,此时 stdout 必须是空的:退回打印结果 JSON 会把
+		// 信封写进重定向出来的 .user.js。
+		Convey("空源码就输出空,不退回打印结果 JSON", func() {
+			stubDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"code":"","contentTrust":"untrusted-user-script-source"}`)})
+			code, out := runCLI("get", "u1", "-o", "source")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "")
+		})
 	})
 }
 
@@ -288,38 +308,73 @@ func TestOutputSourceRestriction(t *testing.T) {
 			So(code, ShouldEqual, exitOK)
 			So(out, ShouldEqual, "abc")
 		})
+
+		Convey("被拒绝时不向桥接发起调用", func() {
+			req := stubDaemonCapturing(t, control.CallResult{OK: true, Result: json.RawMessage(`{"scripts":[]}`)})
+			code, _ := runCLI("get", "-o", "source")
+			So(code, ShouldEqual, exitError)
+			So(req.Action, ShouldEqual, "")
+		})
 	})
 }
 
 func TestResourceWordOptional(t *testing.T) {
 	Convey("get / delete / enable / disable 接受可省略的资源词 scripts|script|sc", t, func() {
-		Convey("get 支持三种资源词简称", func() {
-			stubDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"uuid":"u1","name":"x","enabled":true,"version":"1.0"}`)})
+		Convey("get 支持三种资源词简称,下发的仍是资源词之后的 uuid", func() {
 			for _, word := range []string{"scripts", "script", "sc"} {
+				req := stubDaemonCapturing(t, control.CallResult{OK: true, Result: json.RawMessage(`{"uuid":"u1","name":"x","enabled":true,"version":"1.0"}`)})
 				code, out := runCLI("get", word, "u1")
 				So(code, ShouldEqual, exitOK)
 				So(out, ShouldContainSubstring, "u1")
+				So(req.Action, ShouldEqual, "scripts.metadata.get")
+				So(uuidOfInput(req.Input), ShouldEqual, "u1")
 			}
 		})
 
-		Convey("delete/enable/disable 同样接受资源词", func() {
-			stubDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"uuid":"u1"}`)})
-			code, _ := runCLI("delete", "sc", "u1")
-			So(code, ShouldEqual, exitOK)
-			code, _ = runCLI("enable", "script", "u1")
-			So(code, ShouldEqual, exitOK)
-			code, _ = runCLI("disable", "scripts", "u1")
-			So(code, ShouldEqual, exitOK)
+		Convey("delete/enable/disable 同样接受资源词,下发的仍是资源词之后的 uuid", func() {
+			for _, c := range []struct {
+				args   []string
+				action string
+			}{
+				{[]string{"delete", "sc", "u1"}, "scripts.delete.request"},
+				{[]string{"enable", "script", "u1"}, "scripts.toggle.request"},
+				{[]string{"disable", "scripts", "u1"}, "scripts.toggle.request"},
+			} {
+				req := stubDaemonCapturing(t, control.CallResult{OK: true, Result: json.RawMessage(`{"uuid":"u1"}`)})
+				code, _ := runCLI(c.args...)
+				So(code, ShouldEqual, exitOK)
+				So(req.Action, ShouldEqual, c.action)
+				So(uuidOfInput(req.Input), ShouldEqual, "u1")
+			}
 		})
 
-		Convey("get 在资源词与 uuid 之外多余的位置参数报错退出", func() {
+		Convey("资源词只在首个位置参数上被吞掉", func() {
+			Convey("非首位的资源词按 uuid 计数,delete <uuid> sc 是参数错误", func() {
+				code, _ := runCLI("delete", "u1", "sc")
+				So(code, ShouldEqual, exitError)
+			})
+
+			Convey("uuid 恰好叫 sc 时,get sc sc 仍能指名到它", func() {
+				req := stubDaemonCapturing(t, control.CallResult{OK: true, Result: json.RawMessage(`{"uuid":"sc"}`)})
+				code, _ := runCLI("get", "sc", "sc")
+				So(code, ShouldEqual, exitOK)
+				So(req.Action, ShouldEqual, "scripts.metadata.get")
+				So(uuidOfInput(req.Input), ShouldEqual, "sc")
+			})
+		})
+
+		Convey("参数个数错误按约定退出码 3 报错,不占用「用户拒绝」的 1", func() {
 			code, _, _ := runCLICapture("get", "scripts", "u1", "extra")
-			So(code, ShouldNotEqual, exitOK)
-		})
+			So(code, ShouldEqual, exitError)
 
-		Convey("delete 缺少 uuid 时报错退出", func() {
-			code, _, _ := runCLICapture("delete", "scripts")
-			So(code, ShouldNotEqual, exitOK)
+			code, _, _ = runCLICapture("delete", "scripts")
+			So(code, ShouldEqual, exitError)
+
+			code, _, _ = runCLICapture("enable")
+			So(code, ShouldEqual, exitError)
+
+			code, _, _ = runCLICapture("disable", "sc")
+			So(code, ShouldEqual, exitError)
 		})
 	})
 }
@@ -390,6 +445,48 @@ func TestGetLinesFlag(t *testing.T) {
 			So(in.UUID, ShouldEqual, "u1")
 			So(in.StartLine, ShouldEqual, 2)
 			So(in.EndLine, ShouldEqual, 3)
+		})
+
+		Convey("不带 --lines 时不下发行窗字段(扩展据此返回整份源码)", func() {
+			req := stubDaemonCapturing(t, control.CallResult{OK: true, Result: json.RawMessage(`{"code":"whole"}`)})
+			code, _ := runCLI("get", "u1", "-o", "source")
+			So(code, ShouldEqual, exitOK)
+			So(string(req.Input), ShouldNotContainSubstring, "startLine")
+			So(string(req.Input), ShouldNotContainSubstring, "endLine")
+		})
+	})
+}
+
+func TestParseLinesFlag(t *testing.T) {
+	Convey("--lines 解析 1-based 闭区间", t, func() {
+		Convey("空值表示未传该标志", func() {
+			_, _, ok, err := parseLinesFlag("")
+			So(err, ShouldBeNil)
+			So(ok, ShouldBeFalse)
+		})
+
+		Convey("合法区间原样解出,单行窗口 A=B 合法", func() {
+			start, end, ok, err := parseLinesFlag("2-3")
+			So(err, ShouldBeNil)
+			So(ok, ShouldBeTrue)
+			So(start, ShouldEqual, 2)
+			So(end, ShouldEqual, 3)
+
+			start, end, ok, err = parseLinesFlag("3-3")
+			So(err, ShouldBeNil)
+			So(ok, ShouldBeTrue)
+			So(start, ShouldEqual, 3)
+			So(end, ShouldEqual, 3)
+		})
+
+		Convey("非法区间一律报错,不静默降级为「无行窗」", func() {
+			// 依次为:非数字 / 缺分隔符 / 缺一端 / 多余分隔符 / 起点越界 / 起点为负 / 区间反向 /
+			// 夹带空白 / 溢出 int64。
+			for _, v := range []string{"abc", "5", "1-", "-3", "1-3-5", "0-3", "-1-3", "3-1", "1 - 3", "1-99999999999999999999"} {
+				_, _, ok, err := parseLinesFlag(v)
+				So(err, ShouldNotBeNil)
+				So(ok, ShouldBeFalse)
+			}
 		})
 	})
 }
