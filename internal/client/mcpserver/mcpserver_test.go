@@ -85,6 +85,70 @@ func TestToolsListExposesAllTools(t *testing.T) {
 	})
 }
 
+func toolByName(res *mcp.ListToolsResult, name string) *mcp.Tool {
+	for _, tl := range res.Tools {
+		if tl.Name == name {
+			return tl
+		}
+	}
+	return nil
+}
+
+// schemaPropsOf 取出工具输入 schema 的 properties 表,用于断言字段是否被声明。
+func schemaPropsOf(tl *mcp.Tool) map[string]any {
+	So(tl, ShouldNotBeNil)
+	raw, err := json.Marshal(tl.InputSchema)
+	So(err, ShouldBeNil)
+	var schema struct {
+		Properties map[string]any `json:"properties"`
+	}
+	So(json.Unmarshal(raw, &schema), ShouldBeNil)
+	return schema.Properties
+}
+
+func TestSourceAndEditToolSchemas(t *testing.T) {
+	Convey("行窗读取、grep 与编辑三个能力在工具 schema 与描述上如实声明", t, func() {
+		p := loadProto(t)
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+		So(err, ShouldBeNil)
+
+		Convey("scripts_source_get 声明 startLine/endLine,客户端才知道能只取一段", func() {
+			props := schemaPropsOf(toolByName(res, "scripts_source_get"))
+			So(props, ShouldContainKey, "startLine")
+			So(props, ShouldContainKey, "endLine")
+		})
+
+		Convey("scripts_source_grep 已注册,且 uuid/query 之外的检索参数齐备", func() {
+			props := schemaPropsOf(toolByName(res, "scripts_source_grep"))
+			for _, key := range []string{"uuid", "query", "mode", "ignoreCase", "contextLines", "maxMatches"} {
+				So(props, ShouldContainKey, key)
+			}
+		})
+
+		Convey("grep 描述写明默认 text 档是纯字面量、要模式匹配须显式传 regex", func() {
+			// 不写明的话,模型会照惯例把 query 当正则用,再困惑于 `.*` 零命中。
+			tl := toolByName(res, "scripts_source_grep")
+			So(tl, ShouldNotBeNil)
+			So(tl.Description, ShouldContainSubstring, "literal")
+			So(tl.Description, ShouldContainSubstring, `"regex"`)
+		})
+
+		Convey("scripts_edit_request 已注册,input 是 uuid + edits 数组", func() {
+			props := schemaPropsOf(toolByName(res, "scripts_edit_request"))
+			So(props, ShouldContainKey, "uuid")
+			So(props, ShouldContainKey, "edits")
+		})
+
+		Convey("edit 描述写明需人工确认,别让模型以为是静默写入", func() {
+			tl := toolByName(res, "scripts_edit_request")
+			So(tl, ShouldNotBeNil)
+			So(tl.Description, ShouldContainSubstring, "approve")
+		})
+	})
+}
+
 func TestToolCallResults(t *testing.T) {
 	Convey("工具调用结果映射", t, func() {
 		p := loadProto(t)

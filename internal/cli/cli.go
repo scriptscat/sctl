@@ -85,6 +85,8 @@ func NewRootCmd() *cobra.Command {
 		newStatusCmd(),
 		newVersionCmd(),
 		newGetCmd(),
+		newGrepCmd(),
+		newEditCmd(),
 		newInstallCmd(),
 		newToggleCmd(true),
 		newToggleCmd(false),

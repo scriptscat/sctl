@@ -45,6 +45,11 @@ func runCLI(args ...string) (int, string) {
 
 // runCLICapture 执行一次子命令,分别返回退出码、stdout 与 stderr。
 func runCLICapture(args ...string) (int, string, string) {
+	return runCLIStdin(strings.NewReader(""), args...)
+}
+
+// runCLIStdin 与 runCLICapture 相同,但为命令喂入给定 stdin(`edit -f -` 从 stdin 读 edits 用)。
+func runCLIStdin(stdin io.Reader, args ...string) (int, string, string) {
 	oldOut, oldErr := os.Stdout, os.Stderr
 	rOut, wOut, _ := os.Pipe()
 	rErr, wErr, _ := os.Pipe()
@@ -61,6 +66,7 @@ func runCLICapture(args ...string) (int, string, string) {
 
 	root := NewRootCmd()
 	root.SetArgs(args)
+	root.SetIn(stdin)
 	err := root.Execute()
 
 	wOut.Close()
