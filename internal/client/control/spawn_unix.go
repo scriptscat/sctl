@@ -16,6 +16,9 @@ func spawnServeProcess() error {
 	if err != nil {
 		return fmt.Errorf("定位自身可执行文件: %w", err)
 	}
+	if err := assertSelfIsSctl(self); err != nil {
+		return err
+	}
 	cmd := exec.Command(self, "serve")
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
