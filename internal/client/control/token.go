@@ -17,7 +17,7 @@ import (
 func NewControlToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("生成控制令牌: %w", err)
+		return "", fmt.Errorf("generate control token: %w", err)
 	}
 	return hex.EncodeToString(b), nil
 }
@@ -27,7 +27,7 @@ func NewControlToken() (string, error) {
 func WriteControlToken(token string) error {
 	path := paths.ControlTokenFile()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("创建控制令牌目录: %w", err)
+		return fmt.Errorf("create control token directory: %w", err)
 	}
 	return fsutil.WriteFileAtomic(path, []byte(token), 0o600)
 }

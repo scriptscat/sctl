@@ -51,12 +51,12 @@ func (b *daemonComponent) Start(ctx context.Context, cfg *configs.Config) error 
 func (b *daemonComponent) StartCancel(ctx context.Context, cancel context.CancelFunc, cfg *configs.Config) error {
 	p, err := protocol.Load()
 	if err != nil {
-		logger.Ctx(ctx).Error("加载内嵌协议失败", zap.Error(err))
+		logger.Ctx(ctx).Error("failed to load the embedded protocol", zap.Error(err))
 		return err
 	}
 	if err := cfg.Scan(ctx, "bridge", &b.cfg); err != nil {
 		// 缺 bridge 段时退回协议默认端口,而不是直接失败。
-		logger.Ctx(ctx).Warn("读取 bridge 配置失败,回退协议默认地址", zap.Error(err))
+		logger.Ctx(ctx).Warn("failed to read the bridge config, falling back to the protocol default address", zap.Error(err))
 	}
 	// SCTL_BRIDGE_ADDR 覆盖配置/默认:daemon 与前端(control.resolveBaseURL)读同一环境变量,
 	// 保证自动拉起时 serve 绑定的地址正是前端要连的地址(自定义端口 / 多实例场景)。
@@ -68,7 +68,7 @@ func (b *daemonComponent) StartCancel(ctx context.Context, cancel context.Cancel
 	}
 	// 仅允许绑定 loopback:非本机地址一律拒绝(docs/protocol.md §8 明确不做 Origin 判别,监听面必须收窄)。
 	if err := validateLoopback(b.cfg.Address); err != nil {
-		logger.Ctx(ctx).Error("拒绝在非 loopback 地址上监听", zap.String("address", b.cfg.Address), zap.Error(err))
+		logger.Ctx(ctx).Error("refusing to listen on a non-loopback address", zap.String("address", b.cfg.Address), zap.Error(err))
 		return err
 	}
 
@@ -78,21 +78,21 @@ func (b *daemonComponent) StartCancel(ctx context.Context, cancel context.Cancel
 	// 同步 net.Listen 使绑定失败在启动阶段即暴露(cago 会 panic,符合 fail-fast 约定)。
 	ln, err := net.Listen("tcp", b.cfg.Address)
 	if err != nil {
-		logger.Ctx(ctx).Error("绑定 WS 监听端口失败", zap.String("address", b.cfg.Address), zap.Error(err))
+		logger.Ctx(ctx).Error("failed to bind the websocket listener", zap.String("address", b.cfg.Address), zap.Error(err))
 		return err
 	}
 	b.listener = ln
-	logger.Ctx(ctx).Info("桥接 daemon 开始监听", zap.String("address", ln.Addr().String()), zap.Int("protocolVersion", p.ProtocolVersion))
+	logger.Ctx(ctx).Info("bridge daemon is listening", zap.String("address", ln.Addr().String()), zap.Int("protocolVersion", p.ProtocolVersion))
 
 	// 绑定成功后(端口竞态胜出者才走到这里)再生成并落盘控制令牌,避免失败方覆盖胜出者的令牌。
 	// 令牌先于 server goroutine 就绪:前端一旦看到 /control/health 200,令牌文件必已写好。
 	token, err := control.NewControlToken()
 	if err != nil {
-		logger.Ctx(ctx).Error("生成控制令牌失败", zap.Error(err))
+		logger.Ctx(ctx).Error("failed to generate the control token", zap.Error(err))
 		return err
 	}
 	if err := control.WriteControlToken(token); err != nil {
-		logger.Ctx(ctx).Error("写入控制令牌失败", zap.Error(err))
+		logger.Ctx(ctx).Error("failed to write the control token", zap.Error(err))
 		return err
 	}
 
@@ -105,7 +105,7 @@ func (b *daemonComponent) StartCancel(ctx context.Context, cancel context.Cancel
 	gogo.Go(func() error {
 		// server 意外退出(非优雅停机)即终止整个应用。
 		if err := b.srv.Serve(ctx, ln, mux); err != nil {
-			logger.Ctx(ctx).Error("WS server 异常退出", zap.Error(err))
+			logger.Ctx(ctx).Error("websocket server exited unexpectedly", zap.Error(err))
 			cancel()
 			return err
 		}
@@ -115,7 +115,7 @@ func (b *daemonComponent) StartCancel(ctx context.Context, cancel context.Cancel
 }
 
 func (b *daemonComponent) CloseHandle() {
-	logger.Default().Info("桥接 daemon 已停止")
+	logger.Default().Info("bridge daemon stopped")
 }
 
 func defaultAddress(port int) string {
@@ -126,17 +126,17 @@ func defaultAddress(port int) string {
 func validateLoopback(address string) error {
 	host, _, err := net.SplitHostPort(address)
 	if err != nil {
-		return fmt.Errorf("解析监听地址 %q: %w", address, err)
+		return fmt.Errorf("parse listen address %q: %w", address, err)
 	}
 	if host == "localhost" {
 		return nil
 	}
 	ip := net.ParseIP(host)
 	if ip == nil {
-		return fmt.Errorf("监听地址主机 %q 非法或非 loopback", host)
+		return fmt.Errorf("listen address host %q is invalid or not loopback", host)
 	}
 	if !ip.IsLoopback() {
-		return fmt.Errorf("拒绝非 loopback 监听地址 %q", host)
+		return fmt.Errorf("refusing non-loopback listen address %q", host)
 	}
 	return nil
 }

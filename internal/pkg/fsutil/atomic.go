@@ -13,24 +13,24 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".tmp-"+filepath.Base(path)+"-*")
 	if err != nil {
-		return fmt.Errorf("创建临时文件: %w", err)
+		return fmt.Errorf("create temporary file: %w", err)
 	}
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
 
 	if err := tmp.Chmod(perm); err != nil {
 		tmp.Close()
-		return fmt.Errorf("设置临时文件权限: %w", err)
+		return fmt.Errorf("set temporary file permissions: %w", err)
 	}
 	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
-		return fmt.Errorf("写入临时文件: %w", err)
+		return fmt.Errorf("write temporary file: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("关闭临时文件: %w", err)
+		return fmt.Errorf("close temporary file: %w", err)
 	}
 	if err := os.Rename(tmpName, path); err != nil {
-		return fmt.Errorf("替换目标文件: %w", err)
+		return fmt.Errorf("replace target file: %w", err)
 	}
 	return nil
 }

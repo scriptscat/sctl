@@ -14,7 +14,7 @@ import (
 func newInstallCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "install <url|file>",
-		Short: "请求安装用户脚本(URL 或本地文件),阻塞至浏览器确认",
+		Short: "Request installing a userscript (URL or local file); blocks until approved in the browser",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			input, err := buildInstallInput(args[0])
@@ -25,7 +25,7 @@ func newInstallCmd() *cobra.Command {
 				if outputFormat == outputJSON {
 					return printResultJSON(result)
 				}
-				fmt.Fprintf(os.Stdout, "已安装: %s\n", summarizeInstall(result))
+				fmt.Fprintf(os.Stdout, "installed: %s\n", summarizeInstall(result))
 				return nil
 			})
 		},
@@ -39,7 +39,7 @@ func buildInstallInput(arg string) (json.RawMessage, error) {
 	}
 	code, err := os.ReadFile(arg)
 	if err != nil {
-		return nil, fmt.Errorf("读取脚本文件 %q: %w", arg, err)
+		return nil, fmt.Errorf("read script file %q: %w", arg, err)
 	}
 	return mustInput(map[string]string{"code": string(code)}), nil
 }
@@ -59,9 +59,9 @@ func summarizeInstall(result json.RawMessage) string {
 
 // newToggleCmd 生成 enable(enable=true)或 disable(enable=false)命令,均接受可省略的资源词。
 func newToggleCmd(enable bool) *cobra.Command {
-	use, short := "disable [scripts|script|sc] <uuid>", "请求禁用脚本,阻塞至浏览器确认"
+	use, short := "disable [scripts|script|sc] <uuid>", "Request disabling a script; blocks until approved in the browser"
 	if enable {
-		use, short = "enable [scripts|script|sc] <uuid>", "请求启用脚本,阻塞至浏览器确认"
+		use, short = "enable [scripts|script|sc] <uuid>", "Request enabling a script; blocks until approved in the browser"
 	}
 	return &cobra.Command{
 		Use:   use,
@@ -74,11 +74,11 @@ func newToggleCmd(enable bool) *cobra.Command {
 				if outputFormat == outputJSON {
 					return printResultJSON(result)
 				}
-				verb := "禁用"
+				verb := "disabled"
 				if enable {
-					verb = "启用"
+					verb = "enabled"
 				}
-				fmt.Fprintf(os.Stdout, "已%s: %s\n", verb, uuid)
+				fmt.Fprintf(os.Stdout, "%s: %s\n", verb, uuid)
 				return nil
 			})
 		},
@@ -91,7 +91,7 @@ func newDeleteCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "delete [scripts|script|sc] <uuid>",
 		Aliases: []string{"del"},
-		Short:   "请求删除脚本,阻塞至浏览器确认",
+		Short:   "Request deleting a script; blocks until approved in the browser",
 		Args:    exactlyOneUUIDArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			uuid := stripResourceWord(args)[0]
@@ -100,7 +100,7 @@ func newDeleteCmd() *cobra.Command {
 				if outputFormat == outputJSON {
 					return printResultJSON(result)
 				}
-				fmt.Fprintf(os.Stdout, "已删除: %s\n", uuid)
+				fmt.Fprintf(os.Stdout, "deleted: %s\n", uuid)
 				return nil
 			})
 		},

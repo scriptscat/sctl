@@ -90,7 +90,7 @@ func (r *Recorder) Record(ev Event) {
 	r.events = append(r.events, ev)
 	r.mu.Unlock()
 
-	r.log.Warn("安全事件",
+	r.log.Warn("security event",
 		zap.String("event", string(ev.Type)),
 		zap.String("client", ev.Client),
 		zap.String("reason", string(ev.Reason)),

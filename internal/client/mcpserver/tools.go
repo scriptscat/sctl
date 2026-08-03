@@ -12,14 +12,14 @@ type toolDef struct {
 
 const (
 	schemaEmpty   = `{"type":"object","properties":{},"additionalProperties":false}`
-	schemaUUID    = `{"type":"object","properties":{"uuid":{"type":"string","description":"脚本 uuid"}},"required":["uuid"],"additionalProperties":false}`
-	schemaToggle  = `{"type":"object","properties":{"uuid":{"type":"string","description":"脚本 uuid"},"enable":{"type":"boolean","description":"true 启用 / false 禁用"}},"required":["uuid","enable"],"additionalProperties":false}`
-	schemaInstall = `{"type":"object","properties":{"url":{"type":"string","description":"用户脚本 URL"},"code":{"type":"string","description":"用户脚本源码"}},"additionalProperties":false}`
+	schemaUUID    = `{"type":"object","properties":{"uuid":{"type":"string","description":"Script uuid."}},"required":["uuid"],"additionalProperties":false}`
+	schemaToggle  = `{"type":"object","properties":{"uuid":{"type":"string","description":"Script uuid."},"enable":{"type":"boolean","description":"true enables the script, false disables it."}},"required":["uuid","enable"],"additionalProperties":false}`
+	schemaInstall = `{"type":"object","properties":{"url":{"type":"string","description":"URL of the userscript to install."},"code":{"type":"string","description":"Source code of the userscript to install."}},"additionalProperties":false}`
 
 	// 行窗是上下文预算的分页手段:两个字段要么都给要么都不给,不给即整份返回。返回的 sha256 始终是
 	// 全文哈希,客户端据此判断跨次分页读之间脚本有没有变。
 	schemaSourceGet = `{"type":"object","properties":{` +
-		`"uuid":{"type":"string","description":"脚本 uuid"},` +
+		`"uuid":{"type":"string","description":"Script uuid."},` +
 		`"startLine":{"type":"integer","minimum":1,"description":"First line to return, 1-based and inclusive. Give it together with endLine; omit both to return the whole file."},` +
 		`"endLine":{"type":"integer","minimum":1,"description":"Last line to return, 1-based and inclusive. An endLine past the end of the file is clamped to the last line; a startLine past the end is rejected, so page forward until the returned endLine equals totalLines."}},` +
 		`"required":["uuid"],"additionalProperties":false}`
@@ -48,19 +48,19 @@ var toolDefs = []toolDef{
 	{
 		action:      "scripts.list",
 		name:        "scripts_list",
-		description: "列出 ScriptCat 扩展中已安装的用户脚本摘要(uuid、名称、启用状态、版本)。",
+		description: "List the userscripts installed in the ScriptCat extension: uuid, name, enabled state and version for each.",
 		inputSchema: schemaEmpty,
 	},
 	{
 		action:      "scripts.metadata.get",
 		name:        "scripts_metadata_get",
-		description: "按 uuid 读取单个脚本的元数据。",
+		description: "Read one script's metadata by uuid.",
 		inputSchema: schemaUUID,
 	},
 	{
 		action:      "scripts.source.get",
 		name:        "scripts_source_get",
-		description: "按 uuid 读取单个脚本的源码。首次读取会在浏览器弹出源码披露确认,需用户批准。",
+		description: "Read one script's source by uuid. The first read raises a source disclosure prompt in the browser that the user must approve.",
 		inputSchema: schemaSourceGet,
 	},
 	{
@@ -77,19 +77,19 @@ var toolDefs = []toolDef{
 	{
 		action:      "scripts.install.request",
 		name:        "scripts_install_request",
-		description: "请求安装一个用户脚本(url 与 code 二选一)。需在浏览器中人工确认。",
+		description: "Request installing a userscript, given either url or code. The user must approve it in the browser.",
 		inputSchema: schemaInstall,
 	},
 	{
 		action:      "scripts.toggle.request",
 		name:        "scripts_toggle_request",
-		description: "按 uuid 请求启用或禁用一个脚本。需在浏览器中人工确认。",
+		description: "Request enabling or disabling one script by uuid. The user must approve it in the browser.",
 		inputSchema: schemaToggle,
 	},
 	{
 		action:      "scripts.delete.request",
 		name:        "scripts_delete_request",
-		description: "按 uuid 请求删除一个脚本。需在浏览器中人工确认。",
+		description: "Request deleting one script by uuid. The user must approve it in the browser.",
 		inputSchema: schemaUUID,
 	},
 	{

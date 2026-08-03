@@ -39,12 +39,12 @@ func dispatchAction(cmd *cobra.Command, action string, input json.RawMessage, bl
 	// 连上之后才提示,否则 daemon 不可用时会先报一句误导的「等待确认」。
 	// 走 stderr:stdout 只承载结果 / -o/--output 输出(见包注释)。
 	if blocking {
-		fmt.Fprintln(os.Stderr, "等待浏览器确认…(可 Ctrl-C 取消并作废本次操作)")
+		fmt.Fprintln(os.Stderr, "waiting for approval in the browser… (Ctrl-C cancels and voids this operation)")
 	}
 	res, err := client.Call(ctx, action, input)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			return &ExitError{Code: exitVoided, Message: "已取消,操作作废"}
+			return &ExitError{Code: exitVoided, Message: "canceled, operation voided"}
 		}
 		return &ExitError{Code: exitError, Message: err.Error()}
 	}
@@ -62,13 +62,13 @@ func dispatchAction(cmd *cobra.Command, action string, input json.RawMessage, bl
 // mapBridgeError 把桥接错误码映射为带退出码的 ExitError。
 func mapBridgeError(e *control.CallError) error {
 	if e == nil {
-		return &ExitError{Code: exitError, Message: "调用失败"}
+		return &ExitError{Code: exitError, Message: "call failed"}
 	}
 	switch e.Code {
 	case "USER_REJECTED":
-		return &ExitError{Code: exitRejected, Message: "操作被用户拒绝"}
+		return &ExitError{Code: exitRejected, Message: "operation rejected by the user"}
 	case "OPERATION_EXPIRED":
-		return &ExitError{Code: exitVoided, Message: "操作已作废或超时"}
+		return &ExitError{Code: exitVoided, Message: "operation voided or timed out"}
 	default:
 		return &ExitError{Code: exitError, Message: e.Error()}
 	}

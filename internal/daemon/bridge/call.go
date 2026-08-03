@@ -53,7 +53,7 @@ func (s *Server) Call(ctx context.Context, req Request, write bool) (Response, e
 	}()
 
 	if err := active.send(typeBridgeRequest, requestID, req); err != nil {
-		return Response{}, fmt.Errorf("发送 bridge.request: %w", err)
+		return Response{}, fmt.Errorf("send bridge.request: %w", err)
 	}
 
 	timer := time.NewTimer(s.writeDecisionTTL)
@@ -76,7 +76,7 @@ func (s *Server) Call(ctx context.Context, req Request, write bool) (Response, e
 // cancelToExt 向扩展发送 bridge.cancel,回填原 bridge.request 的 requestId,best-effort。
 func (s *Server) cancelToExt(c *conn, requestID string) {
 	if err := c.send(typeBridgeCancel, requestID, struct{}{}); err != nil {
-		s.log.Debug("发送 bridge.cancel 失败", zap.Error(err))
+		s.log.Debug("failed to send bridge.cancel", zap.Error(err))
 	}
 }
 
@@ -84,7 +84,7 @@ func (s *Server) cancelToExt(c *conn, requestID string) {
 func (s *Server) handleBridgeResponse(env Envelope) {
 	var resp Response
 	if err := json.Unmarshal(env.Payload, &resp); err != nil {
-		s.log.Debug("解析 bridge.response 失败", zap.Error(err))
+		s.log.Debug("failed to parse bridge.response", zap.Error(err))
 		return
 	}
 	s.mu.Lock()

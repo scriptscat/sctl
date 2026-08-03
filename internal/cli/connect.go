@@ -15,7 +15,7 @@ import (
 func newConnectCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "connect",
-		Short: "生成一次性配对码,与 ScriptCat 扩展建立外部接入",
+		Short: "Generate a one-time pairing code to set up external access with the ScriptCat extension",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt)
 			defer stop()
@@ -27,7 +27,7 @@ func newConnectCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintf(os.Stdout, "接入配对码: %s\n请在 ScriptCat 扩展设置的「工具 › 外部接入」中输入此码完成接入(2 分钟内有效)。\n此码只在本终端显示,请勿转发。\n", code)
+			fmt.Fprintf(os.Stdout, "pairing code: %s\nEnter it under \"Tools › External Access\" in the ScriptCat extension settings to finish connecting (valid for 2 minutes).\nThis code is shown only in this terminal — do not forward it.\n", code)
 			return nil
 		},
 	}

@@ -14,7 +14,7 @@ import (
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
-		Short: "打印版本与协议信息",
+		Short: "Print version and protocol information",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p, err := protocol.Load()
 			if err != nil {

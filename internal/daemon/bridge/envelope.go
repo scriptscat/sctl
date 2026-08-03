@@ -107,7 +107,7 @@ func newEnvelope(typ, requestID string, payload any) (Envelope, error) {
 	if payload != nil {
 		raw, err := json.Marshal(payload)
 		if err != nil {
-			return Envelope{}, fmt.Errorf("序列化 %s payload: %w", typ, err)
+			return Envelope{}, fmt.Errorf("marshal %s payload: %w", typ, err)
 		}
 		env.Payload = raw
 	}

@@ -93,12 +93,12 @@ func (h *Handler) status(w http.ResponseWriter, _ *http.Request) {
 func (h *Handler) call(w http.ResponseWriter, r *http.Request) {
 	var req control.CallRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeControlError(w, bridge.CodeInvalidRequest, "请求体非法")
+		writeControlError(w, bridge.CodeInvalidRequest, "malformed request body")
 		return
 	}
 	action, ok := h.bridge.Action(req.Action)
 	if !ok {
-		writeControlError(w, bridge.CodeInvalidRequest, "未知 action")
+		writeControlError(w, bridge.CodeInvalidRequest, "unknown action")
 		return
 	}
 
@@ -123,16 +123,16 @@ func (h *Handler) call(w http.ResponseWriter, r *http.Request) {
 		// 请求方已断开(Ctrl-C / 超时),连接已消失,无需再写响应。
 		return
 	case errors.Is(err, bridge.ErrNotConnected):
-		writeControlError(w, bridge.CodeInternal, "扩展未连接")
+		writeControlError(w, bridge.CodeInternal, "extension not connected")
 	case errors.Is(err, bridge.ErrDisconnected):
-		writeControlError(w, bridge.CodeOperationExpired, "扩展连接已断开,操作作废")
+		writeControlError(w, bridge.CodeOperationExpired, "extension connection lost, operation voided")
 	default:
 		var be *bridge.Error
 		if errors.As(err, &be) {
 			writeControlError(w, be.Code, be.Message)
 			return
 		}
-		writeControlError(w, bridge.CodeInternal, "内部错误")
+		writeControlError(w, bridge.CodeInternal, "internal error")
 	}
 }
 

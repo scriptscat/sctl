@@ -15,7 +15,7 @@ import (
 )
 
 // ErrDaemonUnreachable 表示自动拉起后仍无法在超时内连上 daemon。
-var ErrDaemonUnreachable = errors.New("无法连接 sctl daemon")
+var ErrDaemonUnreachable = errors.New("cannot connect to the sctl daemon")
 
 // 可注入点:测试用桩替换,避免真的 fork 进程。默认拉起一个 detached 的 `sctl serve`。
 var (
@@ -57,7 +57,7 @@ func dial(ctx context.Context, autoLaunch bool) (*Client, error) {
 	}
 	tok, err := ReadControlToken()
 	if err != nil {
-		return nil, fmt.Errorf("读取控制令牌(daemon 未就绪?): %w", err)
+		return nil, fmt.Errorf("read control token (daemon not ready?): %w", err)
 	}
 	c.controlToken = tok
 	return c, nil
@@ -89,7 +89,7 @@ func (c *Client) ensureDaemon(ctx context.Context) error {
 		return nil
 	}
 	if err := spawnDaemon(); err != nil {
-		return fmt.Errorf("拉起 sctl daemon: %w", err)
+		return fmt.Errorf("start sctl daemon: %w", err)
 	}
 	deadline := time.Now().Add(launchTimeout)
 	ticker := time.NewTicker(pollInterval)
@@ -176,7 +176,7 @@ func (c *Client) Call(ctx context.Context, action string, input json.RawMessage)
 	}
 	var res CallResult
 	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return CallResult{}, fmt.Errorf("解析控制应答: %w", err)
+		return CallResult{}, fmt.Errorf("decode control response: %w", err)
 	}
 	return res, nil
 }
@@ -227,7 +227,7 @@ func (c *Client) Enroll(ctx context.Context) (string, error) {
 func statusError(resp *http.Response) error {
 	msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 	if resp.StatusCode == http.StatusUnauthorized {
-		return fmt.Errorf("控制通道鉴权失败(控制令牌无效): %s", bytes.TrimSpace(msg))
+		return fmt.Errorf("control channel authentication failed (invalid control token): %s", bytes.TrimSpace(msg))
 	}
-	return fmt.Errorf("控制请求失败 %d: %s", resp.StatusCode, bytes.TrimSpace(msg))
+	return fmt.Errorf("control request failed with %d: %s", resp.StatusCode, bytes.TrimSpace(msg))
 }

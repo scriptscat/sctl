@@ -18,12 +18,12 @@ func newMcpCmd() *cobra.Command {
 	var name string
 	cmd := &cobra.Command{
 		Use:   "mcp",
-		Short: "以 stdio 运行 MCP server(daemon 未运行时自动拉起)",
+		Short: "Run the MCP server over stdio (starts the daemon if it is not running)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runMcpServe(cmd, name)
 		},
 	}
-	cmd.Flags().StringVar(&name, "name", "default", "MCP 实例名(审计标签,区分多份配置)")
+	cmd.Flags().StringVar(&name, "name", "default", "MCP instance name (audit label telling multiple configurations apart)")
 	return cmd
 }
 

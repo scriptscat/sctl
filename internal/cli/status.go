@@ -15,7 +15,7 @@ import (
 func newStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "查看 daemon 与扩展连接状态",
+		Short: "Show daemon and extension connection status",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			client, err := control.Connect(ctx)
@@ -23,7 +23,7 @@ func newStatusCmd() *cobra.Command {
 				if outputFormat == outputJSON {
 					return printValueJSON(control.StatusResult{})
 				}
-				fmt.Fprintln(os.Stdout, "daemon 未运行")
+				fmt.Fprintln(os.Stdout, "daemon is not running")
 				return nil
 			}
 			st, err := client.Status(ctx)
@@ -33,10 +33,10 @@ func newStatusCmd() *cobra.Command {
 			if outputFormat == outputJSON {
 				return printValueJSON(st)
 			}
-			fmt.Fprintf(os.Stdout, "daemon 版本: %s\n扩展已连接: %v\n", st.DaemonVersion, st.ExtConnected)
+			fmt.Fprintf(os.Stdout, "daemon version: %s\nextension connected: %v\n", st.DaemonVersion, st.ExtConnected)
 			// 人读输出只给一行摘要,完整事件走 -o json,避免刷屏淹没状态本身。
 			if summary := formatSecuritySummary(st.Security); summary != "" {
-				fmt.Fprintf(os.Stdout, "近期安全事件: %s\n", summary)
+				fmt.Fprintf(os.Stdout, "recent security events: %s\n", summary)
 			}
 			return nil
 		},
@@ -53,5 +53,5 @@ func formatSecuritySummary(events []audit.Event) string {
 	for _, c := range counts {
 		parts = append(parts, fmt.Sprintf("%s×%d", c.Type, c.Count))
 	}
-	return fmt.Sprintf("%d 条(%s)", len(events), strings.Join(parts, ", "))
+	return fmt.Sprintf("%d total (%s)", len(events), strings.Join(parts, ", "))
 }

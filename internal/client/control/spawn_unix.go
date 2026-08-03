@@ -14,7 +14,7 @@ import (
 func spawnServeProcess() error {
 	self, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("定位自身可执行文件: %w", err)
+		return fmt.Errorf("locate own executable: %w", err)
 	}
 	if err := assertSelfIsSctl(self); err != nil {
 		return err

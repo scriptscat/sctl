@@ -103,11 +103,11 @@ func (c *Crypto) DerivePairingKeys(code string) (kpMac, kpEnc []byte, err error)
 	salt := []byte(c.ctx["pairKdfSalt"])
 	kpMac, err = hkdf.Key(sha256.New, ikm, salt, c.ctx["pairKdfInfoMac"], 32)
 	if err != nil {
-		return nil, nil, fmt.Errorf("派生 Kp_mac: %w", err)
+		return nil, nil, fmt.Errorf("derive Kp_mac: %w", err)
 	}
 	kpEnc, err = hkdf.Key(sha256.New, ikm, salt, c.ctx["pairKdfInfoEnc"], 32)
 	if err != nil {
-		return nil, nil, fmt.Errorf("派生 Kp_enc: %w", err)
+		return nil, nil, fmt.Errorf("derive Kp_enc: %w", err)
 	}
 	return kpMac, kpEnc, nil
 }
@@ -116,15 +116,15 @@ func (c *Crypto) DerivePairingKeys(code string) (kpMac, kpEnc []byte, err error)
 func (c *Crypto) SealKey(kpEnc, k []byte) (ctB64, ivB64 string, err error) {
 	block, err := aes.NewCipher(kpEnc)
 	if err != nil {
-		return "", "", fmt.Errorf("构造 AES cipher: %w", err)
+		return "", "", fmt.Errorf("create AES cipher: %w", err)
 	}
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return "", "", fmt.Errorf("构造 GCM: %w", err)
+		return "", "", fmt.Errorf("create GCM: %w", err)
 	}
 	iv := make([]byte, gcm.NonceSize())
 	if _, err := rand.Read(iv); err != nil {
-		return "", "", fmt.Errorf("生成 iv: %w", err)
+		return "", "", fmt.Errorf("generate iv: %w", err)
 	}
 	ct := gcm.Seal(nil, iv, k, nil)
 	return base64.StdEncoding.EncodeToString(ct), base64.StdEncoding.EncodeToString(iv), nil
@@ -134,23 +134,23 @@ func (c *Crypto) SealKey(kpEnc, k []byte) (ctB64, ivB64 string, err error) {
 func (c *Crypto) OpenKey(kpEnc []byte, ctB64, ivB64 string) ([]byte, error) {
 	ct, err := base64.StdEncoding.DecodeString(ctB64)
 	if err != nil {
-		return nil, fmt.Errorf("解码密文: %w", err)
+		return nil, fmt.Errorf("decode ciphertext: %w", err)
 	}
 	iv, err := base64.StdEncoding.DecodeString(ivB64)
 	if err != nil {
-		return nil, fmt.Errorf("解码 iv: %w", err)
+		return nil, fmt.Errorf("decode iv: %w", err)
 	}
 	block, err := aes.NewCipher(kpEnc)
 	if err != nil {
-		return nil, fmt.Errorf("构造 AES cipher: %w", err)
+		return nil, fmt.Errorf("create AES cipher: %w", err)
 	}
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return nil, fmt.Errorf("构造 GCM: %w", err)
+		return nil, fmt.Errorf("create GCM: %w", err)
 	}
 	k, err := gcm.Open(nil, iv, ct, nil)
 	if err != nil {
-		return nil, fmt.Errorf("GCM 解密失败: %w", err)
+		return nil, fmt.Errorf("GCM decryption failed: %w", err)
 	}
 	return k, nil
 }
@@ -159,7 +159,7 @@ func (c *Crypto) OpenKey(kpEnc []byte, ctB64, ivB64 string) ([]byte, error) {
 func RandomNonceHex(n int) (string, error) {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("生成 nonce: %w", err)
+		return "", fmt.Errorf("generate nonce: %w", err)
 	}
 	return hex.EncodeToString(b), nil
 }
@@ -168,7 +168,7 @@ func RandomNonceHex(n int) (string, error) {
 func NewLongTermKey() ([]byte, error) {
 	k := make([]byte, 32)
 	if _, err := rand.Read(k); err != nil {
-		return nil, fmt.Errorf("生成长期密钥: %w", err)
+		return nil, fmt.Errorf("generate long-term key: %w", err)
 	}
 	return k, nil
 }
@@ -177,7 +177,7 @@ func NewLongTermKey() ([]byte, error) {
 func NewPairingCode() (canonical, display string, err error) {
 	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {
-		return "", "", fmt.Errorf("生成配对码: %w", err)
+		return "", "", fmt.Errorf("generate pairing code: %w", err)
 	}
 	var sb strings.Builder
 	for _, v := range b {

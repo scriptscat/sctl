@@ -30,11 +30,11 @@ func (s *KeyStore) Load() (key []byte, ok bool, err error) {
 		return nil, false, nil
 	}
 	if err != nil {
-		return nil, false, fmt.Errorf("读取密钥文件: %w", err)
+		return nil, false, fmt.Errorf("read key file: %w", err)
 	}
 	k, err := hex.DecodeString(strings.TrimSpace(string(raw)))
 	if err != nil {
-		return nil, false, fmt.Errorf("解析密钥文件: %w", err)
+		return nil, false, fmt.Errorf("parse key file: %w", err)
 	}
 	return k, true, nil
 }
@@ -42,7 +42,7 @@ func (s *KeyStore) Load() (key []byte, ok bool, err error) {
 // Save 原子写入长期密钥,文件与目录权限分别为 0600 / 0700。重新配对时覆盖旧密钥。
 func (s *KeyStore) Save(key []byte) error {
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
-		return fmt.Errorf("创建密钥目录: %w", err)
+		return fmt.Errorf("create key directory: %w", err)
 	}
 	return fsutil.WriteFileAtomic(s.path, []byte(hex.EncodeToString(key)), 0o600)
 }

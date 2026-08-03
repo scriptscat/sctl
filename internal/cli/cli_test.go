@@ -143,7 +143,7 @@ func TestBlockingHint(t *testing.T) {
 			stubDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"uuid":"u1","name":"x"}`)})
 			code, out, errOut := runCLICapture("install", "-o", "json", "https://example.com/x.user.js")
 			So(code, ShouldEqual, exitOK)
-			So(errOut, ShouldContainSubstring, "等待浏览器确认")
+			So(errOut, ShouldContainSubstring, "waiting for approval in the browser")
 			// stdout 必须是干净可解析的 JSON,提示混进来就会解析失败。
 			var parsed map[string]any
 			So(json.Unmarshal([]byte(out), &parsed), ShouldBeNil)
@@ -152,7 +152,7 @@ func TestBlockingHint(t *testing.T) {
 		Convey("只读动词不提示", func() {
 			stubDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"scripts":[]}`)})
 			_, _, errOut := runCLICapture("get", "-o", "json")
-			So(errOut, ShouldNotContainSubstring, "等待浏览器确认")
+			So(errOut, ShouldNotContainSubstring, "waiting for approval in the browser")
 		})
 
 		Convey("daemon 连不上时不该先报等待确认", func() {
@@ -162,7 +162,7 @@ func TestBlockingHint(t *testing.T) {
 			So(os.WriteFile(filepath.Join(dir, "control.token"), []byte("tok"), 0o600), ShouldBeNil)
 			code, _, errOut := runCLICapture("delete", "u1")
 			So(code, ShouldEqual, exitError)
-			So(errOut, ShouldNotContainSubstring, "等待浏览器确认")
+			So(errOut, ShouldNotContainSubstring, "waiting for approval in the browser")
 		})
 	})
 }
@@ -181,7 +181,7 @@ func TestStatusSecurityEvents(t *testing.T) {
 			})
 			code, out := runCLI("status")
 			So(code, ShouldEqual, exitOK)
-			So(out, ShouldContainSubstring, "近期安全事件")
+			So(out, ShouldContainSubstring, "recent security events")
 			So(out, ShouldContainSubstring, "handshake.failed×2")
 			So(out, ShouldContainSubstring, "request.rate_limited×1")
 		})
@@ -190,7 +190,7 @@ func TestStatusSecurityEvents(t *testing.T) {
 			stubDaemonStatus(t, control.StatusResult{DaemonVersion: "0.1.0"})
 			code, out := runCLI("status")
 			So(code, ShouldEqual, exitOK)
-			So(out, ShouldNotContainSubstring, "近期安全事件")
+			So(out, ShouldNotContainSubstring, "recent security events")
 		})
 
 		Convey("-o json 输出完整事件供脚本消费", func() {

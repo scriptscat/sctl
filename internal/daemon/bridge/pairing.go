@@ -36,11 +36,11 @@ func (s *Server) activeEnrollmentCode() (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.enrollment == nil {
-		return "", errors.New("无进行中的接入窗口")
+		return "", errors.New("no enrollment window in progress")
 	}
 	if time.Now().After(s.enrollment.expiresAt) {
 		s.enrollment = nil
-		return "", errors.New("接入窗口已过期")
+		return "", errors.New("enrollment window expired")
 	}
 	return s.enrollment.code, nil
 }

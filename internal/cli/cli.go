@@ -58,7 +58,7 @@ func (e *ExitError) Error() string { return e.Message }
 func NewRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "sctl",
-		Short:         "ScriptCat 控制工具:本地桥接 daemon、MCP server 与脚本管理命令",
+		Short:         "ScriptCat control tool: local bridge daemon, MCP server and script management commands",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
@@ -76,7 +76,7 @@ func NewRootCmd() *cobra.Command {
 			return nil
 		},
 	}
-	root.PersistentFlags().StringVar(&logLevel, "log-level", "info", "日志级别 debug|info|warn|error(始终输出到 stderr)")
+	root.PersistentFlags().StringVar(&logLevel, "log-level", "info", "log level: debug|info|warn|error (always written to stderr)")
 	root.PersistentFlags().StringVarP(&outputFormat, "output", "o", outputTable, "output format: table|json|source (source only valid for \"get <uuid>\")")
 	root.AddCommand(
 		newServeCmd(),

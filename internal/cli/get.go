@@ -113,7 +113,7 @@ func printScriptRowTable(result json.RawMessage) error {
 
 func printScriptTable(items []scriptSummary) error {
 	if len(items) == 0 {
-		fmt.Fprintln(os.Stdout, "(无已安装脚本)")
+		fmt.Fprintln(os.Stdout, "(no scripts installed)")
 		return nil
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)

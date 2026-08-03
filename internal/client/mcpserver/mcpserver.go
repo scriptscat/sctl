@@ -100,7 +100,7 @@ func startProgress(ctx context.Context, req *mcp.CallToolRequest) func() {
 				n++
 				_ = req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{
 					ProgressToken: token,
-					Message:       "等待浏览器确认…",
+					Message:       "Waiting for approval in the browser…",
 					Progress:      n,
 				})
 			}
@@ -122,7 +122,7 @@ func okResult(result json.RawMessage) *mcp.CallToolResult {
 }
 
 func errorResult(e *control.CallError) *mcp.CallToolResult {
-	msg := "调用失败"
+	msg := "call failed"
 	if e != nil {
 		msg = e.Code
 		if e.Message != "" {

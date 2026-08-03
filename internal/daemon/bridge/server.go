@@ -25,9 +25,9 @@ const auditCapacity = 500
 
 var (
 	// ErrNotConnected 表示当前没有已配对的扩展连接。
-	ErrNotConnected = errors.New("扩展未连接")
+	ErrNotConnected = errors.New("extension not connected")
 	// ErrDisconnected 表示在途请求因扩展连接断开而作废。
-	ErrDisconnected = errors.New("扩展连接已断开")
+	ErrDisconnected = errors.New("extension connection lost")
 )
 
 // Server 是桥接 daemon 的 WS 服务核心:accept、双向认证握手、envelope 路由与阻塞写模型。
@@ -180,14 +180,14 @@ func originAllowed(origin string) bool {
 // 真正的闸门(docs/protocol.md §8:非浏览器进程可伪造任意 Origin)。
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	if origin := r.Header.Get("Origin"); !originAllowed(origin) {
-		s.log.Debug("拒绝非扩展 Origin 的 WS 连接", zap.String("origin", origin))
+		s.log.Debug("rejected websocket connection from non-extension origin", zap.String("origin", origin))
 		s.audit.Record(audit.Event{Type: audit.TypeOriginRejected})
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 	if err != nil {
-		s.log.Warn("websocket accept 失败", zap.Error(err))
+		s.log.Warn("websocket accept failed", zap.Error(err))
 		return
 	}
 	ws.SetReadLimit(s.maxFrameBytes)
@@ -197,7 +197,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 
 	if err := c.handshake(); err != nil {
 		// 认证失败统一以 1008 关闭,不回显原因(不给探测者信息,§3)。
-		s.log.Debug("握手失败,断开连接", zap.Error(err))
+		s.log.Debug("handshake failed, closing connection", zap.Error(err))
 		// 只有被守卫判定为安全信号的失败才进审计;本地故障(密钥读写失败等)不混入。
 		var ae *authError
 		if errors.As(err, &ae) {
@@ -210,11 +210,11 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	s.audit.Record(audit.Event{Type: audit.TypeHandshakeOK})
 	s.setActive(c)
 	if err := c.send(typeHello, uuid.NewString(), helloPayload{DaemonVersion: s.version, ProtocolVersion: protocolV}); err != nil {
-		s.log.Debug("发送 hello 失败", zap.Error(err))
+		s.log.Debug("failed to send hello", zap.Error(err))
 		c.close(websocket.StatusInternalError, "")
 		return
 	}
-	s.log.Info("扩展已完成握手并连接")
+	s.log.Info("extension completed the handshake and is connected")
 	c.readLoop()
 }
 

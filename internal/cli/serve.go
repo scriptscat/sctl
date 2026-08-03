@@ -21,14 +21,14 @@ import (
 func newServeCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "serve",
-		Short: "运行桥接 daemon(WS server,仅监听 127.0.0.1)",
+		Short: "Run the bridge daemon (WebSocket server bound to 127.0.0.1 only)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			cfg, err := loadServeConfig(ctx)
 			if err != nil {
 				return err
 			}
-			logger.Ctx(ctx).Info("启动 sctl serve", zap.String("version", Version))
+			logger.Ctx(ctx).Info("starting sctl serve", zap.String("version", Version))
 			return cago.New(ctx, cfg).
 				RegistryCancel(daemon.Component(Version)).
 				Start()
@@ -44,7 +44,7 @@ func loadServeConfig(ctx context.Context) (*configs.Config, error) {
 	if _, err := os.Stat(configFile); err == nil {
 		return configs.NewConfig("sctl")
 	}
-	logger.Ctx(ctx).Info("未找到 configs/config.yaml,使用内置默认配置启动")
+	logger.Ctx(ctx).Info("configs/config.yaml not found, starting with built-in defaults")
 	return configs.NewConfig("sctl", configs.WithSource(emptyConfigSource{}))
 }
 
