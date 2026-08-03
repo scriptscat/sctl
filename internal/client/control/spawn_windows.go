@@ -16,7 +16,7 @@ const (
 )
 
 // spawnServeProcess 以 detached 方式拉起 `sctl serve`。stdout/stderr 置 nil(连到 NUL),
-// 保证不污染前端的 stdout(MCP 协议 / --json)。
+// 保证不污染前端的 stdout(MCP 协议 / -o 输出)。
 func spawnServeProcess() error {
 	self, err := os.Executable()
 	if err != nil {

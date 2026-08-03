@@ -37,8 +37,8 @@ const (
 	outputSource = "source"
 )
 
-// 退出码约定(对外文档见 README.md「写操作阻塞语义与退出码」):写动词按用户决策映射,
-// 其余错误统一 exitError。
+// 退出码约定(对外文档见 README.md 的 "Blocking semantics and exit codes for write operations" 一节):
+// 写动词按用户决策映射,其余错误统一 exitError。
 const (
 	exitOK       = 0
 	exitRejected = 1 // 用户在浏览器确认页拒绝

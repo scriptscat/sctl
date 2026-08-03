@@ -10,7 +10,7 @@ import (
 )
 
 // spawnServeProcess 以 detached(新会话)方式拉起 `sctl serve`,使其脱离当前终端与 CLI 生命周期。
-// stdout/stderr 置 nil(os/exec 连到 /dev/null),保证不污染前端的 stdout(MCP 协议 / --json)。
+// stdout/stderr 置 nil(os/exec 连到 /dev/null),保证不污染前端的 stdout(MCP 协议 / -o 输出)。
 func spawnServeProcess() error {
 	self, err := os.Executable()
 	if err != nil {

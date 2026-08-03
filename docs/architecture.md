@@ -4,7 +4,7 @@
 
 ```text
 MCP client (Claude/Codex…) ─ stdio ─→ sctl mcp ─┐ (local internal connection: loopback control API)
-CLI verbs (sctl scripts list / install …)───────┤
+CLI verbs (sctl get / edit / install …)─────────┤
                                                 ▼
                           sctl serve (daemon; WS listens on 127.0.0.1:8643 only)
                                                 ▲ WebSocket (extension dials in + mutual HMAC handshake)
@@ -32,11 +32,13 @@ cmd/sctl/main.go            # cobra entry point (unwraps ExitError → os.Exit)
 configs/config.yaml         # cago config (bridge.address etc.; falls back to built-in defaults if absent)
 
 internal/cli/               # subcommand definitions; spans both sides, hence top level
-  cli.go                    #   root command, global flags, JSON output helpers
+  cli.go                    #   root command, global flags (-o/--output, --log-level), output helpers
   serve.go                  #   bootstraps the cago app and mounts the daemon Component
   mcp.go                    #   sctl mcp (serves all tools; --name is an audit label)
   connect.go status.go version.go
-  scripts.go write.go       #   read verbs / write verbs
+  get.go grep.go            #   read verbs
+  edit.go write.go          #   write verbs (edit / install / enable / disable / delete)
+  resource.go               #   the optional scripts|script|sc resource word shared by those verbs
   dispatch.go               #   action forwarding and bridge error → exit code mapping
 
 internal/daemon/            # ── sctl serve side ──

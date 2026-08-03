@@ -1,7 +1,7 @@
 // Package logging 为所有 sctl 子命令初始化统一的 zap 日志。
 //
 // 关键约束:日志绝不写 stdout —— `sctl mcp` 以 stdout 承载 MCP 协议帧,CLI 动词以
-// stdout 输出 `--json` 结果,任何日志混入都会破坏它们。cago 的 component.Core() 默认
+// stdout 输出 `-o json` / `-o source` 结果,任何日志混入都会破坏它们。cago 的 component.Core() 默认
 // 把日志写 stdout,因此 sctl 不用它(与 opskat/opsctl 一致),改由本包用 logger.New +
 // NewFileCore 构建 logger 并 logger.SetLogger 注入 cago,后续代码照常用 logger.Ctx(ctx)。
 //

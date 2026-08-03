@@ -21,7 +21,7 @@ point" to "can see that the port is open, and gets disconnected when the handsha
 - the **control token** between the local frontend (`sctl mcp` / CLI verbs) and the daemon (written to a 0600
   file once the daemon has bound its port; only same-user processes can read it).
 
-**The second gate, present throughout:** every write operation (install / toggle / delete) and every source
+**The second gate, present throughout:** every write operation (install / edit / toggle / delete) and every source
 disclosure is ultimately decided by **human approval in the browser**, applied identically to the CLI and to
 MCP; even if a malicious local process gets the control token and calls sctl, the write still needs the user to
 press approve on the extension's confirmation page (unless the corresponding global policy is set to
@@ -93,7 +93,7 @@ permissions).
 ## 6. Daemon-side audit
 
 The authoritative audit store lives on the **extension side** (the audit view via the extension's existing
-logger, `component: local-access`): what an accepted request did is determined by that record.
+logger, `component: external-access`): what an accepted request did is determined by that record.
 
 The daemon side only fills in the part the extension **cannot see** — events that were blocked before an
 extension session was ever established and therefore leave no extension-side record at all:
@@ -107,7 +107,7 @@ extension session was ever established and therefore leave no extension-side rec
 | `request.rate_limited` | A client's read/write requests went over the limit and were rejected before being forwarded to the extension |
 | `handshake.ok` | A session was established |
 
-To view: `sctl status` prints one summary line aggregated by type, and `sctl status --json` outputs the full
+To view: `sctl status` prints one summary line aggregated by type, and `sctl status -o json` outputs the full
 events.
 
 Boundary: the queryable store is **in memory only** (a fixed-capacity ring buffer, cleared whenever the daemon

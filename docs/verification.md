@@ -25,7 +25,7 @@ go build -o sctl ./cmd/sctl
 export SCTL_DATA_DIR=$(mktemp -d) SCTL_BRIDGE_ADDR=127.0.0.1:18643
 ./sctl serve &                 # start the daemon (writes control.token)
 ./sctl status                  # should report truthfully that no extension is connected
-./sctl scripts list            # no extension connected → "extension not connected" error, exit code 3
+./sctl get                     # no extension connected → "extension not connected" error, exit code 3
 ```
 
 Cover **the boundaries that motivated the change**: if you touched exit-code mapping, exercise every code; if
@@ -70,8 +70,8 @@ just buries the real cause deeper.
 You cannot click through the browser-extension side, but every decision it makes leaves a trace on the daemon
 side. The observable outlets are:
 
-- `./sctl status` — whether the extension is connected, how many clients are paired, a summary of recent
-  security events;
+- `./sctl status` — the daemon version, whether the extension is connected, and a one-line summary of recent
+  security events (`-o json` prints the full events);
 - audit events (`internal/pkg/audit`) — handshakes, pairing, revocation, and rejections are all recorded;
 - stderr logs with `--log-level` turned up;
 - on-disk state under `$SCTL_DATA_DIR` (keys, client store).

@@ -156,8 +156,10 @@ and source disclosure (§5).
 |---|---|---|
 | `scripts.list` | `{}` | `{ scripts: ScriptSummary[] }` |
 | `scripts.metadata.get` | `{ uuid }` | `ScriptMetadata` |
-| `scripts.source.get` | `{ uuid }` | `ScriptSource` (≤ `limits.maxSourceBytes`, beyond that `PAYLOAD_TOO_LARGE`) |
+| `scripts.source.get` | `{ uuid, startLine?, endLine? }` (the line window is 1-based and inclusive; give both or neither) | `ScriptSource` (the **returned slice** ≤ `limits.maxSourceBytes`, beyond that `PAYLOAD_TOO_LARGE`) |
+| `scripts.source.grep` | `{ uuid, query, mode?, ignoreCase?, contextLines?, maxMatches? }` | `ScriptSourceGrepResult` |
 | `scripts.install.request` | `{ url }` or `{ code }` (exactly one; both or neither = `INVALID_REQUEST`) | `{ uuid, name, version?, enabled }` (enabled defaults to false; it is true only when the user ticks "enable now" on the confirmation page) |
+| `scripts.edit.request` | `{ uuid, edits: [{ oldText, newText, replaceAll? }] }` (1–100 edits; no client-supplied hash) | `{ uuid, name, enabled }` |
 | `scripts.toggle.request` | `{ uuid, enable: boolean }` | `{ uuid, enabled }` |
 | `scripts.delete.request` | `{ uuid }` | `{ uuid, deleted: true }` |
 
@@ -165,6 +167,30 @@ The `ScriptSummary` / `ScriptMetadata` / `ScriptSource` shapes follow #1573 (`Sc
 always `"untrusted-user-script-source"`; script-controlled text is always returned as structured data and must
 never be concatenated into a tool description or into Markdown). The metadata layer does not return the real
 update URL (it may contain a token), only `hasUpdateUrl`.
+
+Three notes on the source and edit actions, all decided and enforced extension-side:
+
+- **Line window.** `scripts.source.get` returns the window it actually served as `startLine` / `endLine` /
+  `totalLines`; an `endLine` past the end of the file is clamped to the last line, while a `startLine` past
+  the end is `INVALID_REQUEST`. `ScriptSource.sha256` is always the **whole-file** hash even for a window, so
+  a client paginating through a script can tell the underlying file changed between reads.
+- **Search.** `scripts.source.grep` searches one script line by line and returns `matches` (each
+  `{ lineNumber, line, before, after }`) plus `totalMatches`, `truncated`, `skippedLongLines`, `totalLines`,
+  the whole-file `sha256`, and the same `contentTrust`. `mode` defaults to `"text"`, a plain **literal**
+  substring test in which no character is a wildcard; `"regex"` compiles the query as a regular expression and
+  is the only mode subject to the per-line length skip (counted in `skippedLongLines`) and the execution
+  budget. Because matching lines carry source content, grep shares `scripts.source.get`'s gate exactly: same
+  scope, same source-read policy, same session-allow key.
+- **Editing.** `scripts.edit.request` is anchored by content, never by line number. The extension applies the
+  edits in order to its own copy of the source — each one searching the previous one's result — and each
+  `oldText` must occur exactly once unless that edit sets `replaceAll`; not found and not unique are two
+  distinguishable `INVALID_REQUEST` messages. Occurrences are counted by **candidate position, overlaps
+  included**, so a self-overlapping anchor (`"\n\n"`, an indent, a run of brackets) is reported as ambiguous
+  rather than silently resolved to the first offset. An empty `newText` deletes. The client sends **no hash**:
+  the TOCTOU anchors of §5 are computed extension-side. A batch is capped at **100 edits** and at a wall-clock
+  budget for applying them — each edit rescans and rebuilds the whole script, so an unbounded batch turns a
+  few KiB of request into minutes of synchronous extension time. Edits that produce no change, or a result
+  over `limits.maxSourceBytes`, are rejected before any confirmation page opens.
 
 ## 5. Write operations and blocking semantics
 
@@ -177,9 +203,10 @@ dialog:
 - rejected → `USER_REJECTED`;
 - pending for `limits.writeDecisionTtlMs` (5 minutes) → voided → `OPERATION_EXPIRED`;
 - the relevant global policy is "always-allow" → no pending, execute and return immediately. There are two such
-  policies, both applied identically to the CLI and to MCP: the **write policy** (install / toggle / delete)
-  and the **source-read policy** (source disclosure). Neither exempts the other, and the CLI is **not** exempt
-  from source disclosure (see [threat-model.md](./threat-model.md)).
+  policies, both applied identically to the CLI and to MCP: the **write policy** (install / edit / toggle /
+  delete) and the **source-read policy** (source disclosure and grep). Neither exempts the other — an edit
+  needs no source-read permission, and reading source grants no write — and the CLI is **not** exempt from
+  source disclosure (see [threat-model.md](./threat-model.md)).
 
 **Disconnect voids the request (bridge.cancel)**: if any link in the requester chain disappears (MCP client
 timeout or `notifications/cancelled`, shim exit, CLI Ctrl-C, internal session drop), the daemon immediately
