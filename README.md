@@ -69,14 +69,6 @@ troubleshooting.
 Run `sctl --help` or `sctl <command> --help` for usage and flags. Write operations block
 until the user approves, rejects, or closes the confirmation flow in ScriptCat.
 
-## Documentation
-
-- [MCP installation](./docs/mcp.md) — installation, enrollment, client configuration, and troubleshooting.
-- [Architecture](./docs/architecture.md) — process model and package responsibilities.
-- [Protocol](./docs/protocol.md) — extension ↔ daemon JSON-RPC 2.0 protocol.
-- [Threat model](./docs/threat-model.md) — trust boundaries, credentials, approval, and auditing.
-- [Contributor documentation](./docs/README.md) — development, verification, and documentation index.
-
 ## License
 
 GPL-3.0, the same license as ScriptCat. See [LICENSE](./LICENSE).

@@ -66,14 +66,6 @@ sctl --data-dir /absolute/path/to/sctl-data status
 运行 `sctl --help` 或 `sctl <command> --help` 查看用法和参数。写操作会阻塞，直到用户在
 ScriptCat 中批准、拒绝或关闭确认流程。
 
-## 文档
-
-- [MCP 安装](./mcp.md) — 安装、接入、客户端配置和故障排查。
-- [架构](./architecture.md) — 进程模型和包职责。
-- [协议](./protocol.md) — 扩展与 daemon 之间的 JSON-RPC 2.0 协议。
-- [威胁模型](./threat-model.md) — 信任边界、凭据、操作确认和审计。
-- [贡献者文档](./README.md) — 开发、验证和文档索引。
-
 ## 许可证
 
 GPL-3.0，与 ScriptCat 相同。参见 [LICENSE](../LICENSE)。
