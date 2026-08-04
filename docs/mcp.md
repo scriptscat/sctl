@@ -80,17 +80,16 @@ If it reports that the daemon is unreachable, fix that before configuring an MCP
 
 ## 4. Enroll ScriptCat once
 
-1. Open ScriptCat's options page.
-2. Open **Tools** and enable **External Access**.
-3. Keep `sctl serve` running.
-4. In another terminal, run:
+1. Open ScriptCat's options page and enable **External Access**.
+2. Keep `sctl serve` running.
+3. In another terminal, run:
 
    ```bash
    sctl --data-dir /absolute/path/to/sctl-data connect
    ```
 
-5. Enter the displayed one-time code in ScriptCat's External Access enrollment dialog.
-6. Verify the connection:
+4. Enter the displayed one-time code in ScriptCat's External Access enrollment dialog.
+5. Verify the connection:
 
    ```bash
    sctl --data-dir /absolute/path/to/sctl-data status
