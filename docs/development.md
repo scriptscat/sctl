@@ -139,7 +139,7 @@ That version is delivered to the extension in `hello.daemonVersion`.
 
 | Trigger | What runs |
 |---|---|
-| Every PR (any target branch) | `lint` + `test` (`-race`) + `protocol-drift` |
+| Every PR (any target branch) | `lint` + `test` (`-race`) + `protocol-schema` |
 | push to `main` / `release/**` | Same as above |
 | push tag `v*` | Reuses the full test gate first; only builds and publishes once it passes |
 
@@ -162,12 +162,13 @@ via `-ldflags` and are visible through `sctl version`.
 
 Cross-compilation, packaging, checksums, and the GitHub Release upload all happen inside that workflow.
 
-## Protocol single source
+## Protocol source and generation
 
-`internal/pkg/protocol/protocol.json` mirrors the extension's copy and is compiled into the binary with
-`go:embed`. CI's `protocol-drift` job fetches the authoritative copy from the extension repository and diffs
-it byte for byte; both sides must be updated together.
+`internal/pkg/protocol/protocol.json` is the only maintained source for the extension-facing RPC contract. Run
+`make protocol-generate` after changing it. The Go and TypeScript bindings, business runtime schemas, and
+ScriptCat copies are generated artifacts and must be updated in the same cross-repository change.
+`make protocol-sync-scriptcat` updates the adjacent checkout; override `SCRIPTCAT_DIR` when it lives elsewhere.
 
-The job reads that copy from the `main` branch of `scriptscat/scriptcat` by default. Until the extension-side
-bridge lands there, point the repository variable `EXT_PROTOCOL_REF` at the branch that carries it — otherwise
-the fetch fails and the job goes red on every PR.
+`make protocol-check` verifies that every checked-in artifact is reproducible from the source. The generator also
+validates the protocol definition before emitting code, so invalid method bindings and unsupported schema shapes
+fail generation.

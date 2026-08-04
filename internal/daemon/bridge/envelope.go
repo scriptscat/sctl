@@ -5,40 +5,23 @@ import (
 	"fmt"
 )
 
-// Envelope 是所有 WS 消息的统一信封(docs/protocol.md §2)。
-type Envelope struct {
-	V         int             `json:"v"`
-	Type      string          `json:"type"`
-	RequestID string          `json:"requestId,omitempty"`
-	Payload   json.RawMessage `json:"payload,omitempty"`
-}
+const jsonRPCVersion = "2.0"
 
-// 协议版本常量。
-const protocolV = 1
-
-// envelope 类型。扁平信任把 pair.*/client.* 从 protocol.json envelopeTypes 中移除后,下列即
-// 全集:envelopeTypes.session(握手/存活/生命周期)+ envelopeTypes.bridge(能力 RPC)。未知
-// 类型按前向兼容忽略(§2)。
 const (
-	typeAuthChallenge  = "auth.challenge"
-	typeAuthResponse   = "auth.response"
-	typeAuthOK         = "auth.ok"
-	typeHello          = "hello"
-	typeBridgeRequest  = "bridge.request"
-	typeBridgeResponse = "bridge.response"
-	typeBridgeCancel   = "bridge.cancel"
-	typePing           = "ping"
-	typePong           = "pong"
-	typeBridgeShutdown = "bridge.shutdown"
+	methodAuthenticate  = "$session.authenticate"
+	methodAuthenticated = "$session.authenticated"
+	methodHello         = "$session.hello"
+	methodCapabilities  = "$session.capabilities"
+	methodPing          = "$session.ping"
+	methodShutdown      = "$session.shutdown"
+	methodCancel        = "$/cancelRequest"
 )
 
-// 握手模式标识(auth.response.mode)。
 const (
 	modeSession = "session"
 	modePairing = "pairing"
 )
 
-// 常用错误码(全集见 protocol.json errorCodes;此处仅列 daemon 侧会主动产生的)。
 const (
 	CodeInvalidRequest   = "INVALID_REQUEST"
 	CodeInternal         = "INTERNAL_ERROR"
@@ -46,13 +29,32 @@ const (
 	CodeOperationExpired = "OPERATION_EXPIRED"
 )
 
-// --- payload 结构 ---
+// Message is one JSON-RPC 2.0 request, notification, success response, or error response.
+type Message struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      string          `json:"id,omitempty"`
+	Method  string          `json:"method,omitempty"`
+	Params  json.RawMessage `json:"params,omitempty"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   *RPCError       `json:"error,omitempty"`
+}
 
-type authChallengePayload struct {
+type RPCError struct {
+	Code    int        `json:"code"`
+	Message string     `json:"message"`
+	Data    *ErrorData `json:"data,omitempty"`
+}
+
+type ErrorData struct {
+	Code        string `json:"code"`
+	OperationID string `json:"operationId,omitempty"`
+}
+
+type authChallengeParams struct {
 	NonceD string `json:"nonceD"`
 }
 
-type authResponsePayload struct {
+type authResponseResult struct {
 	Mode   string `json:"mode"`
 	NonceE string `json:"nonceE"`
 	HMAC   string `json:"hmac"`
@@ -63,35 +65,45 @@ type keyDelivery struct {
 	IV         string `json:"iv"`
 }
 
-type authOKPayload struct {
+type authenticatedParams struct {
 	HMAC string       `json:"hmac"`
 	Key  *keyDelivery `json:"key,omitempty"`
 }
 
-type helloPayload struct {
-	DaemonVersion   string `json:"daemonVersion"`
-	ProtocolVersion int    `json:"protocolVersion"`
+type helloParams struct {
+	DaemonVersion string `json:"daemonVersion"`
 }
 
-// Request 是转发给扩展执行的一次 action 调用(docs/protocol.md §4)。
+type capabilitiesParams struct {
+	SchemaVersion string   `json:"schemaVersion"`
+	Methods       []string `json:"methods"`
+}
+
+type cancelParams struct {
+	ID string `json:"id"`
+}
+
+type businessParams struct {
+	ClientID string          `json:"clientId,omitempty"`
+	Input    json.RawMessage `json:"input"`
+}
+
 type Request struct {
-	ProtocolVersion int             `json:"protocolVersion"`
-	ClientID        string          `json:"clientId"`
-	Action          string          `json:"action"`
-	Input           json.RawMessage `json:"input"`
+	ClientID string          `json:"clientId"`
+	Action   string          `json:"action"`
+	Input    json.RawMessage `json:"input"`
 }
 
-// Response 是扩展对 bridge.request 的应答(ok 二选一)。
 type Response struct {
 	OK     bool            `json:"ok"`
 	Result json.RawMessage `json:"result,omitempty"`
 	Error  *Error          `json:"error,omitempty"`
 }
 
-// Error 是失败应答里的结构化错误。
 type Error struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Code        string `json:"code"`
+	Message     string `json:"message"`
+	OperationID string `json:"operationId,omitempty"`
 }
 
 func (e *Error) Error() string {
@@ -101,15 +113,23 @@ func (e *Error) Error() string {
 	return e.Code + ": " + e.Message
 }
 
-// newEnvelope 组装一条信封,payload 为 nil 时省略该字段。
-func newEnvelope(typ, requestID string, payload any) (Envelope, error) {
-	env := Envelope{V: protocolV, Type: typ, RequestID: requestID}
-	if payload != nil {
-		raw, err := json.Marshal(payload)
-		if err != nil {
-			return Envelope{}, fmt.Errorf("marshal %s payload: %w", typ, err)
-		}
-		env.Payload = raw
+func newRequest(id, method string, params any) (Message, error) {
+	raw, err := json.Marshal(params)
+	if err != nil {
+		return Message{}, fmt.Errorf("marshal %s params: %w", method, err)
 	}
-	return env, nil
+	return Message{JSONRPC: jsonRPCVersion, ID: id, Method: method, Params: raw}, nil
+}
+
+func newNotification(method string, params any) (Message, error) {
+	message, err := newRequest("", method, params)
+	return message, err
+}
+
+func newResult(id string, result any) (Message, error) {
+	raw, err := json.Marshal(result)
+	if err != nil {
+		return Message{}, fmt.Errorf("marshal result: %w", err)
+	}
+	return Message{JSONRPC: jsonRPCVersion, ID: id, Result: raw}, nil
 }

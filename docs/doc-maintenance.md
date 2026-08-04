@@ -45,9 +45,9 @@ authoritative source, never recalled from memory or copied from earlier prose.
 | A source file / directory exists | `git ls-files --error-unmatch internal/daemon/component.go` |
 | A function / type exists **under that exact name** | `git grep -n 'func WriteFileAtomic' -- internal` — renames are the #1 source of drift |
 | Dependency direction between packages | `go list -f '{{.ImportPath}} {{join .Imports " "}}' ./...` |
-| Protocol constants (port, timeouts, TTLs, limits, action set) | `internal/pkg/protocol/protocol.json` is the sole authority, shared with the extension; docs only explain semantics |
+| Protocol constants (port, timeouts, TTLs, limits, method set) | `internal/pkg/protocol/protocol.json` is the authority; docs only explain semantics |
 | The version floor | `grep minDaemonVersion internal/pkg/protocol/protocol.json` |
-| "N MCP tools" | Count the `actions` keys in `protocol.json`, not the comment in `internal/client/mcpserver/tools.go` |
+| "N MCP tools" | Count the `methods` keys in `internal/pkg/protocol/protocol.json`, not comments in the MCP implementation |
 | "N release artifacts" | The build matrix in `.github/workflows/release.yaml` |
 | Toolchain versions | `GOLANGCI_LINT_VERSION` in `.github/workflows/test.yaml` must match [development.md](./development.md) |
 | CLI subcommands / flags | `git grep -n 'Use:' -- internal/cli`, or just `./sctl --help` |

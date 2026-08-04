@@ -34,7 +34,7 @@ const (
 	HeaderClientLabel = "X-Sctl-Client"
 )
 
-// CLIClientID 是缺省客户端标签(bridge.request.clientId 回填,仅供扩展侧审计展示)。
+// CLIClientID 是缺省客户端标签(JSON-RPC params.clientId 回填,仅供扩展侧审计展示)。
 const CLIClientID = "sctl-cli"
 
 // CallRequest 是 /control/call 的请求体:转发一次 bridge action 调用。
@@ -43,7 +43,7 @@ type CallRequest struct {
 	Input  json.RawMessage `json:"input"`
 }
 
-// CallResult 是 /control/call 的响应体,镜像桥接的 bridge.response(ok 二选一)。
+// CallResult 是 /control/call 的响应体,映射桥接的 JSON-RPC result/error。
 type CallResult struct {
 	OK     bool            `json:"ok"`
 	Result json.RawMessage `json:"result,omitempty"`

@@ -14,10 +14,9 @@ This file is the entry point for AI coding agents and contributors working on sc
 > [`docs/architecture.md`](./docs/architecture.md)** — process model, directory layout, per-package
 > responsibilities, dependency direction.
 
-> **Before changing the envelope, actions, limits, or handshake, read
-> [`docs/protocol.md`](./docs/protocol.md)** — `internal/pkg/protocol/protocol.json` is the single source of
-> truth shared with the extension and both sides must stay in sync; the doc only explains semantics, and the
-> json wins on conflict.
+> **Before changing the envelope, RPC methods, limits, or handshake, read
+> [`docs/protocol.md`](./docs/protocol.md)** — [`internal/pkg/protocol/protocol.json`](./internal/pkg/protocol/protocol.json) is the schema authority; generated files
+> are updated with `make protocol-generate`, while the doc owns temporal semantics.
 
 > **Before touching authentication, keys, enrollment, or auditing, read
 > [`docs/threat-model.md`](./docs/threat-model.md)** — security boundaries, attack surface, accepted
@@ -92,7 +91,7 @@ review today; the one exception is called out in the item itself.
   there by the daemon side or a library corrupts MCP frames. Diagnostics always go through
   `internal/pkg/logging`, which writes to stderr plus the log files under the data directory — never stdout.
 
-- **Extend through the existing extension points.** A new action lands in `protocol.json` first. A new verb
+- **Extend through the existing extension points.** A new RPC method lands in `internal/pkg/protocol/protocol.json` first. A new verb
   reuses the `dispatch` / `dispatchBlocking` skeleton in `internal/cli/dispatch.go` instead of re-implementing
   connection, cancellation, and exit-code mapping. A new `/control/*` handler is registered in
   `controlapi.Handler.Register`, on the mux that `internal/daemon/component.go` assembles. Inject dependencies

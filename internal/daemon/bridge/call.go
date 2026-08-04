@@ -2,7 +2,6 @@ package bridge
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -10,17 +9,19 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/scriptscat/sctl/internal/pkg/audit"
+	"github.com/scriptscat/sctl/internal/pkg/protocolschema"
 )
 
-// pendingCall 是一条挂起的 bridge.request:阻塞直到应答/取消/断开/超时。
+// pendingCall 是一条挂起的 JSON-RPC 请求:阻塞直到应答/取消/断开/超时。
 type pendingCall struct {
 	clientID string
+	method   string
 	respCh   chan Response
 }
 
 // Call 把一次 bridge action 转发给扩展并阻塞等待应答。write=true 的写调用可能挂起数分钟
 // (等待用户在浏览器审批)。调用方 ctx 取消 / 超过 writeDecisionTTL / 扩展断开时:
-//   - ctx 取消 / 超时:向扩展发 bridge.cancel 作废该操作,返回相应错误;
+//   - ctx 取消 / 超时:向扩展发 $/cancelRequest 作废该操作,返回相应错误;
 //   - 扩展断开:隐式作废全部在途请求,返回 ErrDisconnected。
 func (s *Server) Call(ctx context.Context, req Request, write bool) (Response, error) {
 	limiter := s.readLimit
@@ -33,15 +34,18 @@ func (s *Server) Call(ctx context.Context, req Request, write bool) (Response, e
 		return Response{}, &Error{Code: CodeRateLimited, Message: "rate limited"}
 	}
 
-	req.ProtocolVersion = protocolV
 	requestID := uuid.NewString()
-	pc := &pendingCall{clientID: req.ClientID, respCh: make(chan Response, 1)}
+	pc := &pendingCall{clientID: req.ClientID, method: req.Action, respCh: make(chan Response, 1)}
 
 	s.mu.Lock()
 	active := s.active
 	if active == nil {
 		s.mu.Unlock()
 		return Response{}, ErrNotConnected
+	}
+	if _, supported := active.capabilities[req.Action]; !supported {
+		s.mu.Unlock()
+		return Response{}, &Error{Code: "METHOD_NOT_FOUND", Message: "extension does not support " + req.Action}
 	}
 	s.pending[requestID] = pc
 	s.mu.Unlock()
@@ -52,8 +56,9 @@ func (s *Server) Call(ctx context.Context, req Request, write bool) (Response, e
 		s.mu.Unlock()
 	}()
 
-	if err := active.send(typeBridgeRequest, requestID, req); err != nil {
-		return Response{}, fmt.Errorf("send bridge.request: %w", err)
+	params := businessParams{Input: req.Input, ClientID: req.ClientID}
+	if err := active.sendRequest(requestID, req.Action, params); err != nil {
+		return Response{}, fmt.Errorf("send JSON-RPC request: %w", err)
 	}
 
 	timer := time.NewTimer(s.writeDecisionTTL)
@@ -73,25 +78,35 @@ func (s *Server) Call(ctx context.Context, req Request, write bool) (Response, e
 	}
 }
 
-// cancelToExt 向扩展发送 bridge.cancel,回填原 bridge.request 的 requestId,best-effort。
+// cancelToExt sends a JSON-RPC cancellation notification for an in-flight request.
 func (s *Server) cancelToExt(c *conn, requestID string) {
-	if err := c.send(typeBridgeCancel, requestID, struct{}{}); err != nil {
-		s.log.Debug("failed to send bridge.cancel", zap.Error(err))
+	if err := c.sendNotification(methodCancel, cancelParams{ID: requestID}); err != nil {
+		s.log.Debug("failed to send cancellation notification", zap.Error(err))
 	}
 }
 
-// handleBridgeResponse 把应答交付给对应的挂起调用;取消后迟到的应答无主,忽略。
-func (s *Server) handleBridgeResponse(env Envelope) {
-	var resp Response
-	if err := json.Unmarshal(env.Payload, &resp); err != nil {
-		s.log.Debug("failed to parse bridge.response", zap.Error(err))
-		return
-	}
+// handleRPCResponse delivers a JSON-RPC response to its pending call.
+func (s *Server) handleRPCResponse(message Message) {
 	s.mu.Lock()
-	pc := s.pending[env.RequestID]
+	pc := s.pending[message.ID]
 	s.mu.Unlock()
 	if pc == nil {
 		return
 	}
-	pc.respCh <- resp
+	if message.Error == nil {
+		if err := protocolschema.ValidateMethodResult(pc.method, message.Result); err != nil {
+			s.log.Debug("invalid rpc result", zap.Error(err))
+			pc.respCh <- Response{OK: false, Error: &Error{Code: CodeInternal, Message: "invalid response from extension"}}
+			return
+		}
+		pc.respCh <- Response{OK: true, Result: message.Result}
+		return
+	}
+	domainCode := CodeInternal
+	operationID := ""
+	if message.Error.Data != nil {
+		domainCode = message.Error.Data.Code
+		operationID = message.Error.Data.OperationID
+	}
+	pc.respCh <- Response{OK: false, Error: &Error{Code: domainCode, Message: message.Error.Message, OperationID: operationID}}
 }

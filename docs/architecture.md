@@ -11,11 +11,10 @@ CLI verbs (sctl get / edit / install …)─────────┤
                           ScriptCat browser extension (authority for approval and authorization)
 ```
 
-`sctl mcp` and the CLI verbs are **separate processes** from the resident `sctl serve`. They talk over the
+`sctl mcp` and the CLI verbs are **separate processes** from `sctl serve`. They talk over the
 `/control/*` HTTP/JSON control API on the daemon's listener — same port as the extension's WS surface, separate
-path, authenticated with the 0600 control token the daemon writes. When a frontend finds no daemon running it
-spawns one detached. The bind race between several frontends starting cold is resolved by "if the bind fails,
-connect to the instance that won".
+path, authenticated with the 0600 control token the daemon writes. Frontends never start `serve`: run it
+explicitly in the foreground or let an external system service manager own its lifecycle.
 
 The authority always lives on the extension side: the daemon approves no write on its own — it forwards the
 request and blocks until a human decides in the browser. Details in [threat-model.md](./threat-model.md).
@@ -46,7 +45,7 @@ internal/daemon/            # ── sctl serve side ──
   bridge/                   #   WS service core
     server.go               #     Server struct, Serve, Origin whitelist, handshake admission, connection registry
     conn.go                 #     single connection: handshake, read loop, send
-    call.go                 #     action forwarding, pending-call table, bridge.cancel
+    call.go                 #     action forwarding, pending-call table, JSON-RPC cancellation
     pairing.go              #     extension enrollment window (out-of-band code → key K)
     envelope.go             #     envelope, payload structs, error codes
   controlapi/               #   /control/* handlers (controller role), depends on the narrow Bridge interface
@@ -55,11 +54,12 @@ internal/daemon/            # ── sctl serve side ──
   ratelimit/                #   per-key sliding-window rate limiting
 
 internal/client/            # ── sctl mcp / CLI verb side ──
-  control/                  #   control API client, shared DTOs, control token, detached auto-spawn
+  control/                  #   control API client, shared DTOs, control token
   mcpserver/                #   go-sdk stdio MCP server: all tools (flat trust), progress while waiting
 
 internal/pkg/               # ── shared by both sides ──
-  protocol/                 #   protocol.json itself + embedded parsing
+  protocol/                 #   protocol.json authority plus generated language and business-schema artifacts
+  protocolschema/           #   JSON-RPC parsing and business-schema validation at the untrusted WS boundary
   audit/                    #   daemon-side security events (the Event type crosses the control API, hence shared)
   paths/                    #   data directory and derived paths
   logging/                  #   unified zap logging (stderr + <dataDir>/logs/*.log, never stdout)

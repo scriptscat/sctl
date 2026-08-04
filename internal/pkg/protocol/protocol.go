@@ -1,31 +1,31 @@
-// Package protocol 解析内嵌的 protocol.json —— 与 ScriptCat 扩展共用的桥接常量单一事实源。
-// 协议语义见 docs/protocol.md,两者冲突以 json 为准。
+// Package protocol 解析从 sctl 权威 schema 生成并嵌入的协议元数据。
 package protocol
 
 import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync"
 )
 
-// protocolJSON 是桥接协议常量文件。权威副本在扩展仓库,CI 的 protocol-drift job
-// 逐字节比对本镜像。
+// DefinitionJSON is the sole maintained protocol definition embedded directly from protocol.json.
 //
 //go:embed protocol.json
-var protocolJSON []byte
+var DefinitionJSON []byte
 
 type Protocol struct {
-	ProtocolVersion int               `json:"protocolVersion"`
-	Transport       Transport         `json:"transport"`
-	Versions        Versions          `json:"versions"`
-	EnvelopeTypes   EnvelopeTypes     `json:"envelopeTypes"`
-	Scopes          []string          `json:"scopes"`
-	Actions         map[string]Action `json:"actions"`
-	ErrorCodes      []string          `json:"errorCodes"`
-	Crypto          Crypto            `json:"crypto"`
-	Limits          Limits            `json:"limits"`
-	PairingCode     PairingCode       `json:"pairingCode"`
+	JSONRPCVersion string            `json:"jsonrpc"`
+	SchemaVersion  string            `json:"schemaVersion"`
+	Transport      Transport         `json:"transport"`
+	Versions       Versions          `json:"versions"`
+	SessionMethods []string          `json:"sessionMethods"`
+	Scopes         []string          `json:"scopes"`
+	Actions        map[string]Action `json:"methods"`
+	ErrorCodes     []string          `json:"errorCodes"`
+	Crypto         Crypto            `json:"crypto"`
+	Limits         Limits            `json:"limits"`
+	PairingCode    PairingCode       `json:"pairingCode"`
 }
 
 type Transport struct {
@@ -34,22 +34,17 @@ type Transport struct {
 	Frame       string `json:"frame"`
 }
 
-// EnvelopeTypes groups the wire envelope vocabulary into the protocol's two layers: session frames
-// carry the crypto handshake, version/liveness and session lifecycle (Layer 1); bridge frames are
-// the capability RPC tunnelled over the channel (Layer 2). See protocol.json "$comment.layering".
-type EnvelopeTypes struct {
-	Session []string `json:"session"`
-	Bridge  []string `json:"bridge"`
-}
-
 type Versions struct {
 	MinDaemonVersion string `json:"minDaemonVersion"`
 }
 
 type Action struct {
 	Scope    string `json:"scope"`
-	Write    bool   `json:"write"`
+	Write    bool   `json:"-"`
+	Effect   string `json:"effect"`
 	Blocking string `json:"blocking,omitempty"`
+	Params   string `json:"params"`
+	Result   string `json:"result"`
 }
 
 type Crypto struct {
@@ -65,7 +60,6 @@ type Limits struct {
 	AuthTimeoutMs       int `json:"authTimeoutMs"`
 	WriteDecisionTtlMs  int `json:"writeDecisionTtlMs"`
 	ExtPairingCodeTtlMs int `json:"extPairingCodeTtlMs"`
-	McpPairingTtlMs     int `json:"mcpPairingTtlMs"`
 	MaxSourceBytes      int `json:"maxSourceBytes"`
 	MaxFrameBytes       int `json:"maxFrameBytes"`
 	PingIntervalMs      int `json:"pingIntervalMs"`
@@ -87,10 +81,20 @@ var (
 func Load() (*Protocol, error) {
 	once.Do(func() {
 		p := &Protocol{}
-		if err := json.Unmarshal(protocolJSON, p); err != nil {
+		if err := json.Unmarshal(DefinitionJSON, p); err != nil {
 			parseErr = fmt.Errorf("parse embedded protocol.json: %w", err)
 			return
 		}
+		scopeSet := make(map[string]struct{})
+		for name, action := range p.Actions {
+			action.Write = action.Effect == "write"
+			p.Actions[name] = action
+			scopeSet[action.Scope] = struct{}{}
+		}
+		for scope := range scopeSet {
+			p.Scopes = append(p.Scopes, scope)
+		}
+		sort.Strings(p.Scopes)
 		parsed = p
 	})
 	return parsed, parseErr

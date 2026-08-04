@@ -59,7 +59,7 @@ func (b *daemonComponent) StartCancel(ctx context.Context, cancel context.Cancel
 		logger.Ctx(ctx).Warn("failed to read the bridge config, falling back to the protocol default address", zap.Error(err))
 	}
 	// SCTL_BRIDGE_ADDR 覆盖配置/默认:daemon 与前端(control.resolveBaseURL)读同一环境变量,
-	// 保证自动拉起时 serve 绑定的地址正是前端要连的地址(自定义端口 / 多实例场景)。
+	// 保证 serve 绑定的地址正是前端要连的地址(自定义端口 / 多实例场景)。
 	if envAddr := os.Getenv("SCTL_BRIDGE_ADDR"); envAddr != "" {
 		b.cfg.Address = envAddr
 	}
@@ -82,7 +82,7 @@ func (b *daemonComponent) StartCancel(ctx context.Context, cancel context.Cancel
 		return err
 	}
 	b.listener = ln
-	logger.Ctx(ctx).Info("bridge daemon is listening", zap.String("address", ln.Addr().String()), zap.Int("protocolVersion", p.ProtocolVersion))
+	logger.Ctx(ctx).Info("bridge daemon is listening", zap.String("address", ln.Addr().String()), zap.String("jsonrpc", p.JSONRPCVersion))
 
 	// 绑定成功后(端口竞态胜出者才走到这里)再生成并落盘控制令牌,避免失败方覆盖胜出者的令牌。
 	// 令牌先于 server goroutine 就绪:前端一旦看到 /control/health 200,令牌文件必已写好。

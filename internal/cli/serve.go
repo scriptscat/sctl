@@ -14,10 +14,10 @@ import (
 	"github.com/scriptscat/sctl/internal/daemon"
 )
 
-// newServeCmd 引导 cago 应用并挂载桥接 Component。
+// newServeCmd 引导 cago 应用并挂载桥接 Component。命令始终在前台运行,生命周期由调用方管理。
 //
-// 不使用 component.Core():cago 的 Core 把日志写 stdout,而桥接 daemon 可能由 `sctl mcp` /
-// CLI 动词自动拉起、其 stdout 需保持洁净;日志已由全局 stderr logger 承载。
+// 不使用 component.Core():cago 的 Core 把日志写 stdout,而桥接 daemon 的 stdout 需保持洁净;
+// 日志已由全局 stderr logger 承载。
 func newServeCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "serve",
@@ -36,8 +36,8 @@ func newServeCmd() *cobra.Command {
 	}
 }
 
-// loadServeConfig 加载 cago 配置。有 ./configs/config.yaml 时从文件读;否则(如 sctl mcp 从任意
-// 目录自动拉起 daemon)退回内存空源,全部走内置默认(protocol.json + SCTL_* 环境变量),
+// loadServeConfig 加载 cago 配置。有 ./configs/config.yaml 时从文件读;否则退回内存空源,
+// 全部走内置默认(protocol.json + SCTL_* 环境变量),
 // 不因缺配置文件而拒绝启动。
 func loadServeConfig(ctx context.Context) (*configs.Config, error) {
 	const configFile = "./configs/config.yaml"

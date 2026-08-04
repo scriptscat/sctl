@@ -14,15 +14,8 @@ import (
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
 )
 
-// ErrDaemonUnreachable 表示自动拉起后仍无法在超时内连上 daemon。
-var ErrDaemonUnreachable = errors.New("cannot connect to the sctl daemon")
-
-// 可注入点:测试用桩替换,避免真的 fork 进程。默认拉起一个 detached 的 `sctl serve`。
-var (
-	launchTimeout = 5 * time.Second
-	pollInterval  = 50 * time.Millisecond
-	spawnDaemon   = spawnServeProcess
-)
+// ErrDaemonUnreachable 表示当前没有可连接的 daemon。serve 的生命周期由用户或外部服务管理器负责。
+var ErrDaemonUnreachable = errors.New("cannot connect to the sctl daemon; start it with `sctl serve`")
 
 // Client 是前端连接 daemon 控制 API 的 HTTP 客户端。零值不可用,须经 Dial 构造。
 type Client struct {
@@ -32,27 +25,23 @@ type Client struct {
 	clientLabel  string // 可选:调用方自报的客户端标签,仅用于审计归因(不构成授权)
 }
 
-// Dial 解析 daemon 地址、必要时自动拉起 daemon,并读取控制令牌返回可用客户端。
+// Dial 解析 daemon 地址并连接已运行的 daemon。它不负责启动或托管 serve 进程。
 func Dial(ctx context.Context) (*Client, error) {
-	return dial(ctx, true)
+	return dial(ctx)
 }
 
-// Connect 与 Dial 相同,但 daemon 未运行时直接报错、不自动拉起(供 status 等只读探测命令使用)。
+// Connect 与 Dial 相同,保留此名称供 status 等只读探测命令表达调用意图。
 func Connect(ctx context.Context) (*Client, error) {
-	return dial(ctx, false)
+	return dial(ctx)
 }
 
-func dial(ctx context.Context, autoLaunch bool) (*Client, error) {
+func dial(ctx context.Context) (*Client, error) {
 	base, err := resolveBaseURL()
 	if err != nil {
 		return nil, err
 	}
 	c := &Client{http: &http.Client{}, base: base}
-	if autoLaunch {
-		if err := c.ensureDaemon(ctx); err != nil {
-			return nil, err
-		}
-	} else if !c.healthOK(ctx) {
+	if !c.healthOK(ctx) {
 		return nil, ErrDaemonUnreachable
 	}
 	tok, err := ReadControlToken()
@@ -79,34 +68,6 @@ func resolveBaseURL() (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("http://127.0.0.1:%d", p.Transport.DefaultPort), nil
-}
-
-// ensureDaemon 保证 daemon 可达:已在跑直接返回;否则拉起 detached 进程并轮询健康检查。
-// 端口竞态下失败方的 serve 会因绑定失败退出,但胜出者已在监听,健康检查照样成功
-// (「绑定失败即转为连接既有实例」)。
-func (c *Client) ensureDaemon(ctx context.Context) error {
-	if c.healthOK(ctx) {
-		return nil
-	}
-	if err := spawnDaemon(); err != nil {
-		return fmt.Errorf("start sctl daemon: %w", err)
-	}
-	deadline := time.Now().Add(launchTimeout)
-	ticker := time.NewTicker(pollInterval)
-	defer ticker.Stop()
-	for {
-		if c.healthOK(ctx) {
-			return nil
-		}
-		if time.Now().After(deadline) {
-			return ErrDaemonUnreachable
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-		}
-	}
 }
 
 func (c *Client) healthOK(ctx context.Context) bool {
@@ -153,7 +114,7 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body []byt
 }
 
 // Call 转发一次 bridge action 调用并阻塞至应答/作废。ctx 取消(如 CLI Ctrl-C)会切断连接,
-// daemon 侧据此发 bridge.cancel 作废该操作;此时 Do 返回 context.Canceled。
+// daemon 侧据此发 $/cancelRequest 作废该操作;此时 Do 返回 context.Canceled。
 func (c *Client) Call(ctx context.Context, action string, input json.RawMessage) (CallResult, error) {
 	if input == nil {
 		input = json.RawMessage(`{}`)

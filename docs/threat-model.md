@@ -76,7 +76,7 @@ on the daemon's listener (same port as the extension WS surface, separate path).
 - **The health check is unauthenticated**: it returns only `{ok, version}` and leaks no key, script, or client
   information; it is equivalent to the already-accepted risk that an open port is probeable.
 - **Disconnect voids the request**: the frontend request (HTTP connection) drops → the daemon's request ctx is
-  cancelled → `bridge.cancel` is sent to the extension to void the in-flight write operation.
+  cancelled → `$/cancelRequest` is sent to the extension to void the in-flight write operation.
 
 ## 5. Credentials persisted to disk
 
@@ -101,7 +101,7 @@ extension session was ever established and therefore leave no extension-side rec
 | Event | Trigger |
 |---|---|
 | `origin.rejected` | A WS connection was rejected by the Origin whitelist (present, non-extension Origin) |
-| `handshake.failed` | Handshake HMAC verification failed / the 5s timeout elapsed / a non-`auth.response` message was sent during the handshake |
+| `handshake.failed` | Handshake HMAC verification failed / the 5s timeout elapsed / an invalid response to `$session.authenticate` was sent |
 | `pairing.failed` | The enrollment handshake HMAC failed, or there was no valid enrollment code |
 | `pairing.rate_limited` | Enrollment attempts exceeded 5 per minute |
 | `request.rate_limited` | A client's read/write requests went over the limit and were rejected before being forwarded to the extension |

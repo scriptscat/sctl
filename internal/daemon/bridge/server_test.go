@@ -66,44 +66,59 @@ func dial(url string) *extClient {
 	return &extClient{ws: ws}
 }
 
-func (e *extClient) read() Envelope {
+func (e *extClient) read() Message {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	_, data, err := e.ws.Read(ctx)
 	So(err, ShouldBeNil)
-	var env Envelope
+	var env Message
 	So(json.Unmarshal(data, &env), ShouldBeNil)
 	return env
 }
 
-func (e *extClient) write(typ, requestID string, payload any) {
+func (e *extClient) writeRequest(method, id string, params any) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	env, err := newEnvelope(typ, requestID, payload)
+	env, err := newRequest(id, method, params)
 	So(err, ShouldBeNil)
 	So(wsjson.Write(ctx, e.ws, env), ShouldBeNil)
+}
+
+func (e *extClient) writeResult(id string, result any) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	message, err := newResult(id, result)
+	So(err, ShouldBeNil)
+	So(wsjson.Write(ctx, e.ws, message), ShouldBeNil)
 }
 
 // doSessionHandshake 以给定长期密钥完成会话握手,并消费 hello。
 func (h *testHarness) doSessionHandshake(key []byte) *extClient {
 	e := dial(h.url)
 	challenge := e.read()
-	So(challenge.Type, ShouldEqual, typeAuthChallenge)
-	var cp authChallengePayload
-	So(json.Unmarshal(challenge.Payload, &cp), ShouldBeNil)
+	So(challenge.Method, ShouldEqual, methodAuthenticate)
+	var cp authChallengeParams
+	So(json.Unmarshal(challenge.Params, &cp), ShouldBeNil)
 
 	nonceE, _ := auth.RandomNonceHex(h.proto.Crypto.NonceBytes)
 	mac := h.crypto.ExtHMAC(auth.ModeSession, key, cp.NonceD, nonceE)
-	e.write(typeAuthResponse, uuid.NewString(), authResponsePayload{Mode: modeSession, NonceE: nonceE, HMAC: mac})
+	e.writeResult(challenge.ID, authResponseResult{Mode: modeSession, NonceE: nonceE, HMAC: mac})
 
 	ok := e.read()
-	So(ok.Type, ShouldEqual, typeAuthOK)
-	var okp authOKPayload
-	So(json.Unmarshal(ok.Payload, &okp), ShouldBeNil)
+	So(ok.Method, ShouldEqual, methodAuthenticated)
+	var okp authenticatedParams
+	So(json.Unmarshal(ok.Params, &okp), ShouldBeNil)
 	So(h.crypto.VerifyDaemonHMAC(auth.ModeSession, key, cp.NonceD, nonceE, okp.HMAC), ShouldBeTrue)
 
 	hello := e.read()
-	So(hello.Type, ShouldEqual, typeHello)
+	So(hello.Method, ShouldEqual, methodHello)
+	methods := make([]string, 0, len(h.proto.Actions))
+	for method := range h.proto.Actions {
+		methods = append(methods, method)
+	}
+	capabilitiesID := uuid.NewString()
+	e.writeRequest(methodCapabilities, capabilitiesID, capabilitiesParams{SchemaVersion: "1.0.0", Methods: methods})
+	So(e.read().ID, ShouldEqual, capabilitiesID)
 	return e
 }
 
@@ -121,12 +136,12 @@ func TestSessionHandshakeFlow(t *testing.T) {
 		Convey("错误密钥握手失败,连接被断开", func() {
 			e := dial(h.url)
 			challenge := e.read()
-			var cp authChallengePayload
-			_ = json.Unmarshal(challenge.Payload, &cp)
+			var cp authChallengeParams
+			_ = json.Unmarshal(challenge.Params, &cp)
 			wrong, _ := auth.NewLongTermKey()
 			nonceE, _ := auth.RandomNonceHex(h.proto.Crypto.NonceBytes)
 			mac := h.crypto.ExtHMAC(auth.ModeSession, wrong, cp.NonceD, nonceE)
-			e.write(typeAuthResponse, uuid.NewString(), authResponsePayload{Mode: modeSession, NonceE: nonceE, HMAC: mac})
+			e.writeResult(challenge.ID, authResponseResult{Mode: modeSession, NonceE: nonceE, HMAC: mac})
 			// 认证失败:后续读应报错(连接以 1008 关闭,不回显原因)。
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
@@ -150,16 +165,16 @@ func TestPairingHandshakeFlow(t *testing.T) {
 
 			e := dial(h.url)
 			challenge := e.read()
-			var cp authChallengePayload
-			_ = json.Unmarshal(challenge.Payload, &cp)
+			var cp authChallengeParams
+			_ = json.Unmarshal(challenge.Params, &cp)
 			nonceE, _ := auth.RandomNonceHex(h.proto.Crypto.NonceBytes)
 			mac := h.crypto.ExtHMAC(auth.ModePairing, kpMac, cp.NonceD, nonceE)
-			e.write(typeAuthResponse, uuid.NewString(), authResponsePayload{Mode: modePairing, NonceE: nonceE, HMAC: mac})
+			e.writeResult(challenge.ID, authResponseResult{Mode: modePairing, NonceE: nonceE, HMAC: mac})
 
 			ok := e.read()
-			So(ok.Type, ShouldEqual, typeAuthOK)
-			var okp authOKPayload
-			So(json.Unmarshal(ok.Payload, &okp), ShouldBeNil)
+			So(ok.Method, ShouldEqual, methodAuthenticated)
+			var okp authenticatedParams
+			So(json.Unmarshal(ok.Params, &okp), ShouldBeNil)
 			So(okp.Key, ShouldNotBeNil)
 			So(h.crypto.VerifyDaemonHMAC(auth.ModePairing, kpMac, cp.NonceD, nonceE, okp.HMAC), ShouldBeTrue)
 
@@ -167,7 +182,7 @@ func TestPairingHandshakeFlow(t *testing.T) {
 			So(err, ShouldBeNil)
 
 			hello := e.read()
-			So(hello.Type, ShouldEqual, typeHello)
+			So(hello.Method, ShouldEqual, methodHello)
 
 			// 落盘的长期密钥与扩展解出的一致。
 			saved, ok2, err := h.keys.Load()
@@ -185,11 +200,11 @@ func TestPairingHandshakeFlow(t *testing.T) {
 
 			e := dial(h.url)
 			challenge := e.read()
-			var cp authChallengePayload
-			_ = json.Unmarshal(challenge.Payload, &cp)
+			var cp authChallengeParams
+			_ = json.Unmarshal(challenge.Params, &cp)
 			nonceE, _ := auth.RandomNonceHex(h.proto.Crypto.NonceBytes)
 			mac := h.crypto.ExtHMAC(auth.ModePairing, wrongMac, cp.NonceD, nonceE)
-			e.write(typeAuthResponse, uuid.NewString(), authResponsePayload{Mode: modePairing, NonceE: nonceE, HMAC: mac})
+			e.writeResult(challenge.ID, authResponseResult{Mode: modePairing, NonceE: nonceE, HMAC: mac})
 
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
@@ -213,7 +228,7 @@ func TestBlockingCallAndCancel(t *testing.T) {
 			err  error
 		}
 
-		Convey("批准前请求方取消 → 扩展收到同 requestId 的 bridge.cancel", func() {
+		Convey("批准前请求方取消 → 扩展收到指向原请求 ID 的 $/cancelRequest", func() {
 			callCtx, cancelCall := context.WithCancel(context.Background())
 			resCh := make(chan callResult, 1)
 			go func() {
@@ -226,14 +241,16 @@ func TestBlockingCallAndCancel(t *testing.T) {
 			}()
 
 			req := e.read()
-			So(req.Type, ShouldEqual, typeBridgeRequest)
-			So(req.RequestID, ShouldNotBeBlank)
+			So(req.Method, ShouldEqual, "scripts.install.request")
+			So(req.ID, ShouldNotBeBlank)
 
 			cancelCall()
 
 			cancelMsg := e.read()
-			So(cancelMsg.Type, ShouldEqual, typeBridgeCancel)
-			So(cancelMsg.RequestID, ShouldEqual, req.RequestID)
+			So(cancelMsg.Method, ShouldEqual, methodCancel)
+			var cancelled cancelParams
+			So(json.Unmarshal(cancelMsg.Params, &cancelled), ShouldBeNil)
+			So(cancelled.ID, ShouldEqual, req.ID)
 
 			r := <-resCh
 			So(r.err, ShouldNotBeNil)
@@ -251,13 +268,13 @@ func TestBlockingCallAndCancel(t *testing.T) {
 			}()
 
 			req := e.read()
-			So(req.Type, ShouldEqual, typeBridgeRequest)
-			e.write(typeBridgeResponse, req.RequestID, Response{OK: true, Result: json.RawMessage(`{"scripts":[]}`)})
+			So(req.Method, ShouldEqual, "scripts.list")
+			e.writeResult(req.ID, json.RawMessage(`{"scripts":[],"contentTrust":"untrusted-user-script-metadata"}`))
 
 			r := <-resCh
 			So(r.err, ShouldBeNil)
 			So(r.resp.OK, ShouldBeTrue)
-			So(string(r.resp.Result), ShouldEqual, `{"scripts":[]}`)
+			So(string(r.resp.Result), ShouldEqual, `{"scripts":[],"contentTrust":"untrusted-user-script-metadata"}`)
 		})
 
 		Convey("扩展连接断开 → 在途请求返回 ErrDisconnected", func() {
@@ -272,7 +289,7 @@ func TestBlockingCallAndCancel(t *testing.T) {
 			}()
 
 			req := e.read()
-			So(req.Type, ShouldEqual, typeBridgeRequest)
+			So(req.Method, ShouldEqual, "scripts.list")
 			So(e.ws.Close(websocket.StatusNormalClosure, "bye"), ShouldBeNil)
 
 			r := <-resCh
@@ -307,7 +324,7 @@ func TestOriginWhitelist(t *testing.T) {
 
 		Convey("无 Origin(非浏览器进程)放行,由握手兜底", func() {
 			e := dial(h.url)
-			So(e.read().Type, ShouldEqual, typeAuthChallenge)
+			So(e.read().Method, ShouldEqual, methodAuthenticate)
 		})
 
 		Convey("被拒的网页连接记录为 origin.rejected 审计事件", func() {

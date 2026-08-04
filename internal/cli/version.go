@@ -27,11 +27,11 @@ func newVersionCmd() *cobra.Command {
 					"buildDate":        BuildDate,
 					"goVersion":        runtime.Version(),
 					"platform":         runtime.GOOS + "/" + runtime.GOARCH,
-					"protocolVersion":  p.ProtocolVersion,
+					"jsonrpc":          p.JSONRPCVersion,
 					"minDaemonVersion": p.Versions.MinDaemonVersion,
 				})
 			}
-			fmt.Fprintf(os.Stdout, "sctl %s (protocol v%d, min daemon %s)\n", Version, p.ProtocolVersion, p.Versions.MinDaemonVersion)
+			fmt.Fprintf(os.Stdout, "sctl %s (JSON-RPC %s, min daemon %s)\n", Version, p.JSONRPCVersion, p.Versions.MinDaemonVersion)
 			fmt.Fprintf(os.Stdout, "commit %s, built %s, %s %s/%s\n", Commit, BuildDate, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 			return nil
 		},

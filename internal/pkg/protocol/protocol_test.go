@@ -7,9 +7,9 @@ func TestLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("解析内嵌 protocol.json 失败: %v", err)
 	}
-	t.Run("协议版本为 1", func(t *testing.T) {
-		if p.ProtocolVersion != 1 {
-			t.Fatalf("protocolVersion = %d, 期望 1", p.ProtocolVersion)
+	t.Run("wire protocol is JSON-RPC 2.0", func(t *testing.T) {
+		if p.JSONRPCVersion != "2.0" {
+			t.Fatalf("jsonrpc = %q, want 2.0", p.JSONRPCVersion)
 		}
 	})
 	t.Run("所有 action 映射到合法 scope", func(t *testing.T) {

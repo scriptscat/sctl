@@ -11,7 +11,7 @@ verification method are in [`doc-maintenance.md`](./doc-maintenance.md).
 |---|---|
 | [`../AGENTS.md`](../AGENTS.md) | Engineering principles and the architecture quick-map. Single source of truth relative to `CLAUDE.md`, which only `@`-imports it. |
 | [`architecture.md`](./architecture.md) | Process model, directory layout, per-package responsibilities, dependency direction. **Read before changing package structure or dependency direction.** |
-| [`protocol.md`](./protocol.md) | The extension ↔ daemon WS bridge protocol: envelope, handshake, actions, limits, error codes. **Read before changing the protocol.** |
+| [`protocol.md`](./protocol.md) | The extension ↔ daemon JSON-RPC 2.0 protocol: handshake, methods, cancellation, limits, and errors. **Read before changing the protocol.** |
 | [`threat-model.md`](./threat-model.md) | Security boundaries, attack surface and trade-offs, credentials on disk, daemon-side auditing. **Read before touching auth, keys, pairing, or auditing.** |
 | [`development.md`](./development.md) | Build commands, test design and commands, static analysis, environment variables, the version floor, branches / CI / releases. **Read before writing code.** |
 | [`verification.md`](./verification.md) | How to confirm a change "actually works": evidence, one-shot scripts under `e2e/scratch/`, reproduction discipline. **Read before claiming something is fixed.** |
@@ -23,6 +23,6 @@ instead; this directory targets sctl contributors and maintainers only.
 ## Single source of truth
 
 - The only authority for protocol constants is
-  [`internal/pkg/protocol/protocol.json`](../internal/pkg/protocol/protocol.json). It mirrors the copy in the
-  [extension repository](https://github.com/scriptscat/scriptcat); how the two are kept from drifting is in
-  [development.md](./development.md#protocol-single-source).
+  [`internal/pkg/protocol/protocol.json`](../internal/pkg/protocol/protocol.json). Generated bindings are consumed by the extension and daemon.
+  Generation and reproducibility checks are described in
+  [development.md](./development.md#protocol-source-and-generation).

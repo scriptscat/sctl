@@ -15,8 +15,9 @@ CLI verbs (sctl get / edit / install …)─────────┤
                           ScriptCat browser extension (authority for approval and authorization)
 ```
 
-`sctl mcp` and the CLI verbs are **separate processes** from the resident `sctl serve`; they talk to it over
-the `/control/*` HTTP/JSON control API on the daemon's listener, and spawn one when none is running. Details
+`sctl mcp` and the CLI verbs are **separate processes** from `sctl serve`; they talk to it over
+the `/control/*` HTTP/JSON control API on the daemon's listener. Start `sctl serve` explicitly and use your
+system service manager if it should remain resident; requester commands never start it themselves. Details
 in [`docs/architecture.md`](./docs/architecture.md).
 
 ## Subcommands
@@ -25,7 +26,7 @@ in [`docs/architecture.md`](./docs/architecture.md).
 |---|---|
 | `sctl serve` | Run the bridge daemon (a cago app; the WS server binds loopback only and mounts the control API) |
 | `sctl connect` | Generate a one-time pairing code and set up external access with the extension (needed once; the CLI and every MCP agent inherit that trust afterwards) |
-| `sctl mcp [--name <label>]` | stdio MCP server; inherits trust through external access and exposes every script tool (starts `serve` if it is not running; `--name` is an audit label only) |
+| `sctl mcp [--name <label>]` | stdio MCP server; inherits trust through external access and exposes every script tool (requires an existing `sctl serve`; `--name` is an audit label only) |
 | `sctl status` | Daemon and extension connection status, with a summary of guard-side security events (does not start the daemon) |
 | `sctl get [<uuid>]` | List installed scripts, or show one script |
 | `sctl grep <uuid> <query>` | Search one script's source and print matching lines with their line numbers |
@@ -66,7 +67,7 @@ edits are sent.
 ### Blocking semantics and exit codes for write operations
 
 Write verbs and MCP write tools **block** until the user decides on the confirmation page in the browser.
-**Ctrl-C** in the requester cuts the connection, and the daemon then sends `bridge.cancel` to the extension to
+**Ctrl-C** in the requester cuts the connection, and the daemon then sends `$/cancelRequest` to the extension to
 void the operation. CLI exit codes:
 
 | Code | Meaning |

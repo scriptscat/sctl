@@ -33,12 +33,12 @@ func waitForAuditEvent(h *testHarness, typ audit.Type) audit.Event {
 func (h *testHarness) failSessionHandshake() (nonceE, mac string) {
 	e := dial(h.url)
 	challenge := e.read()
-	var cp authChallengePayload
-	So(json.Unmarshal(challenge.Payload, &cp), ShouldBeNil)
+	var cp authChallengeParams
+	So(json.Unmarshal(challenge.Params, &cp), ShouldBeNil)
 	wrong, _ := auth.NewLongTermKey()
 	nonceE, _ = auth.RandomNonceHex(h.proto.Crypto.NonceBytes)
 	mac = h.crypto.ExtHMAC(auth.ModeSession, wrong, cp.NonceD, nonceE)
-	e.write(typeAuthResponse, uuid.NewString(), authResponsePayload{Mode: modeSession, NonceE: nonceE, HMAC: mac})
+	e.writeResult(challenge.ID, authResponseResult{Mode: modeSession, NonceE: nonceE, HMAC: mac})
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	_, _, _ = e.ws.Read(ctx)
@@ -61,10 +61,10 @@ func TestAuditRecording(t *testing.T) {
 			So(ev.At.IsZero(), ShouldBeFalse)
 		})
 
-		Convey("握手期发送非 auth.response 消息记录为协议违规", func() {
+		Convey("握手期发送错误的 JSON-RPC 响应记录为协议违规", func() {
 			e := dial(h.url)
 			e.read()
-			e.write(typeBridgeResponse, uuid.NewString(), struct{}{})
+			e.writeResult(uuid.NewString(), struct{}{})
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			_, _, _ = e.ws.Read(ctx)
@@ -80,11 +80,11 @@ func TestAuditRecording(t *testing.T) {
 
 			e := dial(h.url)
 			challenge := e.read()
-			var cp authChallengePayload
-			So(json.Unmarshal(challenge.Payload, &cp), ShouldBeNil)
+			var cp authChallengeParams
+			So(json.Unmarshal(challenge.Params, &cp), ShouldBeNil)
 			nonceE, _ := auth.RandomNonceHex(h.proto.Crypto.NonceBytes)
 			mac := h.crypto.ExtHMAC(auth.ModePairing, wrongMac, cp.NonceD, nonceE)
-			e.write(typeAuthResponse, uuid.NewString(), authResponsePayload{Mode: modePairing, NonceE: nonceE, HMAC: mac})
+			e.writeResult(challenge.ID, authResponseResult{Mode: modePairing, NonceE: nonceE, HMAC: mac})
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			_, _, _ = e.ws.Read(ctx)
@@ -102,11 +102,11 @@ func TestAuditRecording(t *testing.T) {
 			for i := 0; i < 6; i++ {
 				e := dial(h.url)
 				challenge := e.read()
-				var cp authChallengePayload
-				So(json.Unmarshal(challenge.Payload, &cp), ShouldBeNil)
+				var cp authChallengeParams
+				So(json.Unmarshal(challenge.Params, &cp), ShouldBeNil)
 				nonceE, _ := auth.RandomNonceHex(h.proto.Crypto.NonceBytes)
 				mac := h.crypto.ExtHMAC(auth.ModePairing, wrongMac, cp.NonceD, nonceE)
-				e.write(typeAuthResponse, uuid.NewString(), authResponsePayload{Mode: modePairing, NonceE: nonceE, HMAC: mac})
+				e.writeResult(challenge.ID, authResponseResult{Mode: modePairing, NonceE: nonceE, HMAC: mac})
 				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 				_, _, _ = e.ws.Read(ctx)
 				cancel()

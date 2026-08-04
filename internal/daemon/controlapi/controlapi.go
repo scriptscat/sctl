@@ -89,7 +89,7 @@ func (h *Handler) status(w http.ResponseWriter, _ *http.Request) {
 }
 
 // call 转发一次 bridge action:解析调用方自报标签(仅审计),再驱动阻塞的 Bridge.Call。
-// 请求方(CLI/mcp)断开会取消 r.Context() → Call 向扩展发 bridge.cancel 作废操作。
+// 请求方(CLI/mcp)断开会取消 r.Context() → Call 向扩展发 $/cancelRequest 作废操作。
 func (h *Handler) call(w http.ResponseWriter, r *http.Request) {
 	var req control.CallRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

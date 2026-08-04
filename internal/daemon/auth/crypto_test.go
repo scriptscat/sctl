@@ -29,7 +29,7 @@ func TestSessionHandshake(t *testing.T) {
 			So(cfg.VerifyExtHMAC(ModeSession, key, nonceD, nonceE, extMAC), ShouldBeTrue)
 		})
 
-		Convey("daemon 的 auth.ok HMAC 由扩展用同一密钥验证通过", func() {
+		Convey("daemon 的 $session.authenticated HMAC 由扩展用同一密钥验证通过", func() {
 			okMAC := cfg.DaemonHMAC(ModeSession, key, nonceD, nonceE)
 			So(cfg.VerifyDaemonHMAC(ModeSession, key, nonceD, nonceE, okMAC), ShouldBeTrue)
 		})

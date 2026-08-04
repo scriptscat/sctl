@@ -18,7 +18,7 @@ func newMcpCmd() *cobra.Command {
 	var name string
 	cmd := &cobra.Command{
 		Use:   "mcp",
-		Short: "Run the MCP server over stdio (starts the daemon if it is not running)",
+		Short: "Run the MCP server over stdio (requires an existing sctl serve process)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runMcpServe(cmd, name)
 		},

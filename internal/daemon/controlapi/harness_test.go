@@ -29,16 +29,13 @@ import (
 // 扩展侧一律按线上协议(docs/protocol.md)自己拼信封,不借 bridge 的未导出符号 —— 这样这些
 // 测试同时也在守护「daemon 对扩展呈现的样子」。
 const (
-	testControlToken = "test-control-token"
-	testVersion      = "0.1.0"
-
-	typeAuthChallenge  = "auth.challenge"
-	typeAuthResponse   = "auth.response"
-	typeAuthOK         = "auth.ok"
-	typeHello          = "hello"
-	typeBridgeRequest  = "bridge.request"
-	typeBridgeResponse = "bridge.response"
-	typeBridgeCancel   = "bridge.cancel"
+	testControlToken    = "test-control-token"
+	testVersion         = "0.1.0"
+	methodAuthenticate  = "$session.authenticate"
+	methodAuthenticated = "$session.authenticated"
+	methodHello         = "$session.hello"
+	methodCapabilities  = "$session.capabilities"
+	methodCancel        = "$/cancelRequest"
 
 	modeSession = "session"
 )
@@ -55,6 +52,15 @@ type authResponsePayload struct {
 
 type authOKPayload struct {
 	HMAC string `json:"hmac"`
+}
+
+type rpcRequestParams struct {
+	Input    json.RawMessage `json:"input"`
+	ClientID string          `json:"clientId"`
+}
+
+type cancelParams struct {
+	ID string `json:"id"`
 }
 
 // testHarness 承载一个运行中的 daemon(WS 面 + 控制 API)与用于对拍的密码学助手/存储。
@@ -122,45 +128,60 @@ func dial(url string) *extClient {
 	return &extClient{ws: ws}
 }
 
-func (e *extClient) read() bridge.Envelope {
+func (e *extClient) read() bridge.Message {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	_, data, err := e.ws.Read(ctx)
 	So(err, ShouldBeNil)
-	var env bridge.Envelope
+	var env bridge.Message
 	So(json.Unmarshal(data, &env), ShouldBeNil)
 	return env
 }
 
-func (e *extClient) write(typ, requestID string, payload any) {
+func (e *extClient) writeRequest(method, id string, params any) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	raw, err := json.Marshal(payload)
+	raw, err := json.Marshal(params)
 	So(err, ShouldBeNil)
-	env := bridge.Envelope{V: 1, Type: typ, RequestID: requestID, Payload: raw}
+	env := bridge.Message{JSONRPC: "2.0", ID: id, Method: method, Params: raw}
 	So(wsjson.Write(ctx, e.ws, env), ShouldBeNil)
+}
+
+func (e *extClient) writeResult(id string, result any) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	raw, err := json.Marshal(result)
+	So(err, ShouldBeNil)
+	So(wsjson.Write(ctx, e.ws, bridge.Message{JSONRPC: "2.0", ID: id, Result: raw}), ShouldBeNil)
 }
 
 // doSessionHandshake 以给定长期密钥完成会话握手,并消费 hello。
 func (h *testHarness) doSessionHandshake(key []byte) *extClient {
 	e := dial(h.url)
 	challenge := e.read()
-	So(challenge.Type, ShouldEqual, typeAuthChallenge)
+	So(challenge.Method, ShouldEqual, methodAuthenticate)
 	var cp authChallengePayload
-	So(json.Unmarshal(challenge.Payload, &cp), ShouldBeNil)
+	So(json.Unmarshal(challenge.Params, &cp), ShouldBeNil)
 
 	nonceE, _ := auth.RandomNonceHex(h.proto.Crypto.NonceBytes)
 	mac := h.crypto.ExtHMAC(auth.ModeSession, key, cp.NonceD, nonceE)
-	e.write(typeAuthResponse, uuid.NewString(), authResponsePayload{Mode: modeSession, NonceE: nonceE, HMAC: mac})
+	e.writeResult(challenge.ID, authResponsePayload{Mode: modeSession, NonceE: nonceE, HMAC: mac})
 
 	ok := e.read()
-	So(ok.Type, ShouldEqual, typeAuthOK)
+	So(ok.Method, ShouldEqual, methodAuthenticated)
 	var okp authOKPayload
-	So(json.Unmarshal(ok.Payload, &okp), ShouldBeNil)
+	So(json.Unmarshal(ok.Params, &okp), ShouldBeNil)
 	So(h.crypto.VerifyDaemonHMAC(auth.ModeSession, key, cp.NonceD, nonceE, okp.HMAC), ShouldBeTrue)
 
 	hello := e.read()
-	So(hello.Type, ShouldEqual, typeHello)
+	So(hello.Method, ShouldEqual, methodHello)
+	methods := make([]string, 0, len(h.proto.Actions))
+	for method := range h.proto.Actions {
+		methods = append(methods, method)
+	}
+	capabilitiesID := uuid.NewString()
+	e.writeRequest(methodCapabilities, capabilitiesID, map[string]any{"schemaVersion": "1.0.0", "methods": methods})
+	So(e.read().ID, ShouldEqual, capabilitiesID)
 	return e
 }
 

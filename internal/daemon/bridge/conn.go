@@ -15,6 +15,7 @@ import (
 
 	"github.com/scriptscat/sctl/internal/daemon/auth"
 	"github.com/scriptscat/sctl/internal/pkg/audit"
+	"github.com/scriptscat/sctl/internal/pkg/protocolschema"
 )
 
 // writeTimeout 是单帧写出的兜底超时,避免卡死的对端拖住写锁。
@@ -32,7 +33,8 @@ type conn struct {
 	closed    chan struct{}
 	closeOnce sync.Once
 
-	key []byte // 握手确立的长期共享密钥 K(会话建立后)
+	key          []byte // 握手确立的长期共享密钥 K(会话建立后)
+	capabilities map[string]struct{}
 }
 
 // authError 是被守卫判定为安全信号的握手失败,携带审计分类。handleWS 据此统一记录一次,
@@ -60,24 +62,24 @@ func (c *conn) handshake() error {
 	if err != nil {
 		return err
 	}
-	if err := c.sendCtx(ctx, typeAuthChallenge, uuid.NewString(), authChallengePayload{NonceD: nonceD}); err != nil {
-		return fmt.Errorf("send auth.challenge: %w", err)
+	challengeID := uuid.NewString()
+	if err := c.sendRequestCtx(ctx, challengeID, methodAuthenticate, authChallengeParams{NonceD: nonceD}); err != nil {
+		return fmt.Errorf("send authenticate request: %w", err)
 	}
 
-	env, err := c.readEnvelope(ctx)
+	env, err := c.readMessage(ctx)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			return authFail(audit.TypeHandshakeFailed, audit.ReasonTimeout, "timed out waiting for auth.response: %w", err)
+			return authFail(audit.TypeHandshakeFailed, audit.ReasonTimeout, "timed out waiting for authentication response: %w", err)
 		}
-		return fmt.Errorf("read auth.response: %w", err)
+		return fmt.Errorf("read authentication response: %w", err)
 	}
-	// 握手完成前,除 auth.response 外的任何消息导致立即断开(§3)。
-	if env.Type != typeAuthResponse {
-		return authFail(audit.TypeHandshakeFailed, audit.ReasonProtocol, "got %s instead of auth.response during handshake", env.Type)
+	if env.ID != challengeID || env.Method != "" || env.Error != nil || len(env.Result) == 0 {
+		return authFail(audit.TypeHandshakeFailed, audit.ReasonProtocol, "invalid authentication response")
 	}
-	var resp authResponsePayload
-	if err := json.Unmarshal(env.Payload, &resp); err != nil {
-		return authFail(audit.TypeHandshakeFailed, audit.ReasonProtocol, "parse auth.response: %w", err)
+	var resp authResponseResult
+	if err := json.Unmarshal(env.Result, &resp); err != nil {
+		return authFail(audit.TypeHandshakeFailed, audit.ReasonProtocol, "parse authentication response: %w", err)
 	}
 
 	switch resp.Mode {
@@ -91,7 +93,7 @@ func (c *conn) handshake() error {
 }
 
 // handshakeSession 用已配对长期密钥 K 完成会话握手(§3.1)。
-func (c *conn) handshakeSession(ctx context.Context, nonceD string, resp authResponsePayload) error {
+func (c *conn) handshakeSession(ctx context.Context, nonceD string, resp authResponseResult) error {
 	s := c.srv
 	key, ok, err := s.keys.Load()
 	if err != nil {
@@ -104,8 +106,8 @@ func (c *conn) handshakeSession(ctx context.Context, nonceD string, resp authRes
 		return authFail(audit.TypeHandshakeFailed, audit.ReasonHMACMismatch, "session handshake HMAC verification failed")
 	}
 	okMAC := s.crypto.DaemonHMAC(auth.ModeSession, key, nonceD, resp.NonceE)
-	if err := c.sendCtx(ctx, typeAuthOK, uuid.NewString(), authOKPayload{HMAC: okMAC}); err != nil {
-		return fmt.Errorf("send auth.ok: %w", err)
+	if err := c.sendNotificationCtx(ctx, methodAuthenticated, authenticatedParams{HMAC: okMAC}); err != nil {
+		return fmt.Errorf("send authenticated notification: %w", err)
 	}
 	c.key = key
 	return nil
@@ -113,7 +115,7 @@ func (c *conn) handshakeSession(ctx context.Context, nonceD string, resp authRes
 
 // handshakePairing 用接入码派生密钥完成首次接入握手,并以 AES-256-GCM 下发新长期密钥 K(§3.2)。
 // 线上模式标识沿用 "pairing"(与扩展侧一致),语义即「接入 enrollment」。
-func (c *conn) handshakePairing(ctx context.Context, nonceD string, resp authResponsePayload) error {
+func (c *conn) handshakePairing(ctx context.Context, nonceD string, resp authResponseResult) error {
 	s := c.srv
 	if !s.enrollAttempts.Allow("enrollment") {
 		return authFail(audit.TypePairingRateLimited, audit.ReasonPairExhausted, "too many enrollment attempts")
@@ -140,8 +142,8 @@ func (c *conn) handshakePairing(ctx context.Context, nonceD string, resp authRes
 		return fmt.Errorf("seal long-term key: %w", err)
 	}
 	okMAC := s.crypto.DaemonHMAC(auth.ModePairing, kpMac, nonceD, resp.NonceE)
-	if err := c.sendCtx(ctx, typeAuthOK, uuid.NewString(), authOKPayload{HMAC: okMAC, Key: &keyDelivery{Ciphertext: ct, IV: iv}}); err != nil {
-		return fmt.Errorf("send auth.ok: %w", err)
+	if err := c.sendNotificationCtx(ctx, methodAuthenticated, authenticatedParams{HMAC: okMAC, Key: &keyDelivery{Ciphertext: ct, IV: iv}}); err != nil {
+		return fmt.Errorf("send authenticated notification: %w", err)
 	}
 	// 下发成功后再落盘,避免下发失败却持久化了扩展拿不到的密钥。
 	if err := s.keys.Save(k); err != nil {
@@ -155,63 +157,112 @@ func (c *conn) handshakePairing(ctx context.Context, nonceD string, resp authRes
 // readLoop 是握手后的消息分发循环,任何读错误即关闭连接返回。
 func (c *conn) readLoop() {
 	for {
-		env, err := c.readEnvelope(c.ctx)
+		message, err := c.readMessage(c.ctx)
 		if err != nil {
 			c.close(websocket.StatusNormalClosure, "")
 			return
 		}
-		// v 不等于 1:立即断开(§2)。
-		if env.V != protocolV {
-			c.close(websocket.StatusProtocolError, "unsupported protocol version")
-			return
+		if message.Method == "" {
+			c.srv.handleRPCResponse(message)
+			continue
 		}
-		switch env.Type {
-		case typeBridgeResponse:
-			c.srv.handleBridgeResponse(env)
-		case typePing:
-			if err := c.send(typePong, env.RequestID, struct{}{}); err != nil {
-				c.log.Debug("failed to reply with pong", zap.Error(err))
+		switch message.Method {
+		case methodPing:
+			if message.ID != "" {
+				if err := c.sendResult(message.ID, struct{}{}); err != nil {
+					c.log.Debug("failed to reply to ping", zap.Error(err))
+				}
 			}
-		case typePong:
-			// 心跳应答,v1 不做主动存活探测,无需处理。
 		default:
-			// 未知/非预期类型:忽略并记日志(前向兼容,§2)。
-			c.log.Debug("ignoring unknown or unexpected message", zap.String("type", env.Type))
+			c.log.Debug("ignoring unexpected JSON-RPC method", zap.String("method", message.Method))
 		}
 	}
 }
 
-func (c *conn) readEnvelope(ctx context.Context) (Envelope, error) {
-	_, data, err := c.ws.Read(ctx)
-	if err != nil {
-		return Envelope{}, err
-	}
-	var env Envelope
-	if err := json.Unmarshal(data, &env); err != nil {
-		return Envelope{}, fmt.Errorf("parse envelope: %w", err)
-	}
-	return env, nil
-}
-
-func (c *conn) sendCtx(ctx context.Context, typ, requestID string, payload any) error {
-	env, err := newEnvelope(typ, requestID, payload)
+func (c *conn) receiveCapabilities() error {
+	ctx, cancel := context.WithTimeout(c.ctx, c.srv.authTimeout)
+	defer cancel()
+	message, err := c.readMessage(ctx)
 	if err != nil {
 		return err
 	}
-	return c.writeEnvelope(ctx, env)
+	if message.Method != methodCapabilities || message.ID == "" {
+		return fmt.Errorf("expected capabilities request")
+	}
+	var payload capabilitiesParams
+	if err := json.Unmarshal(message.Params, &payload); err != nil {
+		return err
+	}
+	capabilities := make(map[string]struct{}, len(payload.Methods))
+	for _, method := range payload.Methods {
+		capabilities[method] = struct{}{}
+	}
+	c.capabilities = capabilities
+	return c.sendResultCtx(ctx, message.ID, struct{}{})
 }
 
-func (c *conn) send(typ, requestID string, payload any) error {
+func (c *conn) readMessage(ctx context.Context) (Message, error) {
+	_, data, err := c.ws.Read(ctx)
+	if err != nil {
+		return Message{}, err
+	}
+	if err := protocolschema.ValidateWireFrame(data); err != nil {
+		return Message{}, fmt.Errorf("validate JSON-RPC message: %w", err)
+	}
+	var message Message
+	if err := json.Unmarshal(data, &message); err != nil {
+		return Message{}, fmt.Errorf("parse JSON-RPC message: %w", err)
+	}
+	return message, nil
+}
+
+func (c *conn) sendRequestCtx(ctx context.Context, id, method string, params any) error {
+	message, err := newRequest(id, method, params)
+	if err != nil {
+		return err
+	}
+	return c.writeMessage(ctx, message)
+}
+
+func (c *conn) sendRequest(id, method string, params any) error {
 	ctx, cancel := context.WithTimeout(c.ctx, writeTimeout)
 	defer cancel()
-	return c.sendCtx(ctx, typ, requestID, payload)
+	return c.sendRequestCtx(ctx, id, method, params)
 }
 
-// writeEnvelope 串行化写出(coder/websocket 同一时刻只允许一个写者)。
-func (c *conn) writeEnvelope(ctx context.Context, env Envelope) error {
+func (c *conn) sendNotificationCtx(ctx context.Context, method string, params any) error {
+	message, err := newNotification(method, params)
+	if err != nil {
+		return err
+	}
+	return c.writeMessage(ctx, message)
+}
+
+func (c *conn) sendNotification(method string, params any) error {
+	ctx, cancel := context.WithTimeout(c.ctx, writeTimeout)
+	defer cancel()
+	return c.sendNotificationCtx(ctx, method, params)
+}
+
+func (c *conn) sendResultCtx(ctx context.Context, id string, result any) error {
+	message, err := newResult(id, result)
+	if err != nil {
+		return err
+	}
+	return c.writeMessage(ctx, message)
+}
+
+func (c *conn) sendResult(id string, result any) error {
+	ctx, cancel := context.WithTimeout(c.ctx, writeTimeout)
+	defer cancel()
+	return c.sendResultCtx(ctx, id, result)
+}
+
+// writeEnvelope 串行化写出 JSON-RPC 消息(coder/websocket 同一时刻只允许一个写者)。
+func (c *conn) writeMessage(ctx context.Context, message Message) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
-	return wsjson.Write(ctx, c.ws, env)
+	return wsjson.Write(ctx, c.ws, message)
 }
 
 // close 幂等关闭:取消连接 ctx(解阻塞读)、关闭底层 WS、触发 closed 通道。

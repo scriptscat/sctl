@@ -64,12 +64,12 @@ func handshakeHMAC(key []byte, context, first, second string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-// ExtHMAC 计算扩展 auth.response 应携带的 HMAC:context=ctx.*Ext,顺序 nonceD||nonceE。
+// ExtHMAC 计算扩展对 $session.authenticate 的响应应携带的 HMAC:context=ctx.*Ext,顺序 nonceD||nonceE。
 func (c *Crypto) ExtHMAC(mode Mode, key []byte, nonceD, nonceE string) string {
 	return handshakeHMAC(key, c.extContext(mode), nonceD, nonceE)
 }
 
-// DaemonHMAC 计算 daemon auth.ok 应携带的 HMAC:context=ctx.*Daemon,顺序 nonceE||nonceD。
+// DaemonHMAC 计算 daemon $session.authenticated 通知应携带的 HMAC:context=ctx.*Daemon,顺序 nonceE||nonceD。
 func (c *Crypto) DaemonHMAC(mode Mode, key []byte, nonceD, nonceE string) string {
 	return handshakeHMAC(key, c.daemonContext(mode), nonceE, nonceD)
 }
@@ -79,7 +79,7 @@ func (c *Crypto) VerifyExtHMAC(mode Mode, key []byte, nonceD, nonceE, got string
 	return constantTimeHexEqual(c.ExtHMAC(mode, key, nonceD, nonceE), got)
 }
 
-// VerifyDaemonHMAC 恒定时间校验 daemon auth.ok 的 HMAC(供扩展/测试使用)。
+// VerifyDaemonHMAC 恒定时间校验 daemon $session.authenticated 的 HMAC(供扩展/测试使用)。
 func (c *Crypto) VerifyDaemonHMAC(mode Mode, key []byte, nonceD, nonceE, got string) bool {
 	return constantTimeHexEqual(c.DaemonHMAC(mode, key, nonceD, nonceE), got)
 }

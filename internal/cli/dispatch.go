@@ -13,10 +13,10 @@ import (
 	"github.com/scriptscat/sctl/internal/client/control"
 )
 
-// dispatch 是所有走桥接的动词的公共骨架:自动拉起并连上 daemon、以可被 Ctrl-C 取消的 ctx 发起
+// dispatch 是所有走桥接的动词的公共骨架:连上已有 daemon、以可被 Ctrl-C 取消的 ctx 发起
 // 阻塞调用,再把结果/错误映射为退出码。onOK 负责把成功结果打印出来。
 //
-// Ctrl-C 会取消 ctx → 切断到 daemon 的连接 → daemon 向扩展发 bridge.cancel 作废操作;此处映射为
+// Ctrl-C 会取消 ctx → 切断到 daemon 的连接 → daemon 向扩展发 $/cancelRequest 作废操作;此处映射为
 // exitVoided。桥接业务错误按 code 映射:USER_REJECTED→exitRejected,OPERATION_EXPIRED→exitVoided,
 // 其余→exitError。
 func dispatch(cmd *cobra.Command, action string, input json.RawMessage, onOK func(result json.RawMessage) error) error {

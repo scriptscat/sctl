@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"github.com/scriptscat/sctl/internal/daemon/auth"
@@ -146,8 +145,7 @@ func (s *Server) shutdown() {
 		s.mu.Unlock()
 
 		if active != nil {
-			// 计划退出前推送 bridge.shutdown(§3.4),best-effort。
-			_ = active.send(typeBridgeShutdown, uuid.NewString(), struct{}{})
+			_ = active.sendNotification(methodShutdown, struct{}{})
 		}
 		for _, c := range conns {
 			c.close(websocket.StatusGoingAway, "server shutdown")
@@ -208,12 +206,17 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.audit.Record(audit.Event{Type: audit.TypeHandshakeOK})
-	s.setActive(c)
-	if err := c.send(typeHello, uuid.NewString(), helloPayload{DaemonVersion: s.version, ProtocolVersion: protocolV}); err != nil {
+	if err := c.sendNotification(methodHello, helloParams{DaemonVersion: s.version}); err != nil {
 		s.log.Debug("failed to send hello", zap.Error(err))
 		c.close(websocket.StatusInternalError, "")
 		return
 	}
+	if err := c.receiveCapabilities(); err != nil {
+		s.log.Debug("failed to negotiate extension capabilities", zap.Error(err))
+		c.close(websocket.StatusProtocolError, "invalid capabilities")
+		return
+	}
+	s.setActive(c)
 	s.log.Info("extension completed the handshake and is connected")
 	c.readLoop()
 }
