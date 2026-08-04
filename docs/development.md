@@ -116,10 +116,11 @@ When bumping the version, update `GOLANGCI_LINT_VERSION` in `.github/workflows/t
 
 | Variable | Effect |
 |---|---|
-| `SCTL_DATA_DIR` | Overrides the data directory (keys / tokens / client store / logs) |
 | `SCTL_BRIDGE_ADDR` | Overrides both the daemon's bind address and the frontend's connect address (custom port, multiple instances, isolated testing) |
 
-How to drive a real daemon in isolation with these two variables, and what evidence makes a change count as
+Use the global `--data-dir <path>` flag to override the data directory for keys, tokens, client state, and logs.
+Pass the same directory to `serve` and every client command that talks to it. How to drive a real daemon in
+isolation with this flag and `SCTL_BRIDGE_ADDR`, and what evidence makes a change count as
 "verified", is owned by [verification.md](./verification.md).
 
 ## Version floor

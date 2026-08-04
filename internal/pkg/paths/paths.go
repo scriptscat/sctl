@@ -1,5 +1,5 @@
 // Package paths 解析 sctl 的数据目录与派生路径(日志、配对密钥等)。
-// 平台约定对齐 opskat/opsctl:各平台的用户级应用数据目录,可用 SCTL_DATA_DIR 覆盖。
+// 平台约定对齐 opskat/opsctl:各平台的用户级应用数据目录可由 CLI --data-dir 覆盖。
 package paths
 
 import (
@@ -8,10 +8,18 @@ import (
 	"runtime"
 )
 
-// DataDir 返回 sctl 的数据目录。SCTL_DATA_DIR 优先,否则用平台默认目录。
+var configuredDataDir string
+
+// SetDataDir configures the process-wide data directory before the daemon or a CLI client starts.
+// An empty value restores platform-default path resolution.
+func SetDataDir(dir string) {
+	configuredDataDir = dir
+}
+
+// DataDir 返回 sctl 的数据目录。CLI 配置优先,否则使用平台默认目录。
 func DataDir() string {
-	if dir := os.Getenv("SCTL_DATA_DIR"); dir != "" {
-		return dir
+	if configuredDataDir != "" {
+		return configuredDataDir
 	}
 	switch runtime.GOOS {
 	case "darwin":

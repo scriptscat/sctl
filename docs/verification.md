@@ -16,16 +16,17 @@ debugging compile errors through a slow feedback loop.
 
 ## Driving a real daemon
 
-`SCTL_DATA_DIR` and `SCTL_BRIDGE_ADDR` (defined in
+`--data-dir` and `SCTL_BRIDGE_ADDR` (defined in
 [development.md](./development.md#environment-variables)) let you start a daemon on an isolated data directory
 and port without touching the one you use day to day:
 
 ```bash
 go build -o sctl ./cmd/sctl
-export SCTL_DATA_DIR=$(mktemp -d) SCTL_BRIDGE_ADDR=127.0.0.1:18643
-./sctl serve &                 # start the daemon (writes control.token)
-./sctl status                  # should report truthfully that no extension is connected
-./sctl get                     # no extension connected → "extension not connected" error, exit code 3
+data_dir=$(mktemp -d)
+export SCTL_BRIDGE_ADDR=127.0.0.1:18643
+./sctl --data-dir "$data_dir" serve &  # start the daemon (writes control.token)
+./sctl --data-dir "$data_dir" status   # should report truthfully that no extension is connected
+./sctl --data-dir "$data_dir" get      # no extension connected → "extension not connected" error, exit code 3
 ```
 
 Cover **the boundaries that motivated the change**: if you touched exit-code mapping, exercise every code; if
@@ -74,7 +75,7 @@ side. The observable outlets are:
   security events (`-o json` prints the full events);
 - audit events (`internal/pkg/audit`) — handshakes, pairing, revocation, and rejections are all recorded;
 - stderr logs with `--log-level` turned up;
-- on-disk state under `$SCTL_DATA_DIR` (keys, client store).
+- on-disk state under the directory passed to `--data-dir` (keys, client store).
 
 The full chain that needs a human clicking in the browser (pair → list → source disclosure → install approval
 → revoke → kill switch) is cross-repository integration work. It waits until the extension-side build is ready
