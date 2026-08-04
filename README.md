@@ -20,6 +20,46 @@ the `/control/*` HTTP/JSON control API on the daemon's listener. Start `sctl ser
 system service manager if it should remain resident; requester commands never start it themselves. Details
 in [`docs/architecture.md`](./docs/architecture.md).
 
+## Install and connect an AI client
+
+sctl is still under active development. If a published binary for your platform is available on
+[GitHub Releases](https://github.com/scriptscat/sctl/releases), install it on `PATH` and confirm that the
+installed version satisfies the extension's version floor:
+
+```bash
+sctl version
+```
+
+If no published release is available, this setup requires a contributor source build. Source builds must inject
+a usable version; follow
+[`docs/development.md`](./docs/development.md#version-floor) instead of distributing a plain development
+build.
+
+Choose one absolute data directory and use it for the daemon, CLI, and MCP process. Start the daemon explicitly:
+
+```bash
+sctl --data-dir /absolute/path/to/sctl-data serve
+```
+
+Then enable **External Access** under ScriptCat's **Tools** page. In another terminal, open a one-time enrollment
+window and enter the printed code in ScriptCat:
+
+```bash
+sctl --data-dir /absolute/path/to/sctl-data connect
+sctl --data-dir /absolute/path/to/sctl-data status
+```
+
+Finally, configure the AI client to launch the same binary as a stdio MCP server, using this executable and
+argument sequence:
+
+```text
+/absolute/path/to/sctl --data-dir /absolute/path/to/sctl-data mcp --name my-ai-client
+```
+
+This MCP process is not the daemon and will not start one. The two `--data-dir` values must be identical. See
+the client-configuration JSON, complete setup, verification, security notes, and troubleshooting guide in
+[`docs/mcp.md`](./docs/mcp.md).
+
 ## Subcommands
 
 | Command | What it does |
@@ -41,6 +81,9 @@ in [`docs/architecture.md`](./docs/architecture.md).
 
 Global flags:
 
+- `--data-dir` — directory for the long-term pairing key, local control token, and logs. Pass the same absolute
+  directory to `serve`, CLI commands, and `mcp`. If omitted, sctl uses the platform's per-user application data
+  directory.
 - `-o` / `--output` — `table` (the default human-readable format), `json`, or `source`. `-o source` is only
   valid for `sctl get <uuid>`, where it writes the raw code to stdout with no trailing newline so it can be
   redirected into a `.user.js` file.
