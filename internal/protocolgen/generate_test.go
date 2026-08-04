@@ -18,7 +18,7 @@ func TestGenerateProducesDeterministicGoAndTypeScriptContracts(t *testing.T) {
 		t.Fatalf("generate protocol contracts: %v", err)
 	}
 
-	for _, name := range []string{"protocol.generated.go", "protocol.generated.ts", "schema.generated.ts"} {
+	for _, name := range []string{"protocol.generated.go", "protocol.generated.ts", "validators.generated.ts"} {
 		first, err := os.ReadFile(filepath.Join(out, name))
 		if err != nil {
 			t.Fatalf("read generated %s: %v", name, err)
@@ -123,5 +123,31 @@ func TestGenerateProducesStronglyTypedRPCContracts(t *testing.T) {
 	}
 	if strings.Contains(string(typescript), "unknown") {
 		t.Error("generated TypeScript contains an unresolved schema type")
+	}
+
+	validators, err := os.ReadFile(filepath.Join(out, "validators.generated.ts"))
+	if err != nil {
+		t.Fatalf("read generated TypeScript validators: %v", err)
+	}
+	for _, want := range []string{
+		"export function validateScriptsToggleParams",
+		`typeof value["enable"] === "boolean"`,
+		`isUUID(value["uuid"])`,
+		`value["edits"].length >= 1`,
+		`value["edits"].length <= 100`,
+		`hasOnlyKeys(item, ["newText", "oldText", "replaceAll"])`,
+		`Number.isInteger(value["contextLines"])`,
+		`value["contextLines"] >= 0`,
+		"export const RPC_PARAM_VALIDATORS",
+		"export const RPC_RESULT_VALIDATORS",
+	} {
+		if !strings.Contains(string(validators), want) {
+			t.Errorf("generated TypeScript validators do not contain %q", want)
+		}
+	}
+	for _, unwanted := range []string{"from \"ajv", "eval(", "new Function"} {
+		if strings.Contains(string(validators), unwanted) {
+			t.Errorf("generated TypeScript validators contain runtime code generation %q", unwanted)
+		}
 	}
 }

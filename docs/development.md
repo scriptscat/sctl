@@ -165,7 +165,7 @@ Cross-compilation, packaging, checksums, and the GitHub Release upload all happe
 ## Protocol source and generation
 
 `internal/pkg/protocol/protocol.json` is the only maintained source for the extension-facing RPC contract. Run
-`make protocol-generate` after changing it. The Go and TypeScript bindings, business runtime schemas, and
+`make protocol-generate` after changing it. The Go and TypeScript bindings, native TypeScript validators, and
 ScriptCat copies are generated artifacts and must be updated in the same cross-repository change.
 `make protocol-sync-scriptcat` updates the adjacent checkout; override `SCRIPTCAT_DIR` when it lives elsewhere.
 

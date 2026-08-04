@@ -210,5 +210,5 @@ the JSON-RPC response through the offscreen WebSocket owner.
 
 Run `make protocol-generate` after editing `protocol.json`, and `make protocol-sync-scriptcat` to update the
 adjacent ScriptCat checkout. `make protocol-check` regenerates all artifacts and fails if the checked-in output
-differs. Both peers parse the JSON-RPC structure directly and validate business parameters and results against
-the generated method schemas at their dispatch boundaries.
+differs. Both peers parse the JSON-RPC structure directly. ScriptCat validates business parameters with generated
+native TypeScript type guards, so extension startup does not compile schemas at runtime.
