@@ -1,6 +1,6 @@
 # sctl
 
-[English](./README.md) | [简体中文](./README_zh-CN.md)
+[English](../README.md) | [简体中文](./README_zh-CN.md)
 
 sctl 用于将 AI 客户端和命令行工作流连接到
 [ScriptCat](https://github.com/scriptscat/scriptcat) 浏览器扩展。单个跨平台二进制同时提供本地桥接
@@ -24,7 +24,7 @@ CLI ─────────────────────────�
 ## 快速开始
 
 如果 [GitHub Releases](https://github.com/scriptscat/sctl/releases) 已提供对应平台的二进制，请安装到
-`PATH`。贡献者从源码构建时必须遵循[版本下限说明](./docs/development.md#version-floor)；普通
+`PATH`。贡献者从源码构建时必须遵循[版本下限说明](./development.md#version-floor)；普通
 `0.0.0-dev` 构建会被扩展拒绝。
 
 选择一个绝对路径作为数据目录，并传给所有 sctl 进程：
@@ -46,7 +46,7 @@ sctl --data-dir /absolute/path/to/sctl-data status
 ```
 
 `sctl mcp` 不会启动 daemon；它与 `sctl serve` 必须使用相同的 `--data-dir`。客户端 JSON、验证方式、
-安全说明和故障排查参见[完整 MCP 安装指南](./docs/mcp.md)。
+安全说明和故障排查参见[完整 MCP 安装指南](./mcp.md)。
 
 ## 命令
 
@@ -68,12 +68,12 @@ ScriptCat 中批准、拒绝或关闭确认流程。
 
 ## 文档
 
-- [MCP 安装](./docs/mcp.md) — 安装、接入、客户端配置和故障排查。
-- [架构](./docs/architecture.md) — 进程模型和包职责。
-- [协议](./docs/protocol.md) — 扩展与 daemon 之间的 JSON-RPC 2.0 协议。
-- [威胁模型](./docs/threat-model.md) — 信任边界、凭据、操作确认和审计。
-- [贡献者文档](./docs/README.md) — 开发、验证和文档索引。
+- [MCP 安装](./mcp.md) — 安装、接入、客户端配置和故障排查。
+- [架构](./architecture.md) — 进程模型和包职责。
+- [协议](./protocol.md) — 扩展与 daemon 之间的 JSON-RPC 2.0 协议。
+- [威胁模型](./threat-model.md) — 信任边界、凭据、操作确认和审计。
+- [贡献者文档](./README.md) — 开发、验证和文档索引。
 
 ## 许可证
 
-GPL-3.0，与 ScriptCat 相同。参见 [LICENSE](./LICENSE)。
+GPL-3.0，与 ScriptCat 相同。参见 [LICENSE](../LICENSE)。

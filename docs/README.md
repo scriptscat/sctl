@@ -9,7 +9,7 @@ verification method are in [`doc-maintenance.md`](./doc-maintenance.md).
 
 | Doc | Owns |
 |---|---|
-| [`../README.md`](../README.md) / [`../README_zh-CN.md`](../README_zh-CN.md) | End-user project overview and quick start in English and Simplified Chinese. |
+| [`../README.md`](../README.md) / [`README_zh-CN.md`](./README_zh-CN.md) | End-user project overview and quick start in English and Simplified Chinese. |
 | [`../AGENTS.md`](../AGENTS.md) | Engineering principles and the architecture quick-map. Single source of truth relative to `CLAUDE.md`, which only `@`-imports it. |
 | [`architecture.md`](./architecture.md) | Process model, directory layout, per-package responsibilities, dependency direction. **Read before changing package structure or dependency direction.** |
 | [`protocol.md`](./protocol.md) | The extension ↔ daemon JSON-RPC 2.0 protocol: handshake, methods, cancellation, limits, and errors. **Read before changing the protocol.** |

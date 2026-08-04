@@ -1,6 +1,6 @@
 # sctl
 
-[English](./README.md) | [简体中文](./README_zh-CN.md)
+[English](./README.md) | [简体中文](./docs/README_zh-CN.md)
 
 sctl connects AI clients and command-line workflows to the
 [ScriptCat](https://github.com/scriptscat/scriptcat) browser extension. One cross-platform binary provides a
