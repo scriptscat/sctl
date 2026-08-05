@@ -32,6 +32,9 @@ type conn struct {
 	writeMu   sync.Mutex
 	closed    chan struct{}
 	closeOnce sync.Once
+	pingMu    sync.Mutex
+	pingID    string
+	pingAck   chan struct{}
 
 	key          []byte // 握手确立的长期共享密钥 K(会话建立后)
 	capabilities map[string]struct{}
@@ -92,7 +95,7 @@ func (c *conn) handshake() error {
 	}
 }
 
-// handshakeSession 用已配对长期密钥 K 完成会话握手(§3.1)。
+// handshakeSession 用已配对长期密钥 K 完成会话握手。
 func (c *conn) handshakeSession(ctx context.Context, nonceD string, resp authResponseResult) error {
 	s := c.srv
 	key, ok, err := s.keys.Load()
@@ -113,7 +116,7 @@ func (c *conn) handshakeSession(ctx context.Context, nonceD string, resp authRes
 	return nil
 }
 
-// handshakePairing 用接入码派生密钥完成首次接入握手,并以 AES-256-GCM 下发新长期密钥 K(§3.2)。
+// handshakePairing 用接入码派生密钥完成首次接入握手,并以 AES-256-GCM 下发新长期密钥 K。
 // 线上模式标识沿用 "pairing"(与扩展侧一致),语义即「接入 enrollment」。
 func (c *conn) handshakePairing(ctx context.Context, nonceD string, resp authResponseResult) error {
 	s := c.srv
@@ -163,6 +166,9 @@ func (c *conn) readLoop() {
 			return
 		}
 		if message.Method == "" {
+			if c.acknowledgePing(message) {
+				continue
+			}
 			c.srv.handleRPCResponse(message)
 			continue
 		}
@@ -179,6 +185,60 @@ func (c *conn) readLoop() {
 	}
 }
 
+// heartbeatLoop 主动探测半开连接；对端必须在下一个间隔前应答，否则连接及全部在途调用作废。
+func (c *conn) heartbeatLoop() {
+	ticker := time.NewTicker(c.srv.pingInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.closed:
+			return
+		case <-ticker.C:
+		}
+
+		id := uuid.NewString()
+		ack := make(chan struct{}, 1)
+		c.pingMu.Lock()
+		c.pingID = id
+		c.pingAck = ack
+		c.pingMu.Unlock()
+		if err := c.sendRequest(id, methodPing, struct{}{}); err != nil {
+			c.close(websocket.StatusGoingAway, "heartbeat failed")
+			return
+		}
+
+		timer := time.NewTimer(c.srv.pingInterval)
+		select {
+		case <-ack:
+			if !timer.Stop() {
+				<-timer.C
+			}
+		case <-timer.C:
+			c.close(websocket.StatusGoingAway, "heartbeat timeout")
+			return
+		case <-c.closed:
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return
+		}
+	}
+}
+
+func (c *conn) acknowledgePing(message Message) bool {
+	c.pingMu.Lock()
+	defer c.pingMu.Unlock()
+	if message.ID == "" || message.ID != c.pingID || c.pingAck == nil {
+		return false
+	}
+	if message.Error == nil {
+		c.pingAck <- struct{}{}
+		c.pingID = ""
+		c.pingAck = nil
+	}
+	return true
+}
+
 func (c *conn) receiveCapabilities() error {
 	ctx, cancel := context.WithTimeout(c.ctx, c.srv.authTimeout)
 	defer cancel()
@@ -192,6 +252,9 @@ func (c *conn) receiveCapabilities() error {
 	var payload capabilitiesParams
 	if err := json.Unmarshal(message.Params, &payload); err != nil {
 		return err
+	}
+	if payload.SchemaVersion != c.srv.proto.SchemaVersion {
+		return fmt.Errorf("incompatible protocol schema version %q", payload.SchemaVersion)
 	}
 	capabilities := make(map[string]struct{}, len(payload.Methods))
 	for _, method := range payload.Methods {

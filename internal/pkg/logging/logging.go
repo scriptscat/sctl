@@ -2,11 +2,11 @@
 //
 // 关键约束:日志绝不写 stdout —— `sctl mcp` 以 stdout 承载 MCP 协议帧,CLI 动词以
 // stdout 输出 `-o json` / `-o source` 结果,任何日志混入都会破坏它们。cago 的 component.Core() 默认
-// 把日志写 stdout,因此 sctl 不用它(与 opskat/opsctl 一致),改由本包用 logger.New +
+// 把日志写 stdout,因此 sctl 改由本包用 logger.New +
 // NewFileCore 构建 logger 并 logger.SetLogger 注入 cago,后续代码照常用 logger.Ctx(ctx)。
 //
 // 出口:持久文件日志(<dataDir>/logs/sctl.log 收 level+,sctl.err.log 只收 error+)
-// 外加 stderr console core —— sctl serve/pair 是前台命令,stderr 让用户实时看到日志,
+// 外加 stderr console core —— sctl serve/connect 是前台命令,stderr 让用户实时看到日志,
 // 且 stderr 与 stdout 协议/JSON 输出互不干扰。
 package logging
 

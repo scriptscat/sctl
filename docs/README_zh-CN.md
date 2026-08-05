@@ -45,7 +45,8 @@ sctl --data-dir /absolute/path/to/sctl-data status
 /absolute/path/to/sctl --data-dir /absolute/path/to/sctl-data mcp --name my-ai-client
 ```
 
-`sctl mcp` 不会启动 daemon；它与 `sctl serve` 必须使用相同的 `--data-dir`。客户端 JSON、验证方式、
+`sctl mcp` 不会启动 daemon；它与 `sctl serve` 必须使用相同的 `--data-dir`；覆盖默认监听地址时，
+还必须使用相同的 `--listen-address <host:port>`。客户端 JSON、验证方式、
 安全说明和故障排查参见[完整 MCP 安装指南](./mcp.md)。
 
 ## 命令

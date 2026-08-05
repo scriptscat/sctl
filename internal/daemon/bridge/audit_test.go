@@ -3,6 +3,7 @@ package bridge
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -125,19 +126,19 @@ func TestAuditRecording(t *testing.T) {
 			So(ev.Type, ShouldEqual, audit.TypeHandshakeOK)
 		})
 
-		Convey("客户端写请求超过限流上限后记录为 request.rate_limited", func() {
+		Convey("轮换可伪造客户端标签仍受会话总量限制并记录 request.rate_limited", func() {
 			// 限流在转发前拦下,扩展侧不会产生任何记录,守卫侧不记就完全无痕。
 			// 写限流上限 10/分,第 11 次应被挡下。未连接扩展不影响限流记账。
 			for i := 0; i < 11; i++ {
 				_, _ = h.srv.Call(context.Background(), Request{
-					ClientID: "client-x",
+					ClientID: fmt.Sprintf("client-%d", i),
 					Action:   "scripts.delete.request",
 				}, true)
 			}
 
 			ev := waitForAuditEvent(h, audit.TypeRequestRateLimited)
 			So(ev.Type, ShouldEqual, audit.TypeRequestRateLimited)
-			So(ev.Client, ShouldEqual, "client-x")
+			So(ev.Client, ShouldEqual, "client-10")
 		})
 
 		Convey("审计不泄露握手中过线的密码学材料", func() {

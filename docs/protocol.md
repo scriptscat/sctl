@@ -117,8 +117,9 @@ The daemon answers with an empty result and marks the connection usable only aft
 ### 2.3 Liveness and shutdown
 
 Either peer may send `$session.ping` as a request with empty params; the peer returns an empty result using the
-same `id`. `limits.pingIntervalMs` is the suggested interval. The daemon sends `$session.shutdown` as a
-notification before an orderly shutdown. A connection close cancels every in-flight request.
+same `id`. The daemon actively sends one every `limits.pingIntervalMs` and closes the connection if
+the response is not received within another interval. The daemon sends `$session.shutdown` as a notification
+before an orderly shutdown. A connection close cancels every in-flight request.
 
 ## 3. Business RPC
 

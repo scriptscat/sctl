@@ -10,9 +10,9 @@ go build -o sctl ./cmd/sctl && ./sctl version
 ## Language conventions
 
 - Documentation (this directory, `AGENTS.md`, `docs/README.md`) is written in English — it is read mostly by
-  coding agents.
+  coding agents. `docs/README_zh-CN.md` is the user-facing Chinese translation.
 - Code comments are written in Simplified Chinese, matching the extension repository.
-- The user-facing `README.md` and all CLI output stay in Simplified Chinese.
+- The user-facing `README.md` and CLI output are written in English.
 
 ## Testing
 
@@ -112,15 +112,10 @@ golangci-lint run ./...
 
 When bumping the version, update `GOLANGCI_LINT_VERSION` in `.github/workflows/test.yaml` to match.
 
-## Environment variables
-
-| Variable | Effect |
-|---|---|
-| `SCTL_BRIDGE_ADDR` | Overrides both the daemon's bind address and the frontend's connect address (custom port, multiple instances, isolated testing) |
-
 Use the global `--data-dir <path>` flag to override the data directory for keys, tokens, client state, and logs.
-Pass the same directory to `serve` and every client command that talks to it. How to drive a real daemon in
-isolation with this flag and `SCTL_BRIDGE_ADDR`, and what evidence makes a change count as
+Use the global `--listen-address <host:port>` flag to override the loopback listener and control-client target.
+Pass the same values to `serve` and every client command that talks to it. How to drive a real daemon in
+isolation with these flags, and what evidence makes a change count as
 "verified", is owned by [verification.md](./verification.md).
 
 ## Version floor
@@ -140,7 +135,7 @@ That version is delivered to the extension in `hello.daemonVersion`.
 
 | Trigger | What runs |
 |---|---|
-| Every PR (any target branch) | `lint` + `test` (`-race`) + `protocol-schema` |
+| Every PR (any target branch) | `lint` + native Linux/macOS/Windows `test` (`build`, `vet`, `-race`) + protocol generation and exact paired-ScriptCat drift |
 | push to `main` / `release/**` | Same as above |
 | push tag `v*` | Reuses the full test gate first; only builds and publishes once it passes |
 

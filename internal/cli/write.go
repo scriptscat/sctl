@@ -85,8 +85,8 @@ func newToggleCmd(enable bool) *cobra.Command {
 	}
 }
 
-// newDeleteCmd 请求删除一个脚本,接受可省略的资源词。del 是 delete 唯一的 cobra 别名;旧的 rm 顶层
-// 命令已移除。阻塞至扩展批准/拒绝;Ctrl-C 即作废。
+// newDeleteCmd 请求删除一个脚本,接受可省略的资源词和 del 别名。
+// 命令阻塞至扩展批准或拒绝;Ctrl-C 即作废。
 func newDeleteCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "delete [scripts|script|sc] <uuid>",

@@ -149,6 +149,33 @@ func TestSourceAndEditToolSchemas(t *testing.T) {
 	})
 }
 
+func TestToolSchemasRejectInvalidCrossFieldArgumentsBeforeForwarding(t *testing.T) {
+	Convey("MCP schema 在 bridge 前拒绝跨字段组合无效的请求", t, func() {
+		p := loadProto(t)
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+
+		for _, tc := range []struct {
+			name string
+			args map[string]any
+		}{
+			{name: "scripts_install_request", args: map[string]any{}},
+			{name: "scripts_install_request", args: map[string]any{"url": "https://example.test/a.user.js", "code": "// code"}},
+			{name: "scripts_source_get", args: map[string]any{"uuid": "script-id", "startLine": 1}},
+			{name: "scripts_source_get", args: map[string]any{"uuid": "script-id", "endLine": 2}},
+		} {
+			_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: tc.name, Arguments: tc.args})
+			if err == nil {
+				t.Errorf("%s accepted invalid arguments %#v", tc.name, tc.args)
+			}
+		}
+
+		caller.mu.Lock()
+		defer caller.mu.Unlock()
+		So(caller.actions, ShouldBeEmpty)
+	})
+}
+
 func TestToolCallResults(t *testing.T) {
 	Convey("工具调用结果映射", t, func() {
 		p := loadProto(t)

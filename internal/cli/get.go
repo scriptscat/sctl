@@ -11,9 +11,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newGetCmd 构造 `sctl get`:不带 uuid 打印已安装脚本表格;带 uuid 默认打印单行表格,完整元数据要
-// -o json(kubectl 语义,相对旧 `scripts info` 默认打完整 JSON 是行为变化);-o source 输出源码到
-// stdout(受 root PersistentPreRunE 把关,仅在带 uuid 时合法)。
+// newGetCmd 构造 `sctl get`:不带 uuid 打印已安装脚本表格;带 uuid 默认打印单行表格。
+// -o json 输出完整元数据;-o source 输出源码到 stdout,且仅在带 uuid 时合法。
 func newGetCmd() *cobra.Command {
 	var lines string
 	cmd := &cobra.Command{
@@ -83,8 +82,7 @@ func parseLinesFlag(v string) (start, end int, ok bool, err error) {
 	return start, end, true, nil
 }
 
-// scriptSummary 是 scripts.list/scripts.metadata.get 结果的宽松视图:只取人读表格所需字段,其余
-// 忽略;-o json 路径始终原样输出完整结果,不受此结构约束。
+// scriptSummary 只承载人读表格所需字段;-o json 直接输出完整结果,不受此结构约束。
 type scriptSummary struct {
 	UUID    string `json:"uuid"`
 	Name    string `json:"name"`

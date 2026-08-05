@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 
 	"github.com/cago-frame/cago/configs"
 	"github.com/cago-frame/cago/pkg/gogo"
@@ -24,51 +23,37 @@ import (
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
 )
 
-// Config 是 config.yaml 中 `bridge` 段的映射。地址默认仅 loopback。
-type Config struct {
-	Address string `yaml:"address"`
-}
-
 // daemonComponent 实现 cago 的 ComponentCancel:Start 拉起 WS server,
 // server 意外退出时通过 cancel 终止整个应用。
 type daemonComponent struct {
 	version  string
-	cfg      Config
+	address  string
 	srv      *bridge.Server
 	listener net.Listener
 }
 
 // Component 返回桥接 daemon 组件,注册到 cago 应用(用 RegistryCancel)。
 // version 注入 hello 消息的 daemonVersion。
-func Component(version string) *daemonComponent {
-	return &daemonComponent{version: version}
+func Component(version, address string) *daemonComponent {
+	return &daemonComponent{version: version, address: address}
 }
 
 func (b *daemonComponent) Start(ctx context.Context, cfg *configs.Config) error {
 	return b.StartCancel(ctx, func() {}, cfg)
 }
 
-func (b *daemonComponent) StartCancel(ctx context.Context, cancel context.CancelFunc, cfg *configs.Config) error {
+func (b *daemonComponent) StartCancel(ctx context.Context, cancel context.CancelFunc, _ *configs.Config) error {
 	p, err := protocol.Load()
 	if err != nil {
 		logger.Ctx(ctx).Error("failed to load the embedded protocol", zap.Error(err))
 		return err
 	}
-	if err := cfg.Scan(ctx, "bridge", &b.cfg); err != nil {
-		// 缺 bridge 段时退回协议默认端口,而不是直接失败。
-		logger.Ctx(ctx).Warn("failed to read the bridge config, falling back to the protocol default address", zap.Error(err))
+	if b.address == "" {
+		b.address = defaultAddress(p.Transport.DefaultPort)
 	}
-	// SCTL_BRIDGE_ADDR 覆盖配置/默认:daemon 与前端(control.resolveBaseURL)读同一环境变量,
-	// 保证 serve 绑定的地址正是前端要连的地址(自定义端口 / 多实例场景)。
-	if envAddr := os.Getenv("SCTL_BRIDGE_ADDR"); envAddr != "" {
-		b.cfg.Address = envAddr
-	}
-	if b.cfg.Address == "" {
-		b.cfg.Address = defaultAddress(p.Transport.DefaultPort)
-	}
-	// 仅允许绑定 loopback:非本机地址一律拒绝(docs/protocol.md §8 明确不做 Origin 判别,监听面必须收窄)。
-	if err := validateLoopback(b.cfg.Address); err != nil {
-		logger.Ctx(ctx).Error("refusing to listen on a non-loopback address", zap.String("address", b.cfg.Address), zap.Error(err))
+	// Origin 可被本机非浏览器进程伪造,因此监听面仍必须限制在 loopback。
+	if err := validateLoopback(b.address); err != nil {
+		logger.Ctx(ctx).Error("refusing to listen on a non-loopback address", zap.String("address", b.address), zap.Error(err))
 		return err
 	}
 
@@ -76,9 +61,9 @@ func (b *daemonComponent) StartCancel(ctx context.Context, cancel context.Cancel
 	b.srv = bridge.NewServer(b.version, p, keys, logger.Ctx(ctx))
 
 	// 同步 net.Listen 使绑定失败在启动阶段即暴露(cago 会 panic,符合 fail-fast 约定)。
-	ln, err := net.Listen("tcp", b.cfg.Address)
+	ln, err := net.Listen("tcp", b.address)
 	if err != nil {
-		logger.Ctx(ctx).Error("failed to bind the websocket listener", zap.String("address", b.cfg.Address), zap.Error(err))
+		logger.Ctx(ctx).Error("failed to bind the websocket listener", zap.String("address", b.address), zap.Error(err))
 		return err
 	}
 	b.listener = ln

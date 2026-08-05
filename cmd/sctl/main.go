@@ -16,14 +16,22 @@ func main() {
 	if err == nil {
 		return
 	}
-	// 写动词以 ExitError 携带自定义退出码(0 批准 / 1 拒绝 / 2 作废 / 3 其他)。
 	var ee *cli.ExitError
 	if errors.As(err, &ee) {
 		if ee.Message != "" {
 			fmt.Fprintln(os.Stderr, "error:", ee.Message)
 		}
-		os.Exit(ee.Code)
+		os.Exit(exitCode(err))
 	}
 	fmt.Fprintln(os.Stderr, "error:", err)
-	os.Exit(1)
+	os.Exit(exitCode(err))
+}
+
+// exitCode 保留 1 给浏览器中的明确拒绝；Cobra 解析错误和其他非决策失败统一为 3。
+func exitCode(err error) int {
+	var ee *cli.ExitError
+	if errors.As(err, &ee) {
+		return ee.Code
+	}
+	return 3
 }

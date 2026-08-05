@@ -45,7 +45,7 @@ func (s *Server) activeEnrollmentCode() (string, error) {
 	return s.enrollment.code, nil
 }
 
-// failEnrollmentAttempt 记一次接入失败,累计 3 次即作废接入窗口(docs/protocol.md §3.2)。
+// failEnrollmentAttempt 记一次接入失败,达到协议定义的尝试上限后作废接入窗口。
 func (s *Server) failEnrollmentAttempt() {
 	s.mu.Lock()
 	defer s.mu.Unlock()

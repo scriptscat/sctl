@@ -14,7 +14,7 @@ const (
 	schemaEmpty   = `{"type":"object","properties":{},"additionalProperties":false}`
 	schemaUUID    = `{"type":"object","properties":{"uuid":{"type":"string","description":"Script uuid."}},"required":["uuid"],"additionalProperties":false}`
 	schemaToggle  = `{"type":"object","properties":{"uuid":{"type":"string","description":"Script uuid."},"enable":{"type":"boolean","description":"true enables the script, false disables it."}},"required":["uuid","enable"],"additionalProperties":false}`
-	schemaInstall = `{"type":"object","properties":{"url":{"type":"string","description":"URL of the userscript to install."},"code":{"type":"string","description":"Source code of the userscript to install."}},"additionalProperties":false}`
+	schemaInstall = `{"type":"object","properties":{"url":{"type":"string","description":"URL of the userscript to install."},"code":{"type":"string","description":"Source code of the userscript to install."}},"oneOf":[{"required":["url"]},{"required":["code"]}],"additionalProperties":false}`
 
 	// 行窗是上下文预算的分页手段:两个字段要么都给要么都不给,不给即整份返回。返回的 sha256 始终是
 	// 全文哈希,客户端据此判断跨次分页读之间脚本有没有变。
@@ -22,7 +22,7 @@ const (
 		`"uuid":{"type":"string","description":"Script uuid."},` +
 		`"startLine":{"type":"integer","minimum":1,"description":"First line to return, 1-based and inclusive. Give it together with endLine; omit both to return the whole file."},` +
 		`"endLine":{"type":"integer","minimum":1,"description":"Last line to return, 1-based and inclusive. An endLine past the end of the file is clamped to the last line; a startLine past the end is rejected, so page forward until the returned endLine equals totalLines."}},` +
-		`"required":["uuid"],"additionalProperties":false}`
+		`"required":["uuid"],"oneOf":[{"required":["startLine","endLine"]},{"not":{"anyOf":[{"required":["startLine"]},{"required":["endLine"]}]}}],"additionalProperties":false}`
 
 	schemaSourceGrep = `{"type":"object","properties":{` +
 		`"uuid":{"type":"string","description":"Script uuid."},` +

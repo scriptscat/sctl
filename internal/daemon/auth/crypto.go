@@ -1,5 +1,5 @@
 // Package auth 实现桥接协议的认证原语:双向 HMAC 挑战应答握手(会话/配对两种模式)、
-// 配对码派生(HKDF)与长期密钥下发(AES-256-GCM)。密钥与客户端令牌的落盘存储见
+// 配对码派生(HKDF)与长期密钥下发(AES-256-GCM)。长期密钥的落盘存储见
 // internal/daemon/store。全部常量取自内嵌 protocol.json(见 internal/pkg/protocol),
 // 不在此硬编码。
 package auth
@@ -23,9 +23,9 @@ import (
 type Mode int
 
 const (
-	// ModeSession 使用长期共享密钥 K 的会话握手(§3.1)。
+	// ModeSession 使用长期共享密钥 K 的会话握手。
 	ModeSession Mode = iota
-	// ModePairing 使用配对码派生密钥 Kp_mac 的首次配对握手(§3.2)。
+	// ModePairing 使用配对码派生密钥 Kp_mac 的首次配对握手。
 	ModePairing
 )
 

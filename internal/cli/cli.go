@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/scriptscat/sctl/internal/client/control"
 	"github.com/scriptscat/sctl/internal/pkg/logging"
 	"github.com/scriptscat/sctl/internal/pkg/paths"
 )
@@ -26,9 +27,10 @@ var (
 
 // 全局标志(绑定为包级变量,任意子命令直接读取)。
 var (
-	outputFormat string
-	logLevel     string
-	dataDir      string
+	outputFormat  string
+	logLevel      string
+	dataDir       string
+	listenAddress string
 )
 
 // -o/--output 的合法取值。table 是默认的人读格式;source 仅在 `get <uuid>` 下合法
@@ -65,6 +67,7 @@ func NewRootCmd() *cobra.Command {
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			paths.SetDataDir(dataDir)
+			control.SetAddress(listenAddress)
 			logging.Setup(logLevel)
 			switch outputFormat {
 			case outputTable, outputJSON, outputSource:
@@ -81,6 +84,7 @@ func NewRootCmd() *cobra.Command {
 	}
 	root.PersistentFlags().StringVar(&logLevel, "log-level", "info", "log level: debug|info|warn|error (always written to stderr)")
 	root.PersistentFlags().StringVar(&dataDir, "data-dir", "", "data directory for keys, control token and logs")
+	root.PersistentFlags().StringVar(&listenAddress, "listen-address", "", "loopback address used by sctl serve and commands that connect to it (default 127.0.0.1:8643)")
 	root.PersistentFlags().StringVarP(&outputFormat, "output", "o", outputTable, "output format: table|json|source (source only valid for \"get <uuid>\")")
 	root.AddCommand(
 		newServeCmd(),

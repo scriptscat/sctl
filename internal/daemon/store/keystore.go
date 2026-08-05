@@ -1,5 +1,4 @@
-// Package store 是守卫侧的持久化层(cago 分层里的 repository 角色):把扩展配对的长期
-// 共享密钥与 MCP 客户端授权记录以 0600 权限落到数据目录,全部写入走 fsutil 的原子替换。
+// Package store 是守卫侧的持久化层,以原子替换将扩展配对的长期共享密钥写入数据目录。
 package store
 
 import (
@@ -13,7 +12,7 @@ import (
 	"github.com/scriptscat/sctl/internal/pkg/fsutil"
 )
 
-// KeyStore 以 0600 权限持久化扩展配对的长期共享密钥 K(hex 文本,便于人工核查)。
+// KeyStore 以 0600 权限持久化扩展配对的长期共享密钥 K。
 type KeyStore struct {
 	path string
 }

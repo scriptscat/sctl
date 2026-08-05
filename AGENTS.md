@@ -82,8 +82,8 @@ review today; the one exception is called out in the item itself.
   rewrite. The current dependency graph and the reason for the exception are in
   [`docs/architecture.md`](./docs/architecture.md).
 
-- **Sensitive files hit disk in exactly one place.** Long-term keys, the control token, and the client store
-  all go through `internal/pkg/fsutil.WriteFileAtomic`. A non-atomic write leaves truncated content behind on a
+- **Sensitive files hit disk in exactly one place.** The long-term key and control token both go through
+  `internal/pkg/fsutil.WriteFileAtomic`. A non-atomic write leaves truncated content behind on a
   crash, and a bare `os.WriteFile` also loses the 0600 permission bits. The inventory of credentials on disk is
   in [`docs/threat-model.md`](./docs/threat-model.md).
 

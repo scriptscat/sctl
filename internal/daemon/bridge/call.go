@@ -12,6 +12,8 @@ import (
 	"github.com/scriptscat/sctl/internal/pkg/protocolschema"
 )
 
+const sessionRateLimitKey = "authenticated-extension-session"
+
 // pendingCall 是一条挂起的 JSON-RPC 请求:阻塞直到应答/取消/断开/超时。
 type pendingCall struct {
 	clientID string
@@ -28,7 +30,7 @@ func (s *Server) Call(ctx context.Context, req Request, write bool) (Response, e
 	if write {
 		limiter = s.writeLimit
 	}
-	if req.ClientID != "" && !limiter.Allow(req.ClientID) {
+	if !limiter.Allow(sessionRateLimitKey) {
 		// 限流在转发前拦下,扩展侧不会有任何记录,守卫侧不记就完全无痕。
 		s.audit.Record(audit.Event{Type: audit.TypeRequestRateLimited, Client: req.ClientID})
 		return Response{}, &Error{Code: CodeRateLimited, Message: "rate limited"}

@@ -3,7 +3,7 @@
 // HTTP/JSON 控制 API。它不是桥接协议(见 docs/protocol.md)的一部分——桥接协议只约定
 // 扩展 ↔ daemon 那条 WS 连接;控制 API 是同一二进制内部前端 → daemon 的私有通道。
 //
-// 信任模型(docs/threat-model.md §1 / §4)——扁平信任:
+// 信任模型见 docs/threat-model.md——扁平信任:
 //   - 控制 API 的唯一传输闸门是「控制令牌」——daemon 绑定端口后写入 0600 文件、只有同用户
 //     进程能读。网页可以 new WebSocket / fetch 到该端口,但读不到令牌即被拒(防小人不防君子)。
 //   - 带上控制令牌即拥有全部能力:CLI 与所有 MCP agent 经已接入的可信通道继承信任,不再逐客户端

@@ -16,17 +16,18 @@ debugging compile errors through a slow feedback loop.
 
 ## Driving a real daemon
 
-`--data-dir` and `SCTL_BRIDGE_ADDR` (defined in
-[development.md](./development.md#environment-variables)) let you start a daemon on an isolated data directory
-and port without touching the one you use day to day:
+`--data-dir` and `--listen-address` let you start a daemon on an isolated data directory and port without
+touching the one you use day to day:
 
 ```bash
 go build -o sctl ./cmd/sctl
 data_dir=$(mktemp -d)
-export SCTL_BRIDGE_ADDR=127.0.0.1:18643
-./sctl --data-dir "$data_dir" serve &  # start the daemon (writes control.token)
-./sctl --data-dir "$data_dir" status   # should report truthfully that no extension is connected
-./sctl --data-dir "$data_dir" get      # no extension connected → "extension not connected" error, exit code 3
+address=127.0.0.1:18643
+./sctl --data-dir "$data_dir" --listen-address "$address" serve &  # start daemon and write control.token
+daemon_pid=$!
+trap 'kill "$daemon_pid" 2>/dev/null; wait "$daemon_pid" 2>/dev/null; rm -rf "$data_dir"' EXIT
+./sctl --data-dir "$data_dir" --listen-address "$address" status  # reports no extension connected
+./sctl --data-dir "$data_dir" --listen-address "$address" get     # extension not connected → exit code 3
 ```
 
 Cover **the boundaries that motivated the change**: if you touched exit-code mapping, exercise every code; if
@@ -73,9 +74,9 @@ side. The observable outlets are:
 
 - `./sctl status` — the daemon version, whether the extension is connected, and a one-line summary of recent
   security events (`-o json` prints the full events);
-- audit events (`internal/pkg/audit`) — handshakes, pairing, revocation, and rejections are all recorded;
+- audit events (`internal/pkg/audit`) — handshakes, pairing failures, rate limits, and rejected origins are recorded;
 - stderr logs with `--log-level` turned up;
-- on-disk state under the directory passed to `--data-dir` (keys, client store).
+- on-disk state under the directory passed to `--data-dir` (the pairing key, control token, and logs).
 
 The full chain that needs a human clicking in the browser (pair → list → source disclosure → install approval
 → revoke → kill switch) is cross-repository integration work. It waits until the extension-side build is ready

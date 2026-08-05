@@ -47,7 +47,8 @@ Then configure the AI client to launch:
 /absolute/path/to/sctl --data-dir /absolute/path/to/sctl-data mcp --name my-ai-client
 ```
 
-`sctl mcp` does not start the daemon. It and `sctl serve` must use the same `--data-dir`. See the
+`sctl mcp` does not start the daemon. It and `sctl serve` must use the same `--data-dir` and, when overriding
+the default listener, the same `--listen-address <host:port>`. See the
 [complete MCP installation guide](./docs/mcp.md) for client JSON, verification, security notes, and
 troubleshooting.
 

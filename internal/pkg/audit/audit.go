@@ -1,11 +1,10 @@
 // Package audit 记录守卫侧的安全事件。
 //
-// 审计的权威存储在扩展侧(McpAuditDAO 环形缓冲 + 设置页 UI),这里只补扩展**看不到**的那一段:
-// 握手失败、未授权连入、限流拦截、配对失败——这些事件在扩展建立会话之前就被挡掉,不会产生任何
-// 扩展侧记录,缺了它们无法对「网页直连 8643」这类尝试取证(docs/threat-model.md §2)。
+// 审计的权威存储在扩展侧;本包记录 daemon 本地观察到的握手、配对、Origin 拒绝和限流事件,
+// 补足未转发到扩展的安全信号,边界见 docs/threat-model.md。
 //
 // 事件只有固定字段(类型 / 客户端标识 / 原因分类),没有承载任意载荷的出口,以此保证
-// docs/threat-model.md §5 的铁律:token 原文、脚本源码、含凭据的 URL 永不进入审计与日志。
+// 安全约束见 docs/threat-model.md:token 原文、脚本源码、含凭据的 URL 永不进入审计与日志。
 package audit
 
 import (
@@ -64,7 +63,7 @@ type Recorder struct {
 	clock  func() time.Time
 }
 
-// NewRecorder 构造容量为 capacity 的记录器。容量对齐扩展侧 MCP_AUDIT_RING_BUFFER_SIZE 的约定。
+// NewRecorder 构造容量为 capacity 的记录器。
 func NewRecorder(capacity int, log *zap.Logger) *Recorder {
 	if log == nil {
 		log = zap.NewNop()

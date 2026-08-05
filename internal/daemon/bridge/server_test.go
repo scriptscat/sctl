@@ -148,6 +148,50 @@ func TestSessionHandshakeFlow(t *testing.T) {
 			_, _, err := e.ws.Read(ctx)
 			So(err, ShouldNotBeNil)
 		})
+
+		Convey("扩展声明不兼容 schemaVersion 时连接不进入可用状态", func() {
+			e := dial(h.url)
+			challenge := e.read()
+			var cp authChallengeParams
+			So(json.Unmarshal(challenge.Params, &cp), ShouldBeNil)
+			nonceE, _ := auth.RandomNonceHex(h.proto.Crypto.NonceBytes)
+			mac := h.crypto.ExtHMAC(auth.ModeSession, key, cp.NonceD, nonceE)
+			e.writeResult(challenge.ID, authResponseResult{Mode: modeSession, NonceE: nonceE, HMAC: mac})
+			So(e.read().Method, ShouldEqual, methodAuthenticated)
+			So(e.read().Method, ShouldEqual, methodHello)
+
+			e.writeRequest(methodCapabilities, uuid.NewString(), capabilitiesParams{
+				SchemaVersion: "999.0.0",
+				Methods:       []string{"scripts.list"},
+			})
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			_, _, err := e.ws.Read(ctx)
+			So(err, ShouldNotBeNil)
+			h.srv.mu.Lock()
+			active := h.srv.active
+			h.srv.mu.Unlock()
+			So(active, ShouldBeNil)
+		})
+	})
+}
+
+func TestHeartbeatClosesAnUnresponsiveExtension(t *testing.T) {
+	Convey("扩展不响应 daemon 主动 ping 时在硬超时后断开", t, func() {
+		h := startTestServer(t)
+		h.srv.pingInterval = 20 * time.Millisecond
+		key, _ := auth.NewLongTermKey()
+		So(h.keys.Save(key), ShouldBeNil)
+		e := h.doSessionHandshake(key)
+
+		ping := e.read()
+		So(ping.Method, ShouldEqual, methodPing)
+		So(ping.ID, ShouldNotBeBlank)
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_, _, err := e.ws.Read(ctx)
+		So(err, ShouldNotBeNil)
 	})
 }
 

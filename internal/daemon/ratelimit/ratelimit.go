@@ -1,5 +1,5 @@
-// Package ratelimit 提供按 key 的滑动窗口限流,用于桥接的配对尝试与每客户端读写节流
-// (默认值见 docs/protocol.md §7:配对 5/分、每客户端读 60/分、写 10/分,均为实现可调值)。
+// Package ratelimit 提供按 key 的滑动窗口限流,用于桥接的配对尝试与会话读写节流。
+// 具体限制由 protocol.json 定义并在构造调用处注入。
 package ratelimit
 
 import (

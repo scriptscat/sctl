@@ -18,7 +18,7 @@ import (
 )
 
 // stubDaemon 起一个假 daemon 控制端点:健康检查恒 200,/control/call 恒返回给定 CallResult,
-// 并把前端指向它(SCTL_BRIDGE_ADDR + 临时 SCTL_DATA_DIR 里的 control.token)。
+// 并通过测试夹具变量把公开 CLI 参数指向它。
 func stubDaemon(t *testing.T, result control.CallResult) {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -54,6 +54,9 @@ func runCLIStdin(stdin io.Reader, args ...string) (int, string, string) {
 	// resolution does not read this variable; translate the fixture value to the public CLI flag here.
 	if dir := os.Getenv("SCTL_DATA_DIR"); dir != "" {
 		args = append([]string{"--data-dir", dir}, args...)
+	}
+	if address := os.Getenv("SCTL_BRIDGE_ADDR"); address != "" {
+		args = append([]string{"--listen-address", address}, args...)
 	}
 	oldOut, oldErr := os.Stdout, os.Stderr
 	rOut, wOut, _ := os.Pipe()
@@ -236,6 +239,29 @@ func TestDataDirFlag(t *testing.T) {
 		So(os.WriteFile(filepath.Join(flagDir, "control.token"), []byte("flag-token"), 0o600), ShouldBeNil)
 
 		code, out := runCLI("--data-dir", flagDir, "status")
+		So(code, ShouldEqual, exitOK)
+		So(out, ShouldContainSubstring, "daemon version: 0.1.0")
+	})
+}
+
+func TestListenAddressFlag(t *testing.T) {
+	Convey("--listen-address 指定 sctl serve 与客户端共享的 loopback 地址", t, func() {
+		mux := http.NewServeMux()
+		mux.HandleFunc(control.PathHealth, func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
+		mux.HandleFunc(control.PathStatus, func(w http.ResponseWriter, _ *http.Request) {
+			_ = json.NewEncoder(w).Encode(control.StatusResult{DaemonVersion: "0.1.0"})
+		})
+		srv := httptest.NewServer(mux)
+		defer srv.Close()
+
+		t.Setenv("SCTL_BRIDGE_ADDR", "")
+		dataDir := t.TempDir()
+		So(os.WriteFile(filepath.Join(dataDir, "control.token"), []byte("flag-token"), 0o600), ShouldBeNil)
+
+		address := strings.TrimPrefix(srv.URL, "http://")
+		code, out := runCLI("--data-dir", dataDir, "--listen-address", address, "status")
 		So(code, ShouldEqual, exitOK)
 		So(out, ShouldContainSubstring, "daemon version: 0.1.0")
 	})

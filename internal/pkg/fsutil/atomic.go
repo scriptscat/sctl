@@ -22,6 +22,10 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 		tmp.Close()
 		return fmt.Errorf("set temporary file permissions: %w", err)
 	}
+	if err := restrictFileAccess(tmpName); err != nil {
+		tmp.Close()
+		return fmt.Errorf("restrict temporary file access: %w", err)
+	}
 	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
 		return fmt.Errorf("write temporary file: %w", err)

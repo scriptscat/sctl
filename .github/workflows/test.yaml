@@ -34,8 +34,12 @@ jobs:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
 
   test:
-    name: test
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6
@@ -47,14 +51,36 @@ jobs:
       - run: go test -race ./...
 
   protocol-schema:
-    name: protocol-schema
+    name: protocol schema and ScriptCat mirror
     runs-on: ubuntu-latest
+    env:
+      SCRIPTCAT_REF: 9412954ada9f1a34533ef6dd592d80e29c40e43f
     steps:
       - uses: actions/checkout@v5
         with:
-          fetch-depth: 0
+          path: sctl
+      - uses: actions/checkout@v5
+        with:
+          repository: scriptscat/scriptcat
+          ref: ${{ env.SCRIPTCAT_REF }}
+          path: scriptcat
       - uses: actions/setup-go@v6
         with:
-          go-version-file: go.mod
-          cache: true
-      - run: make protocol-check
+          go-version-file: sctl/go.mod
+          cache-dependency-path: sctl/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check generated artifacts and exact paired mirror
+        working-directory: sctl
+        run: |
+          make protocol-check
+          mkdir -p ../formatted
+          cp internal/pkg/protocol/generated/*.ts ../formatted/
+          npx --yes prettier@3.6.2 --config ../scriptcat/.prettierrc --write ../formatted/*.ts
+          cmp ../formatted/protocol.generated.ts ../scriptcat/src/app/service/service_worker/external_access/generated/protocol.generated.ts
+          cmp ../formatted/validators.generated.ts ../scriptcat/src/app/service/service_worker/external_access/generated/validators.generated.ts
+          {
+            echo "ScriptCat ref: $SCRIPTCAT_REF"
+            sha256sum ../formatted/*.ts
+          } >> "$GITHUB_STEP_SUMMARY"

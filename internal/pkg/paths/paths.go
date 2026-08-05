@@ -1,5 +1,5 @@
 // Package paths 解析 sctl 的数据目录与派生路径(日志、配对密钥等)。
-// 平台约定对齐 opskat/opsctl:各平台的用户级应用数据目录可由 CLI --data-dir 覆盖。
+// 各平台的用户级应用数据目录可由 CLI --data-dir 覆盖。
 package paths
 
 import (

@@ -50,6 +50,7 @@ type Server struct {
 	authTimeout      time.Duration
 	writeDecisionTTL time.Duration
 	enrollTTL        time.Duration
+	pingInterval     time.Duration
 	maxFrameBytes    int64
 
 	mu         sync.Mutex
@@ -64,7 +65,7 @@ type Server struct {
 	shutdownOnce sync.Once
 }
 
-// NewServer 用协议常量与持久化后端构造服务。限流默认值取 docs/protocol.md §7(实现可调)。
+// NewServer 用协议定义的常量与持久化后端构造服务。
 func NewServer(version string, p *protocol.Protocol, keys *store.KeyStore, log *zap.Logger) *Server {
 	if log == nil {
 		log = zap.NewNop()
@@ -82,6 +83,7 @@ func NewServer(version string, p *protocol.Protocol, keys *store.KeyStore, log *
 		authTimeout:      time.Duration(p.Limits.AuthTimeoutMs) * time.Millisecond,
 		writeDecisionTTL: time.Duration(p.Limits.WriteDecisionTtlMs) * time.Millisecond,
 		enrollTTL:        time.Duration(p.Limits.ExtPairingCodeTtlMs) * time.Millisecond,
+		pingInterval:     time.Duration(p.Limits.PingIntervalMs) * time.Millisecond,
 		maxFrameBytes:    int64(p.Limits.MaxFrameBytes),
 		conns:            make(map[*conn]struct{}),
 		pending:          make(map[string]*pendingCall),
@@ -174,8 +176,8 @@ func originAllowed(origin string) bool {
 	return false
 }
 
-// handleWS 接受一条 WS 连接并驱动其握手与消息循环。Origin 白名单是廉价前置(挡网页),握手仍是
-// 真正的闸门(docs/protocol.md §8:非浏览器进程可伪造任意 Origin)。
+// handleWS 接受一条 WS 连接并驱动其握手与消息循环。Origin 白名单是挡网页的前置过滤,
+// 非浏览器进程可以伪造 Origin,因此握手仍是真正的认证闸门。
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	if origin := r.Header.Get("Origin"); !originAllowed(origin) {
 		s.log.Debug("rejected websocket connection from non-extension origin", zap.String("origin", origin))
@@ -194,7 +196,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	defer s.removeConn(c)
 
 	if err := c.handshake(); err != nil {
-		// 认证失败统一以 1008 关闭,不回显原因(不给探测者信息,§3)。
+		// 认证失败统一以 1008 关闭且不回显原因,避免向探测者泄露细节。
 		s.log.Debug("handshake failed, closing connection", zap.Error(err))
 		// 只有被守卫判定为安全信号的失败才进审计;本地故障(密钥读写失败等)不混入。
 		var ae *authError
@@ -218,6 +220,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	s.setActive(c)
 	s.log.Info("extension completed the handshake and is connected")
+	go c.heartbeatLoop()
 	c.readLoop()
 }
 

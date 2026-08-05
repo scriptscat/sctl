@@ -9,12 +9,15 @@
 package mcpserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 
 	"github.com/scriptscat/sctl/internal/client/control"
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
@@ -51,6 +54,18 @@ func New(d Deps) *mcp.Server {
 }
 
 func registerTool(srv *mcp.Server, td toolDef, caller BridgeCaller) {
+	schemaDoc, err := jsonschema.UnmarshalJSON(strings.NewReader(td.inputSchema))
+	if err != nil {
+		panic(fmt.Sprintf("invalid input schema for %s: %v", td.name, err))
+	}
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource(td.name+".json", schemaDoc); err != nil {
+		panic(fmt.Sprintf("load input schema for %s: %v", td.name, err))
+	}
+	schema, err := compiler.Compile(td.name + ".json")
+	if err != nil {
+		panic(fmt.Sprintf("compile input schema for %s: %v", td.name, err))
+	}
 	tool := &mcp.Tool{
 		Name:        td.name,
 		Description: td.description,
@@ -58,6 +73,13 @@ func registerTool(srv *mcp.Server, td toolDef, caller BridgeCaller) {
 	}
 	action := td.action
 	srv.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		input, err := jsonschema.UnmarshalJSON(bytes.NewReader(req.Params.Arguments))
+		if err != nil {
+			return nil, fmt.Errorf("invalid %s arguments: %w", td.name, err)
+		}
+		if err := schema.Validate(input); err != nil {
+			return nil, fmt.Errorf("invalid %s arguments: %w", td.name, err)
+		}
 		return handleCall(ctx, req, action, caller)
 	})
 }

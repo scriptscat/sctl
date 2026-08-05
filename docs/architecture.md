@@ -6,14 +6,15 @@
 MCP client (Claude/Codex…) ─ stdio ─→ sctl mcp ─┐ (local internal connection: loopback control API)
 CLI verbs (sctl get / edit / install …)─────────┤
                                                 ▼
-                          sctl serve (daemon; WS listens on 127.0.0.1:8643 only)
+                          sctl serve (daemon; loopback-only WS listener)
                                                 ▲ WebSocket (extension dials in + mutual HMAC handshake)
                           ScriptCat browser extension (authority for approval and authorization)
 ```
 
 `sctl mcp` and the CLI verbs are **separate processes** from `sctl serve`. They talk over the
 `/control/*` HTTP/JSON control API on the daemon's listener — same port as the extension's WS surface, separate
-path, authenticated with the 0600 control token the daemon writes. Frontends never start `serve`: run it
+path, authenticated with the control token described in [threat-model.md](./threat-model.md#4-the-control-channel-internal-local-connection-in-detail).
+Frontends never start `serve`: run it
 explicitly in the foreground or let an external system service manager own its lifecycle.
 
 The authority always lives on the extension side: the daemon approves no write on its own — it forwards the
@@ -22,13 +23,12 @@ request and blocks until a human decides in the browser. Details in [threat-mode
 ## Directory layout
 
 `internal/` is grouped by **process role**: `daemon/` is the guard side (`sctl serve`), `client/` is the
-request side (`sctl mcp` and the CLI verbs), and the flat top-level packages are shared by both by definition.
-The layering convention is borrowed from [cago](https://github.com/cago-frame/cago) — `configs/`,
-`internal/pkg/`, and store playing the repository role.
+request side (`sctl mcp` and the CLI verbs), `cli/` wires commands to those roles, and `pkg/` is shared.
+The layering convention is borrowed from [cago](https://github.com/cago-frame/cago), with `internal/pkg/` as
+the shared layer and store playing the repository role.
 
 ```text
 cmd/sctl/main.go            # cobra entry point (unwraps ExitError → os.Exit)
-configs/config.yaml         # cago config (bridge.address etc.; falls back to built-in defaults if absent)
 
 internal/cli/               # subcommand definitions; spans both sides, hence top level
   cli.go                    #   root command, global flags (-o/--output, --log-level), output helpers
@@ -50,7 +50,7 @@ internal/daemon/            # ── sctl serve side ──
     envelope.go             #     envelope, payload structs, error codes
   controlapi/               #   /control/* handlers (controller role), depends on the narrow Bridge interface
   auth/                     #   mutual HMAC handshake, enrollment-code derivation (HKDF), key delivery (AES-GCM)
-  store/                    #   0600 persistence of the long-term key K (repository role)
+  store/                    #   persistence of the long-term key K (repository role)
   ratelimit/                #   per-key sliding-window rate limiting
 
 internal/client/            # ── sctl mcp / CLI verb side ──

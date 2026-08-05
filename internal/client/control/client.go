@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
@@ -16,6 +15,13 @@ import (
 
 // ErrDaemonUnreachable 表示当前没有可连接的 daemon。serve 的生命周期由用户或外部服务管理器负责。
 var ErrDaemonUnreachable = errors.New("cannot connect to the sctl daemon; start it with `sctl serve`")
+
+var configuredAddress string
+
+// SetAddress configures the daemon address for this process. An empty value uses the protocol default.
+func SetAddress(address string) {
+	configuredAddress = address
+}
 
 // Client 是前端连接 daemon 控制 API 的 HTTP 客户端。零值不可用,须经 Dial 构造。
 type Client struct {
@@ -60,8 +66,8 @@ func (c *Client) WithClientLabel(label string) *Client {
 }
 
 func resolveBaseURL() (string, error) {
-	if addr := os.Getenv("SCTL_BRIDGE_ADDR"); addr != "" {
-		return "http://" + addr, nil
+	if configuredAddress != "" {
+		return "http://" + configuredAddress, nil
 	}
 	p, err := protocol.Load()
 	if err != nil {

@@ -21,10 +21,3 @@ verification method are in [`doc-maintenance.md`](./doc-maintenance.md).
 
 Readers who want to *write* user scripts should go to [docs.scriptcat.org](https://docs.scriptcat.org/)
 instead; this directory targets sctl contributors and maintainers only.
-
-## Single source of truth
-
-- The only authority for protocol constants is
-  [`internal/pkg/protocol/protocol.json`](../internal/pkg/protocol/protocol.json). Generated bindings are consumed by the extension and daemon.
-  Generation and reproducibility checks are described in
-  [development.md](./development.md#protocol-source-and-generation).
