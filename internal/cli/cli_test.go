@@ -486,6 +486,14 @@ func TestDeleteAliasAndRemovedCommands(t *testing.T) {
 }
 
 func TestGetCommand(t *testing.T) {
+	Convey("get help 引导大脚本使用 grep 与行窗,同时保留完整导出说明", t, func() {
+		code, out := runCLI("get", "--help")
+		So(code, ShouldEqual, exitOK)
+		So(out, ShouldContainSubstring, "sctl grep")
+		So(out, ShouldContainSubstring, "--lines 100-250")
+		So(out, ShouldContainSubstring, "> script.user.js")
+	})
+
 	Convey("get <uuid> 默认打印单行表格,-o json 才给完整元数据", t, func() {
 		Convey("默认表格只含摘要字段", func() {
 			stubDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"uuid":"u1","name":"demo","enabled":true,"version":"1.0","description":"a very long field not in the table"}`)})

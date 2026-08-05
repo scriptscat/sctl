@@ -19,6 +19,7 @@ import (
 type fakeCaller struct {
 	mu      sync.Mutex
 	actions []string
+	inputs  []json.RawMessage
 	block   chan struct{} // 非 nil 则 Call 阻塞至其关闭或 ctx 取消
 	result  control.CallResult
 	err     error
@@ -28,6 +29,7 @@ type fakeCaller struct {
 func (f *fakeCaller) Call(ctx context.Context, action string, input json.RawMessage) (control.CallResult, error) {
 	f.mu.Lock()
 	f.actions = append(f.actions, action)
+	f.inputs = append(f.inputs, append(json.RawMessage(nil), input...))
 	block := f.block
 	f.mu.Unlock()
 	if block != nil {
@@ -173,6 +175,36 @@ func TestToolSchemasRejectInvalidCrossFieldArgumentsBeforeForwarding(t *testing.
 		caller.mu.Lock()
 		defer caller.mu.Unlock()
 		So(caller.actions, ShouldBeEmpty)
+	})
+}
+
+func TestSourceGetAppliesFullSourceBudgetOnlyWithoutLineWindow(t *testing.T) {
+	Convey("MCP 全文读取带上下文预算,显式行窗读取不受该预算限制", t, func() {
+		p := loadProto(t)
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{"code":"source"}`)}}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+
+		_, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+			Name:      "scripts_source_get",
+			Arguments: map[string]any{"uuid": "script-id"},
+		})
+		So(err, ShouldBeNil)
+
+		_, err = session.CallTool(context.Background(), &mcp.CallToolParams{
+			Name: "scripts_source_get",
+			Arguments: map[string]any{
+				"uuid":      "script-id",
+				"startLine": 1,
+				"endLine":   200,
+			},
+		})
+		So(err, ShouldBeNil)
+
+		caller.mu.Lock()
+		defer caller.mu.Unlock()
+		So(caller.inputs, ShouldHaveLength, 2)
+		So(string(caller.inputs[0]), ShouldContainSubstring, `"maxBytes":65536`)
+		So(string(caller.inputs[1]), ShouldNotContainSubstring, "maxBytes")
 	})
 }
 

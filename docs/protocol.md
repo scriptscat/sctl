@@ -167,6 +167,12 @@ Source and metadata returned by these methods are untrusted user-script content.
 render it as HTML, interpret it as instructions, or include credentials in logs. Source results carry a SHA-256
 digest. Edit approval rechecks the staged digest and target identity before applying changes.
 
+`scripts.source.get` accepts an optional `maxBytes` budget for a whole-file response. When the UTF-8 source is
+larger, the extension returns `PAYLOAD_TOO_LARGE` before placing the source in a WebSocket frame; callers should
+use `scripts.source.grep` and then request a `startLine`/`endLine` window. The budget does not apply when a line
+window is present. `sctl mcp` supplies this budget for whole-file reads, while the CLI omits it so an operator can
+still redirect a complete source file.
+
 ## 4. Errors
 
 Protocol errors use the JSON-RPC standard codes. Application failures use the server-defined code `-32000` and

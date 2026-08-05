@@ -107,6 +107,7 @@ type ScriptsListResult struct {
 
 type ScriptsSourceGetParams struct {
 	EndLine   *int   `json:"endLine,omitempty"`
+	MaxBytes  *int   `json:"maxBytes,omitempty"`
 	StartLine *int   `json:"startLine,omitempty"`
 	UUID      string `json:"uuid"`
 }

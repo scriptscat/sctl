@@ -23,6 +23,8 @@ import (
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
 )
 
+const maxFullSourceResponseBytes = 64 * 1024
+
 // progressInterval 是阻塞等待期间发送 progress 通知的间隔。取远小于常见 MCP 客户端 60s 级工具
 // 超时的值,使每次通知都能刷新其倒计时。以 var 暴露仅为便于测试压缩等待。
 var progressInterval = 10 * time.Second
@@ -79,6 +81,19 @@ func registerTool(srv *mcp.Server, td toolDef, caller BridgeCaller) {
 		}
 		if err := schema.Validate(input); err != nil {
 			return nil, fmt.Errorf("invalid %s arguments: %w", td.name, err)
+		}
+		if action == "scripts.source.get" {
+			var args map[string]any
+			if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
+				return nil, fmt.Errorf("decode %s arguments: %w", td.name, err)
+			}
+			if _, windowed := args["startLine"]; !windowed {
+				args["maxBytes"] = maxFullSourceResponseBytes
+				req.Params.Arguments, err = json.Marshal(args)
+				if err != nil {
+					return nil, fmt.Errorf("encode %s arguments: %w", td.name, err)
+				}
+			}
 		}
 		return handleCall(ctx, req, action, caller)
 	})

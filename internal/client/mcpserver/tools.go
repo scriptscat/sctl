@@ -58,9 +58,11 @@ var toolDefs = []toolDef{
 		inputSchema: schemaUUID,
 	},
 	{
-		action:      "scripts.source.get",
-		name:        "scripts_source_get",
-		description: "Read one script's source by uuid. The first read raises a source disclosure prompt in the browser that the user must approve.",
+		action: "scripts.source.get",
+		name:   "scripts_source_get",
+		description: "Read one script's source by uuid. A full-source read has a response budget; if it is too large, " +
+			"use scripts_source_grep to locate relevant code, then provide startLine and endLine to read a line window " +
+			"without that MCP budget. The first read raises a source disclosure prompt in the browser that the user must approve.",
 		inputSchema: schemaSourceGet,
 	},
 	{

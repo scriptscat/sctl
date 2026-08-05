@@ -18,6 +18,12 @@ func newGetCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "get [scripts|script|sc] [<uuid>]",
 		Short: "List installed scripts, or show one script (-o json for full metadata, -o source for raw code)",
+		Long: "List installed scripts, show one script's metadata, or print its raw source with -o source.\n\n" +
+			"For large scripts, use \"sctl grep <uuid> <query>\" to locate relevant code, then read\n" +
+			"a line window instead of printing the whole source:\n\n" +
+			"  sctl get <uuid> -o source --lines 100-250\n\n" +
+			"Without --lines, -o source writes the complete source to stdout and can be redirected:\n\n" +
+			"  sctl get <uuid> -o source > script.user.js",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if n := len(stripResourceWord(args)); n > 1 {
 				return &ExitError{
@@ -61,7 +67,7 @@ func newGetCmd() *cobra.Command {
 			})
 		},
 	}
-	cmd.Flags().StringVar(&lines, "lines", "", `line window "A-B", 1-based inclusive (only valid together with -o source)`)
+	cmd.Flags().StringVar(&lines, "lines", "", `read the inclusive 1-based line window "A-B" (only with -o source)`)
 	return cmd
 }
 
