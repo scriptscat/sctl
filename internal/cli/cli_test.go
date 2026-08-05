@@ -50,11 +50,6 @@ func runCLICapture(args ...string) (int, string, string) {
 
 // runCLIStdin 与 runCLICapture 相同,但为命令喂入给定 stdin(`edit -f -` 从 stdin 读 edits 用)。
 func runCLIStdin(stdin io.Reader, args ...string) (int, string, string) {
-	// Existing test fixtures use SCTL_DATA_DIR only to select an isolated directory. Production path
-	// resolution does not read this variable; translate the fixture value to the public CLI flag here.
-	if dir := os.Getenv("SCTL_DATA_DIR"); dir != "" {
-		args = append([]string{"--data-dir", dir}, args...)
-	}
 	if address := os.Getenv("SCTL_BRIDGE_ADDR"); address != "" {
 		args = append([]string{"--listen-address", address}, args...)
 	}
@@ -239,6 +234,33 @@ func TestDataDirFlag(t *testing.T) {
 		So(os.WriteFile(filepath.Join(flagDir, "control.token"), []byte("flag-token"), 0o600), ShouldBeNil)
 
 		code, out := runCLI("--data-dir", flagDir, "status")
+		So(code, ShouldEqual, exitOK)
+		So(out, ShouldContainSubstring, "daemon version: 0.1.0")
+	})
+}
+
+func TestDataDirEnv(t *testing.T) {
+	Convey("SCTL_DATA_DIR 指定 CLI 与 daemon 共享的数据目录", t, func() {
+		mux := http.NewServeMux()
+		mux.HandleFunc(control.PathHealth, func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
+		mux.HandleFunc(control.PathStatus, func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get(control.HeaderControlToken) != "env-token" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(control.StatusResult{DaemonVersion: "0.1.0"})
+		})
+		srv := httptest.NewServer(mux)
+		defer srv.Close()
+
+		t.Setenv("SCTL_BRIDGE_ADDR", strings.TrimPrefix(srv.URL, "http://"))
+		dataDir := t.TempDir()
+		t.Setenv("SCTL_DATA_DIR", dataDir)
+		So(os.WriteFile(filepath.Join(dataDir, "control.token"), []byte("env-token"), 0o600), ShouldBeNil)
+
+		code, out := runCLI("status")
 		So(code, ShouldEqual, exitOK)
 		So(out, ShouldContainSubstring, "daemon version: 0.1.0")
 	})

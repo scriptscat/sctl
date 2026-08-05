@@ -83,7 +83,7 @@ func NewRootCmd() *cobra.Command {
 		},
 	}
 	root.PersistentFlags().StringVar(&logLevel, "log-level", "info", "log level: debug|info|warn|error (always written to stderr)")
-	root.PersistentFlags().StringVar(&dataDir, "data-dir", "", "data directory for keys, control token and logs")
+	root.PersistentFlags().StringVar(&dataDir, "data-dir", os.Getenv("SCTL_DATA_DIR"), "data directory for keys, control token and logs (env: SCTL_DATA_DIR)")
 	root.PersistentFlags().StringVar(&listenAddress, "listen-address", "", "address used by sctl serve and commands that connect to it (default 127.0.0.1:8643)")
 	root.PersistentFlags().StringVarP(&outputFormat, "output", "o", outputTable, "output format: table|json|source (source only valid for \"get <uuid>\")")
 	root.AddCommand(

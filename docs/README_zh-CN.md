@@ -24,28 +24,29 @@ CLI ─────────────────────────�
 ## 快速开始
 
 如果 [GitHub Releases](https://github.com/scriptscat/sctl/releases) 已提供对应平台的二进制，请安装到
-`PATH`。贡献者从源码构建时必须遵循[版本下限说明](./development.md#version-floor)；普通
-`0.0.0-dev` 构建会被扩展拒绝。
+`PATH`。尚无发布包时，贡献者也可以从源码构建；普通源码构建以 `0.0.0-dev` 标识自身。
 
-选择一个绝对路径作为数据目录，并传给所有 sctl 进程：
+选择一个绝对路径作为数据目录，并为所有 sctl 进程设置环境变量：
 
 ```bash
+export SCTL_DATA_DIR=/absolute/path/to/sctl-data
+
 # 终端 1：保持 daemon 运行
-sctl --data-dir /absolute/path/to/sctl-data serve
+sctl serve
 
 # 终端 2：首次接入，然后验证连接
-sctl --data-dir /absolute/path/to/sctl-data connect
-sctl --data-dir /absolute/path/to/sctl-data status
+sctl connect
+sctl status
 ```
 
 在 ScriptCat 中启用**外部接入**，然后输入 `connect` 打印的一次性配对码。随后将 AI
 客户端配置为启动：
 
 ```text
-/absolute/path/to/sctl --data-dir /absolute/path/to/sctl-data mcp --name my-ai-client
+/absolute/path/to/sctl mcp --name my-ai-client
 ```
 
-`sctl mcp` 不会启动 daemon；它与 `sctl serve` 必须使用相同的 `--data-dir`；覆盖默认监听地址时，
+`sctl mcp` 不会启动 daemon；它与 `sctl serve` 必须解析到相同的数据目录；覆盖默认监听地址时，
 还必须使用相同的 `--listen-address <host:port>`。客户端 JSON、验证方式、
 安全说明和故障排查参见[完整 MCP 安装指南](./mcp.md)。
 

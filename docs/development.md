@@ -112,7 +112,8 @@ golangci-lint run ./...
 
 When bumping the version, update `GOLANGCI_LINT_VERSION` in `.github/workflows/test.yaml` to match.
 
-Use the global `--data-dir <path>` flag to override the data directory for keys, tokens, client state, and logs.
+Use the global `--data-dir <path>` flag or `SCTL_DATA_DIR` environment variable to override the data directory
+for keys, tokens, client state, and logs. An explicit flag takes precedence over the environment variable.
 Use the global `--listen-address <host:port>` flag to override the listener and control-client target.
 Pass the same values to `serve` and every client command that talks to it. How to drive a real daemon in
 isolation with these flags, and what evidence makes a change count as

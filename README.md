@@ -25,30 +25,31 @@ confirmation UI in the extension.
 ## Quick start
 
 If a binary for your platform is available on
-[GitHub Releases](https://github.com/scriptscat/sctl/releases), install it on `PATH`. Contributor source builds
-must follow the [version-floor instructions](./docs/development.md#version-floor); a plain `0.0.0-dev` build is
-rejected by the extension.
+[GitHub Releases](https://github.com/scriptscat/sctl/releases), install it on `PATH`. If no release is available,
+contributors can build sctl from source; plain source builds identify themselves as `0.0.0-dev`.
 
-Choose one absolute data directory and pass it to every sctl process:
+Choose one absolute data directory and export it for every sctl process:
 
 ```bash
+export SCTL_DATA_DIR=/absolute/path/to/sctl-data
+
 # Terminal 1: keep the daemon running
-sctl --data-dir /absolute/path/to/sctl-data serve
+sctl serve
 
 # Terminal 2: enroll once, then verify the connection
-sctl --data-dir /absolute/path/to/sctl-data connect
-sctl --data-dir /absolute/path/to/sctl-data status
+sctl connect
+sctl status
 ```
 
 Enable **External Access** in ScriptCat and enter the one-time code printed by `connect`.
 Then configure the AI client to launch:
 
 ```text
-/absolute/path/to/sctl --data-dir /absolute/path/to/sctl-data mcp --name my-ai-client
+/absolute/path/to/sctl mcp --name my-ai-client
 ```
 
-`sctl mcp` does not start the daemon. It and `sctl serve` must use the same `--data-dir` and, when overriding
-the default listener, the same `--listen-address <host:port>`. See the
+`sctl mcp` does not start the daemon. It and `sctl serve` must resolve to the same data directory and, when
+overriding the default listener, use the same `--listen-address <host:port>`. See the
 [complete MCP installation guide](./docs/mcp.md) for client JSON, verification, security notes, and
 troubleshooting.
 

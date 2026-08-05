@@ -15,8 +15,7 @@ installation and setup workflow.
 
 If a published archive for your operating system and architecture is available on
 [GitHub Releases](https://github.com/scriptscat/sctl/releases), extract it and put the `sctl` executable on
-`PATH`. If no published release is available, use a contributor source build following the
-[version-floor instructions](./development.md#version-floor); a plain build cannot connect to the extension.
+`PATH`. If no published release is available, contributors can build sctl from source.
 
 On macOS and Linux, make a downloaded binary executable if the unpacking tool discarded permissions:
 
@@ -31,9 +30,8 @@ command -v sctl
 sctl version
 ```
 
-The version output includes the minimum daemon version accepted by ScriptCat. A contributor's plain
-`go build` reports `0.0.0-dev`, which is intentionally below that floor; source builds must follow the
-[version-floor instructions](./development.md#version-floor).
+A contributor's plain `go build` reports `0.0.0-dev`; release builds inject their version, commit, and build
+time through the release workflow.
 
 ## 2. Choose one data directory
 
@@ -44,19 +42,21 @@ key, the daemon's local control token, and logs. Pick an absolute path that belo
 /absolute/path/to/sctl-data
 ```
 
-Pass it explicitly to every process:
+Set `SCTL_DATA_DIR` for every process that runs sctl:
 
 ```bash
-sctl --data-dir /absolute/path/to/sctl-data serve
-sctl --data-dir /absolute/path/to/sctl-data status
-sctl --data-dir /absolute/path/to/sctl-data mcp
+export SCTL_DATA_DIR=/absolute/path/to/sctl-data
+sctl serve
+sctl status
+sctl mcp
 ```
+
+An explicit `--data-dir` takes precedence over `SCTL_DATA_DIR`.
 
 Do not put this directory in a repository or cloud-synchronized shared folder. The credential inventory and
 file permissions are owned by [threat-model.md](./threat-model.md#5-credentials-persisted-to-disk).
 
-If `--data-dir` is omitted, sctl uses the platform's per-user application data directory. Explicitly passing a
-directory is recommended for MCP configuration because it makes daemon/client mismatches visible.
+If neither `--data-dir` nor `SCTL_DATA_DIR` is set, sctl uses the platform's per-user application data directory.
 The listener defaults to `127.0.0.1:8643`. To use another address, pass the same
 `--listen-address <host:port>` global flag to `serve` and every CLI or MCP process that connects to it.
 
@@ -65,7 +65,7 @@ The listener defaults to `127.0.0.1:8643`. To use another address, pass the same
 Run the daemon in a terminal and leave it running:
 
 ```bash
-sctl --data-dir /absolute/path/to/sctl-data serve
+sctl serve
 ```
 
 `sctl serve` is the only process that owns the WebSocket connection to ScriptCat. CLI commands and `sctl mcp`
@@ -75,7 +75,7 @@ run this exact command; service-manager-specific installation is outside this gu
 Before enrollment, this command should reach the daemon and report that no extension is connected:
 
 ```bash
-sctl --data-dir /absolute/path/to/sctl-data status
+sctl status
 ```
 
 If it reports that the daemon is unreachable, fix that before configuring an MCP client.
@@ -87,14 +87,14 @@ If it reports that the daemon is unreachable, fix that before configuring an MCP
 3. In another terminal, run:
 
    ```bash
-   sctl --data-dir /absolute/path/to/sctl-data connect
+   sctl connect
    ```
 
 4. Enter the displayed one-time code in ScriptCat's External Access enrollment dialog.
 5. Verify the connection:
 
    ```bash
-   sctl --data-dir /absolute/path/to/sctl-data status
+   sctl status
    ```
 
 The status output must say that the extension is connected. The one-time code is valid only for the enrollment
@@ -114,9 +114,10 @@ common configuration shape is:
   "mcpServers": {
     "scriptcat": {
       "command": "/absolute/path/to/sctl",
+      "env": {
+        "SCTL_DATA_DIR": "/absolute/path/to/sctl-data"
+      },
       "args": [
-        "--data-dir",
-        "/absolute/path/to/sctl-data",
         "mcp",
         "--name",
         "my-ai-client"
@@ -129,7 +130,7 @@ common configuration shape is:
 Adapt the outer property name to the client, but keep `command` and `args` unchanged. Important details:
 
 - `command` should be an absolute executable path. GUI applications often have a smaller `PATH` than a shell.
-- `--data-dir` must exactly match the directory passed to `sctl serve`.
+- `SCTL_DATA_DIR` must resolve to the same absolute directory used by `sctl serve`.
 - Use an absolute data path. JSON configurations generally do not perform shell expansion for `~`, `$HOME`,
   command substitutions, or quoted shell expressions.
 - `mcp` starts only the stdio MCP process. The daemon must already be running.
@@ -144,8 +145,8 @@ Restart or reload the AI client after changing its MCP configuration.
 First verify the infrastructure independently of the AI client:
 
 ```bash
-sctl --data-dir /absolute/path/to/sctl-data status
-sctl --data-dir /absolute/path/to/sctl-data get -o json
+sctl status
+sctl get -o json
 ```
 
 `status` must report a connected extension. `get` should return a JSON list; an empty list is a valid result.
@@ -165,10 +166,9 @@ expected behavior, not an MCP timeout; the security model is detailed in [threat
 
 | Symptom | Check |
 |---|---|
-| MCP process exits immediately or reports that the daemon is unreachable | Start `sctl --data-dir <same-path> serve` first. Requester commands never auto-start it. |
-| Control-channel authentication fails | Confirm that `serve` and the MCP configuration use the exact same absolute `--data-dir`; then restart the MCP client so it launches with the corrected arguments. |
+| MCP process exits immediately or reports that the daemon is unreachable | Start `sctl serve` first. Requester commands never auto-start it. |
+| Control-channel authentication fails | Confirm that `serve`, CLI commands, and the MCP process resolve to the same absolute data directory; check both `SCTL_DATA_DIR` and any explicit `--data-dir`, then restart the MCP client. |
 | `status` says the extension is not connected | Enable External Access in ScriptCat. If it has never been enrolled or was revoked, run `connect` and enter a new one-time code. |
-| ScriptCat reports that sctl is too old | Install a release satisfying the minimum shown by `sctl version`; do not use an uninjected `0.0.0-dev` build. |
 | Tools do not appear in the AI client | Use the absolute sctl executable path, validate the client's JSON/TOML syntax, and reload the client. Check stderr and `<data-dir>/logs/`. |
 | A read or write call appears to wait | Look for the ScriptCat disclosure or confirmation page. The operation intentionally blocks for the user's decision. |
 | The MCP client reports malformed protocol output | Remove wrappers that print banners or diagnostics to stdout. Launch `sctl` directly; its MCP stdout is protocol-only. |
