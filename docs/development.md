@@ -136,9 +136,8 @@ git tag -a v0.1.0 -m "v0.1.0"     # use v0.1.0-rc.1 for prereleases; the workflo
 git push origin v0.1.0
 ```
 
-It produces 6 artifacts (darwin/linux/windows × amd64/arm64) plus `checksums.txt`, and generates build
-provenance for the checksum file. The release is **created as a draft**; publish it manually on GitHub after
-reviewing the changelog.
+It produces 6 artifacts (darwin/linux/windows × amd64/arm64) plus `checksums.txt`, generates build provenance
+for the checksum file, and publishes the GitHub Release automatically after the full test gate passes.
 
 Artifacts are built with `-trimpath` and use the commit time as the archive member timestamp, so rebuilding
 the same tag is byte-for-byte reproducible. Version, commit, and build time are injected into `internal/cli`

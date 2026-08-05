@@ -120,13 +120,12 @@ jobs:
           if [[ "$TAG" == *-* ]]; then
             echo "flag=--prerelease" >> "$GITHUB_OUTPUT"
           fi
-      - name: 创建 GitHub 草稿 Release
+      - name: 创建 GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           PRERELEASE_FLAG: ${{ steps.prerelease.outputs.flag }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            --draft \
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
             $PRERELEASE_FLAG \
@@ -146,5 +145,5 @@ jobs:
             cat artifacts/checksums.txt
             echo '```'
             echo
-            echo "Release 以**草稿**形式创建,确认 changelog 后手动点击 Publish。"
+            echo "Release 已自动发布。"
           } >> "$GITHUB_STEP_SUMMARY"
