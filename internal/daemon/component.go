@@ -1,4 +1,4 @@
-// Package daemon 是 sctl serve 的组装层:一个 cago Component,把仅监听 loopback 的
+// Package daemon 是 sctl serve 的组装层:一个 cago Component,把可配置监听地址的
 // 桥接 WS server(internal/daemon/bridge)、本机控制 API(internal/daemon/controlapi)
 // 与持久化存储(internal/daemon/store)接到同一个 listener 上。
 // 扩展 ↔ daemon 协议见 docs/protocol.md。
@@ -51,12 +51,6 @@ func (b *daemonComponent) StartCancel(ctx context.Context, cancel context.Cancel
 	if b.address == "" {
 		b.address = defaultAddress(p.Transport.DefaultPort)
 	}
-	// Origin 可被本机非浏览器进程伪造,因此监听面仍必须限制在 loopback。
-	if err := validateLoopback(b.address); err != nil {
-		logger.Ctx(ctx).Error("refusing to listen on a non-loopback address", zap.String("address", b.address), zap.Error(err))
-		return err
-	}
-
 	keys := store.NewKeyStore(paths.KeyFile())
 	b.srv = bridge.NewServer(b.version, p, keys, logger.Ctx(ctx))
 
@@ -105,23 +99,4 @@ func (b *daemonComponent) CloseHandle() {
 
 func defaultAddress(port int) string {
 	return fmt.Sprintf("127.0.0.1:%d", port)
-}
-
-// validateLoopback 校验监听地址的主机部分是 loopback(127.0.0.0/8、::1 或 localhost)。
-func validateLoopback(address string) error {
-	host, _, err := net.SplitHostPort(address)
-	if err != nil {
-		return fmt.Errorf("parse listen address %q: %w", address, err)
-	}
-	if host == "localhost" {
-		return nil
-	}
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return fmt.Errorf("listen address host %q is invalid or not loopback", host)
-	}
-	if !ip.IsLoopback() {
-		return fmt.Errorf("refusing non-loopback listen address %q", host)
-	}
-	return nil
 }

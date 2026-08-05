@@ -1,11 +1,11 @@
 // Package control 定义 sctl 前端(sctl mcp / CLI 动词)与常驻 daemon(sctl serve)之间的
-// 「本机内部连接」:一套跑在 daemon loopback listener 上、与扩展 WS 面同端口但独立路径的
+// 「控制连接」:一套跑在 daemon listener 上、与扩展 WS 面同端口但独立路径的
 // HTTP/JSON 控制 API。它不是桥接协议(见 docs/protocol.md)的一部分——桥接协议只约定
 // 扩展 ↔ daemon 那条 WS 连接;控制 API 是同一二进制内部前端 → daemon 的私有通道。
 //
 // 信任模型见 docs/threat-model.md——扁平信任:
-//   - 控制 API 的唯一传输闸门是「控制令牌」——daemon 绑定端口后写入 0600 文件、只有同用户
-//     进程能读。网页可以 new WebSocket / fetch 到该端口,但读不到令牌即被拒(防小人不防君子)。
+//   - 控制 API 的唯一传输闸门是「控制令牌」——daemon 绑定端口后写入受限文件。网页可以
+//     new WebSocket / fetch 到该端口,但读不到令牌即被拒；非默认监听地址由操作者承担传输风险。
 //   - 带上控制令牌即拥有全部能力:CLI 与所有 MCP agent 经已接入的可信通道继承信任,不再逐客户端
 //     配对 / 铸令牌 / 撤销。可选的客户端标签仅用于审计归因,不构成授权。
 //   - 无论哪种调用方,写操作仍需过扩展侧人工审批、源码读取仍需过披露闸门(第二道闸门)。
@@ -27,7 +27,7 @@ const (
 
 // 控制 API 请求头。
 const (
-	// HeaderControlToken 携带 0600 控制令牌,证明调用方是同用户本机进程。所有非健康检查请求必带。
+	// HeaderControlToken 携带控制令牌。所有非健康检查请求必带。
 	HeaderControlToken = "X-Sctl-Control-Token"
 	// HeaderClientLabel 可选,携带调用方自报的客户端标签(如 MCP 客户端名)。仅用于审计归因,
 	// 不构成授权;缺省即内建 CLI 身份标签。自报、未认证、可伪造——只入审计,不上审批界面。

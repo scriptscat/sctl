@@ -28,7 +28,7 @@ type Bridge interface {
 	Action(name string) (protocol.Action, bool)
 	ExtConnected() bool
 	AuditSnapshot() []audit.Event
-	Call(ctx context.Context, req bridge.Request, write bool) (bridge.Response, error)
+	Call(ctx context.Context, req bridge.Request) (bridge.Response, error)
 	BeginEnrollment() (string, error)
 }
 
@@ -96,7 +96,7 @@ func (h *Handler) call(w http.ResponseWriter, r *http.Request) {
 		writeControlError(w, bridge.CodeInvalidRequest, "malformed request body")
 		return
 	}
-	action, ok := h.bridge.Action(req.Action)
+	_, ok := h.bridge.Action(req.Action)
 	if !ok {
 		writeControlError(w, bridge.CodeInvalidRequest, "unknown action")
 		return
@@ -111,7 +111,7 @@ func (h *Handler) call(w http.ResponseWriter, r *http.Request) {
 		ClientID: clientID,
 		Action:   req.Action,
 		Input:    req.Input,
-	}, action.Write)
+	})
 	switch {
 	case err == nil:
 		res := control.CallResult{OK: resp.OK, Result: resp.Result}

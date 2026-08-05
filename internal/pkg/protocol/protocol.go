@@ -18,7 +18,6 @@ type Protocol struct {
 	JSONRPCVersion string            `json:"jsonrpc"`
 	SchemaVersion  string            `json:"schemaVersion"`
 	Transport      Transport         `json:"transport"`
-	Versions       Versions          `json:"versions"`
 	SessionMethods []string          `json:"sessionMethods"`
 	Scopes         []string          `json:"scopes"`
 	Actions        map[string]Action `json:"methods"`
@@ -32,10 +31,6 @@ type Transport struct {
 	DefaultURL  string `json:"defaultUrl"`
 	DefaultPort int    `json:"defaultPort"`
 	Frame       string `json:"frame"`
-}
-
-type Versions struct {
-	MinDaemonVersion string `json:"minDaemonVersion"`
 }
 
 type Action struct {

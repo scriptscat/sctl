@@ -3,6 +3,7 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	. "github.com/smartystreets/goconvey/convey"
@@ -31,8 +32,10 @@ func TestKeyStore(t *testing.T) {
 			So(ok, ShouldBeTrue)
 			So(got, ShouldResemble, k)
 
-			info, _ := os.Stat(path)
-			So(info.Mode().Perm(), ShouldEqual, os.FileMode(0o600))
+			if runtime.GOOS != "windows" {
+				info, _ := os.Stat(path)
+				So(info.Mode().Perm(), ShouldEqual, os.FileMode(0o600))
+			}
 		})
 
 		Convey("重新接入即替换:再次保存覆盖旧密钥", func() {

@@ -121,6 +121,9 @@ func TestGenerateProducesStronglyTypedRPCContracts(t *testing.T) {
 			t.Errorf("generated TypeScript still copies the schema as %q", unwanted)
 		}
 	}
+	if strings.Contains(string(typescript), "minDaemonVersion") {
+		t.Error("generated TypeScript still publishes a minimum daemon version")
+	}
 	if strings.Contains(string(typescript), "unknown") {
 		t.Error("generated TypeScript contains an unresolved schema type")
 	}
@@ -134,7 +137,6 @@ func TestGenerateProducesStronglyTypedRPCContracts(t *testing.T) {
 		`typeof value["enable"] === "boolean"`,
 		`isUUID(value["uuid"])`,
 		`value["edits"].length >= 1`,
-		`value["edits"].length <= 100`,
 		`hasOnlyKeys(item, ["newText", "oldText", "replaceAll"])`,
 		`Number.isInteger(value["contextLines"])`,
 		`value["contextLines"] >= 0`,
@@ -145,7 +147,7 @@ func TestGenerateProducesStronglyTypedRPCContracts(t *testing.T) {
 			t.Errorf("generated TypeScript validators do not contain %q", want)
 		}
 	}
-	for _, unwanted := range []string{"from \"ajv", "eval(", "new Function"} {
+	for _, unwanted := range []string{"from \"ajv", "eval(", "new Function", `value["edits"].length <= 100`} {
 		if strings.Contains(string(validators), unwanted) {
 			t.Errorf("generated TypeScript validators contain runtime code generation %q", unwanted)
 		}

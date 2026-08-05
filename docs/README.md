@@ -15,7 +15,7 @@ verification method are in [`doc-maintenance.md`](./doc-maintenance.md).
 | [`protocol.md`](./protocol.md) | The extension ↔ daemon JSON-RPC 2.0 protocol: handshake, methods, cancellation, limits, and errors. **Read before changing the protocol.** |
 | [`threat-model.md`](./threat-model.md) | Security boundaries, attack surface and trade-offs, credentials on disk, daemon-side auditing. **Read before touching auth, keys, pairing, or auditing.** |
 | [`mcp.md`](./mcp.md) | End-user installation, first enrollment, generic MCP client configuration, verification, and troubleshooting. |
-| [`development.md`](./development.md) | Build commands, test design and commands, static analysis, environment variables, the version floor, branches / CI / releases. **Read before writing code.** |
+| [`development.md`](./development.md) | Build commands, test design and commands, static analysis, environment variables, branches / CI / releases. **Read before writing code.** |
 | [`verification.md`](./verification.md) | How to confirm a change "actually works": evidence, one-shot scripts under `e2e/scratch/`, reproduction discipline. **Read before claiming something is fixed.** |
 | [`doc-maintenance.md`](./doc-maintenance.md) | Documentation ownership rules, truth discipline, and the per-claim verification table. **Read before changing docs.** |
 

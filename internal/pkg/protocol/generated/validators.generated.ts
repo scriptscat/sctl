@@ -39,7 +39,7 @@ export function validateScriptsDeleteResult(value: unknown): value is Protocol.S
 }
 
 export function validateScriptsEditParams(value: unknown): value is Protocol.ScriptsEditParams {
-  return (isRecord(value) && hasOnlyKeys(value, ["edits", "uuid"]) && Array.isArray(value["edits"]) && value["edits"].length >= 1 && value["edits"].length <= 100 && value["edits"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["newText", "oldText", "replaceAll"]) && typeof item["newText"] === "string" && typeof item["oldText"] === "string" && (item["replaceAll"] === undefined || (typeof item["replaceAll"] === "boolean")))) && typeof value["uuid"] === "string" && isUUID(value["uuid"]));
+  return (isRecord(value) && hasOnlyKeys(value, ["edits", "uuid"]) && Array.isArray(value["edits"]) && value["edits"].length >= 1 && value["edits"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["newText", "oldText", "replaceAll"]) && typeof item["newText"] === "string" && typeof item["oldText"] === "string" && (item["replaceAll"] === undefined || (typeof item["replaceAll"] === "boolean")))) && typeof value["uuid"] === "string" && isUUID(value["uuid"]));
 }
 
 export function validateScriptsInstallParams(value: unknown): value is Protocol.ScriptsInstallParams {

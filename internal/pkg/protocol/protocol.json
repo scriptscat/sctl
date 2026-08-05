@@ -6,9 +6,6 @@
     "defaultPort": 8643,
     "frame": "json-text"
   },
-  "versions": {
-    "minDaemonVersion": "0.1.0"
-  },
   "sessionMethods": [
     "$session.authenticate",
     "$session.authenticated",
@@ -189,7 +186,6 @@
         "edits": {
           "type": "array",
           "minItems": 1,
-          "maxItems": 100,
           "items": {
             "type": "object",
             "properties": {

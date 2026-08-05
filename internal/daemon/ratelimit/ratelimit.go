@@ -1,4 +1,4 @@
-// Package ratelimit 提供按 key 的滑动窗口限流,用于桥接的配对尝试与会话读写节流。
+// Package ratelimit 提供按 key 的滑动窗口限流,用于桥接的配对尝试节流。
 // 具体限制由 protocol.json 定义并在构造调用处注入。
 package ratelimit
 

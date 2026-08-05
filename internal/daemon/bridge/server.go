@@ -44,8 +44,6 @@ type Server struct {
 	audit *audit.Recorder
 
 	enrollAttempts *ratelimit.Limiter
-	readLimit      *ratelimit.Limiter
-	writeLimit     *ratelimit.Limiter
 
 	authTimeout      time.Duration
 	writeDecisionTTL time.Duration
@@ -78,8 +76,6 @@ func NewServer(version string, p *protocol.Protocol, keys *store.KeyStore, log *
 		log:              log,
 		audit:            audit.NewRecorder(auditCapacity, log),
 		enrollAttempts:   ratelimit.NewLimiter(5, time.Minute),
-		readLimit:        ratelimit.NewLimiter(60, time.Minute),
-		writeLimit:       ratelimit.NewLimiter(10, time.Minute),
 		authTimeout:      time.Duration(p.Limits.AuthTimeoutMs) * time.Millisecond,
 		writeDecisionTTL: time.Duration(p.Limits.WriteDecisionTtlMs) * time.Millisecond,
 		enrollTTL:        time.Duration(p.Limits.ExtPairingCodeTtlMs) * time.Millisecond,

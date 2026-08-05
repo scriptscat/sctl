@@ -6,9 +6,9 @@
 
 ## 1. Positioning and overall trade-offs
 
-sctl exposes a loopback WebSocket listener protected by a mutual authentication handshake. This avoids new
-browser permissions and a Native Messaging host installer while preserving single-binary distribution. A
-malicious web page can detect that the port is open, but cannot pass the Origin pre-filter and handshake.
+sctl exposes a WebSocket listener protected by a mutual authentication handshake. It defaults to
+`127.0.0.1:8643`, while an explicit `--listen-address` may bind another interface. This avoids new browser
+permissions and a Native Messaging host installer while preserving single-binary distribution.
 
 **There are only two trust anchors:**
 - the **long-term shared key K** between the extension and the daemon, established once by **enrollment**: the
@@ -33,7 +33,7 @@ press approve on the extension's confirmation page (unless the corresponding glo
 | A web page connects straight to the daemon with `new WebSocket("ws://127.0.0.1:8643")` | An **Origin whitelist** rejects any connection whose `Origin` is present and not an extension origin (`chrome-extension://` etc.) — a cheap pre-filter that a browser page cannot get past (the browser stamps Origin, page JS cannot forge it). Beyond that, a connection must complete the mutual HMAC handshake before it can send or receive any business message; without credentials it fails the challenge-response and is disconnected on the 5s timeout **with no reason echoed back** (close 1008). A non-browser process can forge any Origin, so the handshake remains the real gate. Both rejections are recorded in the daemon-side audit (§6) | A page can probe that the port is open |
 | A web page impersonates the local frontend with `fetch("http://127.0.0.1:8643/control/…")` | Apart from `/control/health`, every control API requires an `X-Sctl-Control-Token` header, compared in constant time against the daemon's user-only token; a web page cannot read that file, so it gets a 401 and the action never runs at all | Port / health information can be probed (see below) |
 | A local process grabs 8643 to impersonate the daemon, or connects in while impersonating the extension | **Mutual** HMAC-SHA-256 challenge-response between the extension and the daemon ([protocol.md](./protocol.md#21-authentication)); the long-term key K comes from a one-time enrollment code and never travels in plaintext; nonces are regenerated per connection, so replays are useless | See the "malicious same-user process" row |
-| A local process (CLI or MCP agent) that reaches the daemon requests a privileged action | Flat trust deliberately grants any control-token holder full read/list and the ability to *request* writes; the gate is not per-client authorization but the **per-operation human gate**: writes need browser approval and source reads need disclosure approval, both keyed by script (extension session), plus read/write rate limits. There is no per-client scope to escalate | Any same-user process that can run sctl can list scripts and request writes (writes still gated); an accepted trade-off for single-enrollment simplicity — see §3 |
+| A process that reaches the daemon requests a privileged action | Flat trust deliberately grants any control-token holder full read/list and the ability to *request* writes; the gate is not per-client authorization but the **per-operation human gate**: writes need browser approval and source reads need disclosure approval, both keyed by script (extension session). There is no per-client scope or request-frequency limit | Any process that obtains the control token has the same capabilities; write requests remain browser-gated unless always-allow is enabled |
 | Write operations are abused (installing a malicious script / bulk deletion) | Two-phase confirmation plus a TOCTOU re-check at the moment of approval (staged `contentHash`, target `existingCodeHash`); calls are purely blocking, so a requester disconnect voids them. The install page's own enable toggle decides the enabled state (installs are usable immediately, like a normal install). "Always-allow" is an explicit security-downgrade switch (amber warning in the UI) | Under "always-allow" a write is no longer confirmed by a human — the user takes that risk |
 | Source code leaks | Source disclosure is gated by its own **source-read policy** (approval by default), applied to the CLI and MCP alike — the CLI is **not** exempt; reading is a privacy matter and is not covered by the write policy. Script-controlled text is always returned as structured data (`contentTrust: untrusted-user-script-source`) and must never be concatenated into a tool description | Under a "always-allow" source-read policy, reads are no longer confirmed — the user takes that risk |
 | The port's existence is found by scanning | Accepted: the extension is the client and cannot read a discovery file, so the default port 8643 has to be fixed; authentication is the backstop | The open port is visible |
@@ -53,8 +53,10 @@ press approve on the extension's confirmation page (unless the corresponding glo
 - **`clientId` as an authorization input**: the label a request carries (`sctl-cli`, `scriptcat-<name>`, or an
   MCP client's self-reported `clientInfo.name`) is unauthenticated and forgeable. It is used only for audit
   attribution and is never shown on an approval screen or used to gate anything.
-- **Plaintext `ws://` and remote access**: loopback only; the daemon refuses to bind a non-loopback address.
-  Remote `wss://` (TLS plus server identity) is a separate later design and is not implemented in v1.
+- **Transport confidentiality and remote client isolation**: the protocol uses plaintext `ws://`, has no TLS
+  server identity, and has no per-remote-client credentials. The default loopback binding confines that risk to
+  the host. Explicitly binding another interface exposes metadata and source traffic to that network and must be
+  treated as an operator-selected security downgrade. Native `wss://` is not implemented in v1.
 
 ## 4. The control channel (internal local connection) in detail
 
@@ -103,7 +105,6 @@ extension session was ever established and therefore leave no extension-side rec
 | `handshake.failed` | Handshake HMAC verification failed / the 5s timeout elapsed / an invalid response to `$session.authenticate` was sent |
 | `pairing.failed` | The enrollment handshake HMAC failed, or there was no valid enrollment code |
 | `pairing.rate_limited` | Enrollment attempts exceeded 5 per minute |
-| `request.rate_limited` | A client's read/write requests went over the limit and were rejected before being forwarded to the extension |
 | `handshake.ok` | A session was established |
 
 To view: `sctl status` prints one summary line aggregated by type, and `sctl status -o json` outputs the full

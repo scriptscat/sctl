@@ -7,7 +7,7 @@ express. See [threat-model.md](./threat-model.md) for the security boundary.
 
 ## 1. Transport and message model
 
-The ScriptCat extension opens one WebSocket connection to the local sctl daemon. Every text frame is exactly one
+The ScriptCat extension opens one WebSocket connection to the sctl daemon. Every text frame is exactly one
 JSON-RPC 2.0 message and includes `"jsonrpc": "2.0"`. Requests and responses correlate through `id`;
 notifications omit `id`. Batch requests are not supported.
 
@@ -88,7 +88,8 @@ Disabling External Access deletes the extension copy and closes the connection, 
 
 ### 2.2 Hello and capabilities
 
-After authentication the daemon announces its product version:
+After authentication the daemon announces its product version for diagnostics. The extension does not use it
+as a compatibility gate:
 
 ```json
 {

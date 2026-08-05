@@ -280,7 +280,7 @@ func TestBlockingCallAndCancel(t *testing.T) {
 					ClientID: "sctl-cli",
 					Action:   "scripts.install.request",
 					Input:    json.RawMessage(`{"url":"x"}`),
-				}, true)
+				})
 				resCh <- callResult{resp, err}
 			}()
 
@@ -307,7 +307,7 @@ func TestBlockingCallAndCancel(t *testing.T) {
 					ClientID: "sctl-cli",
 					Action:   "scripts.list",
 					Input:    json.RawMessage(`{}`),
-				}, false)
+				})
 				resCh <- callResult{resp, err}
 			}()
 
@@ -328,7 +328,7 @@ func TestBlockingCallAndCancel(t *testing.T) {
 					ClientID: "sctl-cli",
 					Action:   "scripts.list",
 					Input:    json.RawMessage(`{}`),
-				}, false)
+				})
 				resCh <- callResult{resp, err}
 			}()
 
@@ -362,8 +362,14 @@ func TestOriginWhitelist(t *testing.T) {
 			So(dialOrigin("http://evil.example"), ShouldNotBeNil)
 		})
 
-		Convey("扩展 Origin(chrome-extension://)放行", func() {
-			So(dialOrigin("chrome-extension://abcdefghijklmnop"), ShouldBeNil)
+		Convey("Chrome/Firefox/Safari 扩展 Origin 均放行", func() {
+			for _, origin := range []string{
+				"chrome-extension://abcdefghijklmnop",
+				"moz-extension://abcdefghijklmnop",
+				"safari-web-extension://abcdefghijklmnop",
+			} {
+				So(dialOrigin(origin), ShouldBeNil)
+			}
 		})
 
 		Convey("无 Origin(非浏览器进程)放行,由握手兜底", func() {
@@ -388,5 +394,38 @@ func TestOriginWhitelist(t *testing.T) {
 			}
 			So(found, ShouldBeTrue)
 		})
+	})
+}
+
+func TestCallsAreNotFrequencyLimited(t *testing.T) {
+	Convey("超过旧读写频率额度的请求仍全部转发", t, func() {
+		h := startTestServer(t)
+		key, _ := auth.NewLongTermKey()
+		So(h.keys.Save(key), ShouldBeNil)
+		e := h.doSessionHandshake(key)
+
+		for i := 0; i < 61; i++ {
+			result := make(chan error, 1)
+			go func() {
+				_, err := h.srv.Call(context.Background(), Request{Action: "scripts.list", Input: json.RawMessage(`{}`)})
+				result <- err
+			}()
+			req := e.read()
+			So(req.Method, ShouldEqual, "scripts.list")
+			e.writeResult(req.ID, json.RawMessage(`{"scripts":[],"contentTrust":"untrusted-user-script-metadata"}`))
+			So(<-result, ShouldBeNil)
+		}
+
+		for i := 0; i < 11; i++ {
+			result := make(chan error, 1)
+			go func() {
+				_, err := h.srv.Call(context.Background(), Request{Action: "scripts.delete.request", Input: json.RawMessage(`{"uuid":"script-id"}`)})
+				result <- err
+			}()
+			req := e.read()
+			So(req.Method, ShouldEqual, "scripts.delete.request")
+			e.writeResult(req.ID, json.RawMessage(`{"uuid":"script-id","deleted":true}`))
+			So(<-result, ShouldBeNil)
+		}
 	})
 }

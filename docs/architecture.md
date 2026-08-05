@@ -3,10 +3,10 @@
 ## Process model
 
 ```text
-MCP client (Claude/Codex…) ─ stdio ─→ sctl mcp ─┐ (local internal connection: loopback control API)
+MCP client (Claude/Codex…) ─ stdio ─→ sctl mcp ─┐ (authenticated control API)
 CLI verbs (sctl get / edit / install …)─────────┤
                                                 ▼
-                          sctl serve (daemon; loopback-only WS listener)
+                          sctl serve (daemon; defaults to 127.0.0.1:8643)
                                                 ▲ WebSocket (extension dials in + mutual HMAC handshake)
                           ScriptCat browser extension (authority for approval and authorization)
 ```
@@ -51,7 +51,7 @@ internal/daemon/            # ── sctl serve side ──
   controlapi/               #   /control/* handlers (controller role), depends on the narrow Bridge interface
   auth/                     #   mutual HMAC handshake, enrollment-code derivation (HKDF), key delivery (AES-GCM)
   store/                    #   persistence of the long-term key K (repository role)
-  ratelimit/                #   per-key sliding-window rate limiting
+  ratelimit/                #   enrollment-attempt rate limiting
 
 internal/client/            # ── sctl mcp / CLI verb side ──
   control/                  #   control API client, shared DTOs, control token

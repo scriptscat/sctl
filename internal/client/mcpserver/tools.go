@@ -26,7 +26,7 @@ const (
 
 	schemaSourceGrep = `{"type":"object","properties":{` +
 		`"uuid":{"type":"string","description":"Script uuid."},` +
-		`"query":{"type":"string","description":"What to search for, 1-1024 characters. A literal substring unless mode is \"regex\"."},` +
+		`"query":{"type":"string","minLength":1,"description":"What to search for. A literal substring unless mode is \"regex\"."},` +
 		`"mode":{"type":"string","enum":["text","regex"],"description":"\"text\" (the default) matches the query literally: no character is a wildcard. \"regex\" compiles it as a regular expression."},` +
 		`"ignoreCase":{"type":"boolean","description":"Match case-insensitively. Defaults to false."},` +
 		`"contextLines":{"type":"integer","minimum":0,"maximum":10,"description":"How many lines of context to return around each match. Defaults to 0."},` +
@@ -35,7 +35,7 @@ const (
 
 	schemaEditRequest = `{"type":"object","properties":{` +
 		`"uuid":{"type":"string","description":"Script uuid."},` +
-		`"edits":{"type":"array","minItems":1,"maxItems":100,"description":"Edits applied in order: each one searches the result of the previous one. At most 100 per request.","items":{"type":"object","properties":{` +
+		`"edits":{"type":"array","minItems":1,"description":"Edits applied in order: each one searches the result of the previous one.","items":{"type":"object","properties":{` +
 		`"oldText":{"type":"string","description":"Text to find in the current source, matched literally and never as a pattern. Must occur exactly once unless replaceAll is true; add surrounding lines to make it unique."},` +
 		`"newText":{"type":"string","description":"Text to put in its place. An empty string deletes the matched text."},` +
 		`"replaceAll":{"type":"boolean","description":"Replace every occurrence instead of requiring a unique match. Defaults to false."}},` +

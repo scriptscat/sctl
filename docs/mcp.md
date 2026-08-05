@@ -57,7 +57,7 @@ file permissions are owned by [threat-model.md](./threat-model.md#5-credentials-
 
 If `--data-dir` is omitted, sctl uses the platform's per-user application data directory. Explicitly passing a
 directory is recommended for MCP configuration because it makes daemon/client mismatches visible.
-The listener defaults to `127.0.0.1:8643`. To use another loopback port, pass the same
+The listener defaults to `127.0.0.1:8643`. To use another address, pass the same
 `--listen-address <host:port>` global flag to `serve` and every CLI or MCP process that connects to it.
 
 ## 3. Start the daemon

@@ -33,7 +33,7 @@ func TestRecorder(t *testing.T) {
 		Convey("超出容量时淘汰最旧事件", func() {
 			r.Record(Event{Type: TypeHandshakeFailed, Reason: ReasonHMACMismatch})
 			r.Record(Event{Type: TypePairingRateLimited})
-			r.Record(Event{Type: TypeRequestRateLimited, Client: "c1"})
+			r.Record(Event{Type: TypePairingFailed, Reason: ReasonPairExpired})
 			r.Record(Event{Type: TypeHandshakeOK})
 
 			got := r.Snapshot()
@@ -56,7 +56,7 @@ func TestRecorder(t *testing.T) {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					r.Record(Event{Type: TypeRequestRateLimited, Client: "c1"})
+					r.Record(Event{Type: TypePairingRateLimited})
 				}()
 			}
 			wg.Wait()
@@ -74,13 +74,13 @@ func TestSummarize(t *testing.T) {
 		Convey("同类型合并计数,按数量降序", func() {
 			got := Summarize([]Event{
 				{Type: TypeHandshakeFailed},
-				{Type: TypeRequestRateLimited},
+				{Type: TypePairingRateLimited},
 				{Type: TypeHandshakeFailed},
 			})
 			So(got, ShouldHaveLength, 2)
 			So(got[0].Type, ShouldEqual, TypeHandshakeFailed)
 			So(got[0].Count, ShouldEqual, 2)
-			So(got[1].Type, ShouldEqual, TypeRequestRateLimited)
+			So(got[1].Type, ShouldEqual, TypePairingRateLimited)
 			So(got[1].Count, ShouldEqual, 1)
 		})
 	})

@@ -8,11 +8,8 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/scriptscat/sctl/internal/pkg/audit"
 	"github.com/scriptscat/sctl/internal/pkg/protocolschema"
 )
-
-const sessionRateLimitKey = "authenticated-extension-session"
 
 // pendingCall 是一条挂起的 JSON-RPC 请求:阻塞直到应答/取消/断开/超时。
 type pendingCall struct {
@@ -25,17 +22,7 @@ type pendingCall struct {
 // (等待用户在浏览器审批)。调用方 ctx 取消 / 超过 writeDecisionTTL / 扩展断开时:
 //   - ctx 取消 / 超时:向扩展发 $/cancelRequest 作废该操作,返回相应错误;
 //   - 扩展断开:隐式作废全部在途请求,返回 ErrDisconnected。
-func (s *Server) Call(ctx context.Context, req Request, write bool) (Response, error) {
-	limiter := s.readLimit
-	if write {
-		limiter = s.writeLimit
-	}
-	if !limiter.Allow(sessionRateLimitKey) {
-		// 限流在转发前拦下,扩展侧不会有任何记录,守卫侧不记就完全无痕。
-		s.audit.Record(audit.Event{Type: audit.TypeRequestRateLimited, Client: req.ClientID})
-		return Response{}, &Error{Code: CodeRateLimited, Message: "rate limited"}
-	}
-
+func (s *Server) Call(ctx context.Context, req Request) (Response, error) {
 	requestID := uuid.NewString()
 	pc := &pendingCall{clientID: req.ClientID, method: req.Action, respCh: make(chan Response, 1)}
 

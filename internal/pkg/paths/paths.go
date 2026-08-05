@@ -49,7 +49,7 @@ func KeyFile() string {
 }
 
 // ControlTokenFile 返回本机内部控制通道凭据的落盘路径(0600)。daemon 绑定端口后写入,
-// 本机同用户的前端(sctl mcp / CLI 动词)读取后作为 loopback 控制 API 的鉴权凭据。
+// 同用户的前端(sctl mcp / CLI 动词)读取后作为控制 API 的鉴权凭据。
 func ControlTokenFile() string {
 	return filepath.Join(DataDir(), "control.token")
 }

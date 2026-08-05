@@ -52,7 +52,7 @@ input.
 Use the narrowest realistic boundary that exposes the contract:
 
 - pure unit tests for parsing, mapping, validation, selection, and state transitions;
-- package tests for persistence, bridge lifecycle, rate limiting, audit behavior, retries, and ordering across an
+- package tests for persistence, bridge lifecycle, pairing rate limiting, audit behavior, retries, and ordering across an
   interface;
 - handler or client tests for `/control/*` request validation, authentication, status mapping, and cancellation;
 - CLI tests for user-visible output, stderr/stdout separation, and exit codes; and
@@ -113,23 +113,10 @@ golangci-lint run ./...
 When bumping the version, update `GOLANGCI_LINT_VERSION` in `.github/workflows/test.yaml` to match.
 
 Use the global `--data-dir <path>` flag to override the data directory for keys, tokens, client state, and logs.
-Use the global `--listen-address <host:port>` flag to override the loopback listener and control-client target.
+Use the global `--listen-address <host:port>` flag to override the listener and control-client target.
 Pass the same values to `serve` and every client command that talks to it. How to drive a real daemon in
 isolation with these flags, and what evidence makes a change count as
 "verified", is owned by [verification.md](./verification.md).
-
-## Version floor
-
-The extension checks `daemonVersion >= versions.minDaemonVersion` (currently `0.1.0`). A plain `go build`
-produces `0.0.0-dev`, which is **below the floor and will be rejected as "too old" and disconnected by the
-extension**. For smoke tests and integration against the real extension, build with the version injected (or
-use a release binary):
-
-```bash
-go build -ldflags "-X github.com/scriptscat/sctl/internal/cli.Version=0.1.0" -o sctl ./cmd/sctl
-```
-
-That version is delivered to the extension in `hello.daemonVersion`.
 
 ## Branches and CI
 

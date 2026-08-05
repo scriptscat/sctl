@@ -22,16 +22,15 @@ func newVersionCmd() *cobra.Command {
 			}
 			if outputFormat == outputJSON {
 				return printValueJSON(map[string]any{
-					"version":          Version,
-					"commit":           Commit,
-					"buildDate":        BuildDate,
-					"goVersion":        runtime.Version(),
-					"platform":         runtime.GOOS + "/" + runtime.GOARCH,
-					"jsonrpc":          p.JSONRPCVersion,
-					"minDaemonVersion": p.Versions.MinDaemonVersion,
+					"version":   Version,
+					"commit":    Commit,
+					"buildDate": BuildDate,
+					"goVersion": runtime.Version(),
+					"platform":  runtime.GOOS + "/" + runtime.GOARCH,
+					"jsonrpc":   p.JSONRPCVersion,
 				})
 			}
-			fmt.Fprintf(os.Stdout, "sctl %s (JSON-RPC %s, min daemon %s)\n", Version, p.JSONRPCVersion, p.Versions.MinDaemonVersion)
+			fmt.Fprintf(os.Stdout, "sctl %s (JSON-RPC %s)\n", Version, p.JSONRPCVersion)
 			fmt.Fprintf(os.Stdout, "commit %s, built %s, %s %s/%s\n", Commit, BuildDate, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 			return nil
 		},

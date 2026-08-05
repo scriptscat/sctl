@@ -184,14 +184,14 @@ func TestStatusSecurityEvents(t *testing.T) {
 				Security: []audit.Event{
 					{Type: audit.TypeHandshakeFailed, Reason: audit.ReasonHMACMismatch},
 					{Type: audit.TypeHandshakeFailed, Reason: audit.ReasonHMACMismatch},
-					{Type: audit.TypeRequestRateLimited, Client: "c1"},
+					{Type: audit.TypePairingRateLimited},
 				},
 			})
 			code, out := runCLI("status")
 			So(code, ShouldEqual, exitOK)
 			So(out, ShouldContainSubstring, "recent security events")
 			So(out, ShouldContainSubstring, "handshake.failed×2")
-			So(out, ShouldContainSubstring, "request.rate_limited×1")
+			So(out, ShouldContainSubstring, "pairing.rate_limited×1")
 		})
 
 		Convey("无事件时不打印安全事件行", func() {
@@ -245,7 +245,7 @@ func TestDataDirFlag(t *testing.T) {
 }
 
 func TestListenAddressFlag(t *testing.T) {
-	Convey("--listen-address 指定 sctl serve 与客户端共享的 loopback 地址", t, func() {
+	Convey("--listen-address 指定 sctl serve 与客户端共享的地址", t, func() {
 		mux := http.NewServeMux()
 		mux.HandleFunc(control.PathHealth, func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)

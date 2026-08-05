@@ -19,7 +19,7 @@ confirmation UI in the extension.
 - Exposes ScriptCat operations as discoverable, schema-typed MCP tools.
 - Lists scripts and reads metadata or source, including line windows and source search.
 - Requests installation, content-anchored editing, enable/disable, and deletion through browser approval.
-- Uses JSON-RPC 2.0 over a loopback-only WebSocket with mutual authentication.
+- Uses JSON-RPC 2.0 over a WebSocket with mutual authentication; the listener defaults to loopback.
 - Ships as one binary; no browser automation or Native Messaging host is required.
 
 ## Quick start

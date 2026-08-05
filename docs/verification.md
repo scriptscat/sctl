@@ -33,10 +33,6 @@ trap 'kill "$daemon_pid" 2>/dev/null; wait "$daemon_pid" 2>/dev/null; rm -rf "$d
 Cover **the boundaries that motivated the change**: if you touched exit-code mapping, exercise every code; if
 you touched the pairing window, walk the expiry path too. Running only the happy path is not verification.
 
-Mind the version floor before integrating with a real extension (see
-[development.md](./development.md#version-floor)): the `0.0.0-dev` produced by a plain `go build` is below
-`minDaemonVersion` and the extension will reject it as too old and disconnect.
-
 ## One-shot end-to-end verification, not a new test suite
 
 One-shot verification scripts and their evidence go under the git-ignored `e2e/scratch/`, one directory per
@@ -74,7 +70,7 @@ side. The observable outlets are:
 
 - `./sctl status` — the daemon version, whether the extension is connected, and a one-line summary of recent
   security events (`-o json` prints the full events);
-- audit events (`internal/pkg/audit`) — handshakes, pairing failures, rate limits, and rejected origins are recorded;
+- audit events (`internal/pkg/audit`) — handshakes, pairing failures, pairing rate limits, and rejected origins are recorded;
 - stderr logs with `--log-level` turned up;
 - on-disk state under the directory passed to `--data-dir` (the pairing key, control token, and logs).
 
