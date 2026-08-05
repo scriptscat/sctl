@@ -1,0 +1,150 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  # 发布不允许被后续运行打断。
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # 复用测试工作流的全部门禁(lint / test / 协议一致性),门禁不过不发布。
+  test:
+    uses: ./.github/workflows/test.yaml
+    permissions:
+      contents: read
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: darwin
+            goarch: amd64
+            arch: x86_64
+            format: tar.gz
+          - goos: darwin
+            goarch: arm64
+            arch: arm64
+            format: tar.gz
+          - goos: linux
+            goarch: amd64
+            arch: x86_64
+            format: tar.gz
+          - goos: linux
+            goarch: arm64
+            arch: arm64
+            format: tar.gz
+          - goos: windows
+            goarch: amd64
+            arch: x86_64
+            format: zip
+          - goos: windows
+            goarch: arm64
+            arch: arm64
+            format: zip
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: 构建并打包
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          BUILD_DATE=$(git show -s --format=%cI HEAD)
+          COMMIT_TIMESTAMP=$(git show -s --format=%ct HEAD)
+          PACKAGE="sctl_${VERSION}_${GOOS}_${{ matrix.arch }}"
+          STAGE="dist/${PACKAGE}"
+          BINARY=sctl
+          if [ "$GOOS" = windows ]; then
+            BINARY=sctl.exe
+          fi
+
+          mkdir -p "$STAGE/docs"
+          go build -trimpath -ldflags "-s -w \
+            -X github.com/scriptscat/sctl/internal/cli.Version=${VERSION} \
+            -X github.com/scriptscat/sctl/internal/cli.Commit=${GITHUB_SHA} \
+            -X github.com/scriptscat/sctl/internal/cli.BuildDate=${BUILD_DATE}" \
+            -o "$STAGE/$BINARY" ./cmd/sctl
+          cp README.md LICENSE* "$STAGE/"
+          cp -R docs/. "$STAGE/docs/"
+          find "$STAGE" -exec touch -d "@${COMMIT_TIMESTAMP}" {} +
+
+          if [ "${{ matrix.format }}" = zip ]; then
+            (cd dist && zip -X -q -r "${PACKAGE}.zip" "$PACKAGE")
+          else
+            tar --sort=name --mtime="@${COMMIT_TIMESTAMP}" --owner=0 --group=0 --numeric-owner \
+              -C dist -czf "dist/${PACKAGE}.tar.gz" "$PACKAGE"
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*.${{ matrix.format }}
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # 创建 GitHub Release 并上传产物
+      id-token: write # 构建来源证明(build provenance)签名
+      attestations: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          pattern: release-*
+          merge-multiple: true
+      - name: 生成校验和
+        run: cd artifacts && sha256sum * > checksums.txt
+      - name: 判断是否为预发布
+        id: prerelease
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [[ "$TAG" == *-* ]]; then
+            echo "flag=--prerelease" >> "$GITHUB_OUTPUT"
+          fi
+      - name: 创建 GitHub 草稿 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE_FLAG: ${{ steps.prerelease.outputs.flag }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --draft \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            $PRERELEASE_FLAG \
+            artifacts/*
+      - name: 生成构建来源证明
+        # 只对 checksums.txt 签名即可:它覆盖了全部产物的 sha256,
+        # 用户先 `sha256sum -c` 再 `gh attestation verify checksums.txt` 就形成完整信任链。
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: artifacts/checksums.txt
+      - name: 输出发布摘要
+        run: |
+          {
+            echo "## sctl ${GITHUB_REF_NAME} 发布产物"
+            echo
+            echo '```'
+            cat artifacts/checksums.txt
+            echo '```'
+            echo
+            echo "Release 以**草稿**形式创建,确认 changelog 后手动点击 Publish。"
+          } >> "$GITHUB_STEP_SUMMARY"

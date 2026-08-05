@@ -1,0 +1,108 @@
+package cli
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/spf13/cobra"
+)
+
+// newInstallCmd 请求安装一个用户脚本。参数是 URL 或本地文件路径:URL 上送 {url},本地文件读出后
+// 上送 {code}(staged code)。阻塞至扩展批准/拒绝;Ctrl-C 即作废。install 不是资源词命令。
+func newInstallCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "install <url|file>",
+		Short: "Request installing a userscript (URL or local file); blocks until approved in the browser",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			input, err := buildInstallInput(args[0])
+			if err != nil {
+				return &ExitError{Code: exitError, Message: err.Error()}
+			}
+			return dispatchBlocking(cmd, "scripts.install.request", input, func(result json.RawMessage) error {
+				if outputFormat == outputJSON {
+					return printResultJSON(result)
+				}
+				fmt.Fprintf(os.Stdout, "installed: %s\n", summarizeInstall(result))
+				return nil
+			})
+		},
+	}
+}
+
+// buildInstallInput 判定参数是远程 URL 还是本地文件,构造对应的 bridge input。
+func buildInstallInput(arg string) (json.RawMessage, error) {
+	if strings.HasPrefix(arg, "http://") || strings.HasPrefix(arg, "https://") {
+		return mustInput(map[string]string{"url": arg}), nil
+	}
+	code, err := os.ReadFile(arg)
+	if err != nil {
+		return nil, fmt.Errorf("read script file %q: %w", arg, err)
+	}
+	return mustInput(map[string]string{"code": string(code)}), nil
+}
+
+func summarizeInstall(result json.RawMessage) string {
+	var r struct {
+		UUID    string `json:"uuid"`
+		Name    string `json:"name"`
+		Version string `json:"version"`
+		Enabled bool   `json:"enabled"`
+	}
+	if err := json.Unmarshal(result, &r); err != nil {
+		return string(result)
+	}
+	return fmt.Sprintf("%s (%s) version=%s enabled=%v", r.Name, r.UUID, r.Version, r.Enabled)
+}
+
+// newToggleCmd 生成 enable(enable=true)或 disable(enable=false)命令,均接受可省略的资源词。
+func newToggleCmd(enable bool) *cobra.Command {
+	use, short := "disable [scripts|script|sc] <uuid>", "Request disabling a script; blocks until approved in the browser"
+	if enable {
+		use, short = "enable [scripts|script|sc] <uuid>", "Request enabling a script; blocks until approved in the browser"
+	}
+	return &cobra.Command{
+		Use:   use,
+		Short: short,
+		Args:  exactlyOneUUIDArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			uuid := stripResourceWord(args)[0]
+			input := mustInput(map[string]any{"uuid": uuid, "enable": enable})
+			return dispatchBlocking(cmd, "scripts.toggle.request", input, func(result json.RawMessage) error {
+				if outputFormat == outputJSON {
+					return printResultJSON(result)
+				}
+				verb := "disabled"
+				if enable {
+					verb = "enabled"
+				}
+				fmt.Fprintf(os.Stdout, "%s: %s\n", verb, uuid)
+				return nil
+			})
+		},
+	}
+}
+
+// newDeleteCmd 请求删除一个脚本,接受可省略的资源词和 del 别名。
+// 命令阻塞至扩展批准或拒绝;Ctrl-C 即作废。
+func newDeleteCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "delete [scripts|script|sc] <uuid>",
+		Aliases: []string{"del"},
+		Short:   "Request deleting a script; blocks until approved in the browser",
+		Args:    exactlyOneUUIDArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			uuid := stripResourceWord(args)[0]
+			input := mustInput(map[string]string{"uuid": uuid})
+			return dispatchBlocking(cmd, "scripts.delete.request", input, func(result json.RawMessage) error {
+				if outputFormat == outputJSON {
+					return printResultJSON(result)
+				}
+				fmt.Fprintf(os.Stdout, "deleted: %s\n", uuid)
+				return nil
+			})
+		},
+	}
+}

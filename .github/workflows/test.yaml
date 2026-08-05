@@ -1,0 +1,86 @@
+name: test
+
+on:
+  push:
+    branches: [main, "release/**"]
+  pull_request:
+  # 供 release 工作流复用:打 tag 发布前跑同一套门禁,避免两边规则漂移。
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # PR 上新提交会取消上一次运行;main / release 分支保留每次运行。
+  group: test-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    env:
+      # 与本地开发保持同一版本,避免"本地过 CI 挂"。升级时同步改 docs/development.md。
+      GOLANGCI_LINT_VERSION: v2.12.2
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go build ./...
+      - run: go vet ./...
+      - run: go test -race ./...
+
+  protocol-schema:
+    name: protocol schema and ScriptCat mirror
+    runs-on: ubuntu-latest
+    env:
+      SCRIPTCAT_REF: e32bb5a43d3061aa1d380f62328bd249fdf55ac8
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: sctl
+      - uses: actions/checkout@v5
+        with:
+          repository: scriptscat/scriptcat
+          ref: ${{ env.SCRIPTCAT_REF }}
+          path: scriptcat
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: sctl/go.mod
+          cache-dependency-path: sctl/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check generated artifacts and exact paired mirror
+        working-directory: sctl
+        run: |
+          make protocol-check
+          mkdir -p ../formatted
+          cp internal/pkg/protocol/generated/*.ts ../formatted/
+          npx --yes prettier@3.6.2 --config ../scriptcat/.prettierrc --write ../formatted/*.ts
+          cmp ../formatted/protocol.generated.ts ../scriptcat/src/app/service/service_worker/external_access/generated/protocol.generated.ts
+          cmp ../formatted/validators.generated.ts ../scriptcat/src/app/service/service_worker/external_access/generated/validators.generated.ts
+          {
+            echo "ScriptCat ref: $SCRIPTCAT_REF"
+            sha256sum ../formatted/*.ts
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,604 @@
+{
+  "schemaVersion": "1.0.0",
+  "jsonrpc": "2.0",
+  "transport": {
+    "defaultUrl": "ws://127.0.0.1:8643",
+    "defaultPort": 8643,
+    "frame": "json-text"
+  },
+  "sessionMethods": [
+    "$session.authenticate",
+    "$session.authenticated",
+    "$session.hello",
+    "$session.capabilities",
+    "$session.ping",
+    "$session.shutdown",
+    "$/cancelRequest"
+  ],
+  "methods": {
+    "scripts.list": {
+      "params": "ScriptsListParams",
+      "result": "ScriptsListResult",
+      "scope": "scripts:list",
+      "effect": "read",
+      "blocking": "none"
+    },
+    "scripts.metadata.get": {
+      "params": "ScriptUUIDParams",
+      "result": "ScriptMetadata",
+      "scope": "scripts:metadata:read",
+      "effect": "read",
+      "blocking": "none"
+    },
+    "scripts.source.get": {
+      "params": "ScriptsSourceGetParams",
+      "result": "ScriptSource",
+      "scope": "scripts:source:read",
+      "effect": "read",
+      "blocking": "disclosure"
+    },
+    "scripts.source.grep": {
+      "params": "ScriptsSourceGrepParams",
+      "result": "ScriptSourceGrepResult",
+      "scope": "scripts:source:read",
+      "effect": "read",
+      "blocking": "disclosure"
+    },
+    "scripts.install.request": {
+      "params": "ScriptsInstallParams",
+      "result": "ScriptMutationResult",
+      "scope": "scripts:install:request",
+      "effect": "write",
+      "blocking": "approval"
+    },
+    "scripts.toggle.request": {
+      "params": "ScriptsToggleParams",
+      "result": "ScriptsToggleResult",
+      "scope": "scripts:toggle:request",
+      "effect": "write",
+      "blocking": "approval"
+    },
+    "scripts.delete.request": {
+      "params": "ScriptUUIDParams",
+      "result": "ScriptsDeleteResult",
+      "scope": "scripts:delete:request",
+      "effect": "write",
+      "blocking": "approval"
+    },
+    "scripts.edit.request": {
+      "params": "ScriptsEditParams",
+      "result": "ScriptMutationResult",
+      "scope": "scripts:edit:request",
+      "effect": "write",
+      "blocking": "approval"
+    }
+  },
+  "types": {
+    "ScriptsListParams": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "ScriptUUIDParams": {
+      "type": "object",
+      "properties": {
+        "uuid": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "required": [
+        "uuid"
+      ],
+      "additionalProperties": false
+    },
+    "ScriptsSourceGetParams": {
+      "type": "object",
+      "properties": {
+        "uuid": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "startLine": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "endLine": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2097152
+        }
+      },
+      "required": [
+        "uuid"
+      ],
+      "additionalProperties": false
+    },
+    "ScriptsSourceGrepParams": {
+      "type": "object",
+      "properties": {
+        "uuid": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "query": {
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "text",
+            "regex"
+          ]
+        },
+        "ignoreCase": {
+          "type": "boolean"
+        },
+        "contextLines": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxMatches": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "uuid",
+        "query"
+      ],
+      "additionalProperties": false
+    },
+    "ScriptsInstallParams": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ScriptsToggleParams": {
+      "type": "object",
+      "properties": {
+        "uuid": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "enable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "uuid",
+        "enable"
+      ],
+      "additionalProperties": false
+    },
+    "ScriptsEditParams": {
+      "type": "object",
+      "properties": {
+        "uuid": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "edits": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "properties": {
+              "oldText": {
+                "type": "string"
+              },
+              "newText": {
+                "type": "string"
+              },
+              "replaceAll": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "oldText",
+              "newText"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "uuid",
+        "edits"
+      ],
+      "additionalProperties": false
+    },
+    "ScriptsListResult": {
+      "type": "object",
+      "properties": {
+        "scripts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "uuid": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "namespace": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              },
+              "author": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "normal",
+                  "crontab",
+                  "background"
+                ]
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "updatedAt": {
+                "type": "string"
+              },
+              "hasUpdateUrl": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "uuid",
+              "name",
+              "namespace",
+              "type",
+              "enabled",
+              "updatedAt",
+              "hasUpdateUrl"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "contentTrust": {
+          "const": "untrusted-user-script-metadata"
+        }
+      },
+      "required": [
+        "scripts",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "ScriptMetadata": {
+      "type": "object",
+      "properties": {
+        "uuid": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "normal",
+            "crontab",
+            "background"
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "hasUpdateUrl": {
+          "type": "boolean"
+        },
+        "matches": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "includes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "excludes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "grants": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "connects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "requires": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "resources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "runAt": {
+          "type": "string"
+        },
+        "crontab": {
+          "type": "string"
+        },
+        "contentTrust": {
+          "const": "untrusted-user-script-metadata"
+        }
+      },
+      "required": [
+        "uuid",
+        "name",
+        "namespace",
+        "type",
+        "enabled",
+        "updatedAt",
+        "hasUpdateUrl",
+        "matches",
+        "includes",
+        "excludes",
+        "grants",
+        "connects",
+        "requires",
+        "resources",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "ScriptSource": {
+      "type": "object",
+      "properties": {
+        "uuid": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "contentTrust": {
+          "const": "untrusted-user-script-source"
+        },
+        "startLine": {
+          "type": "integer"
+        },
+        "endLine": {
+          "type": "integer"
+        },
+        "totalLines": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "uuid",
+        "name",
+        "code",
+        "sha256",
+        "contentTrust",
+        "startLine",
+        "endLine",
+        "totalLines"
+      ],
+      "additionalProperties": false
+    },
+    "ScriptSourceGrepResult": {
+      "type": "object",
+      "properties": {
+        "uuid": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "matches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "lineNumber": {
+                "type": "integer"
+              },
+              "line": {
+                "type": "string"
+              },
+              "before": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "after": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "lineNumber",
+              "line",
+              "before",
+              "after"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "totalMatches": {
+          "type": "integer"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "skippedLongLines": {
+          "type": "integer"
+        },
+        "totalLines": {
+          "type": "integer"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "contentTrust": {
+          "const": "untrusted-user-script-source"
+        }
+      },
+      "required": [
+        "uuid",
+        "name",
+        "matches",
+        "totalMatches",
+        "truncated",
+        "skippedLongLines",
+        "totalLines",
+        "sha256",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "ScriptMutationResult": {
+      "type": "object",
+      "properties": {
+        "uuid": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "uuid",
+        "name",
+        "enabled"
+      ]
+    },
+    "ScriptsToggleResult": {
+      "type": "object",
+      "properties": {
+        "uuid": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "uuid",
+        "enabled"
+      ]
+    },
+    "ScriptsDeleteResult": {
+      "type": "object",
+      "properties": {
+        "uuid": {
+          "type": "string"
+        },
+        "deleted": {
+          "const": true
+        }
+      },
+      "required": [
+        "uuid",
+        "deleted"
+      ]
+    }
+  },
+  "errorCodes": [
+    "INVALID_REQUEST",
+    "METHOD_NOT_FOUND",
+    "USER_REJECTED",
+    "OPERATION_EXPIRED",
+    "CONFLICT",
+    "NOT_FOUND",
+    "RATE_LIMITED",
+    "PAYLOAD_TOO_LARGE",
+    "INTERNAL_ERROR"
+  ],
+  "crypto": {
+    "mac": "HMAC-SHA-256",
+    "kdf": "HKDF-SHA-256",
+    "aead": "AES-256-GCM",
+    "nonceBytes": 32,
+    "encoding": "lowercase-hex",
+    "context": {
+      "sessionExt": "scriptcat-rpc-v1/ext",
+      "sessionDaemon": "scriptcat-rpc-v1/daemon",
+      "pairExt": "scriptcat-rpc-v1/pair-ext",
+      "pairDaemon": "scriptcat-rpc-v1/pair-daemon",
+      "pairKdfSalt": "scriptcat-rpc-v1/pair-salt",
+      "pairKdfInfoMac": "scriptcat-rpc-v1/pair-mac",
+      "pairKdfInfoEnc": "scriptcat-rpc-v1/pair-enc"
+    }
+  },
+  "limits": {
+    "authTimeoutMs": 5000,
+    "writeDecisionTtlMs": 300000,
+    "extPairingCodeTtlMs": 120000,
+    "maxSourceBytes": 2097152,
+    "maxFrameBytes": 4194304,
+    "pingIntervalMs": 30000
+  },
+  "pairingCode": {
+    "alphabet": "crockford-base32",
+    "length": 8,
+    "display": "XXXX-XXXX"
+  }
+}
