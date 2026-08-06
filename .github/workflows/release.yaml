@@ -66,7 +66,7 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           BUILD_DATE=$(git show -s --format=%cI HEAD)
           COMMIT_TIMESTAMP=$(git show -s --format=%ct HEAD)
-          PACKAGE="sctl_${VERSION}_${GOOS}_${{ matrix.arch }}"
+          PACKAGE="sctl-${VERSION}-${GOOS}-${{ matrix.arch }}"
           STAGE="dist/${PACKAGE}"
           BINARY=sctl
           if [ "$GOOS" = windows ]; then

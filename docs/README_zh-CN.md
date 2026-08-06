@@ -23,8 +23,25 @@ CLI ─────────────────────────�
 
 ## 快速开始
 
-如果 [GitHub Releases](https://github.com/scriptscat/sctl/releases) 已提供对应平台的二进制，请安装到
-`PATH`。尚无发布包时，贡献者也可以从源码构建；普通源码构建以 `0.0.0-dev` 标识自身。
+使用一条命令安装最新版本 — macOS / Linux：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/scriptscat/sctl/main/scripts/install.sh | sh
+```
+
+或 Windows PowerShell：
+
+```powershell
+irm https://raw.githubusercontent.com/scriptscat/sctl/main/scripts/install.ps1 | iex
+```
+
+安装脚本会下载与你平台对应的连字符命名发布包 `sctl-<version>-<os>-<arch>.<ext>`，用 `checksums.txt`
+校验其 sha256，并安装 `sctl` 到 `~/.local/bin`（macOS/Linux）或 `%LOCALAPPDATA%\sctl\bin`（Windows）。
+`SCTL_VERSION` 用于固定版本，`SCTL_INSTALL_DIR` 用于覆盖安装目录。若安装目录不在 `PATH` 中，安装脚本会
+打印将 `PATH` 加入该目录的确切提示 — 它不会替你修改 shell 配置或用户 PATH。
+
+也可以从 [GitHub Releases](https://github.com/scriptscat/sctl/releases) 手动下载
+`sctl-<version>-<os>-<arch>.<ext>` 归档并放入 `PATH`，或从源码构建；普通源码构建以 `0.0.0-dev` 标识自身。
 
 选择一个绝对路径作为数据目录，并为所有 sctl 进程设置环境变量：
 

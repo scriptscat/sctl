@@ -13,8 +13,25 @@ installation and setup workflow.
 
 ## 1. Install sctl
 
-If a published archive for your operating system and architecture is available on
-[GitHub Releases](https://github.com/scriptscat/sctl/releases), extract it and put the `sctl` executable on
+Install the latest release on macOS or Linux with one command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/scriptscat/sctl/main/scripts/install.sh | sh
+```
+
+or on Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/scriptscat/sctl/main/scripts/install.ps1 | iex
+```
+
+The installer downloads the hyphen-named release archive `sctl-<version>-<os>-<arch>.<ext>` for your platform,
+verifies its sha256 against `checksums.txt`, installs `sctl` into `~/.local/bin` (macOS/Linux) or
+`%LOCALAPPDATA%\sctl\bin` (Windows), and prints a `PATH` hint when the install directory is not on it.
+`SCTL_VERSION` pins a specific version; `SCTL_INSTALL_DIR` overrides the install directory.
+
+To install manually instead, download the matching `sctl-<version>-<os>-<arch>.<ext>` archive from
+[GitHub Releases](https://github.com/scriptscat/sctl/releases), extract it, and put the `sctl` executable on
 `PATH`. If no published release is available, contributors can build sctl from source.
 
 On macOS and Linux, make a downloaded binary executable if the unpacking tool discarded permissions:

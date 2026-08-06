@@ -24,9 +24,27 @@ confirmation UI in the extension.
 
 ## Quick start
 
-If a binary for your platform is available on
-[GitHub Releases](https://github.com/scriptscat/sctl/releases), install it on `PATH`. If no release is available,
-contributors can build sctl from source; plain source builds identify themselves as `0.0.0-dev`.
+Install the latest release with one command — macOS and Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/scriptscat/sctl/main/scripts/install.sh | sh
+```
+
+or Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/scriptscat/sctl/main/scripts/install.ps1 | iex
+```
+
+The installer downloads the hyphen-named release archive `sctl-<version>-<os>-<arch>.<ext>` for your platform,
+verifies its sha256 against `checksums.txt`, and installs `sctl` into `~/.local/bin` (macOS/Linux) or
+`%LOCALAPPDATA%\sctl\bin` (Windows). `SCTL_VERSION` pins a specific version; `SCTL_INSTALL_DIR` overrides the
+install directory. If the install directory is not on your `PATH`, the installer prints the exact `PATH` hint
+for your platform — it never edits your shell profile or user PATH for you.
+
+Or download a `sctl-<version>-<os>-<arch>.<ext>` archive manually from
+[GitHub Releases](https://github.com/scriptscat/sctl/releases) and put it on `PATH`, or build sctl from source;
+plain source builds identify themselves as `0.0.0-dev`.
 
 Choose one absolute data directory and export it for every sctl process:
 
