@@ -1,0 +1,8 @@
+{
+  "extName": {
+    "message": "sctl Browser"
+  },
+  "extDescription": {
+    "message": "Connects this browser to the local sctl daemon so sctl commands and MCP clients can work with its tabs and windows."
+  }
+}

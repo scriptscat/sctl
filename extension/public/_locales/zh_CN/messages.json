@@ -1,0 +1,8 @@
+{
+  "extName": {
+    "message": "sctl Browser"
+  },
+  "extDescription": {
+    "message": "把这个浏览器连接到本机的 sctl daemon，让 sctl 命令和 MCP 客户端可以操作它的标签页和窗口。"
+  }
+}

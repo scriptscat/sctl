@@ -123,7 +123,7 @@ isolation with these flags, and what evidence makes a change count as
 
 | Trigger | What runs |
 |---|---|
-| Every PR (any target branch) | `lint` + native Linux/macOS/Windows `test` (`build`, `vet`, `-race`) + protocol generation and exact paired-ScriptCat drift |
+| Every PR (any target branch) | `lint` + native Linux/macOS/Windows `test` (`build`, `vet`, `-race`) + `extension` (lint, format check, type check, unit tests, build) + protocol generation and exact paired-ScriptCat drift |
 | push to `main` / `release/**` | Same as above |
 | push tag `v*` | Reuses the full test gate first; only builds and publishes once it passes |
 
@@ -136,14 +136,37 @@ git tag -a v0.1.0 -m "v0.1.0"     # use v0.1.0-rc.1 for prereleases; the workflo
 git push origin v0.1.0
 ```
 
-It produces 6 artifacts (darwin/linux/windows × amd64/arm64) plus `checksums.txt`, generates build provenance
-for the checksum file, and publishes the GitHub Release automatically after the full test gate passes.
+It produces 7 artifacts — 6 sctl archives (darwin/linux/windows × amd64/arm64) and the browser extension
+`sctl-browser-extension-<version>.zip` — plus `checksums.txt`, generates build provenance for the checksum file,
+and publishes the GitHub Release automatically after the full test gate passes. The extension zip holds one
+`sctl-browser-extension-<version>/` directory for "Load unpacked"; its manifest version is the release version.
 
 Artifacts are built with `-trimpath` and use the commit time as the archive member timestamp, so rebuilding
 the same tag is byte-for-byte reproducible. Version, commit, and build time are injected into `internal/cli`
 via `-ldflags` and are visible through `sctl version`.
 
 Cross-compilation, packaging, checksums, and the GitHub Release upload all happen inside that workflow.
+
+## Browser extension
+
+The sctl Browser extension lives in `extension/` (pnpm, Vite, React, TypeScript, Tailwind CSS v4, shadcn/ui,
+ESLint, Prettier, Vitest). CI uses Node 24; the pnpm version is pinned by `packageManager` in
+`extension/package.json`. Run everything from `extension/`:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm lint            # ESLint
+pnpm format:check    # Prettier (pnpm format rewrites)
+pnpm typecheck       # tsc -b
+pnpm test            # Vitest, with chrome.* and WebSocket replaced by fakes
+pnpm build           # writes dist/, loadable through "Load unpacked"
+```
+
+`SCTL_EXTENSION_VERSION` sets the manifest version for a build (the release workflow passes the tag version; a
+prerelease suffix such as `-rc.1` goes into `version_name`, because Chrome versions are numeric only). Without it,
+the build uses the `version` in `extension/package.json`. The generated protocol bindings in
+`extension/src/protocol/generated/` are excluded from lint and formatting; regenerate them rather than editing
+them (see below).
 
 ## Protocol source and generation
 

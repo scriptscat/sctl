@@ -46,8 +46,11 @@ authoritative source, never recalled from memory or copied from earlier prose.
 | A function / type exists **under that exact name** | `git grep -n 'func WriteFileAtomic' -- internal` — renames are the #1 source of drift |
 | Dependency direction between packages | `go list -f '{{.ImportPath}} {{join .Imports " "}}' ./...` |
 | Protocol constants (port, timeouts, TTLs, limits, method set) | `internal/pkg/protocol/protocol.json` is the authority; docs only explain semantics |
-| "N MCP tools" | Count the `methods` keys in `internal/pkg/protocol/protocol.json`, not comments in the MCP implementation |
-| "N release artifacts" | The build matrix in `.github/workflows/release.yaml` |
+| "N MCP tools" | Count the `toolDefs` entries in `internal/client/mcpserver/tools.go` whose `action` is a `methods` key in `internal/pkg/protocol/protocol.json` — `mcpserver.New` registers only those; not every protocol method has a tool |
+| "N release artifacts" | The build matrix plus the `extension` job in `.github/workflows/release.yaml` |
+| Extension toolchain (Node, pnpm) | `node-version` in the `extension` job of `.github/workflows/test.yaml`; `packageManager` in `extension/package.json` |
+| Extension commands | The `scripts` in `extension/package.json` |
+| Extension permissions / minimum Chrome version | `extension/src/manifest.json` |
 | Toolchain versions | `GOLANGCI_LINT_VERSION` in `.github/workflows/test.yaml` must match [development.md](./development.md) |
 | CLI subcommands / flags | `git grep -n 'Use:' -- internal/cli`, or just `./sctl --help` |
 | Exit codes | The `exitOK` / `exitRejected` / `exitVoided` / `exitError` constants in `internal/cli/cli.go` |
