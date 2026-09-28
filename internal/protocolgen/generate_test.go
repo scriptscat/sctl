@@ -1,6 +1,9 @@
 package protocolgen_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,22 +17,29 @@ func TestGenerateProducesDeterministicGoAndTypeScriptContracts(t *testing.T) {
 
 	root := filepath.Join("..", "pkg", "protocol")
 	out := t.TempDir()
-	if err := protocolgen.Generate(root, out); err != nil {
+	browserOut := t.TempDir()
+	if err := protocolgen.Generate(root, out, browserOut); err != nil {
 		t.Fatalf("generate protocol contracts: %v", err)
 	}
 
-	for _, name := range []string{"protocol.generated.go", "protocol.generated.ts", "validators.generated.ts"} {
-		first, err := os.ReadFile(filepath.Join(out, name))
+	for _, name := range []string{
+		filepath.Join(out, "protocol.generated.go"),
+		filepath.Join(out, "protocol.generated.ts"),
+		filepath.Join(out, "validators.generated.ts"),
+		filepath.Join(browserOut, "protocol.generated.ts"),
+		filepath.Join(browserOut, "validators.generated.ts"),
+	} {
+		first, err := os.ReadFile(name)
 		if err != nil {
 			t.Fatalf("read generated %s: %v", name, err)
 		}
 		if len(first) == 0 {
 			t.Fatalf("generated %s is empty", name)
 		}
-		if err := protocolgen.Generate(root, out); err != nil {
+		if err := protocolgen.Generate(root, out, browserOut); err != nil {
 			t.Fatalf("regenerate protocol contracts: %v", err)
 		}
-		second, err := os.ReadFile(filepath.Join(out, name))
+		second, err := os.ReadFile(name)
 		if err != nil {
 			t.Fatalf("read regenerated %s: %v", name, err)
 		}
@@ -59,7 +69,7 @@ func TestGenerateProducesStronglyTypedRPCContracts(t *testing.T) {
 	t.Parallel()
 
 	out := t.TempDir()
-	if err := protocolgen.Generate(filepath.Join("..", "pkg", "protocol"), out); err != nil {
+	if err := protocolgen.Generate(filepath.Join("..", "pkg", "protocol"), out, t.TempDir()); err != nil {
 		t.Fatalf("generate protocol contracts: %v", err)
 	}
 
@@ -152,4 +162,179 @@ func TestGenerateProducesStronglyTypedRPCContracts(t *testing.T) {
 			t.Errorf("generated TypeScript validators contain runtime code generation %q", unwanted)
 		}
 	}
+}
+
+// 这两个摘要是 ScriptCat 固定版本(CI 的 SCRIPTCAT_REF)所用生成文件的逐字节身份;
+// 只有 ScriptCat 协议真的变化并同步到 ScriptCat 时才允许改动。
+const (
+	scriptCatProtocolSHA256   = "df47fd341242836501b2497b665a406f98152ce1baa9d6955981e003527117e8"
+	scriptCatValidatorsSHA256 = "2b55453161a593907759c4be7d9a2caa09f71aed7155b3c840f93d33d04896bb"
+)
+
+func TestGenerateKeepsScriptCatTypeScriptByteIdenticalWhenBrowserMethodsExist(t *testing.T) {
+	t.Parallel()
+
+	out := t.TempDir()
+	if err := protocolgen.Generate(filepath.Join("..", "pkg", "protocol"), out, t.TempDir()); err != nil {
+		t.Fatalf("generate protocol contracts: %v", err)
+	}
+	for name, want := range map[string]string{
+		"protocol.generated.ts":   scriptCatProtocolSHA256,
+		"validators.generated.ts": scriptCatValidatorsSHA256,
+	} {
+		content := readFile(t, filepath.Join(out, name))
+		for _, browserOnly := range []string{"tabs.list", "TabsListParams", "BROWSER_OFFLINE", "browserSessionExt"} {
+			if strings.Contains(content, browserOnly) {
+				t.Errorf("ScriptCat %s contains browser-owned %q", name, browserOnly)
+			}
+		}
+		sum := sha256.Sum256([]byte(content))
+		if got := hex.EncodeToString(sum[:]); got != want {
+			t.Errorf("ScriptCat %s sha256 = %s, want the paired ScriptCat copy %s", name, got, want)
+		}
+	}
+}
+
+func TestGenerateWritesBrowserTypeScriptWithOnlyBrowserContract(t *testing.T) {
+	t.Parallel()
+
+	browserOut := t.TempDir()
+	if err := protocolgen.Generate(filepath.Join("..", "pkg", "protocol"), t.TempDir(), browserOut); err != nil {
+		t.Fatalf("generate protocol contracts: %v", err)
+	}
+	typescript := readFile(t, filepath.Join(browserOut, "protocol.generated.ts"))
+	for _, want := range []string{
+		`"tabs.list": { params: TabsListParams; result: TabsListResult };`,
+		`"windows.list": { params: WindowsListParams; result: WindowsListResult };`,
+		`"BROWSER_OFFLINE"`,
+		`"NOT_FOUND"`,
+		`"browserSessionExt": "sctl-browser-rpc-v1/ext"`,
+		`"pairKdfSalt": "scriptcat-rpc-v1/pair-salt"`,
+		`export const SCHEMA_VERSION = "1.0.0" as const;`,
+	} {
+		if !strings.Contains(typescript, want) {
+			t.Errorf("browser TypeScript does not contain %q", want)
+		}
+	}
+	for _, unwanted := range []string{"scripts.list", "ScriptsListParams", `"USER_REJECTED"`, `"sessionExt"`, "unknown"} {
+		if strings.Contains(typescript, unwanted) {
+			t.Errorf("browser TypeScript contains ScriptCat-only or unresolved %q", unwanted)
+		}
+	}
+
+	validators := readFile(t, filepath.Join(browserOut, "validators.generated.ts"))
+	for _, want := range []string{
+		"export function validateTabsOpenParams",
+		`value["tabIds"].length >= 1`,
+		`"tabs.close": validateTabsCloseParams,`,
+	} {
+		if !strings.Contains(validators, want) {
+			t.Errorf("browser validators do not contain %q", want)
+		}
+	}
+	// 浏览器扩展开启 noUnusedLocals 时,未被引用的辅助函数会让类型检查失败。
+	for _, unwanted := range []string{"validateScriptsToggleParams", "isUUID"} {
+		if strings.Contains(validators, unwanted) {
+			t.Errorf("browser validators contain unused ScriptCat code %q", unwanted)
+		}
+	}
+}
+
+func TestGenerateGoBindingsCarryEveryPeer(t *testing.T) {
+	t.Parallel()
+
+	out := t.TempDir()
+	if err := protocolgen.Generate(filepath.Join("..", "pkg", "protocol"), out, t.TempDir()); err != nil {
+		t.Fatalf("generate protocol contracts: %v", err)
+	}
+	goSource := readFile(t, filepath.Join(out, "protocol.generated.go"))
+	for _, want := range []string{
+		`MethodScriptsList `,
+		`MethodTabsList `,
+		`Peer: "browser", MergeField: "tabs"`,
+		`Peer: "scriptcat", MergeField: ""`,
+		`ErrorCodeInvalidRequest `,
+		`ErrorCodeBrowserOffline `,
+		`= "BROWSER_OFFLINE"`,
+		`CryptoContextSessionExt `,
+		`CryptoContextBrowserPairDaemon `,
+		`= "browserPairDaemon"`,
+	} {
+		if !strings.Contains(goSource, want) {
+			t.Errorf("generated Go does not contain %q", want)
+		}
+	}
+}
+
+func TestGenerateRejectsInvalidPeerAnnotations(t *testing.T) {
+	t.Parallel()
+
+	for name, mutate := range map[string]func(def map[string]any){
+		"unchanged definition": func(map[string]any) {},
+		"method with unknown peer": func(def map[string]any) {
+			method(def, "tabs.list")["peer"] = "firefox"
+		},
+		"method without peer": func(def map[string]any) {
+			delete(method(def, "scripts.list"), "peer")
+		},
+		"merge field that is not an array": func(def map[string]any) {
+			method(def, "tabs.list")["mergeField"] = "contentTrust"
+		},
+		"merge field missing from result": func(def map[string]any) {
+			method(def, "windows.list")["mergeField"] = "tabs"
+		},
+		"error code without peers": func(def map[string]any) {
+			def["errorCodes"].([]any)[0].(map[string]any)["peers"] = []any{}
+		},
+		"error code with unknown peer": func(def map[string]any) {
+			def["errorCodes"].([]any)[0].(map[string]any)["peers"] = []any{"firefox"}
+		},
+		"handshake context without peers": func(def map[string]any) {
+			context := def["crypto"].(map[string]any)["context"].(map[string]any)
+			context["sessionExt"].(map[string]any)["peers"] = []any{}
+		},
+		"type that no method uses": func(def map[string]any) {
+			def["types"].(map[string]any)["Orphan"] = map[string]any{"type": "object", "properties": map[string]any{}}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			var def map[string]any
+			if err := json.Unmarshal([]byte(readFile(t, filepath.Join("..", "pkg", "protocol", "protocol.json"))), &def); err != nil {
+				t.Fatalf("parse protocol.json: %v", err)
+			}
+			mutate(def)
+			raw, err := json.Marshal(def)
+			if err != nil {
+				t.Fatalf("encode definition: %v", err)
+			}
+			schemaDir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(schemaDir, "protocol.json"), raw, 0o600); err != nil {
+				t.Fatalf("write definition: %v", err)
+			}
+			err = protocolgen.Generate(schemaDir, t.TempDir(), t.TempDir())
+			if name == "unchanged definition" {
+				if err != nil {
+					t.Fatalf("valid definition rejected: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("invalid definition was accepted")
+			}
+		})
+	}
+}
+
+func method(def map[string]any, name string) map[string]any {
+	return def["methods"].(map[string]any)[name].(map[string]any)
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(content)
 }

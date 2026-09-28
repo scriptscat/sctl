@@ -148,10 +148,14 @@ Cross-compilation, packaging, checksums, and the GitHub Release upload all happe
 ## Protocol source and generation
 
 `internal/pkg/protocol/protocol.json` is the only maintained source for the extension-facing RPC contract. Run
-`make protocol-generate` after changing it. The Go and TypeScript bindings, native TypeScript validators, and
-ScriptCat copies are generated artifacts and must be updated in the same cross-repository change.
-`make protocol-sync-scriptcat` updates the adjacent checkout; override `SCRIPTCAT_DIR` when it lives elsewhere.
+`make protocol-generate` after changing it. It writes the Go bindings (every peer) and the ScriptCat TypeScript
+bindings and validators to `internal/pkg/protocol/generated/`, and the sctl Browser TypeScript bindings and
+validators to `extension/src/protocol/generated/`; which definitions each TypeScript set receives is described in
+[protocol.md](./protocol.md#6-generation-and-conformance). A change to ScriptCat-owned definitions alters the
+ScriptCat copies and must be updated in the same cross-repository change. `make protocol-sync-scriptcat` updates
+the adjacent checkout; override `SCRIPTCAT_DIR` when it lives elsewhere.
 
-`make protocol-check` verifies that every checked-in artifact is reproducible from the source. The generator also
-validates the protocol definition before emitting code, so invalid method bindings and unsupported schema shapes
-fail generation.
+`make protocol-check` verifies that all three generated sets are checked in and reproducible from the source.
+`go test ./internal/protocolgen` additionally pins the ScriptCat TypeScript to the bytes of the paired ScriptCat
+copy. The generator also validates the protocol definition before emitting code, so invalid method bindings,
+peer annotations, merge fields, unreferenced types, and unsupported schema shapes fail generation.

@@ -150,22 +150,33 @@ A successful call returns the generated result type:
 }
 ```
 
-The current methods are:
+Every method is owned by exactly one peer (`peer` in `protocol.json`): ScriptCat implements the `scripts.*`
+methods and the sctl Browser extension implements the tab and window methods. The current methods are:
 
-| Method | Effect | Blocking behavior |
-|---|---|---|
-| `scripts.list` | read script summaries | none |
-| `scripts.metadata.get` | read metadata | none |
-| `scripts.source.get` | read source | disclosure confirmation |
-| `scripts.source.grep` | search source | disclosure confirmation |
-| `scripts.install.request` | install a script | write approval |
-| `scripts.toggle.request` | enable or disable a script | write approval |
-| `scripts.delete.request` | delete a script | write approval |
-| `scripts.edit.request` | edit a script | write approval |
+| Method | Peer | Effect | Blocking behavior |
+|---|---|---|---|
+| `scripts.list` | ScriptCat | read script summaries | none |
+| `scripts.metadata.get` | ScriptCat | read metadata | none |
+| `scripts.source.get` | ScriptCat | read source | disclosure confirmation |
+| `scripts.source.grep` | ScriptCat | search source | disclosure confirmation |
+| `scripts.install.request` | ScriptCat | install a script | write approval |
+| `scripts.toggle.request` | ScriptCat | enable or disable a script | write approval |
+| `scripts.delete.request` | ScriptCat | delete a script | write approval |
+| `scripts.edit.request` | ScriptCat | edit a script | write approval |
+| `tabs.list` | browser | list tabs, optionally in one window | none |
+| `tabs.open` | browser | open a URL in a new tab and return its tab ID | none |
+| `tabs.close` | browser | close one or more tabs | none |
+| `tabs.activate` | browser | activate a tab and focus its window | none |
+| `windows.list` | browser | list windows | none |
 
 Source and metadata returned by these methods are untrusted user-script content. Consumers must not execute it,
 render it as HTML, interpret it as instructions, or include credentials in logs. Source results carry a SHA-256
 digest. Edit approval rechecks the staged digest and target identity before applying changes.
+
+Tab titles and URLs are controlled by web pages; `tabs.list` marks its result with
+`contentTrust: "untrusted-page-content"` and the same handling rules apply. A list method declares a
+`mergeField`: the required array property in its result that holds the listed items, so results from several
+browser instances combine by concatenating that array. Methods without `mergeField` are never combined.
 
 `scripts.source.get` accepts an optional `maxBytes` budget for a whole-file response. When the UTF-8 source is
 larger, the extension returns `PAYLOAD_TOO_LARGE` before placing the source in a WebSocket frame; callers should
@@ -196,6 +207,15 @@ put the stable domain code in `error.data.code`:
 The generated `errorCodes` list is authoritative for domain codes. Messages are human-readable diagnostics;
 callers branch on the numeric JSON-RPC code and `data.code`, not on message text.
 
+These codes are reserved for browser target selection failures:
+
+| Code | Meaning |
+|---|---|
+| `NO_BROWSER_CONNECTED` | a browser method was called while no browser instance is online |
+| `BROWSER_OFFLINE` | the target names a paired browser instance that is not connected |
+| `BROWSER_NOT_FOUND` | the target matches no paired browser instance |
+| `BROWSER_AMBIGUOUS` | the target instance-ID prefix matches more than one paired instance |
+
 ## 5. Cancellation and approval
 
 Write and source-disclosure requests remain pending until the user decides. If the requester disconnects,
@@ -216,7 +236,23 @@ the JSON-RPC response through the offscreen WebSocket owner.
 
 ## 6. Generation and conformance
 
+`protocol.json` annotates ownership: each method has one `peer` (`scriptcat` or `browser`), and each
+`errorCodes` entry and each `crypto.context` entry lists the `peers` that use it. The `browser*` context strings
+are reserved for browser-instance handshakes, so a MAC computed for one peer kind never verifies as the other; the
+pairing KDF strings are shared. The generator emits one set of bindings per peer:
+
+| Output | Contents |
+|---|---|
+| `internal/pkg/protocol/generated/protocol.generated.go` | every method, type, error code, and context key, for the daemon and CLI |
+| `internal/pkg/protocol/generated/*.ts` | ScriptCat's methods, the types they reference, and the codes and contexts listing `scriptcat` |
+| `extension/src/protocol/generated/*.ts` | the same selection for `browser` |
+
+The ScriptCat TypeScript must stay byte-identical to the copy in the paired ScriptCat revision, because ScriptCat
+declares every generated method as a capability and its conformance test compares the method and error-code
+lists exactly. Adding browser-owned definitions therefore never changes ScriptCat's files or `schemaVersion`.
+
 Run `make protocol-generate` after editing `protocol.json`, and `make protocol-sync-scriptcat` to update the
 adjacent ScriptCat checkout. `make protocol-check` regenerates all artifacts and fails if the checked-in output
-differs. Both peers parse the JSON-RPC structure directly. ScriptCat validates business parameters with generated
-native TypeScript type guards, so extension startup does not compile schemas at runtime.
+differs or a generated file is untracked. Both peers parse the JSON-RPC structure directly. ScriptCat validates
+business parameters with generated native TypeScript type guards, so extension startup does not compile schemas
+at runtime.

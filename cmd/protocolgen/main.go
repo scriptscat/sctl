@@ -10,9 +10,10 @@ import (
 
 func main() {
 	schema := flag.String("schema", "internal/pkg/protocol", "protocol source directory")
-	out := flag.String("out", "internal/pkg/protocol/generated", "generated output directory")
+	out := flag.String("out", "internal/pkg/protocol/generated", "output directory for the Go bindings and the ScriptCat TypeScript")
+	browserOut := flag.String("browser-out", "extension/src/protocol/generated", "output directory for the browser extension TypeScript")
 	flag.Parse()
-	if err := protocolgen.Generate(*schema, *out); err != nil {
+	if err := protocolgen.Generate(*schema, *out, *browserOut); err != nil {
 		fail(err)
 	}
 }

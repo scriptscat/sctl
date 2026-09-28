@@ -21,7 +21,7 @@ type Protocol struct {
 	SessionMethods []string          `json:"sessionMethods"`
 	Scopes         []string          `json:"scopes"`
 	Actions        map[string]Action `json:"methods"`
-	ErrorCodes     []string          `json:"errorCodes"`
+	ErrorCodes     []ErrorCode       `json:"errorCodes"`
 	Crypto         Crypto            `json:"crypto"`
 	Limits         Limits            `json:"limits"`
 	PairingCode    PairingCode       `json:"pairingCode"`
@@ -40,15 +40,49 @@ type Action struct {
 	Blocking string `json:"blocking,omitempty"`
 	Params   string `json:"params"`
 	Result   string `json:"result"`
+	Peer     Peer   `json:"peer"`
+	// MergeField 是结果中的数组字段名:多个浏览器同时在线时 daemon 按它合并各实例的列表;非列表方法为空。
+	MergeField string `json:"mergeField,omitempty"`
+}
+
+// Peer 是协议定义的归属对端:方法由哪种扩展实现,错误码与握手常量由哪些扩展使用。
+type Peer string
+
+const (
+	PeerScriptCat Peer = "scriptcat"
+	PeerBrowser   Peer = "browser"
+)
+
+type ErrorCode struct {
+	Code  string `json:"code"`
+	Peers []Peer `json:"peers"`
+}
+
+// CryptoContext 把 context 键映射到握手字符串;protocol.json 中每项另带归属标注,只在生成各对端代码时使用。
+type CryptoContext map[string]string
+
+func (c *CryptoContext) UnmarshalJSON(data []byte) error {
+	var entries map[string]struct {
+		Value string `json:"value"`
+	}
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return err
+	}
+	values := make(CryptoContext, len(entries))
+	for key, entry := range entries {
+		values[key] = entry.Value
+	}
+	*c = values
+	return nil
 }
 
 type Crypto struct {
-	MAC        string            `json:"mac"`
-	KDF        string            `json:"kdf"`
-	AEAD       string            `json:"aead"`
-	NonceBytes int               `json:"nonceBytes"`
-	Encoding   string            `json:"encoding"`
-	Context    map[string]string `json:"context"`
+	MAC        string        `json:"mac"`
+	KDF        string        `json:"kdf"`
+	AEAD       string        `json:"aead"`
+	NonceBytes int           `json:"nonceBytes"`
+	Encoding   string        `json:"encoding"`
+	Context    CryptoContext `json:"context"`
 }
 
 type Limits struct {
