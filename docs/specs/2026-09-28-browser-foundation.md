@@ -47,6 +47,7 @@
 | 11 | 扩展打包成 zip 附在每个 GitHub Release 上，用户通过「加载已解压的扩展程序」安装。 | 设计评审时已确认。本期不上架 Chrome 应用商店。 |
 | 12 | 弹窗采用「同门」风格：ScriptCat 的天蓝色和 ScriptCat 的 logo，加一条「这个浏览器 ↔ daemon」的连线，用线型表示连接状态。工具栏图标直接用 ScriptCat 的 logo，不做修改。 | 用户从三个方向（铭牌、同门、终端）中选定。用户接受两个扩展的工具栏图标看起来完全一样。 |
 | 13 | 弹窗提供外观设置（跟随系统、浅色、深色）和语言设置（跟随浏览器、中文、English），两项默认都跟随系统和浏览器。 | 用户要求。因为语言可以手动切换，弹窗文案要用扩展自带的词典，不能用 `chrome.i18n`，后者无法在运行时切换语言。清单里的扩展名称和描述仍然走 `_locales`，跟随浏览器语言。 |
+| 14 | `protocol.json` 仍是唯一的协议权威，但其中每个方法、错误码和握手常量都标注归属（ScriptCat 或浏览器），并按对端分别生成代码：Go 侧拿到全部定义；给 ScriptCat 的 TS 文件只含属于 ScriptCat 的部分，和现在逐字节一致；浏览器扩展另生成一套自己的 TS。`schemaVersion` 保持不变。 | 用户决定。现状是只生成一套 TS（`internal/protocolgen/generate.go:55-58`），CI 要求它和固定版本的 ScriptCat 副本逐字节一致（`.github/workflows/test.yaml:57,81-82`），而 ScriptCat 会把生成文件里的所有方法都声明为自己的能力，一致性测试还要求方法和错误码列表完全相等。在同一套输出里加入浏览器方法，会让 CI 失败，或者让 ScriptCat 声称支持它并不支持的方法。daemon 要求 `schemaVersion` 完全相等（`internal/daemon/bridge/conn.go:256`），改版本号会断开现有的 ScriptCat。被否：跨仓库修改 ScriptCat 并移动 CI 固定版本，违反「不动 ScriptCat」，还会多出跨仓库依赖；给浏览器单独建一份协议文件，会出现两个权威文件。 |
 
 ## 浏览器实例的身份与配对
 
@@ -134,7 +135,7 @@
 
 **`sctl status`：** 额外列出各浏览器实例及其在线状态。现有的 ScriptCat 字段和退出行为不变。
 
-**协议：** 新方法先加进 `protocol.json`，再从它生成 Go 和 TypeScript 代码。扩展通过现有的 `$session.capabilities` 协商，声明自己实现了哪些浏览器方法。
+**协议：** 新方法、新错误码和新的握手常量先加进 `protocol.json` 并标注归属为浏览器，再按对端分别生成代码（见决策 14）。给 ScriptCat 的生成文件保持逐字节不变，CI 里对固定版本 ScriptCat 的比对继续通过。浏览器扩展使用自己那套生成文件，并通过现有的 `$session.capabilities` 协商，声明自己实现了哪些浏览器方法。
 
 ## 扩展弹窗
 
@@ -244,7 +245,7 @@
 | 控制 API 测试 | 目标选择表的每一行、三种目标相关错误、列表类调用的汇总 | `internal/daemon/controlapi/controlapi_test.go`、`harness_test.go` |
 | 命令行测试：连接模拟的控制服务 | 表格和 JSON 输出；`--browser` 优先于 `SCTL_BROWSER`；每种结果对应的退出码 0、2、3 | `internal/cli/cli_test.go` |
 | MCP 服务测试 | 浏览器工具已注册，描述是静态文本，并且会转发可选的 `browser` 参数 | `internal/client/mcpserver/mcpserver_test.go` |
-| 协议生成检查 | Go 和 TypeScript 生成代码（包括扩展用的）与 `protocol.json` 一致 | `make protocol-check`、`internal/protocolgen/generate_test.go` |
+| 协议生成检查 | Go、ScriptCat 用的 TS、浏览器扩展用的 TS 三套生成代码都与 `protocol.json` 一致；ScriptCat 那套只含 ScriptCat 的方法、错误码和常量，并与生成器改造前逐字节相同 | `make protocol-check`、`internal/protocolgen/generate_test.go`、CI 的 `protocol-schema` 任务 |
 | 扩展单元测试（Vitest，mock `chrome.*`） | 标签页和窗口方法的处理逻辑；握手状态和退避的状态转换；设置的持久化；配对码草稿的恢复；弹窗的每个状态都能根据连接状态正确渲染，中英文都要覆盖 | 本仓库暂无，参照 ScriptCat 的 Vitest 测试 |
 | 一次性真机验证，放在 `e2e/scratch/`，不提交 | 真实 Chrome 同时加载解压的扩展和 ScriptCat，两者都配对到同一个 `sctl serve`；依次执行配对、改名、`tabs open`、`tabs list`、`tabs close`、忘记；整个过程中 ScriptCat 的 `sctl get` 一直正常 | [verification.md](../verification.md) |
 
