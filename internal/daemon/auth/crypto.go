@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
+	"github.com/scriptscat/sctl/internal/pkg/protocol/generated"
 )
 
 // Mode 区分握手所用的上下文与密钥来源。
@@ -72,6 +73,43 @@ func (c *Crypto) ExtHMAC(mode Mode, key []byte, nonceD, nonceE string) string {
 // DaemonHMAC 计算 daemon $session.authenticated 通知应携带的 HMAC:context=ctx.*Daemon,顺序 nonceE||nonceD。
 func (c *Crypto) DaemonHMAC(mode Mode, key []byte, nonceD, nonceE string) string {
 	return handshakeHMAC(key, c.daemonContext(mode), nonceE, nonceD)
+}
+
+func (c *Crypto) browserExtContext(mode Mode) string {
+	if mode == ModePairing {
+		return c.ctx[generated.CryptoContextBrowserPairExt]
+	}
+	return c.ctx[generated.CryptoContextBrowserSessionExt]
+}
+
+func (c *Crypto) browserDaemonContext(mode Mode) string {
+	if mode == ModePairing {
+		return c.ctx[generated.CryptoContextBrowserPairDaemon]
+	}
+	return c.ctx[generated.CryptoContextBrowserSessionDaemon]
+}
+
+// BrowserExtHMAC 计算浏览器实例对 $session.authenticate 的应答 HMAC:
+// context=browser*Ext(区分对端类型)|| instanceID || nonceD || nonceE。instanceID 与 nonce 都是定长
+// 小写 hex(由 bridge 在边界校验),拼接无歧义;绑定实例 ID 使截获的 MAC 无法冒充另一实例重放。
+func (c *Crypto) BrowserExtHMAC(mode Mode, instanceID string, key []byte, nonceD, nonceE string) string {
+	return handshakeHMAC(key, c.browserExtContext(mode)+instanceID, nonceD, nonceE)
+}
+
+// BrowserDaemonHMAC 计算 daemon 对浏览器实例的 $session.authenticated HMAC:
+// context=browser*Daemon || instanceID || nonceE || nonceD。
+func (c *Crypto) BrowserDaemonHMAC(mode Mode, instanceID string, key []byte, nonceD, nonceE string) string {
+	return handshakeHMAC(key, c.browserDaemonContext(mode)+instanceID, nonceE, nonceD)
+}
+
+// VerifyBrowserExtHMAC 恒定时间校验浏览器实例应答的 HMAC。
+func (c *Crypto) VerifyBrowserExtHMAC(mode Mode, instanceID string, key []byte, nonceD, nonceE, got string) bool {
+	return constantTimeHexEqual(c.BrowserExtHMAC(mode, instanceID, key, nonceD, nonceE), got)
+}
+
+// VerifyBrowserDaemonHMAC 恒定时间校验 daemon 对浏览器实例的 HMAC(供扩展/测试使用)。
+func (c *Crypto) VerifyBrowserDaemonHMAC(mode Mode, instanceID string, key []byte, nonceD, nonceE, got string) bool {
+	return constantTimeHexEqual(c.BrowserDaemonHMAC(mode, instanceID, key, nonceD, nonceE), got)
 }
 
 // VerifyExtHMAC 恒定时间校验扩展应答的 HMAC。

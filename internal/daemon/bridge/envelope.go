@@ -3,6 +3,8 @@ package bridge
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/scriptscat/sctl/internal/pkg/protocol"
 )
 
 const jsonRPCVersion = "2.0"
@@ -27,7 +29,11 @@ const (
 	CodeInternal         = "INTERNAL_ERROR"
 	CodeRateLimited      = "RATE_LIMITED"
 	CodeOperationExpired = "OPERATION_EXPIRED"
+	CodeConflict         = "CONFLICT"
 )
+
+// rpcApplicationError 是应用层失败的 JSON-RPC 错误码,领域错误码放在 error.data.code(docs/protocol.md §4)。
+const rpcApplicationError = -32000
 
 // Message is one JSON-RPC 2.0 request, notification, success response, or error response.
 type Message struct {
@@ -55,9 +61,19 @@ type authChallengeParams struct {
 }
 
 type authResponseResult struct {
-	Mode   string `json:"mode"`
-	NonceE string `json:"nonceE"`
-	HMAC   string `json:"hmac"`
+	Mode   string    `json:"mode"`
+	NonceE string    `json:"nonceE"`
+	HMAC   string    `json:"hmac"`
+	Peer   *authPeer `json:"peer,omitempty"`
+}
+
+// peerKindBrowser 是浏览器实例在认证响应里声明的对端类型;不声明 peer 的连接是 ScriptCat。
+const peerKindBrowser = string(protocol.PeerBrowser)
+
+// authPeer 是浏览器实例在认证响应里声明的身份,参与握手 MAC 计算并决定选用哪把实例密钥。
+type authPeer struct {
+	Kind       string `json:"kind"`
+	InstanceID string `json:"instanceId"`
 }
 
 type keyDelivery struct {
@@ -75,8 +91,17 @@ type helloParams struct {
 }
 
 type capabilitiesParams struct {
-	SchemaVersion string   `json:"schemaVersion"`
-	Methods       []string `json:"methods"`
+	SchemaVersion string            `json:"schemaVersion"`
+	Methods       []string          `json:"methods"`
+	Peer          *capabilitiesPeer `json:"peer,omitempty"`
+}
+
+// capabilitiesPeer 是浏览器实例在能力声明里给出的名称与自报信息;名称以 daemon 登记为准。
+type capabilitiesPeer struct {
+	Name             string `json:"name"`
+	Product          string `json:"product,omitempty"`
+	ProductVersion   string `json:"productVersion,omitempty"`
+	ExtensionVersion string `json:"extensionVersion,omitempty"`
 }
 
 type cancelParams struct {
@@ -124,6 +149,10 @@ func newRequest(id, method string, params any) (Message, error) {
 func newNotification(method string, params any) (Message, error) {
 	message, err := newRequest("", method, params)
 	return message, err
+}
+
+func newError(id, code, message string) Message {
+	return Message{JSONRPC: jsonRPCVersion, ID: id, Error: &RPCError{Code: rpcApplicationError, Message: message, Data: &ErrorData{Code: code}}}
 }
 
 func newResult(id string, result any) (Message, error) {

@@ -1,7 +1,9 @@
 package auth
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"strings"
 	"testing"
@@ -63,6 +65,51 @@ func TestSessionHandshake(t *testing.T) {
 			So(mac, ShouldEqual, strings.ToLower(mac))
 			_, decErr := hex.DecodeString(mac)
 			So(decErr, ShouldBeNil)
+		})
+	})
+}
+
+func TestBrowserHandshakeBindsInstanceIdentity(t *testing.T) {
+	p, err := protocol.Load()
+	if err != nil {
+		t.Fatalf("加载协议失败: %v", err)
+	}
+	cfg := NewCrypto(p)
+
+	Convey("浏览器实例握手 MAC 绑定对端类型与实例 ID", t, func() {
+		key := make([]byte, 32)
+		_, _ = rand.Read(key)
+		nonceD, _ := RandomNonceHex(p.Crypto.NonceBytes)
+		nonceE, _ := RandomNonceHex(p.Crypto.NonceBytes)
+		const idA = "0123456789abcdef0123456789abcdef"
+		const idB = "fedcba9876543210fedcba9876543210"
+
+		Convey("两个方向的 MAC 按线上公式计算:浏览器专用 context || instanceId || 两个 nonce", func() {
+			want := func(context, first, second string) string {
+				mac := hmac.New(sha256.New, key)
+				mac.Write([]byte(context + idA + first + second))
+				return hex.EncodeToString(mac.Sum(nil))
+			}
+			So(cfg.BrowserExtHMAC(ModeSession, idA, key, nonceD, nonceE), ShouldEqual, want("sctl-browser-rpc-v1/ext", nonceD, nonceE))
+			So(cfg.BrowserDaemonHMAC(ModeSession, idA, key, nonceD, nonceE), ShouldEqual, want("sctl-browser-rpc-v1/daemon", nonceE, nonceD))
+			So(cfg.BrowserExtHMAC(ModePairing, idA, key, nonceD, nonceE), ShouldEqual, want("sctl-browser-rpc-v1/pair-ext", nonceD, nonceE))
+			So(cfg.BrowserDaemonHMAC(ModePairing, idA, key, nonceD, nonceE), ShouldEqual, want("sctl-browser-rpc-v1/pair-daemon", nonceE, nonceD))
+		})
+
+		Convey("为实例 A 计算的 MAC 不能冒充实例 B 通过校验", func() {
+			macA := cfg.BrowserExtHMAC(ModeSession, idA, key, nonceD, nonceE)
+			So(cfg.VerifyBrowserExtHMAC(ModeSession, idA, key, nonceD, nonceE, macA), ShouldBeTrue)
+			So(cfg.VerifyBrowserExtHMAC(ModeSession, idB, key, nonceD, nonceE, macA), ShouldBeFalse)
+			okA := cfg.BrowserDaemonHMAC(ModeSession, idA, key, nonceD, nonceE)
+			So(cfg.VerifyBrowserDaemonHMAC(ModeSession, idA, key, nonceD, nonceE, okA), ShouldBeTrue)
+			So(cfg.VerifyBrowserDaemonHMAC(ModeSession, idB, key, nonceD, nonceE, okA), ShouldBeFalse)
+		})
+
+		Convey("ScriptCat 的 MAC 与浏览器实例的 MAC 互不通用", func() {
+			scriptCatMAC := cfg.ExtHMAC(ModeSession, key, nonceD, nonceE)
+			So(cfg.VerifyBrowserExtHMAC(ModeSession, idA, key, nonceD, nonceE, scriptCatMAC), ShouldBeFalse)
+			browserMAC := cfg.BrowserExtHMAC(ModeSession, idA, key, nonceD, nonceE)
+			So(cfg.VerifyExtHMAC(ModeSession, key, nonceD, nonceE, browserMAC), ShouldBeFalse)
 		})
 	})
 }

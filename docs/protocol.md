@@ -7,7 +7,8 @@ express. See [threat-model.md](./threat-model.md) for the security boundary.
 
 ## 1. Transport and message model
 
-The ScriptCat extension opens one WebSocket connection to the sctl daemon. Every text frame is exactly one
+Each peer extension — ScriptCat, and every paired sctl Browser instance — opens its own WebSocket connection to
+the sctl daemon. Every text frame is exactly one
 JSON-RPC 2.0 message and includes `"jsonrpc": "2.0"`. Requests and responses correlate through `id`;
 notifications omit `id`. Batch requests are not supported.
 
@@ -86,6 +87,30 @@ within `limits.authTimeoutMs`. Nonces are fresh for every connection.
 The extension stores the session key in extension-local storage. The daemon stores its copy in a user-only file.
 Disabling External Access deletes the extension copy and closes the connection, requiring enrollment again.
 
+#### Browser instances
+
+An sctl Browser instance identifies itself in the authentication response; a response without `peer` is
+ScriptCat. The instance ID is 32 lowercase hex digits, generated randomly when the extension is installed:
+
+```json
+{
+  "mode": "session",
+  "nonceE": "<lowercase hex>",
+  "hmac": "HMAC(K_instance, context.browserSessionExt || instanceId || nonceD || nonceE)",
+  "peer": { "kind": "browser", "instanceId": "<32 lowercase hex>" }
+}
+```
+
+The daemon answers with `HMAC(K_instance, context.browserSessionDaemon || instanceId || nonceE || nonceD)`.
+Pairing uses `context.browserPairExt` / `context.browserPairDaemon` with the same `instanceId` term, keyed by the
+pairing-code MAC key; key derivation and delivery are the same as for ScriptCat. The `browser*` contexts bind the
+peer kind and the `instanceId` term binds the instance, so a MAC recorded for one instance or for ScriptCat never
+verifies as another. An unknown `kind` or a malformed `instanceId` fails the handshake.
+
+Each instance has its own session key, issued by its pairing; pairing a browser never touches ScriptCat's key.
+The daemon selects the key by `instanceId`, so a session handshake from an instance that is not paired — or that
+has been forgotten on the daemon side — fails like any other handshake failure.
+
 ### 2.2 Hello and capabilities
 
 After authentication the daemon announces its product version for diagnostics. The extension does not use it
@@ -113,7 +138,33 @@ The extension then declares the generated schema it uses and the business method
 }
 ```
 
-The daemon answers with an empty result and marks the connection usable only after accepting this request.
+The daemon registers the connection before it answers with an empty result, so business requests may follow that
+result immediately. A connection is usable only after this request is accepted.
+A new ScriptCat connection replaces the previous ScriptCat connection; a browser instance's new connection
+replaces only that instance's previous connection.
+
+A browser instance also declares its name and self-reported product details:
+
+```json
+"params": {
+  "schemaVersion": "1.0.0",
+  "methods": ["tabs.list", "tabs.open"],
+  "peer": {
+    "name": "chrome-3f2a",
+    "product": "Chrome",
+    "productVersion": "129.0.6668.58",
+    "extensionVersion": "0.1.0"
+  }
+}
+```
+
+`name` is 1–32 lowercase letters, digits, and `-`; the other fields are optional printable text of at most 64
+bytes. A missing or invalid `peer` closes the connection. On its first pairing an instance proposes its default
+name, the browser brand followed by `-` and the first four hex digits of its instance ID; renaming means
+reconnecting with the new name. The daemon's registry is authoritative: names are unique across every paired
+instance, online or offline. When another paired instance holds the name, the daemon answers the capabilities
+request with application error `CONFLICT`, keeps the instance's previous name, and closes the connection; a
+first pairing refused this way is not persisted.
 
 ### 2.3 Liveness and shutdown
 

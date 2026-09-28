@@ -12,7 +12,9 @@ import (
 )
 
 // pendingCall 是一条挂起的 JSON-RPC 请求:阻塞直到应答/取消/断开/超时。
+// 只接受发往的那条连接给出的应答,其他对端不能冒名应答。
 type pendingCall struct {
+	conn     *conn
 	clientID string
 	method   string
 	respCh   chan Response
@@ -24,10 +26,9 @@ type pendingCall struct {
 //   - 扩展断开:隐式作废全部在途请求,返回 ErrDisconnected。
 func (s *Server) Call(ctx context.Context, req Request) (Response, error) {
 	requestID := uuid.NewString()
-	pc := &pendingCall{clientID: req.ClientID, method: req.Action, respCh: make(chan Response, 1)}
 
 	s.mu.Lock()
-	active := s.active
+	active := s.scriptCat
 	if active == nil {
 		s.mu.Unlock()
 		return Response{}, ErrNotConnected
@@ -36,6 +37,7 @@ func (s *Server) Call(ctx context.Context, req Request) (Response, error) {
 		s.mu.Unlock()
 		return Response{}, &Error{Code: "METHOD_NOT_FOUND", Message: "extension does not support " + req.Action}
 	}
+	pc := &pendingCall{conn: active, clientID: req.ClientID, method: req.Action, respCh: make(chan Response, 1)}
 	s.pending[requestID] = pc
 	s.mu.Unlock()
 
@@ -74,12 +76,12 @@ func (s *Server) cancelToExt(c *conn, requestID string) {
 	}
 }
 
-// handleRPCResponse delivers a JSON-RPC response to its pending call.
-func (s *Server) handleRPCResponse(message Message) {
+// handleRPCResponse delivers a JSON-RPC response from c to its pending call.
+func (s *Server) handleRPCResponse(c *conn, message Message) {
 	s.mu.Lock()
 	pc := s.pending[message.ID]
 	s.mu.Unlock()
-	if pc == nil {
+	if pc == nil || pc.conn != c {
 		return
 	}
 	if message.Error == nil {
