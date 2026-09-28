@@ -17,13 +17,16 @@ import (
 
 // fakeCaller 是 BridgeCaller 的测试桩:可配置阻塞、返回值,并记录收到的调用。
 type fakeCaller struct {
-	mu      sync.Mutex
-	actions []string
-	inputs  []json.RawMessage
-	block   chan struct{} // 非 nil 则 Call 阻塞至其关闭或 ctx 取消
-	result  control.CallResult
-	err     error
-	sawCtx  atomic.Bool // Call 是否因 ctx 取消而返回
+	mu            sync.Mutex
+	actions       []string
+	inputs        []json.RawMessage
+	browserParams []string      // 记录 CallBrowser 调用中的 browser 参数
+	block         chan struct{} // 非 nil 则 Call 阻塞至其关闭或 ctx 取消
+	result        control.CallResult
+	err           error
+	sawCtx        atomic.Bool           // Call/CallBrowser 是否因 ctx 取消而返回
+	browsersList  []control.BrowserInfo // Browsers 的返回值
+	browsersErr   error
 }
 
 func (f *fakeCaller) Call(ctx context.Context, action string, input json.RawMessage) (control.CallResult, error) {
@@ -41,6 +44,28 @@ func (f *fakeCaller) Call(ctx context.Context, action string, input json.RawMess
 		}
 	}
 	return f.result, f.err
+}
+
+func (f *fakeCaller) CallBrowser(ctx context.Context, action, browser string, input json.RawMessage) (control.CallResult, error) {
+	f.mu.Lock()
+	f.actions = append(f.actions, action)
+	f.browserParams = append(f.browserParams, browser)
+	f.inputs = append(f.inputs, append(json.RawMessage(nil), input...))
+	block := f.block
+	f.mu.Unlock()
+	if block != nil {
+		select {
+		case <-block:
+		case <-ctx.Done():
+			f.sawCtx.Store(true)
+			return control.CallResult{}, ctx.Err()
+		}
+	}
+	return f.result, f.err
+}
+
+func (f *fakeCaller) Browsers(ctx context.Context) ([]control.BrowserInfo, error) {
+	return f.browsersList, f.browsersErr
 }
 
 // connect 用内存 transport 把一个 mcpserver 与一个测试 MCP client 对接。
@@ -74,16 +99,23 @@ func toolNames(res *mcp.ListToolsResult) []string {
 }
 
 func TestToolsListExposesAllTools(t *testing.T) {
-	Convey("扁平信任:tools/list 暴露 protocol.json 定义的全部工具(不再按 scope 过滤)", t, func() {
+	Convey("扁平信任:tools/list 暴露 protocol.json 定义的全部方法(工具)与特殊的 browsers_list", t, func() {
 		p := loadProto(t)
 		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
 
 		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
 		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
 		So(err, ShouldBeNil)
-		So(len(res.Tools), ShouldEqual, len(p.Actions))
+		// 每个 protocol 方法映射一个工具,加上 browsers_list (不是方法)。
+		So(len(res.Tools), ShouldEqual, len(p.Actions)+1)
 		So(toolNames(res), ShouldContain, "scripts_list")
 		So(toolNames(res), ShouldContain, "scripts_delete_request")
+		So(toolNames(res), ShouldContain, "browsers_list")
+		So(toolNames(res), ShouldContain, "tabs_list")
+		So(toolNames(res), ShouldContain, "tabs_open")
+		So(toolNames(res), ShouldContain, "tabs_close")
+		So(toolNames(res), ShouldContain, "tabs_activate")
+		So(toolNames(res), ShouldContain, "windows_list")
 	})
 }
 
