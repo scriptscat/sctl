@@ -30,9 +30,9 @@ const maxFullSourceResponseBytes = 64 * 1024
 var progressInterval = 10 * time.Second
 
 // BridgeCaller 抽象「向 daemon 转发 bridge action 调用与查询浏览器列表」,便于测试注入桩。
+// browser 是浏览器方法的可选目标,其余方法传空串。
 type BridgeCaller interface {
-	Call(ctx context.Context, action string, input json.RawMessage) (control.CallResult, error)
-	CallBrowser(ctx context.Context, action, browser string, input json.RawMessage) (control.CallResult, error)
+	Call(ctx context.Context, action, browser string, input json.RawMessage) (control.CallResult, error)
 	Browsers(ctx context.Context) ([]control.BrowserInfo, error)
 }
 
@@ -46,45 +46,74 @@ type Deps struct {
 }
 
 // New 按依赖构建 MCP server,注册 protocol.json 里定义的全部 bridge action 工具以及 browsers_list。
+// 方法是否是浏览器方法、是否汇总多实例,都取自 protocol.json 的 peer 与 mergeField,不按方法名推断。
 func New(d Deps) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{Name: d.Name, Version: d.Version}, &mcp.ServerOptions{})
 	for _, td := range toolDefs {
-		if _, ok := d.Proto.Actions[td.action]; !ok {
+		action, ok := d.Proto.Actions[td.action]
+		if !ok {
 			continue
 		}
-		registerTool(srv, td, d.Caller)
+		browser := action.Peer == protocol.PeerBrowser
+		if browser {
+			td.inputSchema = schemaWithOptionalBrowser(td.inputSchema, browserParamDescription(action))
+		}
+		registerTool(srv, td, browser, d.Caller)
 	}
 	// browsers_list 特殊处理:不是 bridge action,由控制 API 直接提供已配对实例列表。
 	registerBrowsersListTool(srv, d.Caller)
 	return srv
 }
 
-// isBrowserAction 判断某个 action 是否是浏览器方法。
-func isBrowserAction(action string) bool {
-	return strings.HasPrefix(action, "tabs.") || strings.HasPrefix(action, "windows.")
-}
-
-// extractBrowserParam 从工具参数中抽取可选 browser 参数并返回。若无 browser 参数返回空串。
-// 修改 input 使其不含 browser 参数。
-func extractBrowserParam(input map[string]any) string {
-	browser, _ := input["browser"].(string)
-	delete(input, "browser")
-	return browser
-}
-
-func registerTool(srv *mcp.Server, td toolDef, caller BridgeCaller) {
-	schemaDoc, err := jsonschema.UnmarshalJSON(strings.NewReader(td.inputSchema))
+// compileInputSchema 编译工具的输入 schema;schema 是本包的静态常量,编译失败是编程错误。
+func compileInputSchema(name, inputSchema string) *jsonschema.Schema {
+	schemaDoc, err := jsonschema.UnmarshalJSON(strings.NewReader(inputSchema))
 	if err != nil {
-		panic(fmt.Sprintf("invalid input schema for %s: %v", td.name, err))
+		panic(fmt.Sprintf("invalid input schema for %s: %v", name, err))
 	}
 	compiler := jsonschema.NewCompiler()
-	if err := compiler.AddResource(td.name+".json", schemaDoc); err != nil {
-		panic(fmt.Sprintf("load input schema for %s: %v", td.name, err))
+	if err := compiler.AddResource(name+".json", schemaDoc); err != nil {
+		panic(fmt.Sprintf("load input schema for %s: %v", name, err))
 	}
-	schema, err := compiler.Compile(td.name + ".json")
+	schema, err := compiler.Compile(name + ".json")
 	if err != nil {
-		panic(fmt.Sprintf("compile input schema for %s: %v", td.name, err))
+		panic(fmt.Sprintf("compile input schema for %s: %v", name, err))
 	}
+	return schema
+}
+
+// validateArguments 在转发之前按工具 schema 校验 MCP 客户端给的参数。
+func validateArguments(name string, schema *jsonschema.Schema, arguments json.RawMessage) error {
+	input, err := jsonschema.UnmarshalJSON(bytes.NewReader(arguments))
+	if err != nil {
+		return fmt.Errorf("invalid %s arguments: %w", name, err)
+	}
+	if err := schema.Validate(input); err != nil {
+		return fmt.Errorf("invalid %s arguments: %w", name, err)
+	}
+	return nil
+}
+
+// splitBrowserParam 从已校验的工具参数中取出可选的 browser 目标并删掉它:它交给 daemon 选目标,
+// 不属于方法输入。其余字段保持原始 JSON。
+func splitBrowserParam(arguments json.RawMessage) (string, json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(arguments, &fields); err != nil {
+		return "", nil, err
+	}
+	var browser string
+	if raw, ok := fields["browser"]; ok {
+		if err := json.Unmarshal(raw, &browser); err != nil {
+			return "", nil, err
+		}
+		delete(fields, "browser")
+	}
+	rest, err := json.Marshal(fields)
+	return browser, rest, err
+}
+
+func registerTool(srv *mcp.Server, td toolDef, browserMethod bool, caller BridgeCaller) {
+	schema := compileInputSchema(td.name, td.inputSchema)
 	tool := &mcp.Tool{
 		Name:        td.name,
 		Description: td.description,
@@ -92,28 +121,16 @@ func registerTool(srv *mcp.Server, td toolDef, caller BridgeCaller) {
 	}
 	action := td.action
 	srv.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		input, err := jsonschema.UnmarshalJSON(bytes.NewReader(req.Params.Arguments))
-		if err != nil {
-			return nil, fmt.Errorf("invalid %s arguments: %w", td.name, err)
+		if err := validateArguments(td.name, schema, req.Params.Arguments); err != nil {
+			return nil, err
 		}
-		if err := schema.Validate(input); err != nil {
-			return nil, fmt.Errorf("invalid %s arguments: %w", td.name, err)
-		}
-		// 浏览器方法支持可选的 browser 参数:抽取并从 input 中删除。
 		var browser string
-		if isBrowserAction(action) {
-			inputMap, ok := input.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("invalid %s arguments: expected object", td.name)
-			}
-			browser = extractBrowserParam(inputMap)
-			// 参数已修改,重新编码为 JSON。
-			var inputBytes []byte
-			inputBytes, err = json.Marshal(inputMap)
+		var err error
+		if browserMethod {
+			browser, req.Params.Arguments, err = splitBrowserParam(req.Params.Arguments)
 			if err != nil {
-				return nil, fmt.Errorf("encode %s arguments: %w", td.name, err)
+				return nil, fmt.Errorf("split %s arguments: %w", td.name, err)
 			}
-			req.Params.Arguments = inputBytes
 		}
 		if action == "scripts.source.get" {
 			var args map[string]any
@@ -128,7 +145,7 @@ func registerTool(srv *mcp.Server, td toolDef, caller BridgeCaller) {
 				}
 			}
 		}
-		return handleCall(ctx, req, action, browser, caller)
+		return handleCall(ctx, req, action, browserMethod, browser, caller)
 	})
 }
 
@@ -137,42 +154,22 @@ func registerBrowsersListTool(srv *mcp.Server, caller BridgeCaller) {
 	const (
 		toolName        = "browsers_list"
 		toolDescription = "List all paired browser instances: name, instance ID, online/offline status, brand and version, extension version, and connection time."
-		inputSchema     = `{"type":"object","properties":{},"additionalProperties":false}`
 	)
-	schemaDoc, err := jsonschema.UnmarshalJSON(strings.NewReader(inputSchema))
-	if err != nil {
-		panic(fmt.Sprintf("invalid input schema for %s: %v", toolName, err))
-	}
-	compiler := jsonschema.NewCompiler()
-	if err := compiler.AddResource(toolName+".json", schemaDoc); err != nil {
-		panic(fmt.Sprintf("load input schema for %s: %v", toolName, err))
-	}
-	schema, err := compiler.Compile(toolName + ".json")
-	if err != nil {
-		panic(fmt.Sprintf("compile input schema for %s: %v", toolName, err))
-	}
+	schema := compileInputSchema(toolName, schemaEmpty)
 	tool := &mcp.Tool{
 		Name:        toolName,
 		Description: toolDescription,
-		InputSchema: json.RawMessage(inputSchema),
+		InputSchema: json.RawMessage(schemaEmpty),
 	}
 	srv.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		input, err := jsonschema.UnmarshalJSON(bytes.NewReader(req.Params.Arguments))
-		if err != nil {
-			return nil, fmt.Errorf("invalid %s arguments: %w", toolName, err)
-		}
-		if err := schema.Validate(input); err != nil {
-			return nil, fmt.Errorf("invalid %s arguments: %w", toolName, err)
+		if err := validateArguments(toolName, schema, req.Params.Arguments); err != nil {
+			return nil, err
 		}
 		browsers, err := caller.Browsers(ctx)
 		if err != nil {
 			return nil, err
 		}
-		// 将浏览器列表转换为 JSON 结果格式。
-		result := map[string]any{
-			"browsers": browsers,
-		}
-		resultJSON, err := json.Marshal(result)
+		resultJSON, err := json.Marshal(control.BrowsersResult{Browsers: browsers})
 		if err != nil {
 			return nil, fmt.Errorf("encode %s result: %w", toolName, err)
 		}
@@ -180,21 +177,16 @@ func registerBrowsersListTool(srv *mcp.Server, caller BridgeCaller) {
 	})
 }
 
-// handleCall 转发工具调用到 daemon。scripts 方法使用 Call,等待期间发 progress;浏览器方法使用
-// CallBrowser。桥接业务错误(拒绝/过期/scope 等)作为 IsError 工具结果返回
+// handleCall 转发工具调用到 daemon。桥接业务错误(拒绝/过期/scope 等)作为 IsError 工具结果返回
 // (模型可见并自我纠正);传输/取消错误作为协议级错误返回。
-func handleCall(ctx context.Context, req *mcp.CallToolRequest, action, browser string, caller BridgeCaller) (*mcp.CallToolResult, error) {
-	input := req.Params.Arguments
-	var res control.CallResult
-	var err error
-	if isBrowserAction(action) {
-		// 浏览器方法没有人工审批(spec 设计决策 3),不发「等待浏览器审批」的 progress。
-		res, err = caller.CallBrowser(ctx, action, browser, input)
-	} else {
-		stop := startProgress(ctx, req)
-		res, err = caller.Call(ctx, action, input)
-		stop()
+func handleCall(ctx context.Context, req *mcp.CallToolRequest, action string, browserMethod bool, browser string, caller BridgeCaller) (*mcp.CallToolResult, error) {
+	// 浏览器方法没有人工审批(spec 设计决策 3),不发「等待浏览器审批」的 progress。
+	stop := func() {}
+	if !browserMethod {
+		stop = startProgress(ctx, req)
 	}
+	res, err := caller.Call(ctx, action, browser, req.Params.Arguments)
+	stop()
 	if err != nil {
 		return nil, err
 	}

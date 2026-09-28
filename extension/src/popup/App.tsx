@@ -139,6 +139,13 @@ export function App({
 
   const status = state?.status;
 
+  // "重新配对"只针对点下它时的那次拒绝：离开 rejected 之后就作废，之后再被拒绝要重新给出说明和按钮。
+  const [pairAgainStatus, setPairAgainStatus] = useState(status);
+  if (status !== pairAgainStatus) {
+    setPairAgainStatus(status);
+    if (status !== "rejected") setPairAgain(false);
+  }
+
   // 草稿只在配对真正成功后清除：配对失败或连不上 daemon 时，用户常要先离开弹窗（去终端启动
   // sctl serve），重新打开时还要用同一个配对码。
   useEffect(() => {

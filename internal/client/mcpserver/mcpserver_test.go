@@ -20,33 +20,16 @@ type fakeCaller struct {
 	mu            sync.Mutex
 	actions       []string
 	inputs        []json.RawMessage
-	browserParams []string      // 记录 CallBrowser 调用中的 browser 参数
+	browserParams []string      // 记录每次 Call 的目标浏览器参数
 	block         chan struct{} // 非 nil 则 Call 阻塞至其关闭或 ctx 取消
 	result        control.CallResult
 	err           error
-	sawCtx        atomic.Bool           // Call/CallBrowser 是否因 ctx 取消而返回
+	sawCtx        atomic.Bool           // Call 是否因 ctx 取消而返回
 	browsersList  []control.BrowserInfo // Browsers 的返回值
 	browsersErr   error
 }
 
-func (f *fakeCaller) Call(ctx context.Context, action string, input json.RawMessage) (control.CallResult, error) {
-	f.mu.Lock()
-	f.actions = append(f.actions, action)
-	f.inputs = append(f.inputs, append(json.RawMessage(nil), input...))
-	block := f.block
-	f.mu.Unlock()
-	if block != nil {
-		select {
-		case <-block:
-		case <-ctx.Done():
-			f.sawCtx.Store(true)
-			return control.CallResult{}, ctx.Err()
-		}
-	}
-	return f.result, f.err
-}
-
-func (f *fakeCaller) CallBrowser(ctx context.Context, action, browser string, input json.RawMessage) (control.CallResult, error) {
+func (f *fakeCaller) Call(ctx context.Context, action, browser string, input json.RawMessage) (control.CallResult, error) {
 	f.mu.Lock()
 	f.actions = append(f.actions, action)
 	f.browserParams = append(f.browserParams, browser)
@@ -395,17 +378,17 @@ func TestToolDescriptionsAreStatic(t *testing.T) {
 			desc2[tool.Name] = tool.Description
 		}
 
+		So(desc2, ShouldContainKey, "tabs_list")
+
 		Convey("任何工具描述都不含标签页标题的特征标记", func() {
-			for name, desc := range desc2 {
+			for _, desc := range desc2 {
 				So(desc, ShouldNotContainSubstring, markerTitle)
-				So(name, ShouldNotBeEmpty) // Ensure we checked at least some tools
 			}
 		})
 
 		Convey("任何工具描述都不含标签页 URL 的特征标记", func() {
-			for name, desc := range desc2 {
+			for _, desc := range desc2 {
 				So(desc, ShouldNotContainSubstring, markerURL)
-				So(name, ShouldNotBeEmpty) // Ensure we checked at least some tools
 			}
 		})
 

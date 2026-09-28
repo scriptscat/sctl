@@ -48,7 +48,7 @@ func dispatchAction(cmd *cobra.Command, action, browser string, input json.RawMe
 	if blocking {
 		fmt.Fprintln(os.Stderr, "waiting for approval in the browser… (Ctrl-C cancels and voids this operation)")
 	}
-	res, err := client.CallBrowser(ctx, action, browser, input)
+	res, err := client.Call(ctx, action, browser, input)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return &ExitError{Code: exitVoided, Message: "canceled, operation voided"}

@@ -32,6 +32,21 @@ func TestTabsList(t *testing.T) {
 			So(out, ShouldNotContainSubstring, "BROWSER")
 		})
 
+		Convey("网页控制的标题与 URL 里的控制字符以转义形式打印,不会把终端控制序列或换行写进表格", func() {
+			hostile := `{"contentTrust":"untrusted-page-content","tabs":[
+				{"tabId":1,"windowId":10,"active":true,"pinned":false,"title":"\u001b]0;pwned\u0007Evil\nFAKE ROW\u202e","url":"https://example.com/\u001b[2J"}
+			]}`
+			stubDaemon(t, control.CallResult{OK: true, Result: []byte(hostile)})
+			code, out := runCLI("tabs", "list")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldNotContainSubstring, "\x1b")
+			So(out, ShouldNotContainSubstring, "\x07")
+			So(out, ShouldNotContainSubstring, "\u202e")
+			So(strings.Split(strings.TrimRight(out, "\n"), "\n"), ShouldHaveLength, 2)
+			So(out, ShouldContainSubstring, `\x1b]0;pwned\aEvil\nFAKE ROW\u202e`)
+			So(out, ShouldContainSubstring, `https://example.com/\x1b[2J`)
+		})
+
 		Convey("-o json 原样输出结果", func() {
 			stubDaemon(t, control.CallResult{OK: true, Result: []byte(result)})
 			code, out := runCLI("tabs", "list", "-o", "json")

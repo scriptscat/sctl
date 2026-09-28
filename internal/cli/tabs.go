@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"text/tabwriter"
+	"unicode"
 
 	"github.com/spf13/cobra"
 )
@@ -22,17 +24,10 @@ func addBrowserFlag(cmd *cobra.Command) {
 }
 
 // browserRef 镜像多实例汇总结果里每一项携带的 "browser":{"id","name"}(docs/protocol.md §3.1)。
+// daemon 汇总时给每一项都标上来源,所以只要有一项带它,每一项都带。
 type browserRef struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
-}
-
-// browserLabel 把 browserRef 呈现为表格里的一格;nil 表示单实例结果,不应被调用(调用方先判断)。
-func browserLabel(b *browserRef) string {
-	if b == nil {
-		return ""
-	}
-	return b.Name
 }
 
 // newTabsCmd 构造 `sctl tabs`:list/open/close/activate 四个子命令,均路由到浏览器方法
@@ -185,13 +180,32 @@ func printTabsTable(result json.RawMessage) error {
 		fmt.Fprintln(tw, "TAB ID\tWINDOW ID\tACTIVE\tPINNED\tTITLE\tURL")
 	}
 	for _, t := range payload.Tabs {
+		title, url := terminalSafe(t.Title), terminalSafe(t.URL)
 		if multi {
-			fmt.Fprintf(tw, "%d\t%d\t%v\t%v\t%s\t%s\t%s\n", t.TabId, t.WindowId, t.Active, t.Pinned, t.Title, t.URL, browserLabel(t.Browser))
+			fmt.Fprintf(tw, "%d\t%d\t%v\t%v\t%s\t%s\t%s\n", t.TabId, t.WindowId, t.Active, t.Pinned, title, url, t.Browser.Name)
 		} else {
-			fmt.Fprintf(tw, "%d\t%d\t%v\t%v\t%s\t%s\n", t.TabId, t.WindowId, t.Active, t.Pinned, t.Title, t.URL)
+			fmt.Fprintf(tw, "%d\t%d\t%v\t%v\t%s\t%s\n", t.TabId, t.WindowId, t.Active, t.Pinned, title, url)
 		}
 	}
 	return tw.Flush()
+}
+
+// terminalSafe 把不可打印字符换成 Go 转义形式。表格直接写到终端:网页标题里的 ESC 序列会被终端执行
+// (改窗口标题、清屏、伪造输出),制表符与换行会拆出假的列和行,双向控制符会倒转显示顺序。
+func terminalSafe(s string) string {
+	if strings.IndexFunc(s, func(r rune) bool { return !unicode.IsPrint(r) }) < 0 {
+		return s
+	}
+	var b strings.Builder
+	for _, r := range s {
+		if unicode.IsPrint(r) {
+			b.WriteRune(r)
+			continue
+		}
+		quoted := strconv.QuoteRune(r)
+		b.WriteString(quoted[1 : len(quoted)-1])
+	}
+	return b.String()
 }
 
 func anyTabHasBrowser(rows []tabRow) bool {

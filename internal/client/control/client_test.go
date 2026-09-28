@@ -118,7 +118,7 @@ func TestCallCarriesTargetBrowser(t *testing.T) {
 		c, bodies := captureCalls(t)
 
 		Convey("指定目标时请求体带 browser", func() {
-			res, err := c.CallBrowser(context.Background(), "tabs.open", "edge-fedc", json.RawMessage(`{"url":"https://example.com/"}`))
+			res, err := c.Call(context.Background(), "tabs.open", "edge-fedc", json.RawMessage(`{"url":"https://example.com/"}`))
 			So(err, ShouldBeNil)
 			So(res.OK, ShouldBeTrue)
 			So(string(res.Result), ShouldEqual, `{"tabId":1}`)
@@ -128,7 +128,7 @@ func TestCallCarriesTargetBrowser(t *testing.T) {
 		})
 
 		Convey("不指定目标时请求体不带 browser 字段", func() {
-			_, err := c.Call(context.Background(), "scripts.list", nil)
+			_, err := c.Call(context.Background(), "scripts.list", "", nil)
 			So(err, ShouldBeNil)
 			So(*bodies, ShouldHaveLength, 1)
 			_, has := (*bodies)[0]["browser"]

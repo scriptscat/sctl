@@ -87,7 +87,7 @@ func startTestServer(t *testing.T) *testHarness {
 	keys := store.NewKeyStore(filepath.Join(dir, "pairing.key"))
 	browsers, err := store.LoadBrowserRegistry(filepath.Join(dir, "browsers.json"))
 	So(err, ShouldBeNil)
-	srv := bridge.NewServer(testVersion, p, keys, zap.NewNop(), bridge.WithBrowserRegistry(browsers))
+	srv := bridge.NewServer(testVersion, p, keys, browsers, zap.NewNop())
 
 	mux := http.NewServeMux()
 	New(srv, testControlToken, zap.NewNop()).Register(mux)

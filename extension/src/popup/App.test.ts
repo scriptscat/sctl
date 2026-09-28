@@ -246,6 +246,19 @@ describe("popup states (rendered from ConnectionState, zh and en)", () => {
     ).toBeInTheDocument();
   });
 
+  it("explains a later rejection again after a re-pairing succeeded, instead of jumping straight to the form", async () => {
+    const { emit } = renderApp({ ...BASE, status: "rejected" });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Pair again" }));
+    // 每次状态广播都是一条单独的 chrome.runtime 消息，各自渲染一次。
+    act(() => emit({ ...BASE, status: "pairing" }));
+    act(() => emit({ ...BASE, ...CONNECTED }));
+    act(() => emit({ ...BASE, status: "rejected" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("The daemon no longer recognises this browser");
+    expect(screen.getByRole("button", { name: "Pair again" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Enter the pairing code it shows")).not.toBeInTheDocument();
+  });
+
   it.each(["zh", "en"] as const)("renders the forget-confirmation dialog, focused on cancel, in %s", async (lang) => {
     renderApp({ ...BASE, ...CONNECTED }, { lang });
     const user = userEvent.setup();

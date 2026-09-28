@@ -111,9 +111,6 @@ func (c *conn) handshake() error {
 
 // claimBrowser 在边界校验认证响应里声明的浏览器身份;通过后本连接按该实例选用密钥与 MAC 上下文。
 func (c *conn) claimBrowser(peer authPeer) error {
-	if c.srv.browsers == nil {
-		return authFail(audit.TypeHandshakeFailed, audit.ReasonProtocol, "browser instances are not accepted by this daemon")
-	}
 	if peer.Kind != peerKindBrowser {
 		return authFail(audit.TypeHandshakeFailed, audit.ReasonProtocol, "unknown peer kind")
 	}

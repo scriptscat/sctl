@@ -337,6 +337,24 @@ describe("rename", () => {
     expect(next.params?.peer).toMatchObject({ name: "work-laptop" });
   });
 
+  it("reports the rename as failed and reconnects with the saved name when the accepted name cannot be saved", async () => {
+    const h = await connected();
+    const result = h.connection.rename("work-laptop");
+    const socket = h.socket();
+    h.failPersistence(new Error("storage quota exceeded"));
+    socket.open();
+    await authenticate(socket, { auth: { mode: "session", key: SESSION_KEY } });
+    const capabilities = await hello(socket);
+    socket.receive({ jsonrpc: "2.0", id: capabilities.id, result: {} });
+
+    await expect(result).resolves.toEqual({ ok: false, error: "not-connected" });
+    await until(() => socket.closedWith !== null);
+    socket.drop(1000);
+    h.timers.advance(1000);
+    const retry = await acceptSession(h.socket());
+    expect(retry.params?.peer).toMatchObject({ name: "chrome-3f2a" });
+  });
+
   it("keeps the previous name when the daemon cannot be reached during the rename", async () => {
     const h = await connected();
     const result = h.connection.rename("work-laptop");

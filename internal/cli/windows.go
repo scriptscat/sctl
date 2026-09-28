@@ -65,7 +65,7 @@ func printWindowsTable(result json.RawMessage) error {
 	}
 	for _, w := range payload.Windows {
 		if multi {
-			fmt.Fprintf(tw, "%d\t%v\t%s\t%d\t%s\n", w.WindowId, w.Focused, w.State, w.TabCount, browserLabel(w.Browser))
+			fmt.Fprintf(tw, "%d\t%v\t%s\t%d\t%s\n", w.WindowId, w.Focused, w.State, w.TabCount, w.Browser.Name)
 		} else {
 			fmt.Fprintf(tw, "%d\t%v\t%s\t%d\n", w.WindowId, w.Focused, w.State, w.TabCount)
 		}

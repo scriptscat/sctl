@@ -33,7 +33,7 @@ type Bridge interface {
 	BeginEnrollment() (string, error)
 	// Instances 列出所有已配对的浏览器实例(在线与离线),按名称排序。
 	Instances() []bridge.InstanceInfo
-	// ForgetInstance 按精确实例 ID 或精确名称删除一个已配对浏览器实例的密钥与登记,
+	// ForgetInstance 按精确名称(优先,与目标选择一致)或精确实例 ID 删除一个已配对浏览器实例的密钥与登记,
 	// 若它在线则先断开连接;不匹配任何已配对实例时返回 bridge.ErrInstanceNotFound。
 	ForgetInstance(ref string) error
 }
@@ -115,6 +115,8 @@ func (h *Handler) forgetBrowser(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, bridge.ErrInstanceNotFound):
 		writeControlError(w, generated.ErrorCodeBrowserNotFound, "no paired browser instance matches "+req.Ref)
 	default:
+		// 调用方只拿到 INTERNAL_ERROR,真实原因(登记表写盘失败等)只能留在 daemon 日志里。
+		h.log.Error("failed to forget a browser instance", zap.String("ref", req.Ref), zap.Error(err))
 		writeControlError(w, bridge.CodeInternal, "internal error")
 	}
 }

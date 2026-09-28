@@ -155,10 +155,8 @@ const mergedItemBrowserField = "browser"
 // target 非空时先按名称精确匹配,再按实例 ID 前缀匹配。返回的目标按名称排序,汇总结果沿用这个顺序。
 func (s *Server) resolveBrowsers(target string, mergeable bool) ([]browserTarget, error) {
 	var registered []browserTarget
-	if s.browsers != nil {
-		for _, inst := range s.browsers.List() {
-			registered = append(registered, browserTarget{id: inst.ID, name: inst.Name})
-		}
+	for _, inst := range s.browsers.List() {
+		registered = append(registered, browserTarget{id: inst.ID, name: inst.Name})
 	}
 	s.mu.Lock()
 	for i := range registered {

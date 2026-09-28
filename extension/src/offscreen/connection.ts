@@ -468,7 +468,16 @@ export class Connection {
       this.cfg().key = attempt.pairedKey;
     }
     if (renaming) {
-      await this.deps.persistName(attempt.name);
+      try {
+        await this.deps.persistName(attempt.name);
+      } catch (error) {
+        // 存储里仍是原名称：按改名失败处理，并让随后的重连用原名称把 daemon 的登记改回去，两边保持一致。
+        if (attempt === this.attempt) {
+          this.cfg().name = renaming.from;
+        }
+        renaming.resolve({ ok: false, error: "not-connected" });
+        throw error;
+      }
       renaming.resolve({ ok: true });
     }
     if (attempt !== this.attempt) {

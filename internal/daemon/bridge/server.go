@@ -69,16 +69,17 @@ type Server struct {
 	shutdownOnce sync.Once
 }
 
-// NewServer 用协议定义的常量与持久化后端构造服务。
-func NewServer(version string, p *protocol.Protocol, keys *store.KeyStore, log *zap.Logger, opts ...Option) *Server {
+// NewServer 用协议定义的常量与持久化后端构造服务:keys 存 ScriptCat 的长期密钥,browsers 存浏览器实例的登记与密钥。
+func NewServer(version string, p *protocol.Protocol, keys *store.KeyStore, browsers *store.BrowserRegistry, log *zap.Logger) *Server {
 	if log == nil {
 		log = zap.NewNop()
 	}
-	s := &Server{
+	return &Server{
 		version:          version,
 		proto:            p,
 		crypto:           auth.NewCrypto(p),
 		keys:             keys,
+		browsers:         browsers,
 		log:              log,
 		audit:            audit.NewRecorder(auditCapacity, log),
 		enrollAttempts:   ratelimit.NewLimiter(5, time.Minute),
@@ -91,10 +92,6 @@ func NewServer(version string, p *protocol.Protocol, keys *store.KeyStore, log *
 		online:           make(map[string]*conn),
 		pending:          make(map[string]*pendingCall),
 	}
-	for _, opt := range opts {
-		opt(s)
-	}
-	return s
 }
 
 // Version 返回注入的 daemon 版本(hello.daemonVersion 与控制 API 都读它)。

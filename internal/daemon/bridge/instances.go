@@ -33,20 +33,8 @@ type InstanceInfo struct {
 	ConnectedAt      time.Time
 }
 
-// Option 配置 Server 的可选依赖。
-type Option func(*Server)
-
-// WithBrowserRegistry 让 daemon 接纳浏览器实例,并把实例密钥与登记表持久化到 r。
-// 不提供时 daemon 只接纳 ScriptCat,声明为浏览器实例的握手一律失败。
-func WithBrowserRegistry(r *store.BrowserRegistry) Option {
-	return func(s *Server) { s.browsers = r }
-}
-
 // Instances 列出所有已配对的浏览器实例(在线与离线),按名称排序。
 func (s *Server) Instances() []InstanceInfo {
-	if s.browsers == nil {
-		return nil
-	}
 	registered := s.browsers.List()
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -68,12 +56,9 @@ func (s *Server) Instances() []InstanceInfo {
 	return out
 }
 
-// ForgetInstance 按完整实例 ID 或名称删除一个已配对浏览器实例的密钥与登记;实例在线时断开它,
+// ForgetInstance 按名称或完整实例 ID 删除一个已配对浏览器实例的密钥与登记;实例在线时断开它,
 // 之后它的握手会因实例未配对而失败。
 func (s *Server) ForgetInstance(ref string) error {
-	if s.browsers == nil {
-		return ErrInstanceNotFound
-	}
 	s.regMu.Lock()
 	defer s.regMu.Unlock()
 	id, ok := s.resolveRegistered(ref)
@@ -93,14 +78,16 @@ func (s *Server) ForgetInstance(ref string) error {
 	return nil
 }
 
+// resolveRegistered 与 matchTarget 一样名称优先:名称可以恰好写成另一个实例的 ID,
+// 此时 --browser 选中的是这个名称的实例,忘记它也必须删同一个。
 func (s *Server) resolveRegistered(ref string) (string, bool) {
-	if _, ok := s.browsers.Get(ref); ok {
-		return ref, true
-	}
 	for _, inst := range s.browsers.List() {
 		if inst.Name == ref {
 			return inst.ID, true
 		}
+	}
+	if _, ok := s.browsers.Get(ref); ok {
+		return ref, true
 	}
 	return "", false
 }

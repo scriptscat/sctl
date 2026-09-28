@@ -408,6 +408,19 @@ func TestForgetInstance(t *testing.T) {
 			So(h.srv.Instances(), ShouldHaveLength, 2)
 		})
 	})
+
+	Convey("名称恰好等于另一实例的 ID 时,忘记与选择目标一样按名称优先,删除的是被 --browser 选中的那个实例", t, func() {
+		h := startTestServer(t)
+		const namedLikeB = "fedcba9876543210fedcba9876543210"
+		h.registerBrowser(instanceA, namedLikeB)
+		h.registerBrowser(instanceB, "edge-fedc")
+
+		So(h.srv.ForgetInstance(namedLikeB), ShouldBeNil)
+		_, aKept := h.browsers.Get(instanceA)
+		So(aKept, ShouldBeFalse)
+		_, bKept := h.browsers.Get(instanceB)
+		So(bKept, ShouldBeTrue)
+	})
 }
 
 func TestBrowserPeerValidation(t *testing.T) {

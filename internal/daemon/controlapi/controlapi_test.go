@@ -1,13 +1,18 @@
 package controlapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	. "github.com/smartystreets/goconvey/convey"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/scriptscat/sctl/internal/client/control"
 	"github.com/scriptscat/sctl/internal/pkg/protocol/generated"
@@ -295,5 +300,37 @@ func TestControlEnroll(t *testing.T) {
 		var res control.EnrollResult
 		So(json.NewDecoder(resp.Body).Decode(&res), ShouldBeNil)
 		So(res.Code, ShouldContainSubstring, "-")
+	})
+}
+
+// forgetFailingBridge 是只实现 ForgetInstance 的 Bridge 桩:登记表写盘失败时返回 cause。
+type forgetFailingBridge struct {
+	Bridge
+	cause error
+}
+
+func (b forgetFailingBridge) ForgetInstance(string) error { return b.cause }
+
+func TestControlBrowserForgetLogsRegistryFailure(t *testing.T) {
+	Convey("忘记浏览器时登记表写不进去:调用方收到 INTERNAL_ERROR,daemon 日志记下真实原因", t, func() {
+		core, logs := observer.New(zap.WarnLevel)
+		cause := errors.New("write browsers.json: no space left on device")
+		mux := http.NewServeMux()
+		New(forgetFailingBridge{cause: cause}, testControlToken, zap.New(core)).Register(mux)
+
+		body, err := json.Marshal(control.ForgetBrowserRequest{Ref: "chrome-a"})
+		So(err, ShouldBeNil)
+		req := httptest.NewRequest(http.MethodPost, control.PathBrowserForget, bytes.NewReader(body))
+		req.Header.Set(control.HeaderControlToken, testControlToken)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+
+		var res control.CallResult
+		So(json.NewDecoder(rec.Body).Decode(&res), ShouldBeNil)
+		So(res.OK, ShouldBeFalse)
+		So(res.Error.Code, ShouldEqual, "INTERNAL_ERROR")
+		logged := logs.FilterFieldKey("error").All()
+		So(logged, ShouldHaveLength, 1)
+		So(logged[0].ContextMap()["error"], ShouldEqual, cause.Error())
 	})
 }

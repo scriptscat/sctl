@@ -41,7 +41,7 @@ func startTestServer(t *testing.T) *testHarness {
 	keys := store.NewKeyStore(keyPath)
 	browsers, err := store.LoadBrowserRegistry(filepath.Join(dir, "browsers.json"))
 	So(err, ShouldBeNil)
-	srv := NewServer("0.1.0", p, keys, zap.NewNop(), WithBrowserRegistry(browsers))
+	srv := NewServer("0.1.0", p, keys, browsers, zap.NewNop())
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	So(err, ShouldBeNil)
