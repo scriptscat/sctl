@@ -235,6 +235,37 @@ use `scripts.source.grep` and then request a `startLine`/`endLine` window. The b
 window is present. `sctl mcp` supplies this budget for whole-file reads, while the CLI omits it so an operator can
 still redirect a complete source file.
 
+### 3.1 Routing and target selection
+
+The daemon routes each call by the method's `peer`, not by which methods a connection declared: `scripts.*`
+calls go to the ScriptCat connection, browser methods go to a browser instance. A connection must still have
+declared the method, otherwise the call fails with `METHOD_NOT_FOUND`.
+
+A browser call carries an optional target, either an instance name or an instance-ID prefix; the daemon resolves
+it because only the daemon knows which instances are online. A target is first matched against names exactly, and
+only if no name matches is it treated as an instance-ID prefix over every paired instance, online or offline.
+
+| Target | Result |
+|---|---|
+| none, no instance online | `NO_BROWSER_CONNECTED` |
+| none, exactly one instance online | that instance |
+| none, several online, method with `mergeField` | every online instance; results are combined |
+| none, several online, method without `mergeField` | `BROWSER_AMBIGUOUS`; the message lists the online instances |
+| matches no paired instance | `BROWSER_NOT_FOUND` |
+| ID prefix matches several paired instances | `BROWSER_AMBIGUOUS`; the message lists the matching instances |
+| matches one paired instance that is not connected | `BROWSER_OFFLINE` |
+| matches one online instance | that instance |
+
+A combined call is sent to every online instance at once. The result is the first instance's result with its
+`mergeField` array replaced by the concatenation of every instance's array, in instance-name order, and each
+item gains a `browser` object naming its source: `{"id": "<instance ID>", "name": "<instance name>"}`. Any
+failing instance fails the whole call; partial results are never returned. A call routed to a single instance
+returns that instance's result unchanged.
+
+A target on a `scripts.*` call is rejected with `INVALID_REQUEST`; otherwise `scripts.*` routing and its errors do
+not depend on browser instances. If the target connection closes while a call is in flight — for a combined
+call, any of its instances — the call is voided and the requester receives `OPERATION_EXPIRED`, as for ScriptCat.
+
 ## 4. Errors
 
 Protocol errors use the JSON-RPC standard codes. Application failures use the server-defined code `-32000` and
@@ -258,14 +289,14 @@ put the stable domain code in `error.data.code`:
 The generated `errorCodes` list is authoritative for domain codes. Messages are human-readable diagnostics;
 callers branch on the numeric JSON-RPC code and `data.code`, not on message text.
 
-These codes are reserved for browser target selection failures:
+These codes are reserved for browser target selection failures ([§3.1](#31-routing-and-target-selection)):
 
 | Code | Meaning |
 |---|---|
 | `NO_BROWSER_CONNECTED` | a browser method was called while no browser instance is online |
 | `BROWSER_OFFLINE` | the target names a paired browser instance that is not connected |
 | `BROWSER_NOT_FOUND` | the target matches no paired browser instance |
-| `BROWSER_AMBIGUOUS` | the target instance-ID prefix matches more than one paired instance |
+| `BROWSER_AMBIGUOUS` | the target instance-ID prefix matches more than one paired instance, or a method without `mergeField` was called without a target while several instances are online |
 
 ## 5. Cancellation and approval
 

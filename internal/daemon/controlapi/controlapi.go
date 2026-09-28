@@ -110,6 +110,7 @@ func (h *Handler) call(w http.ResponseWriter, r *http.Request) {
 	resp, err := h.bridge.Call(r.Context(), bridge.Request{
 		ClientID: clientID,
 		Action:   req.Action,
+		Browser:  req.Browser,
 		Input:    req.Input,
 	})
 	switch {

@@ -114,9 +114,11 @@ type businessParams struct {
 }
 
 type Request struct {
-	ClientID string          `json:"clientId"`
-	Action   string          `json:"action"`
-	Input    json.RawMessage `json:"input"`
+	ClientID string `json:"clientId"`
+	Action   string `json:"action"`
+	// Browser 是浏览器方法的目标实例:名称或实例 ID 前缀,空表示按在线实例自动选择。
+	Browser string          `json:"browser,omitempty"`
+	Input   json.RawMessage `json:"input"`
 }
 
 type Response struct {

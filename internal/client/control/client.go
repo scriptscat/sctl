@@ -119,13 +119,19 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body []byt
 	return req, nil
 }
 
-// Call 转发一次 bridge action 调用并阻塞至应答/作废。ctx 取消(如 CLI Ctrl-C)会切断连接,
-// daemon 侧据此发 $/cancelRequest 作废该操作;此时 Do 返回 context.Canceled。
+// Call 转发一次不指定目标浏览器的 bridge action 调用,见 CallBrowser。
 func (c *Client) Call(ctx context.Context, action string, input json.RawMessage) (CallResult, error) {
+	return c.CallBrowser(ctx, action, "", input)
+}
+
+// CallBrowser 转发一次 bridge action 调用并阻塞至应答/作废。browser 是浏览器方法的可选目标
+// (名称或实例 ID 前缀),空串表示由 daemon 按在线实例选择;scripts.* 必须传空串。
+// ctx 取消(如 CLI Ctrl-C)会切断连接,daemon 侧据此发 $/cancelRequest 作废该操作;此时 Do 返回 context.Canceled。
+func (c *Client) CallBrowser(ctx context.Context, action, browser string, input json.RawMessage) (CallResult, error) {
 	if input == nil {
 		input = json.RawMessage(`{}`)
 	}
-	body, err := json.Marshal(CallRequest{Action: action, Input: input})
+	body, err := json.Marshal(CallRequest{Action: action, Browser: browser, Input: input})
 	if err != nil {
 		return CallResult{}, err
 	}
