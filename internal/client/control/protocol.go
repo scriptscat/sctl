@@ -13,16 +13,19 @@ package control
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/scriptscat/sctl/internal/pkg/audit"
 )
 
 // 控制 API 路径。健康检查故意不鉴权(仅暴露「端口开着」这一威胁模型已接受的信息)。
 const (
-	PathHealth = "/control/health"
-	PathCall   = "/control/call"
-	PathEnroll = "/control/enroll"
-	PathStatus = "/control/status"
+	PathHealth        = "/control/health"
+	PathCall          = "/control/call"
+	PathEnroll        = "/control/enroll"
+	PathStatus        = "/control/status"
+	PathBrowsers      = "/control/browsers"
+	PathBrowserForget = "/control/browsers/forget"
 )
 
 // 控制 API 请求头。
@@ -73,15 +76,38 @@ type HealthResult struct {
 	Version string `json:"version"`
 }
 
-// StatusResult 是 /control/status 的响应体:daemon 与扩展连接概览,附守卫侧安全事件。
+// StatusResult 是 /control/status 的响应体:daemon 与扩展连接概览,附守卫侧安全事件与已配对浏览器实例。
 type StatusResult struct {
 	DaemonVersion string        `json:"daemonVersion"`
 	ExtConnected  bool          `json:"extConnected"`
 	SecurityCount int           `json:"securityCount"`
 	Security      []audit.Event `json:"security,omitempty"`
+	Browsers      []BrowserInfo `json:"browsers,omitempty"`
 }
 
 // EnrollResult 是 /control/enroll 的响应体:打开接入窗口后返回展示形配对码。
 type EnrollResult struct {
 	Code string `json:"code"`
+}
+
+// BrowserInfo 是一个已配对浏览器实例的当前视图,镜像 bridge.InstanceInfo(控制 API 不直接暴露
+// bridge 类型,见 internal/daemon/controlapi 的窄接口约定)。离线实例的 ConnectedAt 为零值。
+type BrowserInfo struct {
+	ID               string    `json:"id"`
+	Name             string    `json:"name"`
+	Online           bool      `json:"online"`
+	Product          string    `json:"product,omitempty"`
+	ProductVersion   string    `json:"productVersion,omitempty"`
+	ExtensionVersion string    `json:"extensionVersion,omitempty"`
+	ConnectedAt      time.Time `json:"connectedAt,omitempty"`
+}
+
+// BrowsersResult 是 /control/browsers 的响应体:全部已配对浏览器实例(在线与离线)。
+type BrowsersResult struct {
+	Browsers []BrowserInfo `json:"browsers"`
+}
+
+// ForgetBrowserRequest 是 /control/browsers/forget 的请求体:Ref 是实例名称或完整实例 ID。
+type ForgetBrowserRequest struct {
+	Ref string `json:"ref"`
 }

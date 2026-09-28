@@ -55,6 +55,64 @@ func captureCalls(t *testing.T) (*Client, *[]map[string]json.RawMessage) {
 	return &Client{http: srv.Client(), base: srv.URL, controlToken: "t"}, &bodies
 }
 
+func TestClientBrowsersListsPairedInstances(t *testing.T) {
+	Convey("Browsers 从 /control/browsers 取回已配对实例列表", t, func() {
+		var gotPath string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotPath = r.URL.Path
+			_ = json.NewEncoder(w).Encode(BrowsersResult{Browsers: []BrowserInfo{
+				{ID: "abc", Name: "chrome-abcd", Online: true, Product: "Chrome", ProductVersion: "128.0", ExtensionVersion: "0.1.0"},
+			}})
+		}))
+		t.Cleanup(srv.Close)
+		c := &Client{http: srv.Client(), base: srv.URL, controlToken: "t"}
+
+		list, err := c.Browsers(context.Background())
+
+		So(err, ShouldBeNil)
+		So(gotPath, ShouldEqual, PathBrowsers)
+		So(list, ShouldHaveLength, 1)
+		So(list[0].Name, ShouldEqual, "chrome-abcd")
+		So(list[0].Online, ShouldBeTrue)
+	})
+}
+
+func TestClientForgetBrowserRoundTrip(t *testing.T) {
+	Convey("ForgetBrowser 把目标引用发给 /control/browsers/forget", t, func() {
+		var gotPath string
+		var gotBody ForgetBrowserRequest
+
+		Convey("daemon 确认删除时返回 nil", func() {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath = r.URL.Path
+				_ = json.NewDecoder(r.Body).Decode(&gotBody)
+				_ = json.NewEncoder(w).Encode(CallResult{OK: true})
+			}))
+			t.Cleanup(srv.Close)
+			c := &Client{http: srv.Client(), base: srv.URL, controlToken: "t"}
+
+			err := c.ForgetBrowser(context.Background(), "chrome-abcd")
+
+			So(err, ShouldBeNil)
+			So(gotPath, ShouldEqual, PathBrowserForget)
+			So(gotBody.Ref, ShouldEqual, "chrome-abcd")
+		})
+
+		Convey("目标不存在时返回携带该错误码的错误", func() {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(CallResult{OK: false, Error: &CallError{Code: "NOT_FOUND", Message: "no paired browser instance matches nope"}})
+			}))
+			t.Cleanup(srv.Close)
+			c := &Client{http: srv.Client(), base: srv.URL, controlToken: "t"}
+
+			err := c.ForgetBrowser(context.Background(), "nope")
+
+			So(err, ShouldNotBeNil)
+			So(err.Error(), ShouldContainSubstring, "NOT_FOUND")
+		})
+	})
+}
+
 func TestCallCarriesTargetBrowser(t *testing.T) {
 	Convey("控制客户端把目标浏览器随 /control/call 发给 daemon", t, func() {
 		c, bodies := captureCalls(t)

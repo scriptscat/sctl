@@ -91,6 +91,7 @@ func NewRootCmd() *cobra.Command {
 		newMcpCmd(),
 		newConnectCmd(),
 		newStatusCmd(),
+		newBrowsersCmd(),
 		newVersionCmd(),
 		newGetCmd(),
 		newGrepCmd(),

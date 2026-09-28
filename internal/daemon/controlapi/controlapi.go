@@ -19,6 +19,7 @@ import (
 	"github.com/scriptscat/sctl/internal/daemon/bridge"
 	"github.com/scriptscat/sctl/internal/pkg/audit"
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
+	"github.com/scriptscat/sctl/internal/pkg/protocol/generated"
 )
 
 // Bridge 是控制 API 依赖的守卫侧能力面,由 *bridge.Server 实现。
@@ -30,6 +31,11 @@ type Bridge interface {
 	AuditSnapshot() []audit.Event
 	Call(ctx context.Context, req bridge.Request) (bridge.Response, error)
 	BeginEnrollment() (string, error)
+	// Instances 列出所有已配对的浏览器实例(在线与离线),按名称排序。
+	Instances() []bridge.InstanceInfo
+	// ForgetInstance 按精确实例 ID 或精确名称删除一个已配对浏览器实例的密钥与登记,
+	// 若它在线则先断开连接;不匹配任何已配对实例时返回 bridge.ErrInstanceNotFound。
+	ForgetInstance(ref string) error
 }
 
 // Handler 是控制 API 的处理器集合。
@@ -53,6 +59,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc(control.PathCall, h.guard(h.call))
 	mux.HandleFunc(control.PathStatus, h.guard(h.status))
 	mux.HandleFunc(control.PathEnroll, h.guard(h.enroll))
+	mux.HandleFunc(control.PathBrowsers, h.guard(h.browsers))
+	mux.HandleFunc(control.PathBrowserForget, h.guard(h.forgetBrowser))
 }
 
 // guard 包装需要控制令牌的处理器:恒定时间校验 X-Sctl-Control-Token,不符即 401(无细节)。
@@ -85,7 +93,47 @@ func (h *Handler) status(w http.ResponseWriter, _ *http.Request) {
 		ExtConnected:  h.bridge.ExtConnected(),
 		SecurityCount: len(events),
 		Security:      events,
+		Browsers:      toBrowserInfos(h.bridge.Instances()),
 	})
+}
+
+// browsers 列出所有已配对的浏览器实例(在线与离线)。
+func (h *Handler) browsers(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, control.BrowsersResult{Browsers: toBrowserInfos(h.bridge.Instances())})
+}
+
+// forgetBrowser 删除一个已配对浏览器实例的密钥与登记,若在线则先断开连接(bridge.ForgetInstance)。
+func (h *Handler) forgetBrowser(w http.ResponseWriter, r *http.Request) {
+	var req control.ForgetBrowserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Ref == "" {
+		writeControlError(w, bridge.CodeInvalidRequest, "missing browser reference")
+		return
+	}
+	switch err := h.bridge.ForgetInstance(req.Ref); {
+	case err == nil:
+		writeJSON(w, control.CallResult{OK: true})
+	case errors.Is(err, bridge.ErrInstanceNotFound):
+		writeControlError(w, generated.ErrorCodeNotFound, "no paired browser instance matches "+req.Ref)
+	default:
+		writeControlError(w, bridge.CodeInternal, "internal error")
+	}
+}
+
+// toBrowserInfos 把守卫侧的实例视图映射为控制 API 对外的 DTO(不直接暴露 bridge 类型)。
+func toBrowserInfos(instances []bridge.InstanceInfo) []control.BrowserInfo {
+	out := make([]control.BrowserInfo, 0, len(instances))
+	for _, inst := range instances {
+		out = append(out, control.BrowserInfo{
+			ID:               inst.ID,
+			Name:             inst.Name,
+			Online:           inst.Online,
+			Product:          inst.Product,
+			ProductVersion:   inst.ProductVersion,
+			ExtensionVersion: inst.ExtensionVersion,
+			ConnectedAt:      inst.ConnectedAt,
+		})
+	}
+	return out
 }
 
 // call 转发一次 bridge action:解析调用方自报标签(仅审计),再驱动阻塞的 Bridge.Call。

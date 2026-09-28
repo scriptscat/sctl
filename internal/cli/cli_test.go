@@ -212,6 +212,74 @@ func TestStatusSecurityEvents(t *testing.T) {
 	})
 }
 
+func TestStatusListsBrowserInstances(t *testing.T) {
+	Convey("status 额外列出已配对浏览器实例及其在线状态,ScriptCat 字段不变", t, func() {
+		Convey("人读输出按名称列出在线/离线实例,并保留原有 ScriptCat 字段", func() {
+			stubDaemonStatus(t, control.StatusResult{
+				DaemonVersion: "0.1.0",
+				ExtConnected:  true,
+				Browsers: []control.BrowserInfo{
+					{ID: "0123456789abcdef0123456789abcdef", Name: "chrome-0123", Online: true},
+					{ID: "fedcba9876543210fedcba9876543210", Name: "edge-fedc", Online: false},
+				},
+			})
+			code, out := runCLI("status")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldContainSubstring, "extension connected: true")
+			So(out, ShouldContainSubstring, "chrome-0123")
+			So(out, ShouldContainSubstring, "online")
+			So(out, ShouldContainSubstring, "edge-fedc")
+			So(out, ShouldContainSubstring, "offline")
+		})
+
+		Convey("没有已配对浏览器实例时不打印浏览器小节", func() {
+			stubDaemonStatus(t, control.StatusResult{DaemonVersion: "0.1.0"})
+			code, out := runCLI("status")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldNotContainSubstring, "browsers:")
+		})
+
+		Convey("-o json 的已配对浏览器实例可解析且携带在线状态", func() {
+			stubDaemonStatus(t, control.StatusResult{
+				DaemonVersion: "0.1.0",
+				Browsers:      []control.BrowserInfo{{ID: "abc", Name: "chrome-a", Online: true}},
+			})
+			code, out := runCLI("status", "-o", "json")
+			So(code, ShouldEqual, exitOK)
+			var got control.StatusResult
+			So(json.Unmarshal([]byte(out), &got), ShouldBeNil)
+			So(got.Browsers, ShouldHaveLength, 1)
+			So(got.Browsers[0].Name, ShouldEqual, "chrome-a")
+			So(got.Browsers[0].Online, ShouldBeTrue)
+		})
+	})
+}
+
+func TestConnectMentionsBothExtensions(t *testing.T) {
+	Convey("connect 的配对文案同时覆盖 ScriptCat 与 sctl Browser 扩展", t, func() {
+		mux := http.NewServeMux()
+		mux.HandleFunc(control.PathHealth, func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
+		mux.HandleFunc(control.PathEnroll, func(w http.ResponseWriter, _ *http.Request) {
+			_ = json.NewEncoder(w).Encode(control.EnrollResult{Code: "123-456"})
+		})
+		srv := httptest.NewServer(mux)
+		t.Cleanup(srv.Close)
+		t.Setenv("SCTL_BRIDGE_ADDR", strings.TrimPrefix(srv.URL, "http://"))
+		dir := t.TempDir()
+		t.Setenv("SCTL_DATA_DIR", dir)
+		So(os.WriteFile(filepath.Join(dir, "control.token"), []byte("tok"), 0o600), ShouldBeNil)
+
+		code, out := runCLI("connect")
+
+		So(code, ShouldEqual, exitOK)
+		So(out, ShouldContainSubstring, "123-456")
+		So(out, ShouldContainSubstring, "ScriptCat")
+		So(out, ShouldContainSubstring, "sctl Browser")
+	})
+}
+
 func TestDataDirFlag(t *testing.T) {
 	Convey("--data-dir 指定 CLI 与 daemon 共享的数据目录", t, func() {
 		mux := http.NewServeMux()
