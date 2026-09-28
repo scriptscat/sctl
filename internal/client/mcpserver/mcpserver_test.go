@@ -22,6 +22,7 @@ type fakeCaller struct {
 	inputs        []json.RawMessage
 	browserParams []string      // 记录每次 Call 的目标浏览器参数
 	block         chan struct{} // 非 nil 则 Call 阻塞至其关闭或 ctx 取消
+	entered       chan struct{} // 非 nil 则每次 Call 进入时发送一次,让测试确知调用已抵达桥接侧
 	result        control.CallResult
 	err           error
 	sawCtx        atomic.Bool           // Call 是否因 ctx 取消而返回
@@ -36,6 +37,9 @@ func (f *fakeCaller) Call(ctx context.Context, action, browser string, input jso
 	f.inputs = append(f.inputs, append(json.RawMessage(nil), input...))
 	block := f.block
 	f.mu.Unlock()
+	if f.entered != nil {
+		f.entered <- struct{}{}
+	}
 	if block != nil {
 		select {
 		case <-block:
@@ -295,7 +299,7 @@ func TestBlockingProgressAndCancel(t *testing.T) {
 		Convey("请求方取消 ctx → 调用观察到取消并返回错误", func() {
 			block := make(chan struct{})
 			defer close(block)
-			caller := &fakeCaller{block: block}
+			caller := &fakeCaller{block: block, entered: make(chan struct{}, 1)}
 			session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
 
 			callCtx, cancel := context.WithCancel(context.Background())
@@ -304,8 +308,13 @@ func TestBlockingProgressAndCancel(t *testing.T) {
 				_, err := session.CallTool(callCtx, &mcp.CallToolParams{Name: "scripts_list", Arguments: map[string]any{}})
 				errCh <- err
 			}()
-			// 给调用一点时间抵达阻塞点,再取消。
-			time.Sleep(50 * time.Millisecond)
+			// 必须等调用确实抵达桥接侧再取消:若取消先于服务端派发到达,go-sdk 直接丢弃这个请求,
+			// 桥接调用根本不会发生,本用例要验证的「进行中的调用被作废」也就无从观察。
+			select {
+			case <-caller.entered:
+			case <-time.After(2 * time.Second):
+				t.Fatal("调用未抵达桥接调用")
+			}
 			cancel()
 
 			select {
