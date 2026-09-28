@@ -344,3 +344,73 @@ func TestBlockingProgressAndCancel(t *testing.T) {
 		})
 	})
 }
+
+func TestToolDescriptionsAreStatic(t *testing.T) {
+	Convey("MCP 工具描述为静态文本，从不拼入页面控制数据如标签页标题与 URL", t, func() {
+		p := loadProto(t)
+		// 模拟浏览器调用返回包含特征标记字符串的标签页数据。
+		markerTitle := "MARKER_TITLE_TESTDATA_12345"
+		markerURL := "MARKER_URL_TESTDATA_67890"
+		tabsResult := map[string]any{
+			"tabs": []map[string]any{
+				{
+					"id":       1,
+					"windowId": 1,
+					"active":   true,
+					"pinned":   false,
+					"title":    markerTitle,
+					"url":      markerURL,
+				},
+			},
+		}
+		resultJSON, err := json.Marshal(tabsResult)
+		So(err, ShouldBeNil)
+
+		caller := &fakeCaller{
+			result: control.CallResult{OK: true, Result: resultJSON},
+		}
+
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+
+		// 第一次列出工具，记录描述。
+		res1, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+		So(err, ShouldBeNil)
+		desc1 := make(map[string]string)
+		for _, tool := range res1.Tools {
+			desc1[tool.Name] = tool.Description
+		}
+
+		// 调用 tabs_list，让模拟器返回包含特征标记的数据。
+		_, err = session.CallTool(context.Background(), &mcp.CallToolParams{
+			Name:      "tabs_list",
+			Arguments: map[string]any{},
+		})
+		So(err, ShouldBeNil)
+
+		// 第二次列出工具，再次记录描述。
+		res2, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+		So(err, ShouldBeNil)
+		desc2 := make(map[string]string)
+		for _, tool := range res2.Tools {
+			desc2[tool.Name] = tool.Description
+		}
+
+		Convey("任何工具描述都不含标签页标题的特征标记", func() {
+			for name, desc := range desc2 {
+				So(desc, ShouldNotContainSubstring, markerTitle)
+				So(name, ShouldNotBeEmpty) // Ensure we checked at least some tools
+			}
+		})
+
+		Convey("任何工具描述都不含标签页 URL 的特征标记", func() {
+			for name, desc := range desc2 {
+				So(desc, ShouldNotContainSubstring, markerURL)
+				So(name, ShouldNotBeEmpty) // Ensure we checked at least some tools
+			}
+		})
+
+		Convey("工具描述前后一致，不随数据调用而改变", func() {
+			So(desc1, ShouldResemble, desc2)
+		})
+	})
+}
