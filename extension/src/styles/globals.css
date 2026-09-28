@@ -40,6 +40,8 @@
  * 2b4dd1a 修订）。品牌天蓝 --brand 只用于不承载文字的装饰元素（连线区的图标等）；凡是作文字颜色、
  * 或作白字按钮底色的地方一律用 --primary，浅色模式取同色相的加深值以满足 4.5:1 对比度，深色模式两者
  * 数值相同，因为原值已经达标。
+ * 按钮悬停底色 --primary-hover/--bad-hover 各是对应底色在 oklch 里向文字的反方向移 12%（浅色加深、深色提亮），
+ * 让悬停时文字对比度只升不降；不用 bg-primary/80 这类透明度写法，它在浅色下会把白字按钮洗到 4.5:1 以下。
  */
 :root {
   --radius: 0.625rem;
@@ -52,13 +54,14 @@
   --brand: #1296db;
   --primary: #0e77ae;
   --primary-foreground: #ffffff;
+  --primary-hover: #0a6392;
   --secondary: #f2f7fb;
   --secondary-foreground: #1b2733;
   --muted: #f2f7fb;
   --muted-foreground: #5c6b7a;
   --accent: #f2f7fb;
   --accent-foreground: #1b2733;
-  --destructive: #d6453d;
+  --destructive: #d2352c;
   --border: #dce5ed;
   --input: #dce5ed;
   --ring: #1296db;
@@ -67,6 +70,7 @@
   --warn: #9d6504;
   --bad: #d2352c;
   --bad-foreground: #ffffff;
+  --bad-hover: #b12b23;
 }
 
 .dark {
@@ -79,6 +83,7 @@
   --brand: #3aa9e6;
   --primary: #3aa9e6;
   --primary-foreground: #0a1622;
+  --primary-hover: #59b4ea;
   --secondary: #1a232c;
   --secondary-foreground: #e4ecf3;
   --muted: #1a232c;
@@ -95,6 +100,7 @@
   --bad: #f06a5f;
   /* 与深色主色按钮一样用深色文字：白字在 #F06A5F 上的对比度不到 4.5:1。 */
   --bad-foreground: #0a1622;
+  --bad-hover: #f47e72;
 }
 
 @layer base {

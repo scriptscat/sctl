@@ -560,7 +560,7 @@ export function App({
             <Button
               variant="ghost"
               size="sm"
-              className="text-[var(--bad)] hover:bg-[color-mix(in_oklch,var(--bad),transparent_90%)] hover:text-[var(--bad)]"
+              className="text-[var(--bad)] hover:text-[var(--bad)]"
               onClick={() => setForgetOpen(true)}
             >
               {s.forget}
@@ -586,7 +586,7 @@ export function App({
           <AlertDialogFooter>
             <AlertDialogCancel autoFocus>{s.cancel}</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-[var(--bad)] text-[var(--bad-foreground)] hover:bg-[color-mix(in_oklch,var(--bad),black_12%)]"
+              className="bg-[var(--bad)] text-[var(--bad-foreground)] hover:bg-[var(--bad-hover)]"
               onClick={() => void confirmForget()}
             >
               {s.forget}

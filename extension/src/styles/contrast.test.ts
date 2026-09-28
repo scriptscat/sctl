@@ -88,9 +88,12 @@ const TEXT_ON_SURFACE_PAIRS: Array<{ name: string; text: string; surface: string
 ];
 
 // 白字按钮底色（default 按钮用 --primary-foreground/--primary；忘记确认用 --bad-foreground/--bad）。
+// 悬停时按钮文字仍在，所以悬停底色同样受 4.5:1 约束。
 const FILL_PAIRS: Array<{ name: string; foreground: string; fill: string }> = [
   { name: "primary button fill", foreground: "primary-foreground", fill: "primary" },
+  { name: "primary button hover fill", foreground: "primary-foreground", fill: "primary-hover" },
   { name: "danger button fill", foreground: "bad-foreground", fill: "bad" },
+  { name: "danger button hover fill", foreground: "bad-foreground", fill: "bad-hover" },
 ];
 
 describe.each([
@@ -105,6 +108,11 @@ describe.each([
   it.each(FILL_PAIRS)("$name is >= 4.5:1", ({ foreground, fill }) => {
     const ratio = contrastRatio(get(vars, foreground), get(vars, fill));
     expect(ratio).toBeGreaterThanOrEqual(4.5);
+  });
+
+  // shadcn 组件的错误态（aria-invalid 边框）读 --destructive；spec 的色表只有一个危险色。
+  it("uses the spec danger colour for invalid-field states", () => {
+    expect(get(vars, "destructive")).toBe(get(vars, "bad"));
   });
 });
 
