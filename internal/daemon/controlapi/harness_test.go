@@ -23,6 +23,7 @@ import (
 	"github.com/scriptscat/sctl/internal/daemon/bridge"
 	"github.com/scriptscat/sctl/internal/daemon/store"
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
+	"github.com/scriptscat/sctl/internal/pkg/protocolschema"
 )
 
 // 本包的测试跑真实全栈:bridge.Server + Handler 挂同一 listener,由 extClient 从 WS 面对拍。
@@ -88,6 +89,8 @@ func startTestServer(t *testing.T) *testHarness {
 	browsers, err := store.LoadBrowserRegistry(filepath.Join(dir, "browsers.json"))
 	So(err, ShouldBeNil)
 	srv := bridge.NewServer(testVersion, p, keys, browsers, zap.NewNop())
+	// daemon 首次校验帧时才编译 schema,这笔一次性开销在高负载下能拖过读消息的 3s 时限;先在时限外付掉。
+	So(protocolschema.ValidateWireFrame([]byte(`{"jsonrpc":"2.0","id":"warm-up","method":"$session.ping","params":{}}`)), ShouldBeNil)
 
 	mux := http.NewServeMux()
 	New(srv, testControlToken, zap.NewNop()).Register(mux)

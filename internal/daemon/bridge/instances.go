@@ -122,7 +122,7 @@ func (s *Server) registerBrowser(c *conn) error {
 	s.online[c.instanceID] = c
 	s.mu.Unlock()
 	if old != nil && old != c {
-		old.close(websocket.StatusNormalClosure, "replaced by new connection")
+		old.closeReplaced()
 	}
 	return nil
 }

@@ -3,16 +3,23 @@ package bridge
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/google/uuid"
 	. "github.com/smartystreets/goconvey/convey"
+	"go.uber.org/zap"
 
 	"github.com/scriptscat/sctl/internal/daemon/auth"
 	"github.com/scriptscat/sctl/internal/daemon/store"
 	"github.com/scriptscat/sctl/internal/pkg/audit"
+	"github.com/scriptscat/sctl/internal/pkg/protocol"
 )
 
 const (
@@ -136,12 +143,13 @@ func (e *extClient) alive() {
 	So(e.read().ID, ShouldEqual, id)
 }
 
-// closedByDaemon 断言 daemon 已关闭这条连接。
+// closedByDaemon 断言 daemon 已关闭这条连接;读到期只说明连接还开着,不算关闭。
 func (e *extClient) closedByDaemon() {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	_, _, err := e.ws.Read(ctx)
 	So(err, ShouldNotBeNil)
+	So(errors.Is(err, context.DeadlineExceeded), ShouldBeFalse)
 }
 
 func (h *testHarness) instance(ref string) (InstanceInfo, bool) {
@@ -238,6 +246,62 @@ func TestBrowserInstancesCoexist(t *testing.T) {
 			So(ok, ShouldBeTrue)
 			So(info.Online, ShouldBeFalse)
 			So(info.ConnectedAt.IsZero(), ShouldBeTrue)
+		})
+	})
+}
+
+// busyConnection 把一条真实 WS 连接登记为 ScriptCat(instanceID 为空)或某浏览器实例的当前连接,
+// 返回其对端。daemon 侧此刻没有停在读上(如同读循环正忙于处理一帧),对端也不读,
+// 因此这条连接的关闭握手无法及时完成。
+func (h *testHarness) busyConnection(t *testing.T, instanceID string) *extClient {
+	accepted := make(chan *websocket.Conn, 1)
+	peerSide := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ws, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Errorf("accept busy connection: %v", err)
+			return
+		}
+		accepted <- ws
+	}))
+	t.Cleanup(peerSide.Close)
+	peer := dial("ws" + strings.TrimPrefix(peerSide.URL, "http"))
+	t.Cleanup(func() { peer.ws.CloseNow() })
+
+	kind := protocol.PeerScriptCat
+	if instanceID != "" {
+		kind = protocol.PeerBrowser
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	busy := &conn{ws: <-accepted, srv: h.srv, log: zap.NewNop(), closed: make(chan struct{}), ctx: ctx, cancel: cancel,
+		kind: kind, instanceID: instanceID}
+	t.Cleanup(func() { busy.close(websocket.StatusGoingAway, "") })
+	h.srv.mu.Lock()
+	defer h.srv.mu.Unlock()
+	if kind == protocol.PeerScriptCat {
+		h.srv.scriptCat = busy
+	} else {
+		h.srv.online[instanceID] = busy
+	}
+	return peer
+}
+
+func TestReplacedConnectionDoesNotDelaySuccessor(t *testing.T) {
+	Convey("新连接替换旧连接时不等旧连接完成关闭握手,立即收到能力声明回复;旧连接随后被断开", t, func() {
+		h := startTestServer(t)
+
+		Convey("浏览器实例重连", func() {
+			key := h.registerBrowser(instanceA, "chrome-0123")
+			previous := h.busyConnection(t, instanceA)
+			successor := h.connectBrowser(instanceA, key, "chrome-0123")
+			successor.alive()
+			previous.closedByDaemon()
+		})
+
+		Convey("ScriptCat 重连", func() {
+			previous := h.busyConnection(t, "")
+			successor := h.connectScriptCat()
+			h.scriptsListWorks(successor)
+			previous.closedByDaemon()
 		})
 	})
 }

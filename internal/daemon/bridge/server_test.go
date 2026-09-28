@@ -19,6 +19,7 @@ import (
 	"github.com/scriptscat/sctl/internal/daemon/store"
 	"github.com/scriptscat/sctl/internal/pkg/audit"
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
+	"github.com/scriptscat/sctl/internal/pkg/protocolschema"
 )
 
 // testHarness 承载一个运行中的 daemon 与用于对拍的密码学助手/存储。
@@ -42,6 +43,8 @@ func startTestServer(t *testing.T) *testHarness {
 	browsers, err := store.LoadBrowserRegistry(filepath.Join(dir, "browsers.json"))
 	So(err, ShouldBeNil)
 	srv := NewServer("0.1.0", p, keys, browsers, zap.NewNop())
+	// daemon 首次校验帧时才编译 schema,这笔一次性开销在高负载下能拖过读消息的 3s 时限;先在时限外付掉。
+	So(protocolschema.ValidateWireFrame([]byte(`{"jsonrpc":"2.0","id":"warm-up","method":"$session.ping","params":{}}`)), ShouldBeNil)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	So(err, ShouldBeNil)
