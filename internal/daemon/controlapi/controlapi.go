@@ -113,7 +113,7 @@ func (h *Handler) forgetBrowser(w http.ResponseWriter, r *http.Request) {
 	case err == nil:
 		writeJSON(w, control.CallResult{OK: true})
 	case errors.Is(err, bridge.ErrInstanceNotFound):
-		writeControlError(w, generated.ErrorCodeNotFound, "no paired browser instance matches "+req.Ref)
+		writeControlError(w, generated.ErrorCodeBrowserNotFound, "no paired browser instance matches "+req.Ref)
 	default:
 		writeControlError(w, bridge.CodeInternal, "internal error")
 	}

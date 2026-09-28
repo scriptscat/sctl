@@ -87,26 +87,15 @@ export function App({
   const [addressDraft, setAddressDraft] = useState("");
   const [addressInvalid, setAddressInvalid] = useState(false);
   const [forgetOpen, setForgetOpen] = useState(false);
-  const [connectedSince, setConnectedSince] = useState<number | null>(null);
-
-  // 收到新连接状态时一并推导「已连接起始时间」的近似值：ConnectionState 不带真实的连接起始时间戳，
-  // 记住本次弹窗会话里第一次观察到 connected 的时刻是可用信息里最接近的替代（已知局限，见任务报告）。
-  const applyState = useCallback(
-    (s: ConnectionState) => {
-      setState(s);
-      setConnectedSince((prev) => (s.status === "connected" ? (prev ?? now()) : null));
-    },
-    [now],
-  );
 
   // 初次加载：连接状态、外观/语言设置、配对码草稿（会话存储，重开弹窗时恢复）。
   useEffect(() => {
     let cancelled = false;
     void api.getState().then((s) => {
-      if (!cancelled) applyState(s);
+      if (!cancelled) setState(s);
     });
     const unsubscribe = api.subscribe((s) => {
-      if (!cancelled) applyState(s);
+      if (!cancelled) setState(s);
     });
     void loadPrefs(localStorage).then((p) => {
       if (!cancelled) {
@@ -150,6 +139,15 @@ export function App({
 
   const status = state?.status;
 
+  // 草稿只在配对真正成功后清除：配对失败或连不上 daemon 时，用户常要先离开弹窗（去终端启动
+  // sctl serve），重新打开时还要用同一个配对码。
+  useEffect(() => {
+    if (status === "connected" && codeDraftLoaded) {
+      void clearPairingDraft(sessionStorage);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, codeDraftLoaded]);
+
   // 重连倒计时与已连接时长都要随时间推进，重连中每秒、已连接每分钟够用；tick 本身只用来触发重渲染。
   const [, forceTick] = useState(0);
   useEffect(() => {
@@ -191,12 +189,7 @@ export function App({
       return;
     }
     const result = await api.pair(code);
-    if (!result.ok) {
-      setCodeInvalid(true);
-      return;
-    }
-    setCodeInvalid(false);
-    void clearPairingDraft(sessionStorage);
+    setCodeInvalid(!result.ok);
   };
 
   const startRename = () => {
@@ -480,8 +473,13 @@ export function App({
                   </p>
                 </div>
               ) : (
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">{s.instanceName}</span>
+                <div role="group" aria-labelledby="detail-name" className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 flex-col">
+                    <span id="detail-name" className="text-xs text-muted-foreground">
+                      {s.instanceName}
+                    </span>
+                    <span className={`truncate text-sm font-semibold ${mono}`}>{state.name}</span>
+                  </div>
                   <Button
                     variant="ghost"
                     size="xs"
@@ -498,16 +496,30 @@ export function App({
               <dl
                 className={`grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-1 rounded-lg border px-3 py-2 text-xs ${link !== "ok" ? "opacity-55" : ""}`}
               >
-                <dt className="text-muted-foreground">{s.id}</dt>
-                <dd className="flex min-h-6 items-center justify-end gap-0.5">
+                <dt id="detail-id" className="text-muted-foreground">
+                  {s.id}
+                </dt>
+                <dd aria-labelledby="detail-id" className="flex min-h-6 items-center justify-end gap-0.5">
                   <span className={`truncate ${mono}`}>{state.instanceId.slice(0, 13)}…</span>
                   <CopyButton text={state.instanceId} label={s.copy} />
                 </dd>
-                <dt className="text-muted-foreground">{s.since}</dt>
-                <dd className="min-h-6 content-center text-right">
-                  {state.status === "connected" && connectedSince !== null
-                    ? formatConnectedSince(s, connectedSince, now())
-                    : "—"}
+                <dt id="detail-browser" className="text-muted-foreground">
+                  {s.browser}
+                </dt>
+                <dd aria-labelledby="detail-browser" className="min-h-6 content-center truncate text-right">
+                  {state.status === "connected" ? `${state.product} ${state.productVersion}` : "—"}
+                </dd>
+                <dt id="detail-daemon" className="text-muted-foreground">
+                  {s.daemon}
+                </dt>
+                <dd aria-labelledby="detail-daemon" className={`min-h-6 content-center text-right ${mono}`}>
+                  {state.status === "connected" ? state.daemonVersion : "—"}
+                </dd>
+                <dt id="detail-since" className="text-muted-foreground">
+                  {s.since}
+                </dt>
+                <dd aria-labelledby="detail-since" className="min-h-6 content-center text-right">
+                  {state.status === "connected" ? formatConnectedSince(s, state.connectedAt, now()) : "—"}
                 </dd>
               </dl>
 
@@ -574,7 +586,7 @@ export function App({
           <AlertDialogFooter>
             <AlertDialogCancel autoFocus>{s.cancel}</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-[var(--bad)] text-white hover:bg-[color-mix(in_oklch,var(--bad),black_12%)]"
+              className="bg-[var(--bad)] text-[var(--bad-foreground)] hover:bg-[color-mix(in_oklch,var(--bad),black_12%)]"
               onClick={() => void confirmForget()}
             >
               {s.forget}

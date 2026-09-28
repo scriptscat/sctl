@@ -235,12 +235,12 @@ func TestControlBrowserForget(t *testing.T) {
 			So(decodeBrowsers(listResp).Browsers, ShouldHaveLength, 0)
 		})
 
-		Convey("目标不匹配任何已配对实例 → NOT_FOUND", func() {
+		Convey("目标不匹配任何已配对实例 → BROWSER_NOT_FOUND,与路由时的目标错误码一致", func() {
 			resp, err := postControl(context.Background(), base, control.PathBrowserForget, testControlToken, "", control.ForgetBrowserRequest{Ref: "nope"})
 			So(err, ShouldBeNil)
 			res := decodeCall(resp)
 			So(res.OK, ShouldBeFalse)
-			So(res.Error.Code, ShouldEqual, generated.ErrorCodeNotFound)
+			So(res.Error.Code, ShouldEqual, generated.ErrorCodeBrowserNotFound)
 		})
 
 		Convey("缺少 ref 字段 → INVALID_REQUEST", func() {

@@ -97,6 +97,7 @@ export class Background {
     return {
       instanceId,
       name,
+      defaultName: defaultName(browser.product, instanceId),
       address: stored(items, "address") ?? DEFAULT_ADDRESS,
       key: stored(items, "key") ?? null,
       methods: this.deps.registry.methods(),

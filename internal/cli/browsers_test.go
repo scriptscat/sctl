@@ -117,6 +117,19 @@ func TestBrowsersListJSON(t *testing.T) {
 	})
 }
 
+func TestBrowsersListJSONOmitsConnectionTimeForOfflineInstances(t *testing.T) {
+	Convey("-o json 中离线实例没有连接时间字段,而不是输出零值时间", t, func() {
+		stubDaemonBrowsers(t, []control.BrowserInfo{{ID: "fedc", Name: "edge-fedc", Online: false}})
+
+		code, out := runCLI("browsers", "-o", "json")
+
+		So(code, ShouldEqual, exitOK)
+		So(out, ShouldContainSubstring, "edge-fedc")
+		So(out, ShouldNotContainSubstring, "connectedAt")
+		So(out, ShouldNotContainSubstring, "0001-01-01")
+	})
+}
+
 func TestBrowsersForget(t *testing.T) {
 	Convey("sctl browsers forget 删除一个已配对实例", t, func() {
 		Convey("daemon 确认删除 → 退出码 0,请求带上该引用", func() {
@@ -130,7 +143,7 @@ func TestBrowsersForget(t *testing.T) {
 		})
 
 		Convey("目标不匹配任何已配对实例 → 退出码 3", func() {
-			stubDaemonForget(t, control.CallResult{OK: false, Error: &control.CallError{Code: "NOT_FOUND", Message: "no paired browser instance matches nope"}})
+			stubDaemonForget(t, control.CallResult{OK: false, Error: &control.CallError{Code: "BROWSER_NOT_FOUND", Message: "no paired browser instance matches nope"}})
 
 			code, _ := runCLI("browsers", "forget", "nope")
 

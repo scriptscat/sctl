@@ -94,6 +94,19 @@ describe("instance identity and configuration", () => {
     });
   });
 
+  it("hands over the default name for pairing even after the instance was renamed", async () => {
+    const { background, storage } = setup();
+    const { instanceId } = (await background.handle({ target: "background", type: "offscreenReady" })) as {
+      instanceId: string;
+    };
+    await storage.set({ name: "work" });
+
+    await expect(background.handle({ target: "background", type: "offscreenReady" })).resolves.toMatchObject({
+      name: "work",
+      defaultName: `edge-${instanceId.slice(0, 4)}`,
+    });
+  });
+
   it("reports no key before pairing", async () => {
     const { background } = setup();
 

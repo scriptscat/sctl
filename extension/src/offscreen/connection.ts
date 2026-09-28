@@ -111,6 +111,8 @@ export class Connection {
 
   pair(code: string): void {
     this.reset();
+    const config = this.cfg();
+    config.name = config.defaultName;
     this.open({ mode: "pairing", code });
     this.setState({ status: "pairing" });
   }
@@ -474,7 +476,14 @@ export class Connection {
     }
     attempt.phase = "connected";
     this.failures = 0;
-    this.setState({ status: "connected", daemonVersion: attempt.daemonVersion });
+    const config = this.cfg();
+    this.setState({
+      status: "connected",
+      daemonVersion: attempt.daemonVersion,
+      product: config.product,
+      productVersion: config.productVersion,
+      connectedAt: this.deps.timers.now(),
+    });
   }
 
   private serve(attempt: Attempt, message: JsonRpcMessage): void {

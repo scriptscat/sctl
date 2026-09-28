@@ -6,7 +6,9 @@
 
 @theme inline {
   /* 只用系统字体，不打包字体文件。 */
-  --font-sans: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font-sans:
+    system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC",
+    sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
   --font-heading: var(--font-sans);
   --color-background: var(--background);
@@ -61,6 +63,7 @@
   --ok: #16a06a;
   --warn: #d48806;
   --bad: #d6453d;
+  --bad-foreground: #ffffff;
 }
 
 .dark {
@@ -86,6 +89,8 @@
   --ok: #3cc98a;
   --warn: #e9a93a;
   --bad: #f06a5f;
+  /* 与深色主色按钮一样用深色文字：白字在 #F06A5F 上的对比度不到 4.5:1。 */
+  --bad-foreground: #0a1622;
 }
 
 @layer base {

@@ -197,9 +197,10 @@ expected behavior, not an MCP timeout; the security model is detailed in [threat
 
 `sctl mcp` always also exposes `browsers_list`, `tabs_list`, `tabs_open`, `tabs_close`, `tabs_activate`, and
 `windows_list`, whether or not an sctl Browser instance is paired; calling a tab/window tool with no browser
-instance connected returns an error. Every tool except `browsers_list` accepts an optional `browser` argument
-(name or instance-ID prefix) to pick a target when more than one instance is paired; `browsers_list` itself
-lists the paired instances. Unlike the ScriptCat tools above, these run immediately with no browser-side
+instance connected returns an error. Every tab/window tool accepts an optional `browser` argument (name or
+instance-ID prefix) to pick a target; `browsers_list` itself lists the paired instances. Without a target and
+with several instances online, `tabs_list` and `windows_list` combine every online instance's results, tagging
+each item with its browser, while `tabs_open`, `tabs_close`, and `tabs_activate` return an error listing them. Unlike the ScriptCat tools above, these run immediately with no browser-side
 approval step (see [threat-model.md](./threat-model.md)).
 
 ## Troubleshooting

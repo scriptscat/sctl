@@ -48,8 +48,17 @@ const (
 		`"required":["uuid","edits"],"additionalProperties":false}`
 )
 
+// browser 参数的说明按目标选择表区分(docs/protocol.md §3.1):未指定目标且多个浏览器在线时,
+// 列表类方法汇总全部在线浏览器,操作类方法报错。
+const (
+	browserParamList = "Name or instance ID prefix of the target browser. If not specified, lists from every online " +
+		"browser and tags each item with the browser it came from."
+	browserParamAction = "Name or instance ID prefix of the target browser. If not specified, the only online browser is " +
+		"used; if several browsers are online, returns error listing them."
+)
+
 // schemaWithOptionalBrowser 在既有 schema 基础上加一个可选 browser 参数,供工具向 MCP 客户端声明。
-func schemaWithOptionalBrowser(baseSchema string) string {
+func schemaWithOptionalBrowser(baseSchema, browserDescription string) string {
 	var parsed any
 	if err := json.Unmarshal([]byte(baseSchema), &parsed); err != nil {
 		panic(fmt.Sprintf("schemaWithOptionalBrowser: parse base schema: %v", err))
@@ -64,7 +73,7 @@ func schemaWithOptionalBrowser(baseSchema string) string {
 	}
 	props["browser"] = map[string]any{
 		"type":        "string",
-		"description": "Name or instance ID prefix of the target browser. If not specified and multiple browsers are online, returns error.",
+		"description": browserDescription,
 	}
 	result, err := json.Marshal(m)
 	if err != nil {
@@ -139,30 +148,30 @@ var toolDefs = []toolDef{
 		action:      "tabs.list",
 		name:        "tabs_list",
 		description: "List tabs in a browser window: tab ID, window ID, active status, pinned status, title, and URL.",
-		inputSchema: schemaWithOptionalBrowser(`{"type":"object","properties":{"windowId":{"type":"integer","minimum":0}},"additionalProperties":false}`),
+		inputSchema: schemaWithOptionalBrowser(`{"type":"object","properties":{"windowId":{"type":"integer","minimum":0}},"additionalProperties":false}`, browserParamList),
 	},
 	{
 		action:      "tabs.open",
 		name:        "tabs_open",
 		description: "Open a new tab in a browser window at the specified URL and return the tab ID.",
-		inputSchema: schemaWithOptionalBrowser(`{"type":"object","properties":{"url":{"type":"string"},"windowId":{"type":"integer","minimum":0},"background":{"type":"boolean"}},"required":["url"],"additionalProperties":false}`),
+		inputSchema: schemaWithOptionalBrowser(`{"type":"object","properties":{"url":{"type":"string"},"windowId":{"type":"integer","minimum":0},"background":{"type":"boolean"}},"required":["url"],"additionalProperties":false}`, browserParamAction),
 	},
 	{
 		action:      "tabs.close",
 		name:        "tabs_close",
 		description: "Close one or more tabs by their IDs.",
-		inputSchema: schemaWithOptionalBrowser(`{"type":"object","properties":{"tabIds":{"type":"array","items":{"type":"integer"}}},"required":["tabIds"],"additionalProperties":false}`),
+		inputSchema: schemaWithOptionalBrowser(`{"type":"object","properties":{"tabIds":{"type":"array","items":{"type":"integer"}}},"required":["tabIds"],"additionalProperties":false}`, browserParamAction),
 	},
 	{
 		action:      "tabs.activate",
 		name:        "tabs_activate",
 		description: "Activate a tab and bring its window to focus.",
-		inputSchema: schemaWithOptionalBrowser(`{"type":"object","properties":{"tabId":{"type":"integer"}},"required":["tabId"],"additionalProperties":false}`),
+		inputSchema: schemaWithOptionalBrowser(`{"type":"object","properties":{"tabId":{"type":"integer"}},"required":["tabId"],"additionalProperties":false}`, browserParamAction),
 	},
 	{
 		action:      "windows.list",
 		name:        "windows_list",
 		description: "List all browser windows: window ID, focused status, window state, and tab count.",
-		inputSchema: schemaWithOptionalBrowser(`{"type":"object","properties":{},"additionalProperties":false}`),
+		inputSchema: schemaWithOptionalBrowser(`{"type":"object","properties":{},"additionalProperties":false}`, browserParamList),
 	},
 }

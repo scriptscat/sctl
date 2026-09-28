@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"strings"
 	"testing"
 
 	. "github.com/smartystreets/goconvey/convey"
@@ -239,9 +240,18 @@ func TestBrowserTargetErrorExitCodes(t *testing.T) {
 		})
 
 		Convey("多实例在线且方法不可合并、未指定目标 → BROWSER_AMBIGUOUS,退出码 3(候选列表由 daemon 拼入 message,见 controlapi 层测试)", func() {
-			stubDaemon(t, control.CallResult{OK: false, Error: &control.CallError{Code: "BROWSER_AMBIGUOUS", Message: "ambiguous target: chrome-a, chrome-b are online; use --browser"}})
+			stubDaemon(t, control.CallResult{OK: false, Error: &control.CallError{Code: "BROWSER_AMBIGUOUS", Message: "several browsers are online, choose a target browser: chrome-a (id-a), chrome-b (id-b)"}})
 			code, _ := runCLI("tabs", "open", "https://example.com")
 			So(code, ShouldEqual, exitError)
+		})
+
+		Convey("多实例在线、操作类命令未指定目标 → 错误信息列出候选浏览器并要求加 --browser", func() {
+			stubDaemon(t, control.CallResult{OK: false, Error: &control.CallError{Code: "BROWSER_AMBIGUOUS", Message: "several browsers are online, choose a target browser: chrome-a (id-a), edge-b (id-b)"}})
+			code, _, _, err := runCLIResult(strings.NewReader(""), "tabs", "close", "5")
+			So(code, ShouldEqual, exitError)
+			So(err, ShouldNotBeNil)
+			So(err.Error(), ShouldContainSubstring, "chrome-a (id-a), edge-b (id-b)")
+			So(err.Error(), ShouldContainSubstring, "--browser")
 		})
 
 		Convey("调用进行时目标浏览器断开 → OPERATION_EXPIRED,退出码 2", func() {

@@ -38,8 +38,8 @@ framework and [cobra](https://github.com/spf13/cobra).
 
 ```text
 sctl mcp / CLI verbs  ──/control/* HTTP──▶  sctl serve (daemon)  ──WS──▶  ScriptCat extension (approval authority)
-internal/client/             internal/daemon/                      ├─▶  sctl Browser extension (1+ paired instances)
-                                                                    internal/pkg/ (shared by both sides)
+                                                                 └─WS──▶  sctl Browser extension (1+ paired instances)
+internal/client/             internal/daemon/                      internal/pkg/ (shared by both sides)
 ```
 
 The authority always lives on the extension side for ScriptCat's write and source-disclosure gates: the daemon

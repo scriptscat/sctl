@@ -50,6 +50,12 @@ func runCLICapture(args ...string) (int, string, string) {
 
 // runCLIStdin 与 runCLICapture 相同,但为命令喂入给定 stdin(`edit -f -` 从 stdin 读 edits 用)。
 func runCLIStdin(stdin io.Reader, args ...string) (int, string, string) {
+	code, out, errOut, _ := runCLIResult(stdin, args...)
+	return code, out, errOut
+}
+
+// runCLIResult 与 runCLIStdin 相同,另外返回命令的错误本身(其 Message 由 main 打印到 stderr)。
+func runCLIResult(stdin io.Reader, args ...string) (int, string, string, error) {
 	if address := os.Getenv("SCTL_BRIDGE_ADDR"); address != "" {
 		args = append([]string{"--listen-address", address}, args...)
 	}
@@ -75,7 +81,7 @@ func runCLIStdin(stdin io.Reader, args ...string) (int, string, string) {
 	wOut.Close()
 	wErr.Close()
 	os.Stdout, os.Stderr = oldOut, oldErr
-	return exitCodeOf(err), <-outCh, <-errCh
+	return exitCodeOf(err), <-outCh, <-errCh, err
 }
 
 func exitCodeOf(err error) int {

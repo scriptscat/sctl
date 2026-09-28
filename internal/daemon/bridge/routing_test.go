@@ -124,3 +124,52 @@ func TestMergedCallFailsWhenAnyInstanceFails(t *testing.T) {
 		So(got.resp.Result, ShouldBeNil)
 	})
 }
+
+func TestMergedListSkipsInstancesWithoutTheRequestedWindow(t *testing.T) {
+	Convey("未指定目标的列表类调用按窗口过滤时,没有该窗口的实例不贡献条目,整次调用仍汇总其余实例", t, func() {
+		h := startTestServer(t)
+		keyA := h.registerBrowser(instanceA, "chrome-0123")
+		keyB := h.registerBrowser(instanceB, "edge-fedc")
+		a := h.connectBrowser(instanceA, keyA, "chrome-0123")
+		b := h.connectBrowser(instanceB, keyB, "edge-fedc")
+		ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
+		defer cancel()
+
+		Convey("只有一个实例有该窗口:返回它的标签页,并标上来源浏览器", func() {
+			out := h.goCall(Request{Action: "tabs.list", Input: json.RawMessage(`{"windowId":7}`)})
+			reqA := a.read()
+			reqB := b.read()
+			So(wsjson.Write(ctx, a.ws, newError(reqA.ID, generated.ErrorCodeNotFound, "no window 7")), ShouldBeNil)
+			b.writeResult(reqB.ID, json.RawMessage(`{"tabs":[{"tabId":3,"windowId":7,"active":true,"pinned":false,"title":"t","url":"https://example.com/"}],"contentTrust":"untrusted-page-content"}`))
+
+			got := <-out
+			So(got.err, ShouldBeNil)
+			So(got.resp.OK, ShouldBeTrue)
+			var merged struct {
+				Tabs []struct {
+					TabID   int `json:"tabId"`
+					Browser struct {
+						Name string `json:"name"`
+					} `json:"browser"`
+				} `json:"tabs"`
+			}
+			So(json.Unmarshal(got.resp.Result, &merged), ShouldBeNil)
+			So(merged.Tabs, ShouldHaveLength, 1)
+			So(merged.Tabs[0].TabID, ShouldEqual, 3)
+			So(merged.Tabs[0].Browser.Name, ShouldEqual, "edge-fedc")
+		})
+
+		Convey("没有任何实例有该窗口:返回 NOT_FOUND", func() {
+			out := h.goCall(Request{Action: "tabs.list", Input: json.RawMessage(`{"windowId":7}`)})
+			reqA := a.read()
+			reqB := b.read()
+			So(wsjson.Write(ctx, a.ws, newError(reqA.ID, generated.ErrorCodeNotFound, "no window 7")), ShouldBeNil)
+			So(wsjson.Write(ctx, b.ws, newError(reqB.ID, generated.ErrorCodeNotFound, "no window 7")), ShouldBeNil)
+
+			got := <-out
+			So(got.err, ShouldBeNil)
+			So(got.resp.OK, ShouldBeFalse)
+			So(got.resp.Error.Code, ShouldEqual, generated.ErrorCodeNotFound)
+		})
+	})
+}

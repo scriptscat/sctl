@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom/vitest";
 import { createElement } from "react";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PairResult, RenameResult, SetAddressResult } from "@/shared/messages";
@@ -63,6 +63,13 @@ function fakeSessionStorage(initial: Record<string, unknown> = {}): SessionStora
 }
 
 const BASE = { instanceId: "3f2a9c0e5b7d41e8a6f0c2d4e6f80a1b", name: "chrome-3f2a", address: "127.0.0.1:8643" };
+const CONNECTED = {
+  status: "connected" as const,
+  daemonVersion: "0.2.0",
+  product: "Chrome",
+  productVersion: "129.0.6668.58",
+  connectedAt: 0,
+};
 
 function renderApp(
   state: ConnectionState,
@@ -115,6 +122,8 @@ describe("popup states (rendered from ConnectionState, zh and en)", () => {
       screen.getByRole("textbox", { name: lang === "zh" ? "输入终端显示的配对码" : "Enter the pairing code it shows" }),
     ).toBeDisabled();
     expect(screen.getByRole("button", { name: lang === "zh" ? "正在配对…" : "Pairing…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: lang === "zh" ? "设置" : "Settings" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: lang === "zh" ? "daemon 地址" : "Daemon address" })).toBeDisabled();
   });
 
   it.each(["zh", "en"] as const)("renders pair-failed (code-rejected) in %s", async (lang) => {
@@ -140,25 +149,64 @@ describe("popup states (rendered from ConnectionState, zh and en)", () => {
   });
 
   it.each(["zh", "en"] as const)("renders the connected state with instance details in %s", async (lang) => {
-    renderApp({ ...BASE, status: "connected", daemonVersion: "0.2.0" }, { lang });
-    await screen.findByText(BASE.name);
+    renderApp({ ...BASE, ...CONNECTED }, { lang });
+    const nameRow = await screen.findByRole("group", { name: lang === "zh" ? "实例名称" : "Instance name" });
+    expect(nameRow).toHaveTextContent(BASE.name);
+    expect(within(nameRow).getByRole("button", { name: lang === "zh" ? "重命名" : "Rename" })).toBeEnabled();
     expect(screen.getByRole("status")).toHaveTextContent(lang === "zh" ? "已连接" : "Connected");
-    expect(screen.getByRole("button", { name: lang === "zh" ? "重命名" : "Rename" })).toBeEnabled();
     expect(screen.getByText(new RegExp(`sctl tabs list --browser ${BASE.name}`))).toBeInTheDocument();
   });
 
+  it.each(["zh", "en"] as const)("copies the full instance ID in the connected state in %s", async (lang) => {
+    renderApp({ ...BASE, ...CONNECTED }, { lang });
+    const idRow = await screen.findByRole("definition", { name: lang === "zh" ? "实例 ID" : "Instance ID" });
+    const user = userEvent.setup();
+    const writeText = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+    await user.click(within(idRow).getByRole("button", { name: lang === "zh" ? "复制" : "Copy" }));
+    expect(writeText).toHaveBeenCalledWith(BASE.instanceId);
+  });
+
+  it.each(["zh", "en"] as const)(
+    "shows the browser, daemon version and time since the connection was established in %s",
+    async (lang) => {
+      // 弹窗在连接建立 2 小时后才打开：时长必须按连接建立的时刻计算，而不是从弹窗打开时算起。
+      renderApp({ ...BASE, ...CONNECTED, connectedAt: 1_000 }, { lang, now: () => 1_000 + 2 * 60 * 60 * 1000 });
+      const details = await screen.findByRole("definition", { name: lang === "zh" ? "浏览器" : "Browser" });
+      expect(details).toHaveTextContent("Chrome 129.0.6668.58");
+      expect(screen.getByRole("definition", { name: lang === "zh" ? "daemon" : "Daemon" })).toHaveTextContent("0.2.0");
+      expect(screen.getByRole("definition", { name: lang === "zh" ? "已连接" : "Connected for" })).toHaveTextContent(
+        lang === "zh" ? "2 小时" : "2 h",
+      );
+    },
+  );
+
   it.each(["zh", "en"] as const)("renders the renaming state when Rename is clicked in %s", async (lang) => {
-    renderApp({ ...BASE, status: "connected", daemonVersion: "0.2.0" }, { lang });
+    renderApp({ ...BASE, ...CONNECTED }, { lang });
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: lang === "zh" ? "重命名" : "Rename" }));
     expect(screen.getByLabelText(lang === "zh" ? "实例名称" : "Instance name")).toHaveValue(BASE.name);
     expect(screen.getByRole("button", { name: lang === "zh" ? "保存" : "Save" })).toBeInTheDocument();
   });
 
+  it.each(["zh", "en"] as const)("cancels renaming with Esc and keeps the name in %s", async (lang) => {
+    const { api } = fakeApi({ ...BASE, ...CONNECTED });
+    renderApp({ ...BASE, ...CONNECTED }, { lang, api });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: lang === "zh" ? "重命名" : "Rename" }));
+    const input = screen.getByLabelText(lang === "zh" ? "实例名称" : "Instance name");
+    await user.clear(input);
+    await user.type(input, "home{Escape}");
+    expect(screen.queryByRole("textbox", { name: lang === "zh" ? "实例名称" : "Instance name" })).toBeNull();
+    expect(screen.getByRole("group", { name: lang === "zh" ? "实例名称" : "Instance name" })).toHaveTextContent(
+      BASE.name,
+    );
+    expect(api.rename).not.toHaveBeenCalled();
+  });
+
   it.each(["zh", "en"] as const)("renders the name-taken (rename conflict) state in %s", async (lang) => {
-    const { api } = fakeApi({ ...BASE, status: "connected", daemonVersion: "0.2.0" });
+    const { api } = fakeApi({ ...BASE, ...CONNECTED });
     api.rename.mockResolvedValueOnce({ ok: false, error: "name-taken" });
-    renderApp({ ...BASE, status: "connected", daemonVersion: "0.2.0" }, { lang, api });
+    renderApp({ ...BASE, ...CONNECTED }, { lang, api });
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: lang === "zh" ? "重命名" : "Rename" }));
     const input = screen.getByLabelText(lang === "zh" ? "实例名称" : "Instance name");
@@ -199,7 +247,7 @@ describe("popup states (rendered from ConnectionState, zh and en)", () => {
   });
 
   it.each(["zh", "en"] as const)("renders the forget-confirmation dialog, focused on cancel, in %s", async (lang) => {
-    renderApp({ ...BASE, status: "connected", daemonVersion: "0.2.0" }, { lang });
+    renderApp({ ...BASE, ...CONNECTED }, { lang });
     const user = userEvent.setup();
     await user.click(
       await screen.findByRole("button", { name: lang === "zh" ? "断开并忘记" : "Disconnect and forget" }),
@@ -210,7 +258,7 @@ describe("popup states (rendered from ConnectionState, zh and en)", () => {
   });
 
   it.each(["zh", "en"] as const)("renders the settings screen in %s", async (lang) => {
-    renderApp({ ...BASE, status: "connected", daemonVersion: "0.2.0" }, { lang });
+    renderApp({ ...BASE, ...CONNECTED }, { lang });
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: lang === "zh" ? "设置" : "Settings" }));
     expect(screen.getByRole("radiogroup", { name: lang === "zh" ? "外观" : "Appearance" })).toBeInTheDocument();
@@ -222,7 +270,7 @@ describe("popup states (rendered from ConnectionState, zh and en)", () => {
 describe("settings persistence and live effect", () => {
   it("persists the chosen appearance and language to local storage", async () => {
     const localStorage = fakeLocalStorage();
-    const { getByRole } = renderApp({ ...BASE, status: "connected", daemonVersion: "0.2.0" }, { localStorage });
+    const { getByRole } = renderApp({ ...BASE, ...CONNECTED }, { localStorage });
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Settings" }));
     await user.click(getByRole("radio", { name: "Dark" }));
@@ -232,7 +280,7 @@ describe("settings persistence and live effect", () => {
   });
 
   it("applies the dark appearance to the document immediately", async () => {
-    renderApp({ ...BASE, status: "connected", daemonVersion: "0.2.0" });
+    renderApp({ ...BASE, ...CONNECTED });
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Settings" }));
     await user.click(screen.getByRole("radio", { name: "Dark" }));
@@ -240,7 +288,7 @@ describe("settings persistence and live effect", () => {
   });
 
   it("applies the chosen language immediately, without reopening the popup", async () => {
-    renderApp({ ...BASE, status: "connected", daemonVersion: "0.2.0" });
+    renderApp({ ...BASE, ...CONNECTED });
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Settings" }));
     await user.click(screen.getByRole("radio", { name: "中文" }));
@@ -249,10 +297,11 @@ describe("settings persistence and live effect", () => {
 
   it("restores previously saved appearance and language on the next open", async () => {
     const localStorage = fakeLocalStorage({ appearance: "dark", language: "zh" });
-    renderApp({ ...BASE, status: "connected", daemonVersion: "0.2.0" }, { localStorage });
+    renderApp({ ...BASE, ...CONNECTED }, { localStorage });
     // 等语言真正切到中文，确保 loadPrefs 的 Promise 已经落地，而不仅仅是连接状态已加载。
     await screen.findByText("让 sctl 控制这个浏览器");
-    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    // 深色类由 effect 在提交之后设置，文字出现时它可能还没执行。
+    await vi.waitFor(() => expect(document.documentElement.classList.contains("dark")).toBe(true));
   });
 });
 
@@ -282,22 +331,43 @@ describe("pairing code draft", () => {
     expect(sessionStorage.data.pairingCodeDraft).toBe("K7QM3XRD");
   });
 
-  it("clears the draft once pairing is accepted by the background", async () => {
+  it("keeps the draft when pairing cannot reach the daemon, so the code survives reopening the popup", async () => {
     const sessionStorage = fakeSessionStorage({ pairingCodeDraft: "K7QM3XRD" });
-    const { api } = fakeApi({ ...BASE, status: "unpaired" });
+    const { api, emit } = fakeApi({ ...BASE, status: "unpaired" });
     renderApp({ ...BASE, status: "unpaired" }, { sessionStorage, api });
     const user = userEvent.setup();
     await screen.findByDisplayValue("K7QM3XRD");
     await user.click(screen.getByRole("button", { name: "Pair" }));
     expect(api.pair).toHaveBeenCalledWith("K7QM3XRD");
-    expect(sessionStorage.data.pairingCodeDraft).toBeUndefined();
+    await act(async () => {
+      emit({ ...BASE, status: "pairing" });
+      emit({ ...BASE, status: "pair-unreachable" });
+      await Promise.resolve();
+    });
+    await screen.findByRole("alert");
+    expect(sessionStorage.data.pairingCodeDraft).toBe("K7QM3XRD");
+  });
+
+  it("clears the draft once pairing succeeds", async () => {
+    const sessionStorage = fakeSessionStorage({ pairingCodeDraft: "K7QM3XRD" });
+    const { api, emit } = fakeApi({ ...BASE, status: "unpaired" });
+    renderApp({ ...BASE, status: "unpaired" }, { sessionStorage, api });
+    const user = userEvent.setup();
+    await screen.findByDisplayValue("K7QM3XRD");
+    await user.click(screen.getByRole("button", { name: "Pair" }));
+    await act(async () => {
+      emit({ ...BASE, ...CONNECTED });
+      await Promise.resolve();
+    });
+    await screen.findByText(/sctl tabs list --browser/);
+    await vi.waitFor(() => expect(sessionStorage.data.pairingCodeDraft).toBeUndefined());
   });
 });
 
 describe("rename, forget and daemon address flows", () => {
   it("calls the popup API to rename and returns to the normal view on success", async () => {
-    const { api } = fakeApi({ ...BASE, status: "connected", daemonVersion: "0.2.0" });
-    renderApp({ ...BASE, status: "connected", daemonVersion: "0.2.0" }, { api });
+    const { api } = fakeApi({ ...BASE, ...CONNECTED });
+    renderApp({ ...BASE, ...CONNECTED }, { api });
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Rename" }));
     const input = screen.getByLabelText("Instance name");
@@ -313,8 +383,8 @@ describe("rename, forget and daemon address flows", () => {
   });
 
   it("calls forget on confirmation and leaves the dialog", async () => {
-    const { api } = fakeApi({ ...BASE, status: "connected", daemonVersion: "0.2.0" });
-    renderApp({ ...BASE, status: "connected", daemonVersion: "0.2.0" }, { api });
+    const { api } = fakeApi({ ...BASE, ...CONNECTED });
+    renderApp({ ...BASE, ...CONNECTED }, { api });
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Disconnect and forget" }));
     const dialog = await screen.findByRole("alertdialog");
@@ -323,8 +393,8 @@ describe("rename, forget and daemon address flows", () => {
   });
 
   it("does not call forget when cancel is chosen", async () => {
-    const { api } = fakeApi({ ...BASE, status: "connected", daemonVersion: "0.2.0" });
-    renderApp({ ...BASE, status: "connected", daemonVersion: "0.2.0" }, { api });
+    const { api } = fakeApi({ ...BASE, ...CONNECTED });
+    renderApp({ ...BASE, ...CONNECTED }, { api });
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Disconnect and forget" }));
     const dialog = await screen.findByRole("alertdialog");
@@ -333,8 +403,8 @@ describe("rename, forget and daemon address flows", () => {
   });
 
   it("calls setAddress with the new value and shows the invalid-address error otherwise", async () => {
-    const { api } = fakeApi({ ...BASE, status: "connected", daemonVersion: "0.2.0" });
-    renderApp({ ...BASE, status: "connected", daemonVersion: "0.2.0" }, { api });
+    const { api } = fakeApi({ ...BASE, ...CONNECTED });
+    renderApp({ ...BASE, ...CONNECTED }, { api });
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Settings" }));
     const addressField = screen.getByLabelText("Daemon address");
@@ -345,8 +415,8 @@ describe("rename, forget and daemon address flows", () => {
   });
 
   it("rejects an address that isn't host:port without calling the API", async () => {
-    const { api } = fakeApi({ ...BASE, status: "connected", daemonVersion: "0.2.0" });
-    renderApp({ ...BASE, status: "connected", daemonVersion: "0.2.0" }, { api });
+    const { api } = fakeApi({ ...BASE, ...CONNECTED });
+    renderApp({ ...BASE, ...CONNECTED }, { api });
     const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Settings" }));
     const addressField = screen.getByLabelText("Daemon address");
@@ -361,7 +431,7 @@ describe("rename, forget and daemon address flows", () => {
 describe("link stroke encodes the connection state", () => {
   it.each([
     ["unpaired", { ...BASE, status: "unpaired" as const }, undefined],
-    ["connected", { ...BASE, status: "connected" as const, daemonVersion: "0.2.0" }, undefined],
+    ["connected", { ...BASE, ...CONNECTED }, undefined],
     ["reconnecting", { ...BASE, status: "reconnecting" as const, attempt: 0, retryAt: null }, "5 5"],
     ["rejected", { ...BASE, status: "rejected" as const }, "10 14"],
   ])("draws a distinct stroke for %s", async (_label, state, expectedDash) => {
@@ -375,7 +445,7 @@ describe("link stroke encodes the connection state", () => {
 
 describe("accessibility", () => {
   it("announces the connection status through a polite live region", async () => {
-    renderApp({ ...BASE, status: "connected", daemonVersion: "0.2.0" });
+    renderApp({ ...BASE, ...CONNECTED });
     const status = await screen.findByRole("status");
     expect(status).toHaveAttribute("aria-live", "polite");
   });

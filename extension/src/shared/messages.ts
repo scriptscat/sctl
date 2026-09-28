@@ -14,6 +14,8 @@ export type SetAddressResult = { ok: true } | { ok: false; error: "invalid-addre
 export interface ConnectionConfig {
   instanceId: string;
   name: string;
+  // 配对总以默认名称登记（docs/specs 浏览器实例的身份与配对），即使此前改过名。
+  defaultName: string;
   address: string;
   // 长期会话密钥（小写 hex），未配对时为 null。
   key: string | null;

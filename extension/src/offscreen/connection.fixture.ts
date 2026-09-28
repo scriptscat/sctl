@@ -14,6 +14,7 @@ export function config(overrides: Partial<ConnectionConfig> = {}): ConnectionCon
   return {
     instanceId: INSTANCE_ID,
     name: "chrome-3f2a",
+    defaultName: "chrome-3f2a",
     address: "127.0.0.1:8643",
     key: SESSION_KEY,
     methods: ["tabs.list"],

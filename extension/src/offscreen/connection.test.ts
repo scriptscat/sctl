@@ -39,6 +39,9 @@ describe("session handshake", () => {
     expect(h.state()).toEqual({
       status: "connected",
       daemonVersion: "0.1.0",
+      product: "Chrome",
+      productVersion: "129.0.6668.58",
+      connectedAt: h.timers.now(),
       instanceId: INSTANCE_ID,
       name: "chrome-3f2a",
       address: "127.0.0.1:8643",
@@ -224,6 +227,21 @@ describe("pairing", () => {
     expect(h.state()).toMatchObject({ status: "pair-failed", reason: "name-taken" });
     expect(h.persisted.keys).toEqual([]);
     expect(h.timers.pending()).toBe(0);
+  });
+
+  it("registers the default name when pairing again after the instance was renamed", async () => {
+    const h = harness({ key: null, name: "work" });
+    h.connection.pair(PAIRING_CODE);
+    const socket = h.socket();
+    socket.open();
+    await authenticate(socket, { auth: { mode: "pairing", code: PAIRING_CODE, deliverKey: DELIVERED_KEY } });
+    const capabilities = await hello(socket);
+    expect(capabilities.params?.peer).toMatchObject({ name: "chrome-3f2a" });
+
+    socket.receive({ jsonrpc: "2.0", id: capabilities.id, result: {} });
+    await until(() => h.state().status === "connected");
+    expect(h.state().name).toBe("chrome-3f2a");
+    expect(h.persisted.keys).toEqual([{ key: DELIVERED_KEY, name: "chrome-3f2a" }]);
   });
 
   it("stays unpaired when forgotten while the new pairing is still being saved", async () => {

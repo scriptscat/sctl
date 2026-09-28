@@ -414,3 +414,91 @@ func TestToolDescriptionsAreStatic(t *testing.T) {
 		})
 	})
 }
+
+func TestBrowserToolsForwardTheOptionalBrowserArgument(t *testing.T) {
+	Convey("浏览器工具把可选的 browser 参数作为目标转发给 daemon,且不混入方法输入", t, func() {
+		p := loadProto(t)
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{"tabId":7}`)}}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+
+		_, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+			Name:      "tabs_open",
+			Arguments: map[string]any{"url": "https://example.com", "browser": "work"},
+		})
+		So(err, ShouldBeNil)
+		_, err = session.CallTool(context.Background(), &mcp.CallToolParams{Name: "windows_list", Arguments: map[string]any{}})
+		So(err, ShouldBeNil)
+
+		So(caller.actions, ShouldResemble, []string{"tabs.open", "windows.list"})
+		So(caller.browserParams, ShouldResemble, []string{"work", ""})
+		So(string(caller.inputs[0]), ShouldEqual, `{"url":"https://example.com"}`)
+	})
+
+	Convey("除 browsers_list 外,每个浏览器工具都声明可选的 browser 参数", t, func() {
+		p := loadProto(t)
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: &fakeCaller{}}, nil)
+		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+		So(err, ShouldBeNil)
+		for _, name := range []string{"tabs_list", "tabs_open", "tabs_close", "tabs_activate", "windows_list"} {
+			So(schemaPropsOf(toolByName(res, name)), ShouldContainKey, "browser")
+		}
+		So(schemaPropsOf(toolByName(res, "browsers_list")), ShouldNotContainKey, "browser")
+	})
+}
+
+func TestBrowserParameterDescribesListAggregation(t *testing.T) {
+	Convey("browser 参数的说明与目标选择表一致:列表类工具汇总所有在线浏览器,操作类工具要求指定", t, func() {
+		p := loadProto(t)
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: &fakeCaller{}}, nil)
+		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+		So(err, ShouldBeNil)
+		browserDescription := func(tool string) string {
+			prop, ok := schemaPropsOf(toolByName(res, tool))["browser"].(map[string]any)
+			So(ok, ShouldBeTrue)
+			desc, _ := prop["description"].(string)
+			return desc
+		}
+		for _, name := range []string{"tabs_list", "windows_list"} {
+			So(browserDescription(name), ShouldContainSubstring, "every online browser")
+			So(browserDescription(name), ShouldNotContainSubstring, "returns error")
+		}
+		for _, name := range []string{"tabs_open", "tabs_close", "tabs_activate"} {
+			So(browserDescription(name), ShouldContainSubstring, "returns error")
+		}
+	})
+}
+
+func TestBrowserToolsNeverReportWaitingForApproval(t *testing.T) {
+	Convey("浏览器工具没有人工审批,等待期间不发「等待浏览器审批」的 progress", t, func() {
+		p := loadProto(t)
+		old := progressInterval
+		progressInterval = 10 * time.Millisecond
+		defer func() { progressInterval = old }()
+
+		var progressCount atomic.Int32
+		block := make(chan struct{})
+		caller := &fakeCaller{block: block, result: control.CallResult{OK: true, Result: json.RawMessage(`{"tabs":[]}`)}}
+		opts := &mcp.ClientOptions{
+			ProgressNotificationHandler: func(_ context.Context, _ *mcp.ProgressNotificationClientRequest) {
+				progressCount.Add(1)
+			},
+		}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, opts)
+
+		resCh := make(chan *mcp.CallToolResult, 1)
+		go func() {
+			res, _ := session.CallTool(context.Background(), &mcp.CallToolParams{
+				Name:      "tabs_list",
+				Arguments: map[string]any{},
+				Meta:      mcp.Meta{"progressToken": "tok-browser"},
+			})
+			resCh <- res
+		}()
+		// 阻塞远超 progress 间隔,足以让任何 ticker 触发多次。
+		time.Sleep(100 * time.Millisecond)
+		close(block)
+		res := <-resCh
+		So(res.IsError, ShouldBeFalse)
+		So(progressCount.Load(), ShouldEqual, 0)
+	})
+}

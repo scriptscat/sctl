@@ -78,8 +78,8 @@ internal/pkg/               # ── shared by both sides ──
   fsutil/                   #   atomic file writes
 
 extension/                  # ── sctl Browser, the second extension kind (MV3, pnpm/Vite/React) ──
-  src/background/           #   service worker: connection state, message routing to offscreen/popup
-  src/offscreen/            #   holds the WebSocket, pairing and session handshake, retry/backoff
+  src/background/           #   service worker: identity and settings storage, message routing, method dispatch
+  src/offscreen/            #   holds the WebSocket and connection state, pairing and session handshake, retry/backoff
   src/handlers/             #   tabs.*/windows.* method implementations (chrome.tabs / chrome.windows)
   src/popup/                #   popup UI: pairing, rename, forget, daemon address
   src/protocol/generated/   #   browser-only generated protocol TS (see protocol.md §6)

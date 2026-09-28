@@ -222,7 +222,9 @@ func describeTargets(targets []browserTarget) string {
 }
 
 // callMerged 把列表类调用并发发给每个目标,并把各结果的 mergeField 数组按目标顺序拼接。
-// 任一目标失败都使整次调用失败,不返回部分结果:按目标顺序取第一个传输错误,其次第一个对端错误。
+// 回 NOT_FOUND 的目标(例如没有所请求窗口的浏览器)不贡献条目:窗口 ID 只在各自浏览器内有意义,
+// 只有全部目标都回 NOT_FOUND 时整次调用才是 NOT_FOUND。其余任一目标失败都使整次调用失败,不返回
+// 部分结果:按目标顺序取第一个传输错误,其次第一个对端错误。
 func (s *Server) callMerged(ctx context.Context, targets []browserTarget, req Request, mergeField string) (Response, error) {
 	responses := make([]Response, len(targets))
 	errs := make([]error, len(targets))
@@ -241,12 +243,26 @@ func (s *Server) callMerged(ctx context.Context, targets []browserTarget, req Re
 			return Response{}, err
 		}
 	}
-	for _, resp := range responses {
-		if !resp.OK {
+	var found []browserTarget
+	var results []Response
+	var notFound *Response
+	for i, resp := range responses {
+		switch {
+		case resp.OK:
+			found = append(found, targets[i])
+			results = append(results, resp)
+		case resp.Error.Code == generated.ErrorCodeNotFound:
+			if notFound == nil {
+				notFound = &responses[i]
+			}
+		default:
 			return resp, nil
 		}
 	}
-	merged, err := mergeResults(targets, responses, mergeField)
+	if len(results) == 0 {
+		return *notFound, nil
+	}
+	merged, err := mergeResults(found, results, mergeField)
 	if err != nil {
 		return Response{}, err
 	}

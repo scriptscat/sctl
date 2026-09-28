@@ -63,6 +63,10 @@ func dispatchAction(cmd *cobra.Command, action, browser string, input json.RawMe
 		}
 		return nil
 	}
+	// daemon 的候选列表对 CLI 与 MCP 通用;只有 CLI 知道目标写在 --browser 上。
+	if browser == "" && res.Error != nil && res.Error.Code == "BROWSER_AMBIGUOUS" {
+		return &ExitError{Code: exitError, Message: res.Error.Error() + "; pass --browser <name> or set SCTL_BROWSER"}
+	}
 	return mapBridgeError(res.Error)
 }
 

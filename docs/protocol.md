@@ -258,9 +258,11 @@ only if no name matches is it treated as an instance-ID prefix over every paired
 
 A combined call is sent to every online instance at once. The result is the first instance's result with its
 `mergeField` array replaced by the concatenation of every instance's array, in instance-name order, and each
-item gains a `browser` object naming its source: `{"id": "<instance ID>", "name": "<instance name>"}`. Any
-failing instance fails the whole call; partial results are never returned. A call routed to a single instance
-returns that instance's result unchanged.
+item gains a `browser` object naming its source: `{"id": "<instance ID>", "name": "<instance name>"}`. An
+instance that answers `NOT_FOUND` — for example, it has no window with the requested ID — contributes no items;
+the call fails with `NOT_FOUND` only when every instance answers it. Any other failing instance fails the whole
+call; partial results are never returned. A call routed to a single instance returns that instance's result
+unchanged.
 
 A target on a `scripts.*` call is rejected with `INVALID_REQUEST`; otherwise `scripts.*` routing and its errors do
 not depend on browser instances. If the target connection closes while a call is in flight — for a combined
@@ -295,7 +297,7 @@ These codes are reserved for browser target selection failures ([§3.1](#31-rout
 |---|---|
 | `NO_BROWSER_CONNECTED` | a browser method was called while no browser instance is online |
 | `BROWSER_OFFLINE` | the target names a paired browser instance that is not connected |
-| `BROWSER_NOT_FOUND` | the target matches no paired browser instance |
+| `BROWSER_NOT_FOUND` | the target matches no paired browser instance; `/control/browsers/forget` returns it too when the name or ID matches none |
 | `BROWSER_AMBIGUOUS` | the target instance-ID prefix matches more than one paired instance, or a method without `mergeField` was called without a target while several instances are online |
 
 ## 5. Cancellation and approval

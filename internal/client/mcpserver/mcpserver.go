@@ -164,9 +164,7 @@ func registerBrowsersListTool(srv *mcp.Server, caller BridgeCaller) {
 		if err := schema.Validate(input); err != nil {
 			return nil, fmt.Errorf("invalid %s arguments: %w", toolName, err)
 		}
-		stop := startProgress(ctx, req)
 		browsers, err := caller.Browsers(ctx)
-		stop()
 		if err != nil {
 			return nil, err
 		}
@@ -182,20 +180,21 @@ func registerBrowsersListTool(srv *mcp.Server, caller BridgeCaller) {
 	})
 }
 
-// handleCall 转发工具调用到 daemon,并在等待期间发 progress。浏览器方法使用 CallBrowser,
-// scripts 方法使用 Call。桥接业务错误(拒绝/过期/scope 等)作为 IsError 工具结果返回
+// handleCall 转发工具调用到 daemon。scripts 方法使用 Call,等待期间发 progress;浏览器方法使用
+// CallBrowser。桥接业务错误(拒绝/过期/scope 等)作为 IsError 工具结果返回
 // (模型可见并自我纠正);传输/取消错误作为协议级错误返回。
 func handleCall(ctx context.Context, req *mcp.CallToolRequest, action, browser string, caller BridgeCaller) (*mcp.CallToolResult, error) {
 	input := req.Params.Arguments
-	stop := startProgress(ctx, req)
 	var res control.CallResult
 	var err error
 	if isBrowserAction(action) {
+		// 浏览器方法没有人工审批(spec 设计决策 3),不发「等待浏览器审批」的 progress。
 		res, err = caller.CallBrowser(ctx, action, browser, input)
 	} else {
+		stop := startProgress(ctx, req)
 		res, err = caller.Call(ctx, action, input)
+		stop()
 	}
-	stop()
 	if err != nil {
 		return nil, err
 	}

@@ -91,7 +91,7 @@ type EnrollResult struct {
 }
 
 // BrowserInfo 是一个已配对浏览器实例的当前视图,镜像 bridge.InstanceInfo(控制 API 不直接暴露
-// bridge 类型,见 internal/daemon/controlapi 的窄接口约定)。离线实例的 ConnectedAt 为零值。
+// bridge 类型,见 internal/daemon/controlapi 的窄接口约定)。离线实例的 ConnectedAt 为零值,JSON 中省略。
 type BrowserInfo struct {
 	ID               string    `json:"id"`
 	Name             string    `json:"name"`
@@ -99,7 +99,7 @@ type BrowserInfo struct {
 	Product          string    `json:"product,omitempty"`
 	ProductVersion   string    `json:"productVersion,omitempty"`
 	ExtensionVersion string    `json:"extensionVersion,omitempty"`
-	ConnectedAt      time.Time `json:"connectedAt,omitempty"`
+	ConnectedAt      time.Time `json:"connectedAt,omitzero"`
 }
 
 // BrowsersResult 是 /control/browsers 的响应体:全部已配对浏览器实例(在线与离线)。
