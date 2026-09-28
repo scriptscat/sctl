@@ -53,7 +53,7 @@ export function Tether({
   return (
     <div className="flex items-center gap-2 rounded-xl bg-[var(--surface)] px-3 py-3">
       <div className="flex w-[92px] flex-col items-center gap-1 text-center">
-        <Globe className="size-5 text-primary" aria-hidden />
+        <Globe className="size-5 text-[var(--brand)]" aria-hidden />
         {paired ? (
           <span className={cn("max-w-full truncate text-sm font-semibold", mono)}>{name}</span>
         ) : (
@@ -86,7 +86,7 @@ export function Tether({
         </span>
       </div>
       <div className="flex w-[92px] flex-col items-center gap-1 text-center">
-        <SquareTerminal className="size-5 text-primary" aria-hidden />
+        <SquareTerminal className="size-5 text-[var(--brand)]" aria-hidden />
         <span className={cn("text-[11px] text-muted-foreground", mono)}>{address}</span>
       </div>
     </div>

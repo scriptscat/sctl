@@ -36,8 +36,10 @@
 }
 
 /*
- * 同门配色：以 ScriptCat 的天蓝色为基础（docs/specs 扩展弹窗「视觉规范」表，浅色/深色各一套）。
- * 浅色主色 #1296DB、深色主色 #3AA9E6，其余数值均取自同一张表。
+ * 同门配色：以 ScriptCat 的天蓝色为基础（docs/specs 扩展弹窗「视觉规范」表，浅色/深色各一套，
+ * 2b4dd1a 修订）。品牌天蓝 --brand 只用于不承载文字的装饰元素（连线区的图标等）；凡是作文字颜色、
+ * 或作白字按钮底色的地方一律用 --primary，浅色模式取同色相的加深值以满足 4.5:1 对比度，深色模式两者
+ * 数值相同，因为原值已经达标。
  */
 :root {
   --radius: 0.625rem;
@@ -47,7 +49,8 @@
   --card-foreground: #1b2733;
   --popover: #ffffff;
   --popover-foreground: #1b2733;
-  --primary: #1296db;
+  --brand: #1296db;
+  --primary: #0e77ae;
   --primary-foreground: #ffffff;
   --secondary: #f2f7fb;
   --secondary-foreground: #1b2733;
@@ -60,9 +63,9 @@
   --input: #dce5ed;
   --ring: #1296db;
   --surface: #f2f7fb;
-  --ok: #16a06a;
-  --warn: #d48806;
-  --bad: #d6453d;
+  --ok: #128155;
+  --warn: #9d6504;
+  --bad: #d2352c;
   --bad-foreground: #ffffff;
 }
 
@@ -73,6 +76,7 @@
   --card-foreground: #e4ecf3;
   --popover: #131a21;
   --popover-foreground: #e4ecf3;
+  --brand: #3aa9e6;
   --primary: #3aa9e6;
   --primary-foreground: #0a1622;
   --secondary: #1a232c;
