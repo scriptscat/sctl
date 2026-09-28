@@ -97,29 +97,45 @@ sctl status
 
 If it reports that the daemon is unreachable, fix that before configuring an MCP client.
 
-## 4. Enroll ScriptCat once
+## 4. Enroll ScriptCat and sctl Browser
 
-1. Open ScriptCat's options page and enable **External Access**.
-2. Keep `sctl serve` running.
-3. In another terminal, run:
+ScriptCat and the **sctl Browser** extension (browser tab/window control; see
+[architecture.md](./architecture.md) for how the daemon tells the two kinds of extension apart) each pair
+independently, but both use the same one-time-code flow against the same running `sctl serve`:
+
+1. Keep `sctl serve` running.
+2. In another terminal, run:
 
    ```bash
    sctl connect
    ```
 
-4. Enter the displayed one-time code in ScriptCat's External Access enrollment dialog.
+3. Enter the displayed one-time code:
+   - For ScriptCat: open its options page, enable **External Access**, and enter the code in the enrollment
+     dialog.
+   - For sctl Browser: download `sctl-browser-extension-<version>.zip` from
+     [GitHub Releases](https://github.com/scriptscat/sctl/releases) (its version matches the sctl release),
+     unzip it, open your browser's extensions page, enable developer mode, choose "Load unpacked", and select
+     the unzipped folder. Open the extension's popup and enter the same code.
+4. Run `sctl connect` again for the second extension if you want to pair both — the code is valid only for a
+   short enrollment window, and either extension can consume it first.
 5. Verify the connection:
 
    ```bash
    sctl status
+   sctl browsers
    ```
 
-The status output must say that the extension is connected. The one-time code is valid only for the enrollment
-window and must not be pasted into an AI conversation, issue, log, or MCP configuration. After enrollment, the
-extension and daemon use the persisted long-term pairing state; each AI client does not enroll separately.
+`sctl status` reports whether ScriptCat is connected; `sctl browsers` lists every paired sctl Browser instance
+with its online/offline state. The one-time code must not be pasted into an AI conversation, issue, log, or MCP
+configuration. After enrollment, each extension and the daemon use their own persisted long-term pairing state;
+each AI client does not enroll separately, and multiple sctl Browser instances can stay paired and connected at
+the same time.
 
-Disabling External Access in ScriptCat revokes the extension side of this relationship. Run `connect` again if
-you intentionally revoke it and later want to reconnect.
+Disabling External Access in ScriptCat, or removing the sctl Browser extension, revokes that extension's side
+of the relationship. `sctl browsers forget <name|id>` removes a paired sctl Browser instance from the daemon
+side and disconnects it if online. Run `connect` again if you intentionally revoke a pairing and later want to
+reconnect.
 
 ## 5. Configure the MCP client
 
@@ -178,6 +194,13 @@ AI client → sctl mcp → sctl serve → ScriptCat → JSON-RPC response
 Reading script source can open a source-disclosure prompt in ScriptCat. Installing, editing, enabling,
 disabling, and deleting scripts block until the user approves or rejects the operation in the browser. This is
 expected behavior, not an MCP timeout; the security model is detailed in [threat-model.md](./threat-model.md).
+
+`sctl mcp` always also exposes `browsers_list`, `tabs_list`, `tabs_open`, `tabs_close`, `tabs_activate`, and
+`windows_list`, whether or not an sctl Browser instance is paired; calling a tab/window tool with no browser
+instance connected returns an error. Every tool except `browsers_list` accepts an optional `browser` argument
+(name or instance-ID prefix) to pick a target when more than one instance is paired; `browsers_list` itself
+lists the paired instances. Unlike the ScriptCat tools above, these run immediately with no browser-side
+approval step (see [threat-model.md](./threat-model.md)).
 
 ## Troubleshooting
 

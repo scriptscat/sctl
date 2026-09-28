@@ -4,21 +4,29 @@
 
 ```text
 MCP client (Claude/Codex…) ─ stdio ─→ sctl mcp ─┐ (authenticated control API)
-CLI verbs (sctl get / edit / install …)─────────┤
+CLI verbs (sctl get / edit / install / browsers / tabs / windows …) ┤
                                                 ▼
                           sctl serve (daemon; defaults to 127.0.0.1:8643)
-                                                ▲ WebSocket (extension dials in + mutual HMAC handshake)
-                          ScriptCat browser extension (authority for approval and authorization)
+                                                ▲ WebSocket (each extension dials in + mutual HMAC handshake)
+                     ScriptCat browser extension (authority for write approval and source disclosure)
+                     sctl Browser extension, one or more paired instances (tab/window control)
 ```
 
 `sctl mcp` and the CLI verbs are **separate processes** from `sctl serve`. They talk over the
-`/control/*` HTTP/JSON control API on the daemon's listener — same port as the extension's WS surface, separate
+`/control/*` HTTP/JSON control API on the daemon's listener — same port as the extensions' WS surface, separate
 path, authenticated with the control token described in [threat-model.md](./threat-model.md#4-the-control-channel-internal-local-connection-in-detail).
 Frontends never start `serve`: run it
 explicitly in the foreground or let an external system service manager own its lifecycle.
 
-The authority always lives on the extension side: the daemon approves no write on its own — it forwards the
-request and blocks until a human decides in the browser. Details in [threat-model.md](./threat-model.md).
+The daemon accepts two kinds of extension connection at once: exactly one active ScriptCat connection (a new
+one replaces the previous one), and any number of paired `sctl Browser` instances connecting simultaneously,
+each identified by its own instance ID. A call is routed by which peer kind owns its method (scripts.\* to
+ScriptCat, tabs.\*/windows.\* to a resolved browser instance) — see
+[protocol.md](./protocol.md#31-routing-and-target-selection). For ScriptCat's methods, the daemon approves no
+write on its own — it forwards the request and blocks until a human decides in the browser, and source reads
+go through the same disclosure gate. Browser control methods carry no such human gate by design: any
+control-token holder can drive a paired browser instance immediately. Details in
+[threat-model.md](./threat-model.md).
 
 ## Directory layout
 
@@ -37,6 +45,8 @@ internal/cli/               # subcommand definitions; spans both sides, hence to
   connect.go status.go version.go
   get.go grep.go            #   read verbs
   edit.go write.go          #   write verbs (edit / install / enable / disable / delete)
+  browsers.go               #   sctl browsers [list] / sctl browsers forget <name|id>
+  tabs.go windows.go        #   sctl tabs list|open|close|activate, sctl windows list
   resource.go               #   the optional scripts|script|sc resource word shared by those verbs
   dispatch.go               #   action forwarding and bridge error → exit code mapping
 
@@ -50,7 +60,9 @@ internal/daemon/            # ── sctl serve side ──
     envelope.go             #     envelope, payload structs, error codes
   controlapi/               #   /control/* handlers (controller role), depends on the narrow Bridge interface
   auth/                     #   mutual HMAC handshake, enrollment-code derivation (HKDF), key delivery (AES-GCM)
-  store/                    #   persistence of the long-term key K (repository role)
+  store/                    #   persistence (repository role): ScriptCat's long-term key K, plus the
+                             #     browsers.json registry of paired sctl Browser instances and their own
+                             #     per-instance keys
   ratelimit/                #   enrollment-attempt rate limiting
 
 internal/client/            # ── sctl mcp / CLI verb side ──
@@ -64,6 +76,13 @@ internal/pkg/               # ── shared by both sides ──
   paths/                    #   data directory and derived paths
   logging/                  #   unified zap logging (stderr + <dataDir>/logs/*.log, never stdout)
   fsutil/                   #   atomic file writes
+
+extension/                  # ── sctl Browser, the second extension kind (MV3, pnpm/Vite/React) ──
+  src/background/           #   service worker: connection state, message routing to offscreen/popup
+  src/offscreen/            #   holds the WebSocket, pairing and session handshake, retry/backoff
+  src/handlers/             #   tabs.*/windows.* method implementations (chrome.tabs / chrome.windows)
+  src/popup/                #   popup UI: pairing, rename, forget, daemon address
+  src/protocol/generated/   #   browser-only generated protocol TS (see protocol.md §6)
 ```
 
 ## Dependency direction

@@ -3,8 +3,8 @@
 [English](../README.md) | [简体中文](./README_zh-CN.md)
 
 sctl 用于将 AI 客户端和命令行工作流连接到
-[ScriptCat](https://github.com/scriptscat/scriptcat) 浏览器扩展。单个跨平台二进制同时提供本地桥接
-daemon、stdio MCP Server 和脚本管理命令。
+[ScriptCat](https://github.com/scriptscat/scriptcat) 浏览器扩展,以及它自己的 **sctl Browser**
+浏览器扩展。单个跨平台二进制同时提供本地桥接 daemon、stdio MCP Server、脚本管理命令和浏览器控制命令。
 
 ```text
 AI 客户端 ── stdio MCP ──▶ sctl mcp ── 本地控制 API ──▶ sctl serve ── WebSocket ──▶ ScriptCat
@@ -15,9 +15,10 @@ CLI ─────────────────────────�
 
 ## 功能
 
-- 将 ScriptCat 操作暴露为可发现、具有 Schema 类型的 MCP 工具。
+- 将 ScriptCat 操作与浏览器标签页/窗口控制暴露为可发现、具有 Schema 类型的 MCP 工具。
 - 列出脚本并读取元数据或源码，支持按行读取和源码搜索。
 - 通过浏览器确认请求安装、基于内容锚点的编辑、启用/禁用和删除。
+- 在一个或多个已配对的 sctl Browser 实例上列出、打开、关闭、激活标签页,以及列出窗口。
 - 在仅监听回环地址的 WebSocket 上使用 JSON-RPC 2.0 和双向认证。
 - 单二进制交付，不依赖浏览器自动化或 Native Messaging Host。
 
@@ -56,8 +57,14 @@ sctl connect
 sctl status
 ```
 
-在 ScriptCat 中启用**外部接入**，然后输入 `connect` 打印的一次性配对码。随后将 AI
-客户端配置为启动：
+在 ScriptCat 中启用**外部接入**，然后输入 `connect` 打印的一次性配对码。
+
+若还要配对 **sctl Browser** 扩展(标签页/窗口控制),从 [GitHub Releases](https://github.com/scriptscat/sctl/releases)
+下载 `sctl-browser-extension-<version>.zip` 并解压,在浏览器的扩展管理页把解压后的目录作为"已解压的扩展程序"加载,
+打开其弹窗并输入 `sctl connect` 打印的同一个一次性配对码。完整步骤(含浏览器的"开发者模式"开关)见
+[`mcp.md`](./mcp.md#4-enroll-scriptcat-and-sctl-browser)(英文)。
+
+随后将 AI 客户端配置为启动：
 
 ```text
 /absolute/path/to/sctl mcp --name my-ai-client
@@ -81,9 +88,14 @@ sctl status
 | `sctl edit <uuid>` | 请求基于内容锚点编辑源码。 |
 | `sctl enable <uuid>` / `sctl disable <uuid>` | 请求修改启用状态。 |
 | `sctl delete <uuid>` | 请求删除脚本。 |
+| `sctl browsers [list]` / `sctl browsers forget <name\|id>` | 列出已配对的 sctl Browser 实例，或忘记其中一个。 |
+| `sctl tabs list\|open\|close\|activate` | 在已配对的 sctl Browser 实例上列出、打开、关闭或激活标签页。 |
+| `sctl windows list` | 列出已配对的 sctl Browser 实例上的窗口。 |
 
 运行 `sctl --help` 或 `sctl <command> --help` 查看用法和参数。写操作会阻塞，直到用户在
-ScriptCat 中批准、拒绝或关闭确认流程。
+ScriptCat 中批准、拒绝或关闭确认流程；浏览器控制命令按设计没有审批步骤、立即执行(参见
+[`threat-model.md`](./threat-model.md))。当配对了多个实例时，`tabs` 与 `windows` 可用
+`--browser <name|id>`（或环境变量 `SCTL_BROWSER`）指定目标实例。
 
 ## 许可证
 
