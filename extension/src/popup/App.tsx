@@ -409,11 +409,7 @@ export function App({
             <Note tone="warn" icon={Unplug} title={s.reconnectTitle}>
               {state.retryAt === null
                 ? s.reconnectingNow
-                : s.reconnectBody(
-                    state.attempt + 1,
-                    Math.max(0, Math.ceil((state.retryAt - now()) / 1000)),
-                    state.address,
-                  )}
+                : s.reconnectBody(state.attempt, Math.max(0, Math.ceil((state.retryAt - now()) / 1000)), state.address)}
             </Note>
           )}
           {state.status === "rejected" && !pairAgainActive && (

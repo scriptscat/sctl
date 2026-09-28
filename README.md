@@ -66,8 +66,9 @@ Enable **External Access** in ScriptCat and enter the one-time code printed by `
 To also pair the **sctl Browser** extension (tab/window control), download
 `sctl-browser-extension-<version>.zip` from [GitHub Releases](https://github.com/scriptscat/sctl/releases),
 unzip it, and load the unzipped folder as an unpacked extension from your browser's extensions page. Open its
-popup and enter the same one-time code from `sctl connect`. Full steps, including the browser's "developer
-mode" toggle, are in [`docs/mcp.md`](./docs/mcp.md#4-enroll-scriptcat-and-sctl-browser).
+popup and enter a one-time code from `sctl connect`; a code pairs only one extension, so run `connect` again if
+ScriptCat already used it. Full steps, including the browser's "developer mode" toggle, are in
+[`docs/mcp.md`](./docs/mcp.md#4-enroll-scriptcat-and-sctl-browser).
 
 Then configure the AI client to launch:
 
@@ -85,8 +86,8 @@ troubleshooting.
 | Command | Purpose |
 |---|---|
 | `sctl serve` | Run the local bridge daemon. |
-| `sctl connect` | Open a one-time ScriptCat enrollment window. |
-| `sctl mcp [--name <label>]` | Serve ScriptCat tools over stdio MCP. |
+| `sctl connect` | Open a one-time enrollment window for ScriptCat or sctl Browser. |
+| `sctl mcp [--name <label>]` | Serve ScriptCat and sctl Browser tools over stdio MCP. |
 | `sctl status` | Show daemon and extension connection status. |
 | `sctl get [<uuid>]` | List scripts or read one script. |
 | `sctl grep <uuid> <query>` | Search one script's source. |
@@ -101,7 +102,7 @@ troubleshooting.
 Run `sctl --help` or `sctl <command> --help` for usage and flags. Write operations block
 until the user approves, rejects, or closes the confirmation flow in ScriptCat; browser control commands run
 immediately with no approval step (see [`docs/threat-model.md`](./docs/threat-model.md)). `tabs` and `windows`
-accept `--browser <name|id>` (or `SCTL_BROWSER`) to pick an instance when more than one is paired.
+accept `--browser <name|id>` (or `SCTL_BROWSER`) to pick an instance when more than one is online.
 
 ## License
 

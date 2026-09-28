@@ -19,7 +19,8 @@ export type StatusDetail =
   // product/productVersion 是本浏览器自报给 daemon 的品牌与版本；connectedAt 是握手完成的时间戳（毫秒），
   // 弹窗据此计算已连接时长，重新打开弹窗也不会从零算起。
   | { status: "connected"; daemonVersion: string; product: string; productVersion: string; connectedAt: number }
-  // attempt 是连续失败的次数（0 表示首次连接）；retryAt 是下一次重试的时间戳（毫秒），正在尝试时为 null。
+  // attempt 是连续失败的次数（0 表示首次连接），也是倒计时结束时那次重试的序号；retryAt 是下一次重试的时间戳（毫秒），
+  // 正在尝试时为 null。
   | { status: "reconnecting"; attempt: number; retryAt: number | null }
   | { status: "rejected" };
 

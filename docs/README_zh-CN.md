@@ -61,8 +61,8 @@ sctl status
 
 若还要配对 **sctl Browser** 扩展(标签页/窗口控制),从 [GitHub Releases](https://github.com/scriptscat/sctl/releases)
 下载 `sctl-browser-extension-<version>.zip` 并解压,在浏览器的扩展管理页把解压后的目录作为"已解压的扩展程序"加载,
-打开其弹窗并输入 `sctl connect` 打印的同一个一次性配对码。完整步骤(含浏览器的"开发者模式"开关)见
-[`mcp.md`](./mcp.md#4-enroll-scriptcat-and-sctl-browser)(英文)。
+打开其弹窗并输入 `sctl connect` 打印的一次性配对码;一个码只能配对一个扩展,若已被 ScriptCat 用掉,就再运行一次
+`connect`。完整步骤(含浏览器的"开发者模式"开关)见[`mcp.md`](./mcp.md#4-enroll-scriptcat-and-sctl-browser)(英文)。
 
 随后将 AI 客户端配置为启动：
 
@@ -79,8 +79,8 @@ sctl status
 | 命令 | 用途 |
 |---|---|
 | `sctl serve` | 运行本地桥接 daemon。 |
-| `sctl connect` | 打开一次性 ScriptCat 接入窗口。 |
-| `sctl mcp [--name <label>]` | 通过 stdio MCP 提供 ScriptCat 工具。 |
+| `sctl connect` | 打开一次性接入窗口,供 ScriptCat 或 sctl Browser 配对。 |
+| `sctl mcp [--name <label>]` | 通过 stdio MCP 提供 ScriptCat 与 sctl Browser 工具。 |
 | `sctl status` | 查看 daemon 和扩展的连接状态。 |
 | `sctl get [<uuid>]` | 列出脚本或读取单个脚本。 |
 | `sctl grep <uuid> <query>` | 搜索单个脚本的源码。 |
@@ -94,7 +94,7 @@ sctl status
 
 运行 `sctl --help` 或 `sctl <command> --help` 查看用法和参数。写操作会阻塞，直到用户在
 ScriptCat 中批准、拒绝或关闭确认流程；浏览器控制命令按设计没有审批步骤、立即执行(参见
-[`threat-model.md`](./threat-model.md))。当配对了多个实例时，`tabs` 与 `windows` 可用
+[`threat-model.md`](./threat-model.md))。当多个实例同时在线时，`tabs` 与 `windows` 可用
 `--browser <name|id>`（或环境变量 `SCTL_BROWSER`）指定目标实例。
 
 ## 许可证

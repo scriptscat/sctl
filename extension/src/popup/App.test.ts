@@ -220,10 +220,11 @@ describe("popup states (rendered from ConnectionState, zh and en)", () => {
   it.each(["zh", "en"] as const)(
     "renders the reconnecting state with a countdown and retry button in %s",
     async (lang) => {
-      renderApp({ ...BASE, status: "reconnecting", attempt: 2, retryAt: 5000 }, { lang, now: () => 2000 });
+      // 第一次连接失败之后（attempt=1），倒计时指向的是第 1 次重试，而不是第 2 次。
+      renderApp({ ...BASE, status: "reconnecting", attempt: 1, retryAt: 5000 }, { lang, now: () => 2000 });
       await screen.findByRole("status");
       expect(screen.getByRole("status")).toHaveTextContent(lang === "zh" ? "重连中" : "Reconnecting");
-      expect(screen.getByText(/3s|第 3 次/)).toBeInTheDocument();
+      expect(screen.getByText(lang === "zh" ? /3 秒后进行第 1 次重试/ : /Retry 1 in 3s/)).toBeInTheDocument();
       expect(screen.getByRole("button", { name: lang === "zh" ? "立即重试" : "Retry now" })).toBeInTheDocument();
     },
   );

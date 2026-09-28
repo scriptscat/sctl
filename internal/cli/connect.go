@@ -10,8 +10,8 @@ import (
 	"github.com/scriptscat/sctl/internal/client/control"
 )
 
-// newConnectCmd 打开一次接入窗口并打印一次性配对码,同一个码可以配对 ScriptCat 或 sctl Browser
-// 扩展(2 分钟内有效);两者的配对与握手各自独立,谁先输入谁先配对成功,窗口关闭前都能再配一个。
+// newConnectCmd 打开一次接入窗口并打印一次性配对码,这个码可以配对 ScriptCat 或 sctl Browser
+// 扩展(2 分钟内有效),但只能用一次:先配对成功的扩展会关闭接入窗口,另一个扩展要再运行一次 connect。
 // 接入只需一次:此后 CLI 与所有 MCP agent 都经这条可信通道继承信任。
 func newConnectCmd() *cobra.Command {
 	return &cobra.Command{

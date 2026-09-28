@@ -55,7 +55,7 @@ export interface Strings {
   forgetCommand: (name: string) => string;
   forgetAfter: string;
   reconnectTitle: string;
-  reconnectBody: (attempt: number, seconds: number, addr: string) => string;
+  reconnectBody: (retry: number, seconds: number, addr: string) => string;
   reconnectingNow: string;
   retry: string;
   rejectedTitle: string;
@@ -124,8 +124,8 @@ export const dictionary: Record<Lang, Strings> = {
     forgetCommand: (name: string) => `sctl browsers forget ${name}`,
     forgetAfter: "删除。",
     reconnectTitle: "连不上 sctl serve",
-    reconnectBody: (attempt: number, seconds: number, addr: string) =>
-      `第 ${attempt} 次重试，${seconds} 秒后再试。请确认 sctl serve 正在 ${addr} 运行。`,
+    reconnectBody: (retry: number, seconds: number, addr: string) =>
+      `${seconds} 秒后进行第 ${retry} 次重试。请确认 sctl serve 正在 ${addr} 运行。`,
     reconnectingNow: "正在重试…",
     retry: "立即重试",
     rejectedTitle: "daemon 不再认可这个浏览器",
@@ -194,8 +194,8 @@ export const dictionary: Record<Lang, Strings> = {
     forgetCommand: (name: string) => `sctl browsers forget ${name}`,
     forgetAfter: ".",
     reconnectTitle: "Can't reach sctl serve",
-    reconnectBody: (attempt: number, seconds: number, addr: string) =>
-      `Attempt ${attempt}. Retrying in ${seconds}s. Check that sctl serve is running at ${addr}.`,
+    reconnectBody: (retry: number, seconds: number, addr: string) =>
+      `Retry ${retry} in ${seconds}s. Check that sctl serve is running at ${addr}.`,
     reconnectingNow: "Retrying…",
     retry: "Retry now",
     rejectedTitle: "The daemon no longer recognises this browser",

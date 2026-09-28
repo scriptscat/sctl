@@ -158,7 +158,7 @@ var toolDefs = []toolDef{
 	{
 		action:      "tabs.list",
 		name:        "tabs_list",
-		description: "List tabs in a browser window: tab ID, window ID, active status, pinned status, title, and URL.",
+		description: "List tabs in every window, or only in windowId if given: tab ID, window ID, active status, pinned status, title, and URL.",
 		inputSchema: `{"type":"object","properties":{"windowId":{"type":"integer","minimum":0}},"additionalProperties":false}`,
 	},
 	{
