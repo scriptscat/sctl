@@ -108,13 +108,17 @@ func (s *Server) cancelToExt(c *conn, requestID string) {
 }
 
 // handleRPCResponse delivers a JSON-RPC response from c to its pending call.
+// 投递时即撤下挂起项:每个请求至多投递一次,缓冲为 1 的 respCh 永不阻塞读循环——
+// 否则对端重复应答、而调用方已因取消/超时离开时,第二次投递会永久卡住读循环。
 func (s *Server) handleRPCResponse(c *conn, message Message) {
 	s.mu.Lock()
 	pc := s.pending[message.ID]
-	s.mu.Unlock()
 	if pc == nil || pc.conn != c {
+		s.mu.Unlock()
 		return
 	}
+	delete(s.pending, message.ID)
+	s.mu.Unlock()
 	if message.Error == nil {
 		if err := protocolschema.ValidateMethodResult(pc.method, message.Result); err != nil {
 			s.log.Debug("invalid rpc result", zap.Error(err))

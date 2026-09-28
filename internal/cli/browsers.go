@@ -53,7 +53,7 @@ func runBrowsersList(cmd *cobra.Command) error {
 }
 
 // newBrowsersForgetCmd 构造 `sctl browsers forget <名称|ID>`:仅命令行,无 MCP 工具(见 spec 第 1 期
-// 命令表)。按精确名称或精确实例 ID 删除该实例的密钥与登记表项,在线时先断开连接。
+// 命令表)。按精确名称或精确实例 ID 删除该实例的密钥与登记表项,在线时断开其连接。
 func newBrowsersForgetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "forget <name|id>",

@@ -192,7 +192,7 @@ func (c *Client) Browsers(ctx context.Context) ([]BrowserInfo, error) {
 }
 
 // ForgetBrowser 删除一个已配对浏览器实例的密钥与登记(按精确名称或精确实例 ID),
-// 若它在线则先断开连接;之后该实例的握手会失败。ref 不匹配任何已配对实例时返回错误。
+// 若它在线则断开其连接;之后该实例的握手会失败。ref 不匹配任何已配对实例时返回错误。
 func (c *Client) ForgetBrowser(ctx context.Context, ref string) error {
 	body, err := json.Marshal(ForgetBrowserRequest{Ref: ref})
 	if err != nil {

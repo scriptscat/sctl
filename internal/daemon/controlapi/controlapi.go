@@ -34,7 +34,7 @@ type Bridge interface {
 	// Instances 列出所有已配对的浏览器实例(在线与离线),按名称排序。
 	Instances() []bridge.InstanceInfo
 	// ForgetInstance 按精确名称(优先,与目标选择一致)或精确实例 ID 删除一个已配对浏览器实例的密钥与登记,
-	// 若它在线则先断开连接;不匹配任何已配对实例时返回 bridge.ErrInstanceNotFound。
+	// 若它在线则断开其连接;不匹配任何已配对实例时返回 bridge.ErrInstanceNotFound。
 	ForgetInstance(ref string) error
 }
 
@@ -102,7 +102,7 @@ func (h *Handler) browsers(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, control.BrowsersResult{Browsers: toBrowserInfos(h.bridge.Instances())})
 }
 
-// forgetBrowser 删除一个已配对浏览器实例的密钥与登记,若在线则先断开连接(bridge.ForgetInstance)。
+// forgetBrowser 删除一个已配对浏览器实例的密钥与登记,若在线则断开其连接(bridge.ForgetInstance)。
 func (h *Handler) forgetBrowser(w http.ResponseWriter, r *http.Request) {
 	var req control.ForgetBrowserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Ref == "" {

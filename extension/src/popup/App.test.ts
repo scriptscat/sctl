@@ -469,3 +469,24 @@ describe("accessibility", () => {
     expect(await screen.findByRole("alert")).toBeInTheDocument();
   });
 });
+
+describe("initial state", () => {
+  // getState 的回复绕经 service worker，状态广播直接从 offscreen 发来，两者先后没有保证。
+  it("keeps a state broadcast that arrives before the older getState reply", async () => {
+    const { api, emit } = fakeApi({ ...BASE, ...CONNECTED });
+    let replyWithOlderState: (s: ConnectionState) => void = () => undefined;
+    api.getState.mockImplementation(
+      () =>
+        new Promise<ConnectionState>((resolve) => {
+          replyWithOlderState = resolve;
+        }),
+    );
+    renderApp({ ...BASE, ...CONNECTED }, { api });
+    await act(async () => {
+      emit({ ...BASE, ...CONNECTED });
+      replyWithOlderState({ ...BASE, status: "reconnecting", attempt: 1, retryAt: null });
+      await Promise.resolve();
+    });
+    expect(await screen.findByRole("status")).toHaveTextContent("Connected");
+  });
+});

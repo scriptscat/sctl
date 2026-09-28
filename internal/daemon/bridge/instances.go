@@ -73,7 +73,7 @@ func (s *Server) ForgetInstance(ref string) error {
 	delete(s.online, id)
 	s.mu.Unlock()
 	if c != nil {
-		c.close(websocket.StatusPolicyViolation, "")
+		c.closeInBackground(websocket.StatusPolicyViolation, "")
 	}
 	return nil
 }
@@ -122,7 +122,7 @@ func (s *Server) registerBrowser(c *conn) error {
 	s.online[c.instanceID] = c
 	s.mu.Unlock()
 	if old != nil && old != c {
-		old.closeReplaced()
+		old.closeInBackground(websocket.StatusNormalClosure, "replaced by new connection")
 	}
 	return nil
 }

@@ -171,13 +171,13 @@ var toolDefs = []toolDef{
 		action:      "tabs.close",
 		name:        "tabs_close",
 		description: "Close one or more tabs by their IDs.",
-		inputSchema: `{"type":"object","properties":{"tabIds":{"type":"array","items":{"type":"integer"}}},"required":["tabIds"],"additionalProperties":false}`,
+		inputSchema: `{"type":"object","properties":{"tabIds":{"type":"array","minItems":1,"items":{"type":"integer","minimum":0}}},"required":["tabIds"],"additionalProperties":false}`,
 	},
 	{
 		action:      "tabs.activate",
 		name:        "tabs_activate",
 		description: "Activate a tab and bring its window to focus.",
-		inputSchema: `{"type":"object","properties":{"tabId":{"type":"integer"}},"required":["tabId"],"additionalProperties":false}`,
+		inputSchema: `{"type":"object","properties":{"tabId":{"type":"integer","minimum":0}},"required":["tabId"],"additionalProperties":false}`,
 	},
 	{
 		action:      "windows.list",

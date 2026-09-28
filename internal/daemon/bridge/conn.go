@@ -410,10 +410,11 @@ func (c *conn) writeMessage(ctx context.Context, message Message) error {
 	return wsjson.Write(ctx, c.ws, message)
 }
 
-// closeReplaced 在后台断开被同一对端的新连接替换的旧连接。WS 关闭握手要等旧对端回应关闭帧
-// (库内最长 5s),而被替换的对端往往已失联或正忙;同步关闭会让新连接的登记与能力声明回复陪着等。
-func (c *conn) closeReplaced() {
-	go c.close(websocket.StatusNormalClosure, "replaced by new connection")
+// closeInBackground 在后台断开一条已被撤下(被新连接替换或实例被忘记)的连接。WS 关闭握手要等
+// 对端回应关闭帧(库内最长 5s),而这类对端往往已失联或正忙;同步关闭会让新连接的登记与能力声明
+// 回复、或持有 regMu 的忘记操作陪着等。调用方须先把它移出在线表,它就不会再被选为调用目标。
+func (c *conn) closeInBackground(code websocket.StatusCode, reason string) {
+	go c.close(code, reason)
 }
 
 // close 幂等关闭:取消连接 ctx(解阻塞读)、关闭底层 WS、触发 closed 通道。

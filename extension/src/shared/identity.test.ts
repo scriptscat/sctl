@@ -57,6 +57,13 @@ describe("daemon address", () => {
     expect(parseAddress("127.0.0.1:65536")).toBeNull();
     expect(parseAddress("")).toBeNull();
   });
+
+  // 这类地址形似 host:port，但 WebSocket 构造时直接抛错；存下来后每次连接都会失败，且再也改不回来。
+  it("rejects a host:port that no WebSocket URL can be built from", () => {
+    expect(parseAddress("999.1.1.1:8643")).toBeNull();
+    expect(parseAddress("[1.2.3.4]:8643")).toBeNull();
+    expect(parseAddress("[:::]:8643")).toBeNull();
+  });
 });
 
 describe("pairing code", () => {

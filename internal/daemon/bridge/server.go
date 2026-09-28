@@ -306,6 +306,6 @@ func (s *Server) setScriptCat(c *conn) {
 	s.scriptCat = c
 	s.mu.Unlock()
 	if old != nil && old != c {
-		old.closeReplaced()
+		old.closeInBackground(websocket.StatusNormalClosure, "replaced by new connection")
 	}
 }

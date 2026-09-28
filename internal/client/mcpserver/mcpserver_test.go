@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -194,6 +195,33 @@ func TestToolSchemasRejectInvalidCrossFieldArgumentsBeforeForwarding(t *testing.
 		caller.mu.Lock()
 		defer caller.mu.Unlock()
 		So(caller.actions, ShouldBeEmpty)
+	})
+}
+
+func TestBrowserToolSchemasMatchTheProtocolParams(t *testing.T) {
+	Convey("浏览器工具向 MCP 客户端声明的输入 schema 与 protocol.json 的参数类型一致,不在手写副本里丢约束", t, func() {
+		p := loadProto(t)
+		var definition struct {
+			Types map[string]any `json:"types"`
+		}
+		So(json.Unmarshal(protocol.DefinitionJSON, &definition), ShouldBeNil)
+
+		checked := 0
+		var drifted []string
+		for _, td := range toolDefs {
+			action, ok := p.Actions[td.action]
+			if !ok || action.Peer != protocol.PeerBrowser {
+				continue
+			}
+			var declared any
+			So(json.Unmarshal([]byte(td.inputSchema), &declared), ShouldBeNil)
+			if !reflect.DeepEqual(declared, definition.Types[action.Params]) {
+				drifted = append(drifted, td.name+" vs "+action.Params)
+			}
+			checked++
+		}
+		So(checked, ShouldBeGreaterThan, 0)
+		So(drifted, ShouldBeEmpty)
 	})
 }
 
@@ -467,30 +495,52 @@ func TestBrowserToolsNeverReportWaitingForApproval(t *testing.T) {
 		progressInterval = 10 * time.Millisecond
 		defer func() { progressInterval = old }()
 
-		var progressCount atomic.Int32
+		var browserProgress atomic.Int32
+		scriptProgress := make(chan struct{}, 64)
 		block := make(chan struct{})
-		caller := &fakeCaller{block: block, result: control.CallResult{OK: true, Result: json.RawMessage(`{"tabs":[]}`)}}
+		caller := &fakeCaller{block: block, entered: make(chan struct{}, 2), result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
 		opts := &mcp.ClientOptions{
-			ProgressNotificationHandler: func(_ context.Context, _ *mcp.ProgressNotificationClientRequest) {
-				progressCount.Add(1)
+			ProgressNotificationHandler: func(_ context.Context, req *mcp.ProgressNotificationClientRequest) {
+				if req.Params.ProgressToken == "tok-browser" {
+					browserProgress.Add(1)
+					return
+				}
+				select {
+				case scriptProgress <- struct{}{}:
+				default:
+				}
 			},
 		}
 		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, opts)
 
-		resCh := make(chan *mcp.CallToolResult, 1)
-		go func() {
-			res, _ := session.CallTool(context.Background(), &mcp.CallToolParams{
-				Name:      "tabs_list",
-				Arguments: map[string]any{},
-				Meta:      mcp.Meta{"progressToken": "tok-browser"},
-			})
-			resCh <- res
-		}()
-		// 阻塞远超 progress 间隔,足以让任何 ticker 触发多次。
-		time.Sleep(100 * time.Millisecond)
+		call := func(name string, args map[string]any, token string) <-chan *mcp.CallToolResult {
+			resCh := make(chan *mcp.CallToolResult, 1)
+			go func() {
+				res, _ := session.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args, Meta: mcp.Meta{"progressToken": token}})
+				resCh <- res
+			}()
+			select {
+			case <-caller.entered:
+			case <-time.After(5 * time.Second):
+				t.Fatalf("%s did not reach the bridge", name)
+			}
+			return resCh
+		}
+		// 浏览器调用先抵达桥接侧并阻塞;随后一个有审批的调用作为时钟:它的 progress 滴答了三次,
+		// 说明浏览器调用阻塞期间已过去至少两个间隔,若浏览器调用也有 ticker 必已触发。不用固定睡眠,
+		// 负载再高也不会在调用抵达前就放行而让本用例空过。
+		browserRes := call("tabs_list", map[string]any{}, "tok-browser")
+		scriptRes := call("scripts_toggle_request", map[string]any{"uuid": "x", "enable": true}, "tok-script")
+		for range 3 {
+			select {
+			case <-scriptProgress:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the approval call reported no progress")
+			}
+		}
 		close(block)
-		res := <-resCh
-		So(res.IsError, ShouldBeFalse)
-		So(progressCount.Load(), ShouldEqual, 0)
+		So((<-scriptRes).IsError, ShouldBeFalse)
+		So((<-browserRes).IsError, ShouldBeFalse)
+		So(browserProgress.Load(), ShouldEqual, 0)
 	})
 }

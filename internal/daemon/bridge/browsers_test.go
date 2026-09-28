@@ -306,6 +306,27 @@ func TestReplacedConnectionDoesNotDelaySuccessor(t *testing.T) {
 	})
 }
 
+func TestForgetDoesNotWaitForTheForgottenConnectionToClose(t *testing.T) {
+	Convey("忘记在线实例时不等它的连接完成关闭握手(期间还持有登记锁),立即返回;连接随后被断开", t, func() {
+		h := startTestServer(t)
+		h.registerBrowser(instanceA, "chrome-0123")
+		forgotten := h.busyConnection(t, instanceA)
+
+		done := make(chan error, 1)
+		go func() { done <- h.srv.ForgetInstance("chrome-0123") }()
+		// 关闭握手在库内最长等 5s,3s 内返回即说明没有等它。
+		select {
+		case err := <-done:
+			So(err, ShouldBeNil)
+		case <-time.After(3 * time.Second):
+			t.Fatal("ForgetInstance waited for the forgotten connection's close handshake")
+		}
+		_, listed := h.instance(instanceA)
+		So(listed, ShouldBeFalse)
+		forgotten.closedByDaemon()
+	})
+}
+
 func TestBrowserIsRegisteredBeforeCapabilitiesReply(t *testing.T) {
 	Convey("浏览器实例收到 capabilities 回复时已登记为在线", t, func() {
 		h := startTestServer(t)

@@ -405,6 +405,30 @@ func TestBlockingCallAndCancel(t *testing.T) {
 	})
 }
 
+func TestRepeatedResponseDoesNotStallTheReadLoop(t *testing.T) {
+	Convey("对端对同一请求重复应答、而调用方已放弃等待时,投递不阻塞该连接的读循环", t, func() {
+		h := startTestServer(t)
+		// 调用方已因取消/超时离开等待、尚未撤下挂起项的瞬间:挂起项还在,却没有人再收应答。
+		c := &conn{closed: make(chan struct{})}
+		h.srv.mu.Lock()
+		h.srv.pending["req-1"] = &pendingCall{conn: c, method: "scripts.list", respCh: make(chan Response, 1)}
+		h.srv.mu.Unlock()
+		response := Message{JSONRPC: jsonRPCVersion, ID: "req-1", Result: json.RawMessage(`{"scripts":[],"contentTrust":"untrusted-user-script-metadata"}`)}
+
+		delivered := make(chan struct{})
+		go func() {
+			h.srv.handleRPCResponse(c, response)
+			h.srv.handleRPCResponse(c, response)
+			close(delivered)
+		}()
+		select {
+		case <-delivered:
+		case <-time.After(3 * time.Second):
+			t.Fatal("a repeated response blocked the read loop")
+		}
+	})
+}
+
 func TestOriginWhitelist(t *testing.T) {
 	Convey("Origin 白名单廉价挡掉普通网页直连(握手仍是真正闸门)", t, func() {
 		h := startTestServer(t)

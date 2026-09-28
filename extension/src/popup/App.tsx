@@ -91,10 +91,13 @@ export function App({
   // 初次加载：连接状态、外观/语言设置、配对码草稿（会话存储，重开弹窗时恢复）。
   useEffect(() => {
     let cancelled = false;
+    // getState 的回复绕经 service worker，广播直接从 offscreen 发来，可能先到；先到的广播比回复更新，不能被回复覆盖。
+    let broadcastSeen = false;
     void api.getState().then((s) => {
-      if (!cancelled) setState(s);
+      if (!cancelled && !broadcastSeen) setState(s);
     });
     const unsubscribe = api.subscribe((s) => {
+      broadcastSeen = true;
       if (!cancelled) setState(s);
     });
     void loadPrefs(localStorage).then((p) => {
