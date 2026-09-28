@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "@/styles/globals.css";
+import { App } from "./App";
 
 const root = document.getElementById("root");
 if (!root) {
@@ -9,6 +10,6 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
-    <main className="w-80 p-4 text-sm">sctl Browser</main>
+    <App />
   </StrictMode>,
 );
