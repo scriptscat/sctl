@@ -242,6 +242,11 @@ It is optional in the schema so that an unconfirmed call that reaches the extens
 | `windows.close` | browser | close windows | none | L0 |
 | `windows.focus` | browser | focus a window | none | L0 |
 | `windows.state` | browser | set a window's state | none | L0 |
+| `tabGroups.list` | browser | list tab groups, optionally in one window | none | L0 |
+| `tabGroups.create` | browser | group tabs of one window into a new group and return its group ID | none | L0 |
+| `tabGroups.add` | browser | add tabs to an existing group | none | L0 |
+| `tabGroups.edit` | browser | change a group's title, color, or collapsed state | none | L0 |
+| `tabGroups.ungroup` | browser | remove tabs from their groups | none | L0 |
 | `readingList.list` | browser | list reading list entries, newest first | none | L0 |
 | `readingList.add` | browser | add a URL to the reading list | none | L0 |
 | `readingList.markRead` | browser | mark reading list entries read or unread | none | L0 |
@@ -277,6 +282,14 @@ all-or-nothing for several IDs: every tab or window is checked first, and an unk
 nothing changed. `tabs.move` without `index` (or with `-1`) moves to the end of the window and answers `NOT_FOUND`
 for an unknown target `windowId`. A window `state` other than `normal`, `minimized`, `maximized`, or `fullscreen`
 answers `INVALID_REQUEST`, as does an `index` below -1.
+
+The tab group methods (`tabGroups.*`) are L0 and need the `tabGroups` permission. `tabs.list` items carry `groupId`
+(`-1` when the tab is in no group). `tabGroups.list` marks its result `contentTrust: "untrusted-page-content"`
+because group titles are page- or user-controlled. `tabGroups.create` requires every tab in the same window and
+answers `INVALID_REQUEST` otherwise; a `color` other than `grey`, `blue`, `red`, `yellow`, `green`, `pink`, `purple`,
+`cyan`, or `orange` answers `INVALID_REQUEST`, as does a `tabGroups.edit` that changes nothing. An unknown tab or group
+answers `NOT_FOUND` and changes nothing (all-or-nothing). When `tabGroups.ungroup` removes a group's last tab, the
+browser deletes the group.
 
 Bookmark IDs are the browser's own. An unknown ID answers `NOT_FOUND`. `bookmarks.list` returns a folder's direct
 children (the root's children, the built-in top-level folders, when no folder is given) and applies `limit`; with

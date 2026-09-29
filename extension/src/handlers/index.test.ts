@@ -128,6 +128,11 @@ describe("browser method handlers", () => {
         "windows.close",
         "windows.focus",
         "windows.state",
+        "tabGroups.list",
+        "tabGroups.create",
+        "tabGroups.add",
+        "tabGroups.edit",
+        "tabGroups.ungroup",
       ]),
     );
   });
@@ -139,6 +144,7 @@ describe("browser method handlers", () => {
         windowId: 1,
         active: true,
         pinned: true,
+        groupId: 4,
         title: "<script>alert(1)</script>",
         url: "https://example.com/a?b=1",
       });
@@ -157,6 +163,7 @@ describe("browser method handlers", () => {
               windowId: 1,
               active: true,
               pinned: true,
+              groupId: 4,
               title: "<script>alert(1)</script>",
               url: "https://example.com/a?b=1",
             },
@@ -166,6 +173,16 @@ describe("browser method handlers", () => {
       if (outcome.ok) {
         expect(validateTabsListResult(outcome.result)).toBe(true);
       }
+    });
+
+    it("reports groupId -1 for a tab that is in no group", async () => {
+      chromeMock.tabs.query.mockResolvedValue([
+        fakeTab({ id: 8, windowId: 1, title: "t", url: "https://e.x/", groupId: -1 }),
+      ]);
+
+      const outcome = await registry.dispatch("tabs.list", {});
+
+      expect(outcome).toMatchObject({ ok: true, result: { tabs: [{ tabId: 8, groupId: -1 }] } });
     });
 
     it("filters by window when a window filter is given", async () => {

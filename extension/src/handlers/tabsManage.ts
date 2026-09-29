@@ -1,14 +1,5 @@
 import { HandlerError, type HandlerRegistry, type RpcHandler } from "@/background/registry";
-import { requireTab, requireWindow } from "./targets";
-
-// 多个 ID 的操作先确认全部存在，任何一个不存在都不改动任何对象（全有或全无）；重复的 ID 只处理一次。
-async function requireAllTabs(tabIds: number[]): Promise<number[]> {
-  const unique = [...new Set(tabIds)];
-  for (const tabId of unique) {
-    await requireTab(tabId);
-  }
-  return unique;
-}
+import { requireAllTabs, requireTab, requireWindow } from "./targets";
 
 async function requireAllWindows(windowIds: number[]): Promise<number[]> {
   const unique = [...new Set(windowIds)];

@@ -49,11 +49,11 @@ func TestValidateWireFrameEnforcesBrowserTabSchemas(t *testing.T) {
 
 func TestValidateMethodResultRejectsIncompleteBrowserListItems(t *testing.T) {
 	t.Parallel()
-	valid := `{"tabs":[{"tabId":7,"windowId":1,"active":true,"pinned":false,"title":"t","url":"https://example.com"}],"contentTrust":"untrusted-page-content"}`
+	valid := `{"tabs":[{"tabId":7,"windowId":1,"active":true,"pinned":false,"groupId":-1,"title":"t","url":"https://example.com"}],"contentTrust":"untrusted-page-content"}`
 	if err := protocolschema.ValidateMethodResult("tabs.list", []byte(valid)); err != nil {
 		t.Fatalf("valid tabs.list result rejected: %v", err)
 	}
-	missingURL := `{"tabs":[{"tabId":7,"windowId":1,"active":true,"pinned":false,"title":"t"}],"contentTrust":"untrusted-page-content"}`
+	missingURL := `{"tabs":[{"tabId":7,"windowId":1,"active":true,"pinned":false,"groupId":-1,"title":"t"}],"contentTrust":"untrusted-page-content"}`
 	if err := protocolschema.ValidateMethodResult("tabs.list", []byte(missingURL)); err == nil {
 		t.Fatal("tabs.list result without a tab URL was accepted")
 	}

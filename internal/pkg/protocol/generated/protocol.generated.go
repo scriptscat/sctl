@@ -270,6 +270,61 @@ type ScriptsToggleResult struct {
 	UUID    string `json:"uuid"`
 }
 
+type TabGroupsAddParams struct {
+	GroupId int   `json:"groupId"`
+	TabIds  []int `json:"tabIds"`
+}
+
+type TabGroupsAddResult struct {
+	GroupId int   `json:"groupId"`
+	TabIds  []int `json:"tabIds"`
+}
+
+type TabGroupsCreateParams struct {
+	Color  *string `json:"color,omitempty"`
+	TabIds []int   `json:"tabIds"`
+	Title  *string `json:"title,omitempty"`
+}
+
+type TabGroupsCreateResult struct {
+	GroupId int `json:"groupId"`
+}
+
+type TabGroupsEditParams struct {
+	Collapsed *bool   `json:"collapsed,omitempty"`
+	Color     *string `json:"color,omitempty"`
+	GroupId   int     `json:"groupId"`
+	Title     *string `json:"title,omitempty"`
+}
+
+type TabGroupsEditResult struct {
+	GroupId int `json:"groupId"`
+}
+
+type TabGroupsListParams struct {
+	WindowId *int `json:"windowId,omitempty"`
+}
+
+type TabGroupsListResult struct {
+	ContentTrust string `json:"contentTrust"`
+	Groups       []struct {
+		Collapsed bool   `json:"collapsed"`
+		Color     string `json:"color"`
+		GroupId   int    `json:"groupId"`
+		TabCount  int    `json:"tabCount"`
+		Title     string `json:"title"`
+		WindowId  int    `json:"windowId"`
+	} `json:"groups"`
+}
+
+type TabGroupsUngroupParams struct {
+	TabIds []int `json:"tabIds"`
+}
+
+type TabGroupsUngroupResult struct {
+	TabIds []int `json:"tabIds"`
+}
+
 type TabsActivateParams struct {
 	TabId int `json:"tabId"`
 }
@@ -307,6 +362,7 @@ type TabsListResult struct {
 	ContentTrust string `json:"contentTrust"`
 	Tabs         []struct {
 		Active   bool   `json:"active"`
+		GroupId  int    `json:"groupId"`
 		Pinned   bool   `json:"pinned"`
 		TabId    int    `json:"tabId"`
 		Title    string `json:"title"`
@@ -409,6 +465,11 @@ const (
 	MethodScriptsSourceGet      Method = "scripts.source.get"
 	MethodScriptsSourceGrep     Method = "scripts.source.grep"
 	MethodScriptsToggleRequest  Method = "scripts.toggle.request"
+	MethodTabGroupsAdd          Method = "tabGroups.add"
+	MethodTabGroupsCreate       Method = "tabGroups.create"
+	MethodTabGroupsEdit         Method = "tabGroups.edit"
+	MethodTabGroupsList         Method = "tabGroups.list"
+	MethodTabGroupsUngroup      Method = "tabGroups.ungroup"
 	MethodTabsActivate          Method = "tabs.activate"
 	MethodTabsClose             Method = "tabs.close"
 	MethodTabsDuplicate         Method = "tabs.duplicate"
@@ -449,6 +510,11 @@ var Methods = map[string]MethodMetadata{
 	"scripts.source.get":      {Params: "ScriptsSourceGetParams", Result: "ScriptSource", Scope: "scripts:source:read", Effect: "read", Blocking: "disclosure", Level: "L2", Peer: "scriptcat", MergeField: ""},
 	"scripts.source.grep":     {Params: "ScriptsSourceGrepParams", Result: "ScriptSourceGrepResult", Scope: "scripts:source:read", Effect: "read", Blocking: "disclosure", Level: "L2", Peer: "scriptcat", MergeField: ""},
 	"scripts.toggle.request":  {Params: "ScriptsToggleParams", Result: "ScriptsToggleResult", Scope: "scripts:toggle:request", Effect: "write", Blocking: "approval", Level: "L2", Peer: "scriptcat", MergeField: ""},
+	"tabGroups.add":           {Params: "TabGroupsAddParams", Result: "TabGroupsAddResult", Scope: "tabGroups:add", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"tabGroups.create":        {Params: "TabGroupsCreateParams", Result: "TabGroupsCreateResult", Scope: "tabGroups:create", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"tabGroups.edit":          {Params: "TabGroupsEditParams", Result: "TabGroupsEditResult", Scope: "tabGroups:edit", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"tabGroups.list":          {Params: "TabGroupsListParams", Result: "TabGroupsListResult", Scope: "tabGroups:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "groups"},
+	"tabGroups.ungroup":       {Params: "TabGroupsUngroupParams", Result: "TabGroupsUngroupResult", Scope: "tabGroups:ungroup", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
 	"tabs.activate":           {Params: "TabsActivateParams", Result: "TabsActivateResult", Scope: "tabs:activate", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
 	"tabs.close":              {Params: "TabsCloseParams", Result: "TabsCloseResult", Scope: "tabs:close", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
 	"tabs.duplicate":          {Params: "TabsDuplicateParams", Result: "TabsOpenResult", Scope: "tabs:duplicate", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},

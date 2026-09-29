@@ -2,6 +2,7 @@ import { type HandlerRegistry, type RpcHandler } from "@/background/registry";
 import { registerBookmarkHandlers } from "./bookmarks";
 import { registerReadingListHandlers } from "./readingList";
 import { requireTab, requireWindow } from "./targets";
+import { registerTabGroupHandlers } from "./tabGroups";
 import { registerTabsManageHandlers } from "./tabsManage";
 
 const handleTabsList: RpcHandler<"tabs.list"> = async (params) => {
@@ -18,6 +19,7 @@ const handleTabsList: RpcHandler<"tabs.list"> = async (params) => {
       windowId: tab.windowId,
       active: tab.active,
       pinned: tab.pinned,
+      groupId: tab.groupId,
       title: tab.title!,
       url: tab.url!,
     })),
@@ -76,4 +78,5 @@ export function registerHandlers(registry: HandlerRegistry): void {
   registerReadingListHandlers(registry);
   registerBookmarkHandlers(registry);
   registerTabsManageHandlers(registry);
+  registerTabGroupHandlers(registry);
 }

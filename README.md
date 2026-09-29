@@ -21,6 +21,7 @@ confirmation UI in the extension.
 - Lists scripts and reads metadata or source, including line windows and source search.
 - Requests installation, content-anchored editing, enable/disable, and deletion through browser approval.
 - Lists, opens, closes, activates, moves, pins, mutes, reloads, and duplicates tabs, and lists, opens, closes, focuses, and resizes windows across one or more paired sctl Browser instances.
+- Lists, creates, edits, and dissolves tab groups on a paired sctl Browser instance.
 - Lists, adds, marks read or unread, and removes reading list entries on a paired sctl Browser instance.
 - Lists, searches, adds, moves, and edits bookmarks and bookmark folders on a paired sctl Browser instance, and
   deletes them after approval in that browser.
@@ -103,6 +104,7 @@ troubleshooting.
 | `sctl tabs move\|pin\|unpin\|mute\|unmute\|reload\|duplicate` | Move, pin, mute, reload, or duplicate tabs (several IDs are all-or-nothing). |
 | `sctl windows list` | List windows on a paired sctl Browser instance. |
 | `sctl windows open\|close\|focus\|state` | Open, close, focus, or change the state of windows. |
+| `sctl groups list\|create\|add\|edit\|ungroup` | List, create, fill, edit (title, color, collapse), or dissolve tab groups. |
 | `sctl reading-list list\|add\|mark-read\|rm` | List, add, mark read or unread, or remove reading list entries on a paired sctl Browser instance. |
 | `sctl bookmarks list\|search\|add\|mkdir\|move\|edit\|rm` | List, search, add, move, edit, or delete bookmarks and bookmark folders on a paired sctl Browser instance. |
 

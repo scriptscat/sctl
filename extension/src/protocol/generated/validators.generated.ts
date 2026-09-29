@@ -98,6 +98,46 @@ export function validateReadingListRemoveResult(value: unknown): value is Protoc
   return (isRecord(value) && hasOnlyKeys(value, ["urls"]) && Array.isArray(value["urls"]) && value["urls"].every((item) => typeof item === "string"));
 }
 
+export function validateTabGroupsAddParams(value: unknown): value is Protocol.TabGroupsAddParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["groupId", "tabIds"]) && typeof value["groupId"] === "number" && Number.isInteger(value["groupId"]) && value["groupId"] >= 0 && Array.isArray(value["tabIds"]) && value["tabIds"].length >= 1 && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0));
+}
+
+export function validateTabGroupsAddResult(value: unknown): value is Protocol.TabGroupsAddResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["groupId", "tabIds"]) && typeof value["groupId"] === "number" && Number.isInteger(value["groupId"]) && Array.isArray(value["tabIds"]) && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item)));
+}
+
+export function validateTabGroupsCreateParams(value: unknown): value is Protocol.TabGroupsCreateParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["color", "tabIds", "title"]) && (value["color"] === undefined || ((value["color"] === "grey" || value["color"] === "blue" || value["color"] === "red" || value["color"] === "yellow" || value["color"] === "green" || value["color"] === "pink" || value["color"] === "purple" || value["color"] === "cyan" || value["color"] === "orange"))) && Array.isArray(value["tabIds"]) && value["tabIds"].length >= 1 && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0) && (value["title"] === undefined || (typeof value["title"] === "string")));
+}
+
+export function validateTabGroupsCreateResult(value: unknown): value is Protocol.TabGroupsCreateResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["groupId"]) && typeof value["groupId"] === "number" && Number.isInteger(value["groupId"]));
+}
+
+export function validateTabGroupsEditParams(value: unknown): value is Protocol.TabGroupsEditParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["collapsed", "color", "groupId", "title"]) && (value["collapsed"] === undefined || (typeof value["collapsed"] === "boolean")) && (value["color"] === undefined || ((value["color"] === "grey" || value["color"] === "blue" || value["color"] === "red" || value["color"] === "yellow" || value["color"] === "green" || value["color"] === "pink" || value["color"] === "purple" || value["color"] === "cyan" || value["color"] === "orange"))) && typeof value["groupId"] === "number" && Number.isInteger(value["groupId"]) && value["groupId"] >= 0 && (value["title"] === undefined || (typeof value["title"] === "string")));
+}
+
+export function validateTabGroupsEditResult(value: unknown): value is Protocol.TabGroupsEditResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["groupId"]) && typeof value["groupId"] === "number" && Number.isInteger(value["groupId"]));
+}
+
+export function validateTabGroupsListParams(value: unknown): value is Protocol.TabGroupsListParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["windowId"]) && (value["windowId"] === undefined || (typeof value["windowId"] === "number" && Number.isInteger(value["windowId"]) && value["windowId"] >= 0)));
+}
+
+export function validateTabGroupsListResult(value: unknown): value is Protocol.TabGroupsListResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "groups"]) && value["contentTrust"] === "untrusted-page-content" && Array.isArray(value["groups"]) && value["groups"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["collapsed", "color", "groupId", "tabCount", "title", "windowId"]) && typeof item["collapsed"] === "boolean" && (item["color"] === "grey" || item["color"] === "blue" || item["color"] === "red" || item["color"] === "yellow" || item["color"] === "green" || item["color"] === "pink" || item["color"] === "purple" || item["color"] === "cyan" || item["color"] === "orange") && typeof item["groupId"] === "number" && Number.isInteger(item["groupId"]) && typeof item["tabCount"] === "number" && Number.isInteger(item["tabCount"]) && typeof item["title"] === "string" && typeof item["windowId"] === "number" && Number.isInteger(item["windowId"]))));
+}
+
+export function validateTabGroupsUngroupParams(value: unknown): value is Protocol.TabGroupsUngroupParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["tabIds"]) && Array.isArray(value["tabIds"]) && value["tabIds"].length >= 1 && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0));
+}
+
+export function validateTabGroupsUngroupResult(value: unknown): value is Protocol.TabGroupsUngroupResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["tabIds"]) && Array.isArray(value["tabIds"]) && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item)));
+}
+
 export function validateTabsActivateParams(value: unknown): value is Protocol.TabsActivateParams {
   return (isRecord(value) && hasOnlyKeys(value, ["tabId"]) && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0);
 }
@@ -131,7 +171,7 @@ export function validateTabsListParams(value: unknown): value is Protocol.TabsLi
 }
 
 export function validateTabsListResult(value: unknown): value is Protocol.TabsListResult {
-  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "tabs"]) && value["contentTrust"] === "untrusted-page-content" && Array.isArray(value["tabs"]) && value["tabs"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["active", "pinned", "tabId", "title", "url", "windowId"]) && typeof item["active"] === "boolean" && typeof item["pinned"] === "boolean" && typeof item["tabId"] === "number" && Number.isInteger(item["tabId"]) && typeof item["title"] === "string" && typeof item["url"] === "string" && typeof item["windowId"] === "number" && Number.isInteger(item["windowId"]))));
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "tabs"]) && value["contentTrust"] === "untrusted-page-content" && Array.isArray(value["tabs"]) && value["tabs"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["active", "groupId", "pinned", "tabId", "title", "url", "windowId"]) && typeof item["active"] === "boolean" && typeof item["groupId"] === "number" && Number.isInteger(item["groupId"]) && typeof item["pinned"] === "boolean" && typeof item["tabId"] === "number" && Number.isInteger(item["tabId"]) && typeof item["title"] === "string" && typeof item["url"] === "string" && typeof item["windowId"] === "number" && Number.isInteger(item["windowId"]))));
 }
 
 export function validateTabsMoveParams(value: unknown): value is Protocol.TabsMoveParams {
@@ -206,6 +246,11 @@ export const RPC_PARAM_VALIDATORS = {
   "readingList.list": validateReadingListListParams,
   "readingList.markRead": validateReadingListMarkReadParams,
   "readingList.remove": validateReadingListRemoveParams,
+  "tabGroups.add": validateTabGroupsAddParams,
+  "tabGroups.create": validateTabGroupsCreateParams,
+  "tabGroups.edit": validateTabGroupsEditParams,
+  "tabGroups.list": validateTabGroupsListParams,
+  "tabGroups.ungroup": validateTabGroupsUngroupParams,
   "tabs.activate": validateTabsActivateParams,
   "tabs.close": validateTabsCloseParams,
   "tabs.duplicate": validateTabsDuplicateParams,
@@ -236,6 +281,11 @@ export const RPC_RESULT_VALIDATORS = {
   "readingList.list": validateReadingListListResult,
   "readingList.markRead": validateReadingListMarkReadResult,
   "readingList.remove": validateReadingListRemoveResult,
+  "tabGroups.add": validateTabGroupsAddResult,
+  "tabGroups.create": validateTabGroupsCreateResult,
+  "tabGroups.edit": validateTabGroupsEditResult,
+  "tabGroups.list": validateTabGroupsListResult,
+  "tabGroups.ungroup": validateTabGroupsUngroupResult,
   "tabs.activate": validateTabsActivateResult,
   "tabs.close": validateTabsCloseResult,
   "tabs.duplicate": validateTabsOpenResult,

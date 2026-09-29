@@ -62,6 +62,11 @@ func TestLoadExposesMethodPeerAndListMergeField(t *testing.T) {
 		"bookmarks.mkdir":      {PeerBrowser, ""},
 		"bookmarks.move":       {PeerBrowser, ""},
 		"bookmarks.edit":       {PeerBrowser, ""},
+		"tabGroups.list":       {PeerBrowser, "groups"},
+		"tabGroups.create":     {PeerBrowser, ""},
+		"tabGroups.add":        {PeerBrowser, ""},
+		"tabGroups.edit":       {PeerBrowser, ""},
+		"tabGroups.ungroup":    {PeerBrowser, ""},
 	} {
 		action, ok := p.Actions[name]
 		if !ok {
@@ -107,6 +112,11 @@ func TestLoadExposesEachMethodsDestructionLevel(t *testing.T) {
 		"windows.close":          LevelDirect,
 		"windows.focus":          LevelDirect,
 		"windows.state":          LevelDirect,
+		"tabGroups.list":         LevelDirect,
+		"tabGroups.create":       LevelDirect,
+		"tabGroups.add":          LevelDirect,
+		"tabGroups.edit":         LevelDirect,
+		"tabGroups.ungroup":      LevelDirect,
 	} {
 		action, ok := p.Actions[name]
 		if !ok {

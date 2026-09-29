@@ -48,7 +48,7 @@ func (h *testHarness) callControl(req control.CallRequest) control.CallResult {
 }
 
 func tabsResult(tabID int) json.RawMessage {
-	return json.RawMessage(fmt.Sprintf(`{"tabs":[{"tabId":%d,"windowId":1,"active":true,"pinned":false,"title":"t","url":"https://example.com/"}],"contentTrust":"untrusted-page-content"}`, tabID))
+	return json.RawMessage(fmt.Sprintf(`{"tabs":[{"tabId":%d,"windowId":1,"active":true,"pinned":false,"groupId":-1,"title":"t","url":"https://example.com/"}],"contentTrust":"untrusted-page-content"}`, tabID))
 }
 
 // answer 读取发到 e 的下一条业务请求,断言方法后以 result 应答。

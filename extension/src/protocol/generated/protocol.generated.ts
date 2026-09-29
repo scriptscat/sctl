@@ -152,6 +152,44 @@ export interface ReadingListRemoveParams {
 export interface ReadingListRemoveResult {
   urls: Array<string>;
 }
+export interface TabGroupsAddParams {
+  groupId: number;
+  tabIds: Array<number>;
+}
+export interface TabGroupsAddResult {
+  groupId: number;
+  tabIds: Array<number>;
+}
+export interface TabGroupsCreateParams {
+  color?: "grey" | "blue" | "red" | "yellow" | "green" | "pink" | "purple" | "cyan" | "orange";
+  tabIds: Array<number>;
+  title?: string;
+}
+export interface TabGroupsCreateResult {
+  groupId: number;
+}
+export interface TabGroupsEditParams {
+  collapsed?: boolean;
+  color?: "grey" | "blue" | "red" | "yellow" | "green" | "pink" | "purple" | "cyan" | "orange";
+  groupId: number;
+  title?: string;
+}
+export interface TabGroupsEditResult {
+  groupId: number;
+}
+export interface TabGroupsListParams {
+  windowId?: number;
+}
+export interface TabGroupsListResult {
+  contentTrust: "untrusted-page-content";
+  groups: Array<{ collapsed: boolean; color: "grey" | "blue" | "red" | "yellow" | "green" | "pink" | "purple" | "cyan" | "orange"; groupId: number; tabCount: number; title: string; windowId: number; }>;
+}
+export interface TabGroupsUngroupParams {
+  tabIds: Array<number>;
+}
+export interface TabGroupsUngroupResult {
+  tabIds: Array<number>;
+}
 export interface TabsActivateParams {
   tabId: number;
 }
@@ -179,7 +217,7 @@ export interface TabsListParams {
 }
 export interface TabsListResult {
   contentTrust: "untrusted-page-content";
-  tabs: Array<{ active: boolean; pinned: boolean; tabId: number; title: string; url: string; windowId: number; }>;
+  tabs: Array<{ active: boolean; groupId: number; pinned: boolean; tabId: number; title: string; url: string; windowId: number; }>;
 }
 export interface TabsMoveParams {
   index?: number;
@@ -244,6 +282,11 @@ export interface RpcMethodMap {
   "readingList.list": { params: ReadingListListParams; result: ReadingListListResult };
   "readingList.markRead": { params: ReadingListMarkReadParams; result: ReadingListMarkReadResult };
   "readingList.remove": { params: ReadingListRemoveParams; result: ReadingListRemoveResult };
+  "tabGroups.add": { params: TabGroupsAddParams; result: TabGroupsAddResult };
+  "tabGroups.create": { params: TabGroupsCreateParams; result: TabGroupsCreateResult };
+  "tabGroups.edit": { params: TabGroupsEditParams; result: TabGroupsEditResult };
+  "tabGroups.list": { params: TabGroupsListParams; result: TabGroupsListResult };
+  "tabGroups.ungroup": { params: TabGroupsUngroupParams; result: TabGroupsUngroupResult };
   "tabs.activate": { params: TabsActivateParams; result: TabsActivateResult };
   "tabs.close": { params: TabsCloseParams; result: TabsCloseResult };
   "tabs.duplicate": { params: TabsDuplicateParams; result: TabsOpenResult };
@@ -352,6 +395,46 @@ export const RPC_METHODS = {
     effect: "write",
     blocking: "none",
     level: "L1",
+  },
+  "tabGroups.add": {
+    params: "TabGroupsAddParams",
+    result: "TabGroupsAddResult",
+    scope: "tabGroups:add",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "tabGroups.create": {
+    params: "TabGroupsCreateParams",
+    result: "TabGroupsCreateResult",
+    scope: "tabGroups:create",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "tabGroups.edit": {
+    params: "TabGroupsEditParams",
+    result: "TabGroupsEditResult",
+    scope: "tabGroups:edit",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "tabGroups.list": {
+    params: "TabGroupsListParams",
+    result: "TabGroupsListResult",
+    scope: "tabGroups:list",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "tabGroups.ungroup": {
+    params: "TabGroupsUngroupParams",
+    result: "TabGroupsUngroupResult",
+    scope: "tabGroups:ungroup",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
   },
   "tabs.activate": {
     params: "TabsActivateParams",

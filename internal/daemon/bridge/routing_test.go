@@ -140,7 +140,7 @@ func TestMergedListSkipsInstancesWithoutTheRequestedWindow(t *testing.T) {
 			reqA := a.read()
 			reqB := b.read()
 			So(wsjson.Write(ctx, a.ws, newError(reqA.ID, generated.ErrorCodeNotFound, "no window 7")), ShouldBeNil)
-			b.writeResult(reqB.ID, json.RawMessage(`{"tabs":[{"tabId":3,"windowId":7,"active":true,"pinned":false,"title":"t","url":"https://example.com/"}],"contentTrust":"untrusted-page-content"}`))
+			b.writeResult(reqB.ID, json.RawMessage(`{"tabs":[{"tabId":3,"windowId":7,"active":true,"pinned":false,"groupId":-1,"title":"t","url":"https://example.com/"}],"contentTrust":"untrusted-page-content"}`))
 
 			got := <-out
 			So(got.err, ShouldBeNil)

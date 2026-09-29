@@ -358,3 +358,55 @@ func TestTabsManageToolForwardsEachActionToItsProtocolMethod(t *testing.T) {
 		})
 	})
 }
+
+func TestTabGroupsToolDeclaresAndForwardsEachAction(t *testing.T) {
+	Convey("tab_groups 用 action 枚举选择操作,参数由协议派生,并把每个 action 转发到对应的协议方法", t, func() {
+		p := loadProto(t)
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+		So(err, ShouldBeNil)
+		tool := toolByName(res, "tab_groups")
+		props, required := inputSchemaOf(tool)
+		So(required, ShouldResemble, []any{"action"})
+		action, ok := props["action"].(map[string]any)
+		So(ok, ShouldBeTrue)
+		So(action["enum"], ShouldResemble, []any{"list", "create", "add", "edit", "ungroup"})
+		So(props, ShouldNotContainKey, protocol.ConfirmParam)
+		So(tool.Description, ShouldContainSubstring, "untrusted")
+		color, ok := props["color"].(map[string]any)
+		So(ok, ShouldBeTrue)
+		So(color["enum"], ShouldHaveLength, 9)
+
+		for _, args := range []map[string]any{
+			{"action": "list", "windowId": 10},
+			{"action": "create", "tabIds": []int{1, 2}, "title": "Work", "color": "blue", "browser": "work"},
+			{"action": "add", "groupId": 5, "tabIds": []int{3}},
+			{"action": "edit", "groupId": 5, "title": "New", "color": "red", "collapsed": true},
+			{"action": "ungroup", "tabIds": []int{1, 2}},
+		} {
+			res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "tab_groups", Arguments: args})
+			So(err, ShouldBeNil)
+			So(res.IsError, ShouldBeFalse)
+		}
+		So(caller.actions, ShouldResemble, []string{"tabGroups.list", "tabGroups.create", "tabGroups.add", "tabGroups.edit", "tabGroups.ungroup"})
+		So(caller.browserParams, ShouldResemble, []string{"", "work", "", "", ""})
+
+		Convey("无效颜色与不属于所选 action 的参数在转发前被拒绝", func() {
+			before := len(caller.actions)
+			for _, args := range []map[string]any{
+				{"action": "create", "tabIds": []int{1}, "color": "magenta"},
+				{"action": "edit", "groupId": 5, "color": "magenta"},
+				{"action": "create", "tabIds": []int{}},
+				{"action": "ungroup", "tabIds": []int{1}, "groupId": 5},
+				{"action": "list", "tabIds": []int{1}},
+			} {
+				_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "tab_groups", Arguments: args})
+				if err == nil {
+					t.Errorf("tab_groups accepted invalid arguments %#v", args)
+				}
+			}
+			So(len(caller.actions), ShouldEqual, before)
+		})
+	})
+}

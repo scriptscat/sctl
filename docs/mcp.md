@@ -223,6 +223,15 @@ confirmation. `duplicate` returns the new tab ID and `windows-open` the new wind
 change nothing if any ID is unknown (`NOT_FOUND`), and a `state` other than `normal`, `minimized`, `maximized`, or
 `fullscreen` is `INVALID_REQUEST`.
 
+`tab_groups` manages tab groups, with `action` set to `list`, `create`, `add`, `edit`, or `ungroup`. It runs
+immediately with no confirmation, and results are marked `contentTrust: "untrusted-page-content"` because group titles
+are page- or user-controlled. `create` puts `tabIds` (all in one window, otherwise `INVALID_REQUEST`) into a new group
+with an optional `title` and `color` and returns its group ID; `add` adds `tabIds` to `groupId`; `edit` changes the
+`title`, `color`, or `collapsed` state; `ungroup` removes `tabIds` from their groups, and the browser deletes a group
+whose last tab leaves. `color` is one of `grey`, `blue`, `red`, `yellow`, `green`, `pink`, `purple`, `cyan`, `orange`
+(anything else is `INVALID_REQUEST`), and an unknown tab or group is `NOT_FOUND` with nothing changed.
+`tabs_list` items also carry `groupId` (`-1` when ungrouped).
+
 Browser operations carry a destruction level. Most run immediately. A few are destructive enough to need explicit
 confirmation — currently only the reading list's `rm`: it runs only when the call passes `confirm: true`, and
 without it the daemon answers `CONFIRMATION_REQUIRED` and nothing runs. The command-line equivalent is `--yes`.
