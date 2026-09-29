@@ -447,6 +447,79 @@
       "blocking": "none",
       "level": "L0",
       "peer": "browser"
+    },
+    "downloads.list": {
+      "params": "DownloadsListParams",
+      "result": "DownloadsListResult",
+      "scope": "downloads:list",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "mergeField": "items"
+    },
+    "downloads.start": {
+      "params": "DownloadsStartParams",
+      "result": "DownloadsStartResult",
+      "scope": "downloads:start",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "downloads.pause": {
+      "params": "DownloadsPauseParams",
+      "result": "DownloadsPauseResult",
+      "scope": "downloads:pause",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "downloads.resume": {
+      "params": "DownloadsResumeParams",
+      "result": "DownloadsResumeResult",
+      "scope": "downloads:resume",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "downloads.show": {
+      "params": "DownloadsShowParams",
+      "result": "DownloadsShowResult",
+      "scope": "downloads:show",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "downloads.cancel": {
+      "params": "DownloadsCancelParams",
+      "result": "DownloadsCancelResult",
+      "scope": "downloads:cancel",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L1",
+      "peer": "browser"
+    },
+    "downloads.erase": {
+      "params": "DownloadsEraseParams",
+      "result": "DownloadsEraseResult",
+      "scope": "downloads:erase",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L1",
+      "peer": "browser"
+    },
+    "downloads.deleteFile": {
+      "params": "DownloadsDeleteFileParams",
+      "result": "DownloadsDeleteFileResult",
+      "scope": "downloads:deleteFile",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L1",
+      "peer": "browser"
     }
   },
   "types": {
@@ -2367,6 +2440,288 @@
           "type": "integer"
         }
       },
+      "additionalProperties": false
+    },
+    "DownloadsListParams": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": ["in_progress", "complete", "interrupted"]
+        },
+        "query": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "additionalProperties": false
+    },
+    "DownloadsListResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "url": {
+                "type": "string"
+              },
+              "filename": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": ["in_progress", "complete", "interrupted"]
+              },
+              "bytesReceived": {
+                "type": "integer"
+              },
+              "totalBytes": {
+                "type": "integer"
+              },
+              "startTime": {
+                "type": "integer"
+              },
+              "exists": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "url",
+              "filename",
+              "state",
+              "bytesReceived",
+              "totalBytes",
+              "startTime",
+              "exists"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "items",
+        "hasMore",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsStartParams": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "filename": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsStartResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsPauseParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsPauseResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsResumeParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsResumeResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsShowParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsShowResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsCancelParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "confirm": {
+          "const": true
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsCancelResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsDeleteFileParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "confirm": {
+          "const": true
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsDeleteFileResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsEraseParams": {
+      "type": "object",
+      "properties": {
+        "ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "confirm": {
+          "const": true
+        }
+      },
+      "required": [
+        "ids"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsEraseResult": {
+      "type": "object",
+      "properties": {
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "required": [
+        "ids"
+      ],
       "additionalProperties": false
     },
     "BrowsingDataClearParams": {

@@ -258,6 +258,14 @@ It is optional in the schema so that an unconfirmed call that reaches the extens
 | `browsingData.clear` | browser | clear browsing data of the given types | none | L1 |
 | `recent.list` | browser | list recently closed tabs and windows, newest first | none | L0 |
 | `recent.restore` | browser | restore a closed tab or window, or the most recently closed | none | L0 |
+| `downloads.list` | browser | list downloads, newest first | none | L0 |
+| `downloads.start` | browser | start a download into the default download directory | none | L0 |
+| `downloads.pause` | browser | pause a download | none | L0 |
+| `downloads.resume` | browser | resume a paused download | none | L0 |
+| `downloads.show` | browser | show a download's file in the system file manager | none | L0 |
+| `downloads.cancel` | browser | cancel an in-progress download | none | L1 |
+| `downloads.erase` | browser | remove download records, keeping the files | none | L1 |
+| `downloads.deleteFile` | browser | delete a completed download's file from disk, keeping its record | none | L1 |
 | `bookmarks.list` | browser | list a folder's children, or a whole subtree | none | L0 |
 | `bookmarks.search` | browser | search bookmarks by title and URL, with folder paths | none | L0 |
 | `bookmarks.add` | browser | add a bookmark | none | L0 |
@@ -270,7 +278,7 @@ Source and metadata returned by these methods are untrusted user-script content.
 render it as HTML, interpret it as instructions, or include credentials in logs. Source results carry a SHA-256
 digest. Edit approval rechecks the staged digest and target identity before applying changes.
 
-Tab titles and URLs, reading list titles, history titles and URLs, recently closed titles and URLs, and bookmark titles and URLs are controlled by web pages; `tabs.list`, `readingList.list`, `history.search`, `recent.list`, `bookmarks.list`, and `bookmarks.search` mark
+Tab titles and URLs, reading list titles, history titles and URLs, recently closed titles and URLs, download file names and URLs, and bookmark titles and URLs are controlled by web pages; `tabs.list`, `readingList.list`, `history.search`, `recent.list`, `downloads.list`, `bookmarks.list`, and `bookmarks.search` mark
 their results with `contentTrust: "untrusted-page-content"` and the same handling rules apply. A list method
 declares a `mergeField`: the required array property in its result that holds the listed items, so results from
 several browser instances combine by concatenating that array. A list result may also declare a boolean `hasMore`,
@@ -313,6 +321,17 @@ origins) limits the clearing to those origins and is only valid when every type 
 combining it with `downloads`, `formData`, or `history` answers `INVALID_REQUEST` and nothing is cleared.
 
 `recent.list` returns at most 25 items (Chrome's retention limit; `limit` is 1 to 25, default 25), newest first, each with session ID, `type` (`tab` or `window`), `closedTime`, title and URL, and `tabCount` for windows. `recent.restore` reopens the session with the given `sessionId`, or the most recently closed one when none is given, and returns `tabId` or `windowId`; an unknown session answers `NOT_FOUND`.
+
+The download methods (`downloads.*`) need the `downloads` permission and identify a download by its integer ID; an unknown ID
+answers `NOT_FOUND`. `downloads.list` returns downloads newest first (by start time), each with ID, URL, local file path
+(`filename`), `state` (`in_progress`, `complete`, `interrupted`), `bytesReceived`, `totalBytes` (`-1` when unknown), `startTime`
+(milliseconds) and `exists` (whether the file is still on disk); it accepts `state`, `query` and `limit` and reports `hasMore`.
+`downloads.start` saves into the browser's default download directory with `conflictAction` `uniquify` and no save-as dialog, so an
+existing file is never overwritten; an optional `filename` must be relative and free of `..` segments, and an absolute path
+(including a leading backslash or a drive letter) or a `..` segment answers `INVALID_REQUEST` without starting anything. Chrome's own
+refusal of `pause`, `resume`, `cancel` or `start` (for example pausing a finished download) is surfaced as `INVALID_REQUEST`. `downloads.cancel`,
+`downloads.erase` and `downloads.deleteFile` are L1. `downloads.erase` takes several IDs, is all-or-nothing, and removes only the records.
+`downloads.deleteFile` removes only the file of a `complete` download and keeps the record; any other state answers `INVALID_REQUEST`.
 
 Bookmark IDs are the browser's own. An unknown ID answers `NOT_FOUND`. `bookmarks.list` returns a folder's direct
 children (the root's children, the built-in top-level folders, when no folder is given) and applies `limit`; with

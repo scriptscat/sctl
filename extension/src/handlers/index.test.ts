@@ -98,7 +98,7 @@ describe("browser method handlers", () => {
     vi.unstubAllGlobals();
   });
 
-  it("declares capabilities for exactly the tab, window, reading list, bookmark, tab management, history, browsing data and recently closed methods", () => {
+  it("declares capabilities for exactly the tab, window, reading list, bookmark, tab management, history, browsing data, recently closed and downloads methods", () => {
     expect(new Set(registry.methods())).toEqual(
       new Set([
         "tabs.list",
@@ -140,6 +140,14 @@ describe("browser method handlers", () => {
         "browsingData.clear",
         "recent.list",
         "recent.restore",
+        "downloads.list",
+        "downloads.start",
+        "downloads.pause",
+        "downloads.resume",
+        "downloads.cancel",
+        "downloads.erase",
+        "downloads.deleteFile",
+        "downloads.show",
       ]),
     );
   });

@@ -13,7 +13,8 @@
     "tabGroups",
     "history",
     "browsingData",
-    "sessions"
+    "sessions",
+    "downloads"
   ],
   "background": {
     "service_worker": "background.js",

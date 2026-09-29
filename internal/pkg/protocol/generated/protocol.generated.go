@@ -108,6 +108,87 @@ type BrowsingDataClearResult struct {
 	Types []string `json:"types"`
 }
 
+type DownloadsCancelParams struct {
+	Confirm *bool `json:"confirm,omitempty"`
+	Id      int   `json:"id"`
+}
+
+type DownloadsCancelResult struct {
+	Id int `json:"id"`
+}
+
+type DownloadsDeleteFileParams struct {
+	Confirm *bool `json:"confirm,omitempty"`
+	Id      int   `json:"id"`
+}
+
+type DownloadsDeleteFileResult struct {
+	Id int `json:"id"`
+}
+
+type DownloadsEraseParams struct {
+	Confirm *bool `json:"confirm,omitempty"`
+	Ids     []int `json:"ids"`
+}
+
+type DownloadsEraseResult struct {
+	Ids []int `json:"ids"`
+}
+
+type DownloadsListParams struct {
+	Limit *int    `json:"limit,omitempty"`
+	Query *string `json:"query,omitempty"`
+	State *string `json:"state,omitempty"`
+}
+
+type DownloadsListResult struct {
+	ContentTrust string `json:"contentTrust"`
+	HasMore      bool   `json:"hasMore"`
+	Items        []struct {
+		BytesReceived int    `json:"bytesReceived"`
+		Exists        bool   `json:"exists"`
+		Filename      string `json:"filename"`
+		Id            int    `json:"id"`
+		StartTime     int    `json:"startTime"`
+		State         string `json:"state"`
+		TotalBytes    int    `json:"totalBytes"`
+		URL           string `json:"url"`
+	} `json:"items"`
+}
+
+type DownloadsPauseParams struct {
+	Id int `json:"id"`
+}
+
+type DownloadsPauseResult struct {
+	Id int `json:"id"`
+}
+
+type DownloadsResumeParams struct {
+	Id int `json:"id"`
+}
+
+type DownloadsResumeResult struct {
+	Id int `json:"id"`
+}
+
+type DownloadsShowParams struct {
+	Id int `json:"id"`
+}
+
+type DownloadsShowResult struct {
+	Id int `json:"id"`
+}
+
+type DownloadsStartParams struct {
+	Filename *string `json:"filename,omitempty"`
+	URL      string  `json:"url"`
+}
+
+type DownloadsStartResult struct {
+	Id int `json:"id"`
+}
+
 type HistoryClearParams struct {
 	Confirm   *bool `json:"confirm,omitempty"`
 	EndTime   *int  `json:"endTime,omitempty"`
@@ -540,6 +621,14 @@ const (
 	MethodBookmarksRemove       Method = "bookmarks.remove"
 	MethodBookmarksSearch       Method = "bookmarks.search"
 	MethodBrowsingDataClear     Method = "browsingData.clear"
+	MethodDownloadsCancel       Method = "downloads.cancel"
+	MethodDownloadsDeleteFile   Method = "downloads.deleteFile"
+	MethodDownloadsErase        Method = "downloads.erase"
+	MethodDownloadsList         Method = "downloads.list"
+	MethodDownloadsPause        Method = "downloads.pause"
+	MethodDownloadsResume       Method = "downloads.resume"
+	MethodDownloadsShow         Method = "downloads.show"
+	MethodDownloadsStart        Method = "downloads.start"
 	MethodHistoryClear          Method = "history.clear"
 	MethodHistoryRemove         Method = "history.remove"
 	MethodHistorySearch         Method = "history.search"
@@ -592,6 +681,14 @@ var Methods = map[string]MethodMetadata{
 	"bookmarks.remove":        {Params: "BookmarksRemoveParams", Result: "BookmarksRemoveResult", Scope: "bookmarks:remove", Effect: "write", Blocking: "approval", Level: "L2", Peer: "browser", MergeField: ""},
 	"bookmarks.search":        {Params: "BookmarksSearchParams", Result: "BookmarksSearchResult", Scope: "bookmarks:search", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "nodes"},
 	"browsingData.clear":      {Params: "BrowsingDataClearParams", Result: "BrowsingDataClearResult", Scope: "browsingData:clear", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: ""},
+	"downloads.cancel":        {Params: "DownloadsCancelParams", Result: "DownloadsCancelResult", Scope: "downloads:cancel", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: ""},
+	"downloads.deleteFile":    {Params: "DownloadsDeleteFileParams", Result: "DownloadsDeleteFileResult", Scope: "downloads:deleteFile", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: ""},
+	"downloads.erase":         {Params: "DownloadsEraseParams", Result: "DownloadsEraseResult", Scope: "downloads:erase", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: ""},
+	"downloads.list":          {Params: "DownloadsListParams", Result: "DownloadsListResult", Scope: "downloads:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "items"},
+	"downloads.pause":         {Params: "DownloadsPauseParams", Result: "DownloadsPauseResult", Scope: "downloads:pause", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"downloads.resume":        {Params: "DownloadsResumeParams", Result: "DownloadsResumeResult", Scope: "downloads:resume", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"downloads.show":          {Params: "DownloadsShowParams", Result: "DownloadsShowResult", Scope: "downloads:show", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"downloads.start":         {Params: "DownloadsStartParams", Result: "DownloadsStartResult", Scope: "downloads:start", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
 	"history.clear":           {Params: "HistoryClearParams", Result: "HistoryClearResult", Scope: "history:clear", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: ""},
 	"history.remove":          {Params: "HistoryRemoveParams", Result: "HistoryRemoveResult", Scope: "history:remove", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: ""},
 	"history.search":          {Params: "HistorySearchParams", Result: "HistorySearchResult", Scope: "history:search", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "items"},

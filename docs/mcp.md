@@ -249,8 +249,17 @@ at most 25 items (Chrome's retention limit) newest first, capped by `limit`, and
 given `sessionId`, or the most recently closed one without it, and returns the new `tabId` or `windowId`; an unknown
 session is `NOT_FOUND`. Neither needs confirmation.
 
+`downloads` manages downloads, with `action` set to `list`, `start`, `pause`, `resume`, `cancel`, `erase`, `delete-file` or `show`. `list`
+returns downloads newest first (ID, URL, local file path, state, bytes received and total, start time, whether the file still
+exists), optionally filtered by `state` (`in_progress`, `complete`, `interrupted`) or `query`, capped by `limit` (default 100, at
+most 1000) with `hasMore`, and is marked `contentTrust: "untrusted-page-content"` because file names and URLs come from web pages.
+`start` downloads `url` into the default download directory, renaming instead of overwriting; `filename` must be a relative path
+without `..`, otherwise `INVALID_REQUEST`. `cancel`, `erase` (several `ids`, all-or-nothing, records only) and `delete-file` (removes a
+completed download's file, keeps the record; `INVALID_REQUEST` unless the download is complete) run only with `confirm: true`. An
+unknown ID is `NOT_FOUND`.
+
 Browser operations carry a destruction level. Most run immediately. A few are destructive enough to need explicit
-confirmation — the reading list's `rm`, history `rm` and `clear`, and `browsing_data` `clear`: they run only when the call passes `confirm: true`, and
+confirmation — the reading list's `rm`, history `rm` and `clear`, `browsing_data` `clear`, and downloads `cancel`, `erase` and `delete-file`: they run only when the call passes `confirm: true`, and
 without it the daemon answers `CONFIRMATION_REQUIRED` and nothing runs. The command-line equivalent is `--yes`.
 Deleting bookmarks needs human approval instead: the sctl Browser extension opens an approval window, and the call
 waits — sending progress notifications like the ScriptCat write tools — until the user approves (`CONFLICT` and

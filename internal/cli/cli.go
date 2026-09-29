@@ -98,6 +98,7 @@ func NewRootCmd() *cobra.Command {
 		newHistoryCmd(),
 		newBrowsingDataCmd(),
 		newRecentCmd(),
+		newDownloadsCmd(),
 		newReadingListCmd(),
 		newBookmarksCmd(),
 		newVersionCmd(),

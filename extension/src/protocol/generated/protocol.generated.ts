@@ -129,6 +129,62 @@ export interface BrowsingDataClearParams {
 export interface BrowsingDataClearResult {
   types: Array<string>;
 }
+export interface DownloadsCancelParams {
+  confirm?: true;
+  id: number;
+}
+export interface DownloadsCancelResult {
+  id: number;
+}
+export interface DownloadsDeleteFileParams {
+  confirm?: true;
+  id: number;
+}
+export interface DownloadsDeleteFileResult {
+  id: number;
+}
+export interface DownloadsEraseParams {
+  confirm?: true;
+  ids: Array<number>;
+}
+export interface DownloadsEraseResult {
+  ids: Array<number>;
+}
+export interface DownloadsListParams {
+  limit?: number;
+  query?: string;
+  state?: "in_progress" | "complete" | "interrupted";
+}
+export interface DownloadsListResult {
+  contentTrust: "untrusted-page-content";
+  hasMore: boolean;
+  items: Array<{ bytesReceived: number; exists: boolean; filename: string; id: number; startTime: number; state: "in_progress" | "complete" | "interrupted"; totalBytes: number; url: string; }>;
+}
+export interface DownloadsPauseParams {
+  id: number;
+}
+export interface DownloadsPauseResult {
+  id: number;
+}
+export interface DownloadsResumeParams {
+  id: number;
+}
+export interface DownloadsResumeResult {
+  id: number;
+}
+export interface DownloadsShowParams {
+  id: number;
+}
+export interface DownloadsShowResult {
+  id: number;
+}
+export interface DownloadsStartParams {
+  filename?: string;
+  url: string;
+}
+export interface DownloadsStartResult {
+  id: number;
+}
 export interface HistoryClearParams {
   confirm?: true;
   endTime?: number;
@@ -336,6 +392,14 @@ export interface RpcMethodMap {
   "bookmarks.remove": { params: BookmarksRemoveParams; result: BookmarksRemoveResult };
   "bookmarks.search": { params: BookmarksSearchParams; result: BookmarksSearchResult };
   "browsingData.clear": { params: BrowsingDataClearParams; result: BrowsingDataClearResult };
+  "downloads.cancel": { params: DownloadsCancelParams; result: DownloadsCancelResult };
+  "downloads.deleteFile": { params: DownloadsDeleteFileParams; result: DownloadsDeleteFileResult };
+  "downloads.erase": { params: DownloadsEraseParams; result: DownloadsEraseResult };
+  "downloads.list": { params: DownloadsListParams; result: DownloadsListResult };
+  "downloads.pause": { params: DownloadsPauseParams; result: DownloadsPauseResult };
+  "downloads.resume": { params: DownloadsResumeParams; result: DownloadsResumeResult };
+  "downloads.show": { params: DownloadsShowParams; result: DownloadsShowResult };
+  "downloads.start": { params: DownloadsStartParams; result: DownloadsStartResult };
   "history.clear": { params: HistoryClearParams; result: HistoryClearResult };
   "history.remove": { params: HistoryRemoveParams; result: HistoryRemoveResult };
   "history.search": { params: HistorySearchParams; result: HistorySearchResult };
@@ -435,6 +499,70 @@ export const RPC_METHODS = {
     effect: "write",
     blocking: "none",
     level: "L1",
+  },
+  "downloads.cancel": {
+    params: "DownloadsCancelParams",
+    result: "DownloadsCancelResult",
+    scope: "downloads:cancel",
+    effect: "write",
+    blocking: "none",
+    level: "L1",
+  },
+  "downloads.deleteFile": {
+    params: "DownloadsDeleteFileParams",
+    result: "DownloadsDeleteFileResult",
+    scope: "downloads:deleteFile",
+    effect: "write",
+    blocking: "none",
+    level: "L1",
+  },
+  "downloads.erase": {
+    params: "DownloadsEraseParams",
+    result: "DownloadsEraseResult",
+    scope: "downloads:erase",
+    effect: "write",
+    blocking: "none",
+    level: "L1",
+  },
+  "downloads.list": {
+    params: "DownloadsListParams",
+    result: "DownloadsListResult",
+    scope: "downloads:list",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "downloads.pause": {
+    params: "DownloadsPauseParams",
+    result: "DownloadsPauseResult",
+    scope: "downloads:pause",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "downloads.resume": {
+    params: "DownloadsResumeParams",
+    result: "DownloadsResumeResult",
+    scope: "downloads:resume",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "downloads.show": {
+    params: "DownloadsShowParams",
+    result: "DownloadsShowResult",
+    scope: "downloads:show",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "downloads.start": {
+    params: "DownloadsStartParams",
+    result: "DownloadsStartResult",
+    scope: "downloads:start",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
   },
   "history.clear": {
     params: "HistoryClearParams",

@@ -563,3 +563,50 @@ func TestRecentlyClosedToolListAndRestore(t *testing.T) {
 		})
 	})
 }
+
+func TestDownloadsToolForwardsEachActionToItsProtocolMethod(t *testing.T) {
+	Convey("downloads 工具按 action 转发到 downloads.* 方法,browser 作为目标,confirm 留在方法输入里", t, func() {
+		p := loadProto(t)
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+		So(err, ShouldBeNil)
+		props, required := inputSchemaOf(toolByName(res, "downloads"))
+		So(required, ShouldResemble, []any{"action"})
+		action, ok := props["action"].(map[string]any)
+		So(ok, ShouldBeTrue)
+		So(action["enum"], ShouldResemble, []any{"list", "start", "pause", "resume", "cancel", "erase", "delete-file", "show"})
+		So(props, ShouldContainKey, protocol.ConfirmParam)
+
+		for _, args := range []map[string]any{
+			{"action": "list", "state": "complete", "query": "a", "limit": 5},
+			{"action": "start", "url": "https://files.example/a.zip", "filename": "sub/a.zip", "browser": "work"},
+			{"action": "pause", "id": 1},
+			{"action": "resume", "id": 1},
+			{"action": "cancel", "id": 1, "confirm": true},
+			{"action": "erase", "ids": []int{1, 2}, "confirm": true},
+			{"action": "delete-file", "id": 1, "confirm": true},
+			{"action": "show", "id": 1},
+		} {
+			result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "downloads", Arguments: args})
+			So(err, ShouldBeNil)
+			So(result.IsError, ShouldBeFalse)
+		}
+		So(caller.actions, ShouldResemble, []string{
+			"downloads.list", "downloads.start", "downloads.pause", "downloads.resume",
+			"downloads.cancel", "downloads.erase", "downloads.deleteFile", "downloads.show",
+		})
+		So(string(caller.inputs[1]), ShouldEqual, `{"filename":"sub/a.zip","url":"https://files.example/a.zip"}`)
+		So(string(caller.inputs[5]), ShouldEqual, `{"confirm":true,"ids":[1,2]}`)
+		So(caller.browserParams[1], ShouldEqual, "work")
+	})
+
+	Convey("downloads 的 erase 缺少 ids 时在转发前被拒绝", t, func() {
+		p := loadProto(t)
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+		_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "downloads", Arguments: map[string]any{"action": "erase", "confirm": true}})
+		So(err, ShouldNotBeNil)
+		So(caller.actions, ShouldBeEmpty)
+	})
+}

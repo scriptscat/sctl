@@ -74,6 +74,70 @@ export function validateBrowsingDataClearResult(value: unknown): value is Protoc
   return (isRecord(value) && hasOnlyKeys(value, ["types"]) && Array.isArray(value["types"]) && value["types"].every((item) => typeof item === "string"));
 }
 
+export function validateDownloadsCancelParams(value: unknown): value is Protocol.DownloadsCancelParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["confirm", "id"]) && (value["confirm"] === undefined || (value["confirm"] === true)) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
+}
+
+export function validateDownloadsCancelResult(value: unknown): value is Protocol.DownloadsCancelResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
+}
+
+export function validateDownloadsDeleteFileParams(value: unknown): value is Protocol.DownloadsDeleteFileParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["confirm", "id"]) && (value["confirm"] === undefined || (value["confirm"] === true)) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
+}
+
+export function validateDownloadsDeleteFileResult(value: unknown): value is Protocol.DownloadsDeleteFileResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
+}
+
+export function validateDownloadsEraseParams(value: unknown): value is Protocol.DownloadsEraseParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["confirm", "ids"]) && (value["confirm"] === undefined || (value["confirm"] === true)) && Array.isArray(value["ids"]) && value["ids"].length >= 1 && value["ids"].every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0));
+}
+
+export function validateDownloadsEraseResult(value: unknown): value is Protocol.DownloadsEraseResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["ids"]) && Array.isArray(value["ids"]) && value["ids"].every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0));
+}
+
+export function validateDownloadsListParams(value: unknown): value is Protocol.DownloadsListParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["limit", "query", "state"]) && (value["limit"] === undefined || (typeof value["limit"] === "number" && Number.isInteger(value["limit"]) && value["limit"] >= 1)) && (value["query"] === undefined || (typeof value["query"] === "string")) && (value["state"] === undefined || ((value["state"] === "in_progress" || value["state"] === "complete" || value["state"] === "interrupted"))));
+}
+
+export function validateDownloadsListResult(value: unknown): value is Protocol.DownloadsListResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "hasMore", "items"]) && value["contentTrust"] === "untrusted-page-content" && typeof value["hasMore"] === "boolean" && Array.isArray(value["items"]) && value["items"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["bytesReceived", "exists", "filename", "id", "startTime", "state", "totalBytes", "url"]) && typeof item["bytesReceived"] === "number" && Number.isInteger(item["bytesReceived"]) && typeof item["exists"] === "boolean" && typeof item["filename"] === "string" && typeof item["id"] === "number" && Number.isInteger(item["id"]) && item["id"] >= 0 && typeof item["startTime"] === "number" && Number.isInteger(item["startTime"]) && (item["state"] === "in_progress" || item["state"] === "complete" || item["state"] === "interrupted") && typeof item["totalBytes"] === "number" && Number.isInteger(item["totalBytes"]) && typeof item["url"] === "string")));
+}
+
+export function validateDownloadsPauseParams(value: unknown): value is Protocol.DownloadsPauseParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
+}
+
+export function validateDownloadsPauseResult(value: unknown): value is Protocol.DownloadsPauseResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
+}
+
+export function validateDownloadsResumeParams(value: unknown): value is Protocol.DownloadsResumeParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
+}
+
+export function validateDownloadsResumeResult(value: unknown): value is Protocol.DownloadsResumeResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
+}
+
+export function validateDownloadsShowParams(value: unknown): value is Protocol.DownloadsShowParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
+}
+
+export function validateDownloadsShowResult(value: unknown): value is Protocol.DownloadsShowResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
+}
+
+export function validateDownloadsStartParams(value: unknown): value is Protocol.DownloadsStartParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["filename", "url"]) && (value["filename"] === undefined || (typeof value["filename"] === "string")) && typeof value["url"] === "string");
+}
+
+export function validateDownloadsStartResult(value: unknown): value is Protocol.DownloadsStartResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
+}
+
 export function validateHistoryClearParams(value: unknown): value is Protocol.HistoryClearParams {
   return (isRecord(value) && hasOnlyKeys(value, ["confirm", "endTime", "startTime"]) && (value["confirm"] === undefined || (value["confirm"] === true)) && (value["endTime"] === undefined || (typeof value["endTime"] === "number" && Number.isInteger(value["endTime"]) && value["endTime"] >= 0)) && (value["startTime"] === undefined || (typeof value["startTime"] === "number" && Number.isInteger(value["startTime"]) && value["startTime"] >= 0)));
 }
@@ -299,6 +363,14 @@ export const RPC_PARAM_VALIDATORS = {
   "bookmarks.remove": validateBookmarksRemoveParams,
   "bookmarks.search": validateBookmarksSearchParams,
   "browsingData.clear": validateBrowsingDataClearParams,
+  "downloads.cancel": validateDownloadsCancelParams,
+  "downloads.deleteFile": validateDownloadsDeleteFileParams,
+  "downloads.erase": validateDownloadsEraseParams,
+  "downloads.list": validateDownloadsListParams,
+  "downloads.pause": validateDownloadsPauseParams,
+  "downloads.resume": validateDownloadsResumeParams,
+  "downloads.show": validateDownloadsShowParams,
+  "downloads.start": validateDownloadsStartParams,
   "history.clear": validateHistoryClearParams,
   "history.remove": validateHistoryRemoveParams,
   "history.search": validateHistorySearchParams,
@@ -341,6 +413,14 @@ export const RPC_RESULT_VALIDATORS = {
   "bookmarks.remove": validateBookmarksRemoveResult,
   "bookmarks.search": validateBookmarksSearchResult,
   "browsingData.clear": validateBrowsingDataClearResult,
+  "downloads.cancel": validateDownloadsCancelResult,
+  "downloads.deleteFile": validateDownloadsDeleteFileResult,
+  "downloads.erase": validateDownloadsEraseResult,
+  "downloads.list": validateDownloadsListResult,
+  "downloads.pause": validateDownloadsPauseResult,
+  "downloads.resume": validateDownloadsResumeResult,
+  "downloads.show": validateDownloadsShowResult,
+  "downloads.start": validateDownloadsStartResult,
   "history.clear": validateHistoryClearResult,
   "history.remove": validateHistoryRemoveResult,
   "history.search": validateHistorySearchResult,
