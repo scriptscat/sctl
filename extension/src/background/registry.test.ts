@@ -32,6 +32,31 @@ describe("handler registry", () => {
     });
   });
 
+  it("refuses an L1 call without confirm: true before running its handler", async () => {
+    const closed: unknown[] = [];
+    // 协议里还没有 L1 浏览器方法，用注入的级别把 tabs.close 当作 L1。
+    const registry = new HandlerRegistry(() => "L1");
+    registry.register("tabs.close", (params) => {
+      closed.push(params);
+      return Promise.resolve({ tabIds: params.tabIds });
+    });
+
+    for (const params of [{ tabIds: [1] }, { tabIds: [1], confirm: false }, { tabIds: [1], confirm: "true" }]) {
+      await expect(registry.dispatch("tabs.close", params)).resolves.toEqual({
+        ok: false,
+        code: "CONFIRMATION_REQUIRED",
+        message: expect.stringContaining("confirm") as string,
+      });
+    }
+    expect(closed).toEqual([]);
+
+    await expect(registry.dispatch("tabs.close", { tabIds: [1], confirm: true })).resolves.toEqual({
+      ok: true,
+      result: { tabIds: [1] },
+    });
+    expect(closed).toEqual([{ tabIds: [1], confirm: true }]);
+  });
+
   it("refuses to register the same method twice", () => {
     const registry = new HandlerRegistry();
     registry.register("tabs.list", () => Promise.resolve({ contentTrust: "untrusted-page-content", tabs: [] }));

@@ -38,12 +38,29 @@ type Action struct {
 	Write    bool   `json:"-"`
 	Effect   string `json:"effect"`
 	Blocking string `json:"blocking,omitempty"`
+	Level    Level  `json:"level"`
 	Params   string `json:"params"`
 	Result   string `json:"result"`
 	Peer     Peer   `json:"peer"`
 	// MergeField 是结果中的数组字段名:多个浏览器同时在线时 daemon 按它合并各实例的列表;非列表方法为空。
 	MergeField string `json:"mergeField,omitempty"`
 }
+
+// Level 是方法的破坏级别。daemon 只执行 L1 的确认检查;L2 的人工审批由扩展侧完成,
+// daemon 只是等待它的结果(与 blocking 为 approval/disclosure 的方法同一套阻塞语义)。
+type Level string
+
+const (
+	// LevelDirect 直接执行。
+	LevelDirect Level = "L0"
+	// LevelConfirm 要求调用方在 input 里显式传 confirm: true,否则 daemon 在转发前拒绝。
+	LevelConfirm Level = "L1"
+	// LevelApproval 要求用户在浏览器里批准后才执行。
+	LevelApproval Level = "L2"
+)
+
+// ConfirmParam 是 L1 方法参数里承载显式确认的字段名,值必须恰好是 true。
+const ConfirmParam = "confirm"
 
 // Peer 是协议定义的归属对端:方法由哪种扩展实现,错误码与握手常量由哪些扩展使用。
 type Peer string

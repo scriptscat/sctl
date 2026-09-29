@@ -18,14 +18,18 @@ export const SESSION_METHODS = [
 export const ERROR_CODES = [
   "INVALID_REQUEST",
   "METHOD_NOT_FOUND",
+  "USER_REJECTED",
   "OPERATION_EXPIRED",
   "CONFLICT",
   "NOT_FOUND",
+  "PAYLOAD_TOO_LARGE",
   "INTERNAL_ERROR",
   "NO_BROWSER_CONNECTED",
   "BROWSER_OFFLINE",
   "BROWSER_NOT_FOUND",
-  "BROWSER_AMBIGUOUS"
+  "BROWSER_AMBIGUOUS",
+  "CONFIRMATION_REQUIRED",
+  "UNSUPPORTED"
 ] as const;
 export const CRYPTO = {
   "mac": "HMAC-SHA-256",
@@ -105,6 +109,7 @@ export const RPC_METHODS = {
     scope: "tabs:activate",
     effect: "write",
     blocking: "none",
+    level: "L0",
   },
   "tabs.close": {
     params: "TabsCloseParams",
@@ -112,6 +117,7 @@ export const RPC_METHODS = {
     scope: "tabs:close",
     effect: "write",
     blocking: "none",
+    level: "L0",
   },
   "tabs.list": {
     params: "TabsListParams",
@@ -119,6 +125,7 @@ export const RPC_METHODS = {
     scope: "tabs:list",
     effect: "read",
     blocking: "none",
+    level: "L0",
   },
   "tabs.open": {
     params: "TabsOpenParams",
@@ -126,6 +133,7 @@ export const RPC_METHODS = {
     scope: "tabs:open",
     effect: "write",
     blocking: "none",
+    level: "L0",
   },
   "windows.list": {
     params: "WindowsListParams",
@@ -133,8 +141,9 @@ export const RPC_METHODS = {
     scope: "windows:list",
     effect: "read",
     blocking: "none",
+    level: "L0",
   },
 } as const satisfies Record<
   RpcMethod,
-  { params: string; result: string; scope: string; effect: string; blocking: string }
+  { params: string; result: string; scope: string; effect: string; blocking: string; level: "L0" | "L1" | "L2" }
 >;

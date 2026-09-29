@@ -22,6 +22,7 @@
       "scope": "scripts:list",
       "effect": "read",
       "blocking": "none",
+      "level": "L0",
       "peer": "scriptcat"
     },
     "scripts.metadata.get": {
@@ -30,6 +31,7 @@
       "scope": "scripts:metadata:read",
       "effect": "read",
       "blocking": "none",
+      "level": "L0",
       "peer": "scriptcat"
     },
     "scripts.source.get": {
@@ -38,6 +40,7 @@
       "scope": "scripts:source:read",
       "effect": "read",
       "blocking": "disclosure",
+      "level": "L2",
       "peer": "scriptcat"
     },
     "scripts.source.grep": {
@@ -46,6 +49,7 @@
       "scope": "scripts:source:read",
       "effect": "read",
       "blocking": "disclosure",
+      "level": "L2",
       "peer": "scriptcat"
     },
     "scripts.install.request": {
@@ -54,6 +58,7 @@
       "scope": "scripts:install:request",
       "effect": "write",
       "blocking": "approval",
+      "level": "L2",
       "peer": "scriptcat"
     },
     "scripts.toggle.request": {
@@ -62,6 +67,7 @@
       "scope": "scripts:toggle:request",
       "effect": "write",
       "blocking": "approval",
+      "level": "L2",
       "peer": "scriptcat"
     },
     "scripts.delete.request": {
@@ -70,6 +76,7 @@
       "scope": "scripts:delete:request",
       "effect": "write",
       "blocking": "approval",
+      "level": "L2",
       "peer": "scriptcat"
     },
     "scripts.edit.request": {
@@ -78,6 +85,7 @@
       "scope": "scripts:edit:request",
       "effect": "write",
       "blocking": "approval",
+      "level": "L2",
       "peer": "scriptcat"
     },
     "tabs.list": {
@@ -86,6 +94,7 @@
       "scope": "tabs:list",
       "effect": "read",
       "blocking": "none",
+      "level": "L0",
       "peer": "browser",
       "mergeField": "tabs"
     },
@@ -95,6 +104,7 @@
       "scope": "tabs:open",
       "effect": "write",
       "blocking": "none",
+      "level": "L0",
       "peer": "browser"
     },
     "tabs.close": {
@@ -103,6 +113,7 @@
       "scope": "tabs:close",
       "effect": "write",
       "blocking": "none",
+      "level": "L0",
       "peer": "browser"
     },
     "tabs.activate": {
@@ -111,6 +122,7 @@
       "scope": "tabs:activate",
       "effect": "write",
       "blocking": "none",
+      "level": "L0",
       "peer": "browser"
     },
     "windows.list": {
@@ -119,6 +131,7 @@
       "scope": "windows:list",
       "effect": "read",
       "blocking": "none",
+      "level": "L0",
       "peer": "browser",
       "mergeField": "windows"
     }
@@ -811,17 +824,19 @@
   "errorCodes": [
     { "code": "INVALID_REQUEST", "peers": ["scriptcat", "browser"] },
     { "code": "METHOD_NOT_FOUND", "peers": ["scriptcat", "browser"] },
-    { "code": "USER_REJECTED", "peers": ["scriptcat"] },
+    { "code": "USER_REJECTED", "peers": ["scriptcat", "browser"] },
     { "code": "OPERATION_EXPIRED", "peers": ["scriptcat", "browser"] },
     { "code": "CONFLICT", "peers": ["scriptcat", "browser"] },
     { "code": "NOT_FOUND", "peers": ["scriptcat", "browser"] },
     { "code": "RATE_LIMITED", "peers": ["scriptcat"] },
-    { "code": "PAYLOAD_TOO_LARGE", "peers": ["scriptcat"] },
+    { "code": "PAYLOAD_TOO_LARGE", "peers": ["scriptcat", "browser"] },
     { "code": "INTERNAL_ERROR", "peers": ["scriptcat", "browser"] },
     { "code": "NO_BROWSER_CONNECTED", "peers": ["browser"] },
     { "code": "BROWSER_OFFLINE", "peers": ["browser"] },
     { "code": "BROWSER_NOT_FOUND", "peers": ["browser"] },
-    { "code": "BROWSER_AMBIGUOUS", "peers": ["browser"] }
+    { "code": "BROWSER_AMBIGUOUS", "peers": ["browser"] },
+    { "code": "CONFIRMATION_REQUIRED", "peers": ["browser"] },
+    { "code": "UNSUPPORTED", "peers": ["browser"] }
   ],
   "crypto": {
     "mac": "HMAC-SHA-256",

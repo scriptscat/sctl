@@ -84,6 +84,13 @@ func startTestServer(t *testing.T) *testHarness {
 	t.Helper()
 	p, err := protocol.Load()
 	So(err, ShouldBeNil)
+	return startTestServerWithProtocol(t, p)
+}
+
+// startTestServerWithProtocol 用注入的协议定义启动 daemon,让测试能驱动当前协议里尚不存在的方法属性
+// (例如 L1 级别)。
+func startTestServerWithProtocol(t *testing.T, p *protocol.Protocol) *testHarness {
+	t.Helper()
 	dir := t.TempDir()
 	keys := store.NewKeyStore(filepath.Join(dir, "pairing.key"))
 	browsers, err := store.LoadBrowserRegistry(filepath.Join(dir, "browsers.json"))

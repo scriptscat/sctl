@@ -64,6 +64,25 @@ func TestLoadExposesMethodPeerAndListMergeField(t *testing.T) {
 	}
 }
 
+func TestLoadExposesEachMethodsDestructionLevel(t *testing.T) {
+	p, err := Load()
+	if err != nil {
+		t.Fatalf("load protocol: %v", err)
+	}
+	for name, want := range map[string]Level{
+		"scripts.list":           LevelDirect,
+		"scripts.source.get":     LevelApproval,
+		"scripts.delete.request": LevelApproval,
+		"tabs.list":              LevelDirect,
+		"tabs.close":             LevelDirect,
+		"windows.list":           LevelDirect,
+	} {
+		if got := p.Actions[name].Level; got != want {
+			t.Errorf("%s level = %q, want %q", name, got, want)
+		}
+	}
+}
+
 func TestLoadKeepsBrowserHandshakeContextsDistinctFromScriptCat(t *testing.T) {
 	p, err := Load()
 	if err != nil {

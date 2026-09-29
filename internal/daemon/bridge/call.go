@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -153,6 +154,9 @@ type browserRef struct {
 // mergedItemBrowserField 是汇总结果里每一项新增的来源浏览器字段。
 const mergedItemBrowserField = "browser"
 
+// mergedHasMoreField 是列表结果里「还有未返回的条目」的布尔字段:任一实例还有更多,汇总结果就还有更多。
+const mergedHasMoreField = "hasMore"
+
 // resolveBrowsers 在 daemon 侧解析浏览器调用的目标,只有这里知道哪些实例在线。
 // target 为空时按在线实例数选择:没有在线实例报 NO_BROWSER_CONNECTED;恰好一个就用它;
 // 多个时列表类方法(mergeable)用全部在线实例,操作类方法报 BROWSER_AMBIGUOUS 并列出候选。
@@ -271,15 +275,16 @@ func (s *Server) callMerged(ctx context.Context, targets []browserTarget, req Re
 	return Response{OK: true, Result: merged}, nil
 }
 
-// mergeResults 以第一个结果为底,把各结果 mergeField 数组的每一项标上来源浏览器后拼接。
-// 各项保持原始 JSON,不经数值往返。结果已按方法 schema 校验过,mergeField 必是对象数组;
-// 解析失败说明协议定义与此处假设不符。
+// mergeResults 以第一个结果为底,把各结果 mergeField 数组的每一项标上来源浏览器后拼接,
+// 结果带 hasMore 时对各实例取或。各项保持原始 JSON,不经数值往返。结果已按方法 schema 校验过,
+// mergeField 必是对象数组、hasMore 必是布尔值(protocolgen 保证);解析失败说明协议定义与此处假设不符。
 func mergeResults(targets []browserTarget, responses []Response, mergeField string) (json.RawMessage, error) {
 	var base map[string]json.RawMessage
 	if err := json.Unmarshal(responses[0].Result, &base); err != nil {
 		return nil, fmt.Errorf("merge %s: %w", mergeField, err)
 	}
 	items := []map[string]json.RawMessage{}
+	hasMore, anyHasMore := false, false
 	for i, resp := range responses {
 		ref, err := json.Marshal(browserRef{ID: targets[i].id, Name: targets[i].name})
 		if err != nil {
@@ -297,6 +302,17 @@ func mergeResults(targets []browserTarget, responses []Response, mergeField stri
 			item[mergedItemBrowserField] = ref
 			items = append(items, item)
 		}
+		if raw, ok := fields[mergedHasMoreField]; ok {
+			var more bool
+			if err := json.Unmarshal(raw, &more); err != nil {
+				return nil, fmt.Errorf("merge %s: %w", mergedHasMoreField, err)
+			}
+			anyHasMore = true
+			hasMore = hasMore || more
+		}
+	}
+	if anyHasMore {
+		base[mergedHasMoreField] = json.RawMessage(strconv.FormatBool(hasMore))
 	}
 	raw, err := json.Marshal(items)
 	if err != nil {

@@ -28,6 +28,12 @@ go through the same disclosure gate. Browser control methods carry no such human
 control-token holder can drive a paired browser instance immediately. Details in
 [threat-model.md](./threat-model.md).
 
+Every method carries a destruction level (L0 / L1 / L2, see [protocol.md](./protocol.md#3-business-rpc)). The
+L1 confirmation is checked twice: `controlapi` rejects an L1 call whose input lacks `confirm: true` with
+`CONFIRMATION_REQUIRED` before `bridge` forwards anything, and the sctl Browser extension's handler registry
+(`extension/src/background/registry.ts`) checks again before running the handler. The daemon never decides L2 —
+it forwards the call and blocks, as for ScriptCat's gates.
+
 ## Directory layout
 
 `internal/` is grouped by **process role**: `daemon/` is the guard side (`sctl serve`), `client/` is the

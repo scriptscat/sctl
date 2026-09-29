@@ -32,13 +32,14 @@ type definition struct {
 }
 
 type method struct {
-	Params     string        `json:"params"`
-	Result     string        `json:"result"`
-	Scope      string        `json:"scope"`
-	Effect     string        `json:"effect"`
-	Blocking   string        `json:"blocking"`
-	Peer       protocol.Peer `json:"peer"`
-	MergeField string        `json:"mergeField"`
+	Params     string         `json:"params"`
+	Result     string         `json:"result"`
+	Scope      string         `json:"scope"`
+	Effect     string         `json:"effect"`
+	Blocking   string         `json:"blocking"`
+	Level      protocol.Level `json:"level"`
+	Peer       protocol.Peer  `json:"peer"`
+	MergeField string         `json:"mergeField"`
 }
 
 type errorCode struct {
@@ -64,6 +65,8 @@ type peerContract struct {
 	Crypto         json.RawMessage
 	Limits         json.RawMessage
 	PairingCode    json.RawMessage
+	// WithLevels 决定 RPC_METHODS 是否输出破坏级别:ScriptCat 的生成文件按字节固定,只有浏览器扩展输出它。
+	WithLevels bool
 }
 
 // Generate 从 schemaDir/protocol.json 生成代码:outDir 得到含全部定义的 Go 绑定与 ScriptCat 的 TypeScript,
@@ -126,6 +129,7 @@ func contractFor(def definition, peer protocol.Peer) (peerContract, error) {
 		ErrorCodes:     []string{},
 		Limits:         def.Limits,
 		PairingCode:    def.PairingCode,
+		WithLevels:     peer == protocol.PeerBrowser,
 	}
 	for name, m := range def.Methods {
 		if m.Peer != peer {
@@ -267,6 +271,9 @@ func validateDefinition(def definition) error {
 		default:
 			return fmt.Errorf("rpc %q has invalid blocking mode %q", name, method.Blocking)
 		}
+		if err := validateLevel(def, method); err != nil {
+			return fmt.Errorf("rpc %q: %w", name, err)
+		}
 		if method.MergeField != "" {
 			// 只有浏览器方法会有多个同时在线的目标,daemon 也只为它们合并。
 			if method.Peer != protocol.PeerBrowser {
@@ -307,10 +314,39 @@ func validateDefinition(def definition) error {
 	return nil
 }
 
+// validateLevel 要求每个方法标注合法的破坏级别。L2 与人工闸门(blocking 为 approval/disclosure)一一对应:
+// L2 的审批由扩展完成,daemon 只能靠 blocking 语义等待它。L1 的参数必须声明可选的 confirm: {const: true}:
+// 声明为必填时,缺少确认会先被扩展的参数校验拒成 INVALID_REQUEST,扩展侧的二次确认检查永远轮不到。
+func validateLevel(def definition, method method) error {
+	switch method.Level {
+	case protocol.LevelDirect, protocol.LevelConfirm, protocol.LevelApproval:
+	default:
+		return fmt.Errorf("invalid level %q", method.Level)
+	}
+	if (method.Level == protocol.LevelApproval) != (method.Blocking != "none") {
+		return fmt.Errorf("level %s does not match blocking mode %q: only human-gated methods are L2", method.Level, method.Blocking)
+	}
+	if method.Level != protocol.LevelConfirm {
+		return nil
+	}
+	params := parseSchema(def.Types[method.Params])
+	confirm, ok := params.Properties[protocol.ConfirmParam]
+	if !ok || string(parseSchema(confirm).Const) != "true" || requiredSet(params)[protocol.ConfirmParam] {
+		return fmt.Errorf("L1 params %s must declare an optional %q property with const true", method.Params, protocol.ConfirmParam)
+	}
+	return nil
+}
+
+// mergedHasMoreField 是列表结果里「还有未返回的条目」的布尔字段,daemon 汇总时对各实例取或。
+const mergedHasMoreField = "hasMore"
+
 // validateMergeField 要求合并字段是结果类型中必填的对象数组属性,daemon 才能无条件地拼接各实例的列表;
-// 合并时每一项都会加上来源浏览器的 browser 字段,项本身不能已有同名属性。
+// 合并时每一项都会加上来源浏览器的 browser 字段,项本身不能已有同名属性。结果若声明 hasMore,它必须是布尔值。
 func validateMergeField(result json.RawMessage, field string) error {
 	schema := parseSchema(result)
+	if hasMore, ok := schema.Properties[mergedHasMoreField]; ok && parseSchema(hasMore).Type != "boolean" {
+		return fmt.Errorf("%s must be a boolean for the merge to combine it", mergedHasMoreField)
+	}
 	property, ok := schema.Properties[field]
 	if !ok || !requiredSet(schema)[field] || parseSchema(property).Type != "array" {
 		return fmt.Errorf("mergeField %q is not a required array property of the result", field)
@@ -494,10 +530,10 @@ func writeGo(path string, def definition) error {
 		fmt.Fprintf(&b, "Method%s Method = %q\n", exportedName(name), name)
 	}
 	b.WriteString(")\n\n")
-	b.WriteString("type MethodMetadata struct { Params, Result, Scope, Effect, Blocking, Peer, MergeField string }\n\nvar Methods = map[string]MethodMetadata{\n")
+	b.WriteString("type MethodMetadata struct { Params, Result, Scope, Effect, Blocking, Level, Peer, MergeField string }\n\nvar Methods = map[string]MethodMetadata{\n")
 	for _, name := range sortedKeys(def.Methods) {
 		m := def.Methods[name]
-		fmt.Fprintf(&b, "%q: {Params:%q, Result:%q, Scope:%q, Effect:%q, Blocking:%q, Peer:%q, MergeField:%q},\n", name, m.Params, m.Result, m.Scope, m.Effect, m.Blocking, m.Peer, m.MergeField)
+		fmt.Fprintf(&b, "%q: {Params:%q, Result:%q, Scope:%q, Effect:%q, Blocking:%q, Level:%q, Peer:%q, MergeField:%q},\n", name, m.Params, m.Result, m.Scope, m.Effect, m.Blocking, m.Level, m.Peer, m.MergeField)
 	}
 	b.WriteString("}\n\nconst (\n")
 	for _, code := range def.ErrorCodes {
@@ -597,9 +633,17 @@ func renderTS(def peerContract) []byte {
 	b.WriteString("export const RPC_METHODS = {\n")
 	for _, name := range sortedKeys(def.Methods) {
 		m := def.Methods[name]
-		fmt.Fprintf(&b, "  %s: {\n    params: %s,\n    result: %s,\n    scope: %s,\n    effect: %s,\n    blocking: %s,\n  },\n", strconv.Quote(name), strconv.Quote(m.Params), strconv.Quote(m.Result), strconv.Quote(m.Scope), strconv.Quote(m.Effect), strconv.Quote(m.Blocking))
+		fmt.Fprintf(&b, "  %s: {\n    params: %s,\n    result: %s,\n    scope: %s,\n    effect: %s,\n    blocking: %s,\n", strconv.Quote(name), strconv.Quote(m.Params), strconv.Quote(m.Result), strconv.Quote(m.Scope), strconv.Quote(m.Effect), strconv.Quote(m.Blocking))
+		if def.WithLevels {
+			fmt.Fprintf(&b, "    level: %s,\n", strconv.Quote(string(m.Level)))
+		}
+		b.WriteString("  },\n")
 	}
-	b.WriteString("} as const satisfies Record<\n  RpcMethod,\n  { params: string; result: string; scope: string; effect: string; blocking: string }\n>;\n")
+	levelType := ""
+	if def.WithLevels {
+		levelType = fmt.Sprintf("; level: %q | %q | %q", protocol.LevelDirect, protocol.LevelConfirm, protocol.LevelApproval)
+	}
+	fmt.Fprintf(&b, "} as const satisfies Record<\n  RpcMethod,\n  { params: string; result: string; scope: string; effect: string; blocking: string%s }\n>;\n", levelType)
 	return b.Bytes()
 }
 

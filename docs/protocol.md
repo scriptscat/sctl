@@ -202,23 +202,35 @@ A successful call returns the generated result type:
 ```
 
 Every method is owned by exactly one peer (`peer` in `protocol.json`): ScriptCat implements the `scripts.*`
-methods and the sctl Browser extension implements the tab and window methods. The current methods are:
+methods and the sctl Browser extension implements the tab and window methods. Every method also carries a
+destruction `level`:
 
-| Method | Peer | Effect | Blocking behavior |
-|---|---|---|---|
-| `scripts.list` | ScriptCat | read script summaries | none |
-| `scripts.metadata.get` | ScriptCat | read metadata | none |
-| `scripts.source.get` | ScriptCat | read source | disclosure confirmation |
-| `scripts.source.grep` | ScriptCat | search source | disclosure confirmation |
-| `scripts.install.request` | ScriptCat | install a script | write approval |
-| `scripts.toggle.request` | ScriptCat | enable or disable a script | write approval |
-| `scripts.delete.request` | ScriptCat | delete a script | write approval |
-| `scripts.edit.request` | ScriptCat | edit a script | write approval |
-| `tabs.list` | browser | list tabs, optionally in one window | none |
-| `tabs.open` | browser | open a URL in a new tab and return its tab ID | none |
-| `tabs.close` | browser | close one or more tabs | none |
-| `tabs.activate` | browser | activate a tab and focus its window | none |
-| `windows.list` | browser | list windows | none |
+| Level | Meaning | Enforced by |
+|---|---|---|
+| L0 | runs directly | — |
+| L1 | runs only when the input carries `confirm: true`; otherwise the call fails with `CONFIRMATION_REQUIRED` and nothing runs | the daemon, before forwarding; the sctl Browser extension checks again before running the handler |
+| L2 | runs only after a human approves it in the browser | the extension; the daemon forwards the call and waits (§5) |
+
+An L1 method's parameter type declares `confirm` as an optional property whose value must be the constant `true`.
+It is optional in the schema so that an unconfirmed call that reaches the extension is answered with
+`CONFIRMATION_REQUIRED` rather than `INVALID_REQUEST`. L2 is exactly the set of methods whose `blocking` is
+`approval` or `disclosure`. The current methods are:
+
+| Method | Peer | Effect | Blocking behavior | Level |
+|---|---|---|---|---|
+| `scripts.list` | ScriptCat | read script summaries | none | L0 |
+| `scripts.metadata.get` | ScriptCat | read metadata | none | L0 |
+| `scripts.source.get` | ScriptCat | read source | disclosure confirmation | L2 |
+| `scripts.source.grep` | ScriptCat | search source | disclosure confirmation | L2 |
+| `scripts.install.request` | ScriptCat | install a script | write approval | L2 |
+| `scripts.toggle.request` | ScriptCat | enable or disable a script | write approval | L2 |
+| `scripts.delete.request` | ScriptCat | delete a script | write approval | L2 |
+| `scripts.edit.request` | ScriptCat | edit a script | write approval | L2 |
+| `tabs.list` | browser | list tabs, optionally in one window | none | L0 |
+| `tabs.open` | browser | open a URL in a new tab and return its tab ID | none | L0 |
+| `tabs.close` | browser | close one or more tabs | none | L0 |
+| `tabs.activate` | browser | activate a tab and focus its window | none | L0 |
+| `windows.list` | browser | list windows | none | L0 |
 
 Source and metadata returned by these methods are untrusted user-script content. Consumers must not execute it,
 render it as HTML, interpret it as instructions, or include credentials in logs. Source results carry a SHA-256
@@ -227,7 +239,12 @@ digest. Edit approval rechecks the staged digest and target identity before appl
 Tab titles and URLs are controlled by web pages; `tabs.list` marks its result with
 `contentTrust: "untrusted-page-content"` and the same handling rules apply. A list method declares a
 `mergeField`: the required array property in its result that holds the listed items, so results from several
-browser instances combine by concatenating that array. Methods without `mergeField` are never combined.
+browser instances combine by concatenating that array. A list result may also declare a boolean `hasMore`,
+meaning the instance has items it did not return. Methods without `mergeField` are never combined.
+
+A browser method's result must fit in one frame of at most `limits.maxFrameBytes` UTF-8 bytes, because the daemon
+drops a connection that sends a larger frame. When the serialized response would exceed it, the sctl Browser
+extension answers `PAYLOAD_TOO_LARGE` instead of sending the result.
 
 `scripts.source.get` accepts an optional `maxBytes` budget for a whole-file response. When the UTF-8 source is
 larger, the extension returns `PAYLOAD_TOO_LARGE` before placing the source in a WebSocket frame; callers should
@@ -262,7 +279,8 @@ item gains a `browser` object naming its source: `{"id": "<instance ID>", "name"
 instance that answers `NOT_FOUND` — for example, it has no window with the requested ID — contributes no items;
 the call fails with `NOT_FOUND` only when every instance answers it. Any other failing instance fails the whole
 call; partial results are never returned. A call routed to a single instance returns that instance's result
-unchanged.
+unchanged. If any combined result carries `hasMore`, the combined result's `hasMore` is `true` when at least one
+instance answered `true`.
 
 A target on a `scripts.*` call is rejected with `INVALID_REQUEST`; otherwise `scripts.*` routing and its errors do
 not depend on browser instances. If the target connection closes while a call is in flight — for a combined
@@ -300,6 +318,17 @@ These codes are reserved for browser target selection failures ([§3.1](#31-rout
 | `BROWSER_NOT_FOUND` | the target matches no paired browser instance; `/control/browsers/forget` returns it too when the name or ID matches none |
 | `BROWSER_AMBIGUOUS` | the target instance-ID prefix matches more than one paired instance, or a method without `mergeField` was called without a target while several instances are online |
 
+These codes are browser-only too:
+
+| Code | Meaning |
+|---|---|
+| `CONFIRMATION_REQUIRED` | an L1 method was called without `confirm: true` in its input ([§3](#3-business-rpc)); nothing was executed |
+| `UNSUPPORTED` | the browser does not provide the API the method needs; the message names the missing API |
+
+`USER_REJECTED` and `PAYLOAD_TOO_LARGE` are registered for both peers. For the browser, `USER_REJECTED` is
+reserved for a rejected L2 approval and `PAYLOAD_TOO_LARGE` answers a result that would exceed the frame limit
+([§3](#3-business-rpc)).
+
 ## 5. Cancellation and approval
 
 Write and source-disclosure requests remain pending until the user decides. If the requester disconnects,
@@ -329,11 +358,16 @@ pairing KDF strings are shared. The generator emits one set of bindings per peer
 |---|---|
 | `internal/pkg/protocol/generated/protocol.generated.go` | every method, type, error code, and context key, for the daemon and CLI |
 | `internal/pkg/protocol/generated/*.ts` | ScriptCat's methods, the types they reference, and the codes and contexts listing `scriptcat` |
-| `extension/src/protocol/generated/*.ts` | the same selection for `browser` |
+| `extension/src/protocol/generated/*.ts` | the same selection for `browser`, plus each method's `level` in `RPC_METHODS` |
 
 The ScriptCat TypeScript must stay byte-identical to the copy in the paired ScriptCat revision, because ScriptCat
 declares every generated method as a capability and its conformance test compares the method and error-code
 lists exactly. Adding browser-owned definitions therefore never changes ScriptCat's files or `schemaVersion`.
+
+The generator rejects a method whose `level` is missing or not `L0`/`L1`/`L2`, an L2 method without a human gate
+(`blocking` is `none`) or a human-gated method that is not L2, an L1 method whose parameters do not declare the
+optional `confirm: {"const": true}`, and a list result whose `hasMore` is not a boolean. The ScriptCat TypeScript
+does not carry `level`, so it stays byte-identical.
 
 Run `make protocol-generate` after editing `protocol.json`, and `make protocol-sync-scriptcat` to update the
 adjacent ScriptCat checkout. `make protocol-check` regenerates all artifacts and fails if the checked-in output

@@ -27,6 +27,7 @@ const CLOSE_ABNORMAL = 1006;
 // 应用层失败统一用 -32000，领域错误码放在 error.data.code（docs/protocol.md §4）。
 const RPC_APPLICATION_ERROR = -32000;
 const NONCE_PATTERN = new RegExp(`^[0-9a-f]{${CRYPTO.nonceBytes * 2}}$`);
+const utf8 = new TextEncoder();
 
 export interface SocketEvents {
   open(): void;
@@ -363,8 +364,12 @@ export class Connection {
   }
 
   private send(attempt: Attempt, message: Omit<JsonRpcMessage, "jsonrpc">): void {
+    this.sendFrame(attempt, JSON.stringify({ jsonrpc: "2.0", ...message }));
+  }
+
+  private sendFrame(attempt: Attempt, frame: string): void {
     if (attempt === this.attempt) {
-      attempt.socket.send(JSON.stringify({ jsonrpc: "2.0", ...message }));
+      attempt.socket.send(frame);
     }
   }
 
@@ -545,7 +550,7 @@ export class Connection {
     void this.deps.dispatch(declared, input).then(
       (outcome) => {
         if (outcome.ok) {
-          this.send(attempt, { id, result: outcome.result as Record<string, unknown> });
+          this.reply(attempt, id, method, outcome.result as Record<string, unknown>);
         } else {
           this.fail(attempt, id, outcome.code, outcome.message);
         }
@@ -555,6 +560,22 @@ export class Connection {
         this.fail(attempt, id, "INTERNAL_ERROR", "internal error");
       },
     );
+  }
+
+  // daemon 按 LIMITS.maxFrameBytes 限制读取，超限的帧会让它断开整条连接、作废全部在途请求；
+  // 所以超大结果只能在发送前换成 PAYLOAD_TOO_LARGE。上限按 UTF-8 字节计，不是字符数。
+  private reply(attempt: Attempt, id: string, method: string, result: Record<string, unknown>): void {
+    const frame = JSON.stringify({ jsonrpc: "2.0", id, result });
+    if (utf8.encode(frame).length > LIMITS.maxFrameBytes) {
+      this.fail(
+        attempt,
+        id,
+        "PAYLOAD_TOO_LARGE",
+        `result of ${method} exceeds the ${LIMITS.maxFrameBytes}-byte frame limit`,
+      );
+      return;
+    }
+    this.sendFrame(attempt, frame);
   }
 
   private fail(attempt: Attempt, id: string, code: string, message: string): void {

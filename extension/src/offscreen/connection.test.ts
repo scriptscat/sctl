@@ -513,6 +513,47 @@ describe("business requests", () => {
     expect(h.dispatched).toEqual([]);
   });
 
+  // 返回一个 tabs.list 结果，使 id 为 id 的应答帧按 UTF-8 恰好 frameBytes 字节；pad 是填充标题的字符。
+  function resultOfFrameSize(id: string, frameBytes: number, pad: string) {
+    const encoder = new TextEncoder();
+    const result = (title: string) => ({
+      contentTrust: "untrusted-page-content",
+      tabs: [{ tabId: 1, windowId: 1, active: true, pinned: false, title, url: "https://a.test/" }],
+    });
+    const base = encoder.encode(JSON.stringify({ jsonrpc: "2.0", id, result: result("") })).length;
+    const padBytes = encoder.encode(pad).length;
+    const count = Math.ceil((frameBytes - base) / padBytes);
+    return { result: result(pad.repeat(count)), bytes: base + count * padBytes };
+  }
+
+  it("sends a result whose frame is exactly the daemon's frame limit", async () => {
+    const h = await connected();
+    const { result, bytes } = resultOfFrameSize("r6", LIMITS.maxFrameBytes, "a");
+    expect(bytes).toBe(LIMITS.maxFrameBytes);
+    h.setOutcome({ ok: true, result });
+    const socket = h.socket();
+    const response = socket.nextSent();
+    socket.receive({ jsonrpc: "2.0", id: "r6", method: "tabs.list", params: { input: {} } });
+
+    expect(await response).toEqual({ jsonrpc: "2.0", id: "r6", result });
+  });
+
+  it("answers PAYLOAD_TOO_LARGE instead of a result whose UTF-8 frame exceeds the daemon's frame limit", async () => {
+    const h = await connected();
+    // 多字节字符让帧的 UTF-8 字节数超限而字符数不超限，按字符数判断的实现会把超限帧发出去。
+    const { result, bytes } = resultOfFrameSize("r5", LIMITS.maxFrameBytes + 1, "é");
+    expect(bytes).toBeGreaterThan(LIMITS.maxFrameBytes);
+    expect(JSON.stringify(result).length).toBeLessThan(LIMITS.maxFrameBytes);
+    h.setOutcome({ ok: true, result });
+    const socket = h.socket();
+    const response = socket.nextSent();
+    socket.receive({ jsonrpc: "2.0", id: "r5", method: "tabs.list", params: { input: {} } });
+
+    const answer = await response;
+    expect(answer.result).toBeUndefined();
+    expect(answer).toMatchObject({ id: "r5", error: { code: -32000, data: { code: "PAYLOAD_TOO_LARGE" } } });
+  });
+
   it("answers daemon pings", async () => {
     const h = await connected();
     const socket = h.socket();

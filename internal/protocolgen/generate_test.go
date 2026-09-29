@@ -183,7 +183,7 @@ func TestGenerateKeepsScriptCatTypeScriptByteIdenticalWhenBrowserMethodsExist(t 
 		"validators.generated.ts": scriptCatValidatorsSHA256,
 	} {
 		content := readFile(t, filepath.Join(out, name))
-		for _, browserOnly := range []string{"tabs.list", "TabsListParams", "BROWSER_OFFLINE", "browserSessionExt"} {
+		for _, browserOnly := range []string{"tabs.list", "TabsListParams", "BROWSER_OFFLINE", "browserSessionExt", "CONFIRMATION_REQUIRED", "UNSUPPORTED", "level"} {
 			if strings.Contains(content, browserOnly) {
 				t.Errorf("ScriptCat %s contains browser-owned %q", name, browserOnly)
 			}
@@ -204,19 +204,24 @@ func TestGenerateWritesBrowserTypeScriptWithOnlyBrowserContract(t *testing.T) {
 	}
 	typescript := readFile(t, filepath.Join(browserOut, "protocol.generated.ts"))
 	for _, want := range []string{
-		`"tabs.list": { params: TabsListParams; result: TabsListResult };`,
+		`{ params: TabsListParams; result: TabsListResult };`,
 		`"windows.list": { params: WindowsListParams; result: WindowsListResult };`,
 		`"BROWSER_OFFLINE"`,
 		`"NOT_FOUND"`,
 		`"browserSessionExt": "sctl-browser-rpc-v1/ext"`,
 		`"pairKdfSalt": "scriptcat-rpc-v1/pair-salt"`,
 		`export const SCHEMA_VERSION = "1.0.0" as const;`,
+		`"USER_REJECTED"`,
+		`"PAYLOAD_TOO_LARGE"`,
+		`"CONFIRMATION_REQUIRED"`,
+		`"UNSUPPORTED"`,
+		"  \"tabs.close\": {\n    params: \"TabsCloseParams\",\n    result: \"TabsCloseResult\",\n    scope: \"tabs:close\",\n    effect: \"write\",\n    blocking: \"none\",\n    level: \"L0\",\n  },\n",
 	} {
 		if !strings.Contains(typescript, want) {
 			t.Errorf("browser TypeScript does not contain %q", want)
 		}
 	}
-	for _, unwanted := range []string{"scripts.list", "ScriptsListParams", `"USER_REJECTED"`, `"sessionExt"`, "unknown"} {
+	for _, unwanted := range []string{"scripts.list", "ScriptsListParams", `"sessionExt"`, "unknown"} {
 		if strings.Contains(typescript, unwanted) {
 			t.Errorf("browser TypeScript contains ScriptCat-only or unresolved %q", unwanted)
 		}
@@ -251,8 +256,14 @@ func TestGenerateGoBindingsCarryEveryPeer(t *testing.T) {
 	for _, want := range []string{
 		`MethodScriptsList `,
 		`MethodTabsList `,
-		`Peer: "browser", MergeField: "tabs"`,
-		`Peer: "scriptcat", MergeField: ""`,
+		`{Params: "TabsListParams", Result: "TabsListResult", Scope: "tabs:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "tabs"}`,
+		`{Params: "ScriptUUIDParams", Result: "ScriptsDeleteResult", Scope: "scripts:delete:request", Effect: "write", Blocking: "approval", Level: "L2", Peer: "scriptcat", MergeField: ""}`,
+		`{Params: "ScriptsSourceGetParams", Result: "ScriptSource", Scope: "scripts:source:read", Effect: "read", Blocking: "disclosure", Level: "L2", Peer: "scriptcat", MergeField: ""}`,
+		`{Params: "ScriptsListParams", Result: "ScriptsListResult", Scope: "scripts:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "scriptcat", MergeField: ""}`,
+		`ErrorCodeConfirmationRequired `,
+		`= "CONFIRMATION_REQUIRED"`,
+		`ErrorCodeUnsupported `,
+		`= "UNSUPPORTED"`,
 		`ErrorCodeInvalidRequest `,
 		`ErrorCodeBrowserOffline `,
 		`= "BROWSER_OFFLINE"`,
@@ -303,6 +314,39 @@ func TestGenerateRejectsInvalidPeerAnnotations(t *testing.T) {
 			context := def["crypto"].(map[string]any)["context"].(map[string]any)
 			context["sessionExt"].(map[string]any)["peers"] = []any{}
 		},
+		"method without level": func(def map[string]any) {
+			delete(method(def, "tabs.open"), "level")
+		},
+		"method with unknown level": func(def map[string]any) {
+			method(def, "tabs.open")["level"] = "L3"
+		},
+		"L1 method whose params lack confirm": func(def map[string]any) {
+			method(def, "tabs.close")["level"] = "L1"
+		},
+		"L1 method whose confirm is not the constant true": func(def map[string]any) {
+			method(def, "tabs.close")["level"] = "L1"
+			properties(def, "TabsCloseParams")["confirm"] = map[string]any{"type": "boolean"}
+		},
+		"L1 method that requires confirm in its params schema": func(def map[string]any) {
+			method(def, "tabs.close")["level"] = "L1"
+			properties(def, "TabsCloseParams")["confirm"] = map[string]any{"const": true}
+			params := def["types"].(map[string]any)["TabsCloseParams"].(map[string]any)
+			params["required"] = append(params["required"].([]any), "confirm")
+		},
+		"L1 method gated by a human approval": func(def map[string]any) {
+			method(def, "tabs.close")["level"] = "L1"
+			method(def, "tabs.close")["blocking"] = "approval"
+			properties(def, "TabsCloseParams")["confirm"] = map[string]any{"const": true}
+		},
+		"L2 method without a human gate": func(def map[string]any) {
+			method(def, "tabs.open")["level"] = "L2"
+		},
+		"human-gated method not marked L2": func(def map[string]any) {
+			method(def, "scripts.delete.request")["level"] = "L0"
+		},
+		"merge result whose hasMore is not a boolean": func(def map[string]any) {
+			properties(def, "TabsListResult")["hasMore"] = map[string]any{"type": "integer"}
+		},
 		"type that no method uses": func(def map[string]any) {
 			def["types"].(map[string]any)["Orphan"] = map[string]any{"type": "object", "properties": map[string]any{}}
 		},
@@ -334,6 +378,10 @@ func TestGenerateRejectsInvalidPeerAnnotations(t *testing.T) {
 			}
 		})
 	}
+}
+
+func properties(def map[string]any, typeName string) map[string]any {
+	return def["types"].(map[string]any)[typeName].(map[string]any)["properties"].(map[string]any)
 }
 
 func resultProperty(def map[string]any, typeName, property string) map[string]any {

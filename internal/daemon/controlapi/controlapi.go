@@ -146,9 +146,15 @@ func (h *Handler) call(w http.ResponseWriter, r *http.Request) {
 		writeControlError(w, bridge.CodeInvalidRequest, "malformed request body")
 		return
 	}
-	_, ok := h.bridge.Action(req.Action)
+	action, ok := h.bridge.Action(req.Action)
 	if !ok {
 		writeControlError(w, bridge.CodeInvalidRequest, "unknown action")
+		return
+	}
+	// 确认必须在 daemon 转发前检查:只靠 CLI 的 --yes 时,MCP 和直接调用 /control/call 都能绕过。
+	if action.Level == protocol.LevelConfirm && !confirmed(req.Input) {
+		writeControlError(w, generated.ErrorCodeConfirmationRequired,
+			req.Action+" requires explicit confirmation: pass --yes on the command line or confirm: true in the input")
 		return
 	}
 
@@ -185,6 +191,20 @@ func (h *Handler) call(w http.ResponseWriter, r *http.Request) {
 		}
 		writeControlError(w, bridge.CodeInternal, "internal error")
 	}
+}
+
+// confirmed 报告调用输入是否带 confirm: true。输入来自调用方、尚未经过方法 schema 校验,
+// 不是对象或 confirm 不是布尔 true 都算未确认。
+func confirmed(input json.RawMessage) bool {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(input, &fields); err != nil {
+		return false
+	}
+	var confirm bool
+	if err := json.Unmarshal(fields[protocol.ConfirmParam], &confirm); err != nil {
+		return false
+	}
+	return confirm
 }
 
 // enroll 打开一次接入窗口并返回展示形配对码(供 sctl connect 在终端展示)。

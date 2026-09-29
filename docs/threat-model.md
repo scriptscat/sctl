@@ -32,6 +32,9 @@ press approve on the extension's confirmation page (unless the corresponding glo
 MCP tools are neither approved per operation nor limited to particular tabs: any holder of the control token can
 list, open, close, and activate tabs and list windows in **every** paired sctl Browser instance, immediately. This
 is a deliberate trade for low operating friction; the control token (same user on this host) is the only gate.
+The L1 destruction level ([protocol.md](./protocol.md#3-business-rpc)) is not a security boundary either: it only
+makes the caller state `confirm: true` in the call input so a destructive call is not made by accident, and
+any control-token holder can supply it — a control-token holder can perform every L0 and L1 operation.
 
 ## 2. Attack surface and countermeasures
 

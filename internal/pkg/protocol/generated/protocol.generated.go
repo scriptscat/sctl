@@ -204,38 +204,40 @@ const (
 	MethodWindowsList           Method = "windows.list"
 )
 
-type MethodMetadata struct{ Params, Result, Scope, Effect, Blocking, Peer, MergeField string }
+type MethodMetadata struct{ Params, Result, Scope, Effect, Blocking, Level, Peer, MergeField string }
 
 var Methods = map[string]MethodMetadata{
-	"scripts.delete.request":  {Params: "ScriptUUIDParams", Result: "ScriptsDeleteResult", Scope: "scripts:delete:request", Effect: "write", Blocking: "approval", Peer: "scriptcat", MergeField: ""},
-	"scripts.edit.request":    {Params: "ScriptsEditParams", Result: "ScriptMutationResult", Scope: "scripts:edit:request", Effect: "write", Blocking: "approval", Peer: "scriptcat", MergeField: ""},
-	"scripts.install.request": {Params: "ScriptsInstallParams", Result: "ScriptMutationResult", Scope: "scripts:install:request", Effect: "write", Blocking: "approval", Peer: "scriptcat", MergeField: ""},
-	"scripts.list":            {Params: "ScriptsListParams", Result: "ScriptsListResult", Scope: "scripts:list", Effect: "read", Blocking: "none", Peer: "scriptcat", MergeField: ""},
-	"scripts.metadata.get":    {Params: "ScriptUUIDParams", Result: "ScriptMetadata", Scope: "scripts:metadata:read", Effect: "read", Blocking: "none", Peer: "scriptcat", MergeField: ""},
-	"scripts.source.get":      {Params: "ScriptsSourceGetParams", Result: "ScriptSource", Scope: "scripts:source:read", Effect: "read", Blocking: "disclosure", Peer: "scriptcat", MergeField: ""},
-	"scripts.source.grep":     {Params: "ScriptsSourceGrepParams", Result: "ScriptSourceGrepResult", Scope: "scripts:source:read", Effect: "read", Blocking: "disclosure", Peer: "scriptcat", MergeField: ""},
-	"scripts.toggle.request":  {Params: "ScriptsToggleParams", Result: "ScriptsToggleResult", Scope: "scripts:toggle:request", Effect: "write", Blocking: "approval", Peer: "scriptcat", MergeField: ""},
-	"tabs.activate":           {Params: "TabsActivateParams", Result: "TabsActivateResult", Scope: "tabs:activate", Effect: "write", Blocking: "none", Peer: "browser", MergeField: ""},
-	"tabs.close":              {Params: "TabsCloseParams", Result: "TabsCloseResult", Scope: "tabs:close", Effect: "write", Blocking: "none", Peer: "browser", MergeField: ""},
-	"tabs.list":               {Params: "TabsListParams", Result: "TabsListResult", Scope: "tabs:list", Effect: "read", Blocking: "none", Peer: "browser", MergeField: "tabs"},
-	"tabs.open":               {Params: "TabsOpenParams", Result: "TabsOpenResult", Scope: "tabs:open", Effect: "write", Blocking: "none", Peer: "browser", MergeField: ""},
-	"windows.list":            {Params: "WindowsListParams", Result: "WindowsListResult", Scope: "windows:list", Effect: "read", Blocking: "none", Peer: "browser", MergeField: "windows"},
+	"scripts.delete.request":  {Params: "ScriptUUIDParams", Result: "ScriptsDeleteResult", Scope: "scripts:delete:request", Effect: "write", Blocking: "approval", Level: "L2", Peer: "scriptcat", MergeField: ""},
+	"scripts.edit.request":    {Params: "ScriptsEditParams", Result: "ScriptMutationResult", Scope: "scripts:edit:request", Effect: "write", Blocking: "approval", Level: "L2", Peer: "scriptcat", MergeField: ""},
+	"scripts.install.request": {Params: "ScriptsInstallParams", Result: "ScriptMutationResult", Scope: "scripts:install:request", Effect: "write", Blocking: "approval", Level: "L2", Peer: "scriptcat", MergeField: ""},
+	"scripts.list":            {Params: "ScriptsListParams", Result: "ScriptsListResult", Scope: "scripts:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "scriptcat", MergeField: ""},
+	"scripts.metadata.get":    {Params: "ScriptUUIDParams", Result: "ScriptMetadata", Scope: "scripts:metadata:read", Effect: "read", Blocking: "none", Level: "L0", Peer: "scriptcat", MergeField: ""},
+	"scripts.source.get":      {Params: "ScriptsSourceGetParams", Result: "ScriptSource", Scope: "scripts:source:read", Effect: "read", Blocking: "disclosure", Level: "L2", Peer: "scriptcat", MergeField: ""},
+	"scripts.source.grep":     {Params: "ScriptsSourceGrepParams", Result: "ScriptSourceGrepResult", Scope: "scripts:source:read", Effect: "read", Blocking: "disclosure", Level: "L2", Peer: "scriptcat", MergeField: ""},
+	"scripts.toggle.request":  {Params: "ScriptsToggleParams", Result: "ScriptsToggleResult", Scope: "scripts:toggle:request", Effect: "write", Blocking: "approval", Level: "L2", Peer: "scriptcat", MergeField: ""},
+	"tabs.activate":           {Params: "TabsActivateParams", Result: "TabsActivateResult", Scope: "tabs:activate", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"tabs.close":              {Params: "TabsCloseParams", Result: "TabsCloseResult", Scope: "tabs:close", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"tabs.list":               {Params: "TabsListParams", Result: "TabsListResult", Scope: "tabs:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "tabs"},
+	"tabs.open":               {Params: "TabsOpenParams", Result: "TabsOpenResult", Scope: "tabs:open", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"windows.list":            {Params: "WindowsListParams", Result: "WindowsListResult", Scope: "windows:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "windows"},
 }
 
 const (
-	ErrorCodeInvalidRequest     = "INVALID_REQUEST"
-	ErrorCodeMethodNotFound     = "METHOD_NOT_FOUND"
-	ErrorCodeUserRejected       = "USER_REJECTED"
-	ErrorCodeOperationExpired   = "OPERATION_EXPIRED"
-	ErrorCodeConflict           = "CONFLICT"
-	ErrorCodeNotFound           = "NOT_FOUND"
-	ErrorCodeRateLimited        = "RATE_LIMITED"
-	ErrorCodePayloadTooLarge    = "PAYLOAD_TOO_LARGE"
-	ErrorCodeInternalError      = "INTERNAL_ERROR"
-	ErrorCodeNoBrowserConnected = "NO_BROWSER_CONNECTED"
-	ErrorCodeBrowserOffline     = "BROWSER_OFFLINE"
-	ErrorCodeBrowserNotFound    = "BROWSER_NOT_FOUND"
-	ErrorCodeBrowserAmbiguous   = "BROWSER_AMBIGUOUS"
+	ErrorCodeInvalidRequest       = "INVALID_REQUEST"
+	ErrorCodeMethodNotFound       = "METHOD_NOT_FOUND"
+	ErrorCodeUserRejected         = "USER_REJECTED"
+	ErrorCodeOperationExpired     = "OPERATION_EXPIRED"
+	ErrorCodeConflict             = "CONFLICT"
+	ErrorCodeNotFound             = "NOT_FOUND"
+	ErrorCodeRateLimited          = "RATE_LIMITED"
+	ErrorCodePayloadTooLarge      = "PAYLOAD_TOO_LARGE"
+	ErrorCodeInternalError        = "INTERNAL_ERROR"
+	ErrorCodeNoBrowserConnected   = "NO_BROWSER_CONNECTED"
+	ErrorCodeBrowserOffline       = "BROWSER_OFFLINE"
+	ErrorCodeBrowserNotFound      = "BROWSER_NOT_FOUND"
+	ErrorCodeBrowserAmbiguous     = "BROWSER_AMBIGUOUS"
+	ErrorCodeConfirmationRequired = "CONFIRMATION_REQUIRED"
+	ErrorCodeUnsupported          = "UNSUPPORTED"
 )
 
 // crypto.context 的键,用于查 protocol.Crypto.Context。
