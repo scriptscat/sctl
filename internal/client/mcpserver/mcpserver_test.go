@@ -123,6 +123,7 @@ func TestToolsListExposesAllTools(t *testing.T) {
 		So(toolNames(res), ShouldContain, "tabs_close")
 		So(toolNames(res), ShouldContain, "tabs_activate")
 		So(toolNames(res), ShouldContain, "windows_list")
+		So(toolNames(res), ShouldContain, "page_snapshot")
 		So(toolNames(res), ShouldContain, "page_eval")
 		So(toolNames(res), ShouldContain, "page_detach")
 	})

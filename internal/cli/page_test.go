@@ -188,3 +188,73 @@ func TestPageDetach(t *testing.T) {
 		})
 	})
 }
+
+func TestPageSnapshot(t *testing.T) {
+	Convey("sctl page snapshot", t, func() {
+		t.Setenv("SCTL_BROWSER", "")
+		snapshot := "- heading \"Title\" [level=1] [ref=e1]\n- link \"Home\" [ref=e2]\n  - /url: https://example.com/"
+		result, err := json.Marshal(map[string]any{"contentTrust": "untrusted-page-content", "tabId": 5, "snapshot": snapshot})
+		So(err, ShouldBeNil)
+		ok := control.CallResult{OK: true, Result: result}
+
+		Convey("默认直接输出快照文本;不给 --root 时请求不带 root", func() {
+			stub := stubPageDaemon(t, ok)
+			code, out := runCLI("page", "snapshot")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, snapshot+"\n")
+			So(stub.last.Action, ShouldEqual, "snapshot")
+			So(string(stub.last.Input), ShouldEqual, `{}`)
+		})
+
+		Convey("--root 原样转发引用或选择器", func() {
+			stub := stubPageDaemon(t, ok)
+			code, _ := runCLI("page", "snapshot", "--root", "#main > form", "--tab", "5")
+			So(code, ShouldEqual, exitOK)
+			var input map[string]string
+			So(json.Unmarshal(stub.last.Input, &input), ShouldBeNil)
+			So(input, ShouldResemble, map[string]string{"root": "#main > form"})
+			So(*stub.last.TabID, ShouldEqual, 5)
+		})
+
+		Convey("-o json 输出完整的结构化结果", func() {
+			stubPageDaemon(t, ok)
+			code, out := runCLI("page", "snapshot", "-o", "json")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldContainSubstring, `"contentTrust": "untrusted-page-content"`)
+			So(out, ShouldContainSubstring, `"snapshot": "- heading`)
+		})
+
+		Convey("快照为空时什么都不输出", func() {
+			stubPageDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"contentTrust":"untrusted-page-content","tabId":5,"snapshot":""}`)})
+			code, out := runCLI("page", "snapshot")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "")
+		})
+
+		Convey("页面控制的文本里的控制字符以转义形式打印,行结构保持不变", func() {
+			stubPageDaemon(t, control.CallResult{OK: true, Result: json.RawMessage("{\"contentTrust\":\"untrusted-page-content\",\"tabId\":5,\"snapshot\":\"- text: a\\u001b[2Jb\\n- text: c\u202e\"}")})
+			code, out := runCLI("page", "snapshot")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "- text: a\\x1b[2Jb\n- text: c\\u202e\n")
+		})
+
+		Convey("位置参数:退出码 3,不发请求", func() {
+			stub := stubPageDaemon(t, ok)
+			code, _ := runCLI("page", "snapshot", "e5")
+			So(code, ShouldEqual, exitError)
+			So(stub.calls, ShouldEqual, 0)
+		})
+
+		Convey("STALE_REF 与 PAYLOAD_TOO_LARGE 退出码 3,消息带原因", func() {
+			for code, message := range map[string]string{
+				"STALE_REF":         "ref e5 is not valid on tab 5: take a new snapshot and use a ref from it",
+				"PAYLOAD_TOO_LARGE": "the snapshot is 2000000 bytes, over the 1048576-byte limit: use --root to snapshot part of the page",
+			} {
+				stubPageDaemon(t, pageError(code, message))
+				exit, _, _, err := runCLIResult(strings.NewReader(""), "page", "snapshot")
+				So(exit, ShouldEqual, exitError)
+				So(err.Error(), ShouldContainSubstring, message)
+			}
+		})
+	})
+}

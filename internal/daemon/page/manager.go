@@ -39,6 +39,9 @@ type Tab struct {
 	m          *Manager
 	instanceID string
 	id         int
+	refs       *refTable
+	// watchingFrames 表示这次附加已开启 Page 域,文档替换事件会送到 refs。只在标签页队列里读写。
+	watchingFrames bool
 }
 
 // ID 返回标签页 ID。
@@ -46,6 +49,11 @@ func (t *Tab) ID() int { return t.id }
 
 // send 在标签页的顶层会话上执行一条 CDP 命令,result 非 nil 时把结果解到其中。
 func (t *Tab) send(ctx context.Context, method string, params, result any) error {
+	return t.sendTo(ctx, "", method, params, result)
+}
+
+// sendTo 与 send 相同,但 sessionID 非空时发往标签页下的子会话(跨进程 iframe)。
+func (t *Tab) sendTo(ctx context.Context, sessionID, method string, params, result any) error {
 	// 已结束的命令不能再发命令:调试器分离后的任何一条命令都会让扩展悄悄重新附加。
 	if err := ctx.Err(); err != nil {
 		return err
@@ -58,7 +66,7 @@ func (t *Tab) send(ctx context.Context, method string, params, result any) error
 		}
 		raw = encoded
 	}
-	res, err := t.m.cdp.Send(ctx, t.instanceID, Command{TabID: t.id, Method: method, Params: raw})
+	res, err := t.m.cdp.Send(ctx, t.instanceID, Command{TabID: t.id, SessionID: sessionID, Method: method, Params: raw})
 	if err != nil {
 		return err
 	}
@@ -127,6 +135,8 @@ type Manager struct {
 	clock   Clock
 	actions map[string]action
 	hooks   []attachHook
+	events  map[string][]eventHandler
+	refSeq  refSeq
 
 	mu    sync.Mutex
 	slots map[tabKey]*slot
@@ -139,10 +149,14 @@ func NewManager(cdp CDP, log *zap.Logger) *Manager {
 		log:     log,
 		clock:   realClock{},
 		actions: map[string]action{},
+		events:  map[string][]eventHandler{},
 		slots:   map[tabKey]*slot{},
 	}
 	m.addAttachHook(enableFocusEmulation)
+	m.addEventHandler("Page.frameNavigated", onFrameNavigated)
+	m.addEventHandler("Page.frameDetached", onFrameDetached)
 	m.register("eval", runEval)
+	m.register("snapshot", runSnapshot)
 	m.registerBrowser("detach", m.detach)
 	return m
 }
@@ -164,6 +178,12 @@ func (m *Manager) addAction(name string, a action) {
 
 func (m *Manager) addAttachHook(h attachHook) {
 	m.hooks = append(m.hooks, h)
+}
+
+// addEventHandler 让 method 事件送到发生它的已附加标签页。标签页附加完成之前与分离之后的事件被丢弃:
+// 下一次附加得到的 Tab 从空状态开始。
+func (m *Manager) addEventHandler(method string, h eventHandler) {
+	m.events[method] = append(m.events[method], h)
 }
 
 // enableFocusEmulation 让附加期间的页面以为自己可见且有焦点。真机探针显示,不这样做时 Chrome 丢弃发往
@@ -341,7 +361,7 @@ func (m *Manager) attach(ctx context.Context, s *slot, instanceID string, tabID 
 	if t != nil {
 		return t, nil
 	}
-	t = &Tab{m: m, instanceID: instanceID, id: tabID}
+	t = &Tab{m: m, instanceID: instanceID, id: tabID, refs: newRefTable()}
 	for _, hook := range m.hooks {
 		if err := hook(ctx, t); err != nil {
 			m.abandonAttach(instanceID, tabID, err)
@@ -393,9 +413,45 @@ func (m *Manager) idleExpired(key tabKey, armed *slot, seq uint64) {
 
 // OnNotification 接收浏览器实例的通知。它运行在 bridge 的读循环里,只做内存状态更新。
 func (m *Manager) OnNotification(instanceID, method string, params json.RawMessage) {
-	if method != string(generated.NotificationDebuggerDetached) {
+	switch generated.Notification(method) {
+	case generated.NotificationDebuggerDetached:
+		m.onDetached(instanceID, params)
+	case generated.NotificationDebuggerEvent:
+		m.onEvent(instanceID, params)
+	}
+}
+
+// onEvent 把 CDP 事件交给为它注册的处理函数。
+func (m *Manager) onEvent(instanceID string, params json.RawMessage) {
+	var n generated.DebuggerEventNotification
+	if err := json.Unmarshal(params, &n); err != nil {
+		// bridge 已按 schema 校验过通知,解不开说明生成类型与 schema 不一致。
+		m.log.Error("failed to decode a debugger.event notification", zap.Error(err))
 		return
 	}
+	handlers := m.events[n.Method]
+	if len(handlers) == 0 {
+		return
+	}
+	m.mu.Lock()
+	var t *Tab
+	if s := m.slots[tabKey{instanceID, n.TabId}]; s != nil {
+		t = s.tab
+	}
+	m.mu.Unlock()
+	if t == nil {
+		return
+	}
+	var sessionID string
+	if n.SessionId != nil {
+		sessionID = *n.SessionId
+	}
+	for _, h := range handlers {
+		h(t, sessionID, n.Params)
+	}
+}
+
+func (m *Manager) onDetached(instanceID string, params json.RawMessage) {
 	var n generated.DebuggerDetachedNotification
 	if err := json.Unmarshal(params, &n); err != nil {
 		// bridge 已按 schema 校验过通知,解不开说明生成类型与 schema 不一致。

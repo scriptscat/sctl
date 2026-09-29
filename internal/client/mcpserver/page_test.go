@@ -48,6 +48,32 @@ func TestPageToolsForwardToThePageEndpoint(t *testing.T) {
 			So(string(req.Input), ShouldEqual, `{"all":true}`)
 		})
 
+		Convey("page_snapshot 把 root 作为动作输入转发,tabId 与 browser 作为目标", func() {
+			_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "page_snapshot", Arguments: map[string]any{
+				"root": "e5", "tabId": 9, "browser": "work",
+			}})
+			So(err, ShouldBeNil)
+			req := caller.pages[0]
+			So(req.Action, ShouldEqual, "snapshot")
+			So(*req.TabID, ShouldEqual, 9)
+			So(req.Browser, ShouldEqual, "work")
+			So(string(req.Input), ShouldEqual, `{"root":"e5"}`)
+		})
+
+		Convey("page_snapshot 的参数都是可选的", func() {
+			_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "page_snapshot", Arguments: map[string]any{}})
+			So(err, ShouldBeNil)
+			So(string(caller.pages[0].Input), ShouldEqual, `{}`)
+		})
+
+		Convey("page_snapshot 拒绝空的 root 与未知参数", func() {
+			for _, args := range []map[string]any{{"root": ""}, {"ref": "e5"}} {
+				_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "page_snapshot", Arguments: args})
+				So(err, ShouldNotBeNil)
+			}
+			So(caller.pages, ShouldBeEmpty)
+		})
+
 		Convey("参数不符合 schema 时不转发", func() {
 			for _, args := range []map[string]any{
 				{},

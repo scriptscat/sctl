@@ -1,5 +1,5 @@
 // Package page 是 daemon 内的页面自动化组件:把 `sctl page …` 与 page_* MCP 工具的一次动作翻译成
-// 发往浏览器实例的 CDP 命令,并在 daemon 内存里保存跨命令的页面状态(调试器附加、空闲断开计时)。
+// 发往浏览器实例的 CDP 命令,并在 daemon 内存里保存跨命令的页面状态(调试器附加、空闲断开计时、快照的元素引用表)。
 // 状态放在 daemon 而不是前端,因为只有 daemon 活得比单条命令长(docs/architecture.md)。
 //
 // 它只经窄接口 CDP 与浏览器交互:生产环境由 NewBridgeCDP 经 bridge 转发给 sctl Browser 扩展,

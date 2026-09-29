@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>snapshot fixture</title>
+  </head>
+  <body>
+    <h1>Fixture <span>title</span></h1>
+    <div>
+      <div>
+        <p>Plain <span>inline</span> text with <a href="/next.html">a link</a> inside.</p>
+      </div>
+    </div>
+    <form>
+      <label>Email <input type="text" value="a@example.com" required /></label>
+      <label>Notes <textarea>line one</textarea></label>
+      <label>Color
+        <select><option>Red</option><option selected>Green</option></select>
+      </label>
+      <label><input type="checkbox" checked /> Subscribe</label>
+      <button type="button" disabled>Disabled action</button>
+      <button type="button" aria-expanded="true">Menu</button>
+      <button type="button" aria-pressed="true">Bold</button>
+    </form>
+    <div style="display: none"><button>display none</button></div>
+    <div style="visibility: hidden"><button>visibility hidden</button></div>
+    <div aria-hidden="true"><button>aria hidden</button></div>
+    <button style="width: 0; height: 0; padding: 0; border: 0; overflow: hidden">zero size</button>
+    <div tabindex="0">Focusable div</div>
+    <a href="/card.html"><div>Card title</div></a>
+    <div style="height: 0"><div style="float: left"><button type="button">Floated</button></div></div>
+    <iframe title="Inner frame" src="/snapshot-frame.html"></iframe>
+  </body>
+</html>
