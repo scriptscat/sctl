@@ -204,6 +204,31 @@ type ReadingListRemoveResult struct {
 	Urls []string `json:"urls"`
 }
 
+type RecentListParams struct {
+	Limit *int `json:"limit,omitempty"`
+}
+
+type RecentListResult struct {
+	ContentTrust string `json:"contentTrust"`
+	Items        []struct {
+		ClosedTime int    `json:"closedTime"`
+		SessionId  string `json:"sessionId"`
+		TabCount   *int   `json:"tabCount,omitempty"`
+		Title      string `json:"title"`
+		Type       string `json:"type"`
+		URL        string `json:"url"`
+	} `json:"items"`
+}
+
+type RecentRestoreParams struct {
+	SessionId *string `json:"sessionId,omitempty"`
+}
+
+type RecentRestoreResult struct {
+	TabId    *int `json:"tabId,omitempty"`
+	WindowId *int `json:"windowId,omitempty"`
+}
+
 type ScriptMetadata struct {
 	Author       *string  `json:"author,omitempty"`
 	Connects     []string `json:"connects"`
@@ -523,6 +548,8 @@ const (
 	MethodReadingListList       Method = "readingList.list"
 	MethodReadingListMarkRead   Method = "readingList.markRead"
 	MethodReadingListRemove     Method = "readingList.remove"
+	MethodRecentList            Method = "recent.list"
+	MethodRecentRestore         Method = "recent.restore"
 	MethodScriptsDeleteRequest  Method = "scripts.delete.request"
 	MethodScriptsEditRequest    Method = "scripts.edit.request"
 	MethodScriptsInstallRequest Method = "scripts.install.request"
@@ -573,6 +600,8 @@ var Methods = map[string]MethodMetadata{
 	"readingList.list":        {Params: "ReadingListListParams", Result: "ReadingListListResult", Scope: "readingList:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "entries"},
 	"readingList.markRead":    {Params: "ReadingListMarkReadParams", Result: "ReadingListMarkReadResult", Scope: "readingList:markRead", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
 	"readingList.remove":      {Params: "ReadingListRemoveParams", Result: "ReadingListRemoveResult", Scope: "readingList:remove", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: ""},
+	"recent.list":             {Params: "RecentListParams", Result: "RecentListResult", Scope: "recent:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "items"},
+	"recent.restore":          {Params: "RecentRestoreParams", Result: "RecentRestoreResult", Scope: "recent:restore", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
 	"scripts.delete.request":  {Params: "ScriptUUIDParams", Result: "ScriptsDeleteResult", Scope: "scripts:delete:request", Effect: "write", Blocking: "approval", Level: "L2", Peer: "scriptcat", MergeField: ""},
 	"scripts.edit.request":    {Params: "ScriptsEditParams", Result: "ScriptMutationResult", Scope: "scripts:edit:request", Effect: "write", Blocking: "approval", Level: "L2", Peer: "scriptcat", MergeField: ""},
 	"scripts.install.request": {Params: "ScriptsInstallParams", Result: "ScriptMutationResult", Scope: "scripts:install:request", Effect: "write", Blocking: "approval", Level: "L2", Peer: "scriptcat", MergeField: ""},

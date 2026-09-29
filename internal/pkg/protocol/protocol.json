@@ -428,6 +428,25 @@
       "blocking": "none",
       "level": "L1",
       "peer": "browser"
+    },
+    "recent.list": {
+      "params": "RecentListParams",
+      "result": "RecentListResult",
+      "scope": "recent:list",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "mergeField": "items"
+    },
+    "recent.restore": {
+      "params": "RecentRestoreParams",
+      "result": "RecentRestoreResult",
+      "scope": "recent:restore",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
     }
   },
   "types": {
@@ -2268,6 +2287,86 @@
       "required": [
         "all"
       ],
+      "additionalProperties": false
+    },
+    "RecentListParams": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 25
+        }
+      },
+      "additionalProperties": false
+    },
+    "RecentListResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "sessionId": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": ["tab", "window"]
+              },
+              "closedTime": {
+                "type": "integer"
+              },
+              "title": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              },
+              "tabCount": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "sessionId",
+              "type",
+              "closedTime",
+              "title",
+              "url"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "items",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "RecentRestoreParams": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RecentRestoreResult": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer"
+        },
+        "windowId": {
+          "type": "integer"
+        }
+      },
       "additionalProperties": false
     },
     "BrowsingDataClearParams": {

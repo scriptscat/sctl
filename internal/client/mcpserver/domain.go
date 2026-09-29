@@ -154,6 +154,19 @@ var domainTools = []domainTool{
 			{name: "clear", method: "browsingData.clear"},
 		},
 	},
+	{
+		name: "recently_closed",
+		description: "Manage recently closed tabs and windows. " +
+			"list returns up to 25 recently closed items (Chrome retains at most 25) ordered newest first, " +
+			"each item containing session id, type (tab or window), closed time (milliseconds since the epoch), " +
+			"title, URL, and for window items also tab count; limit caps the count (default 25, at most 25). " +
+			"restore reopens a closed tab or window by session id and returns the restored tab or window id; " +
+			"without session id restores the most recently closed item; an unknown id returns NOT_FOUND.",
+		actions: []domainAction{
+			{name: "list", method: "recent.list"},
+			{name: "restore", method: "recent.restore"},
+		},
+	},
 }
 
 // browserParamDomain 是领域工具的 browser 参数说明:一个工具里既有列表类也有操作类 action,

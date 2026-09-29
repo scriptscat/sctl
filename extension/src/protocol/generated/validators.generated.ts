@@ -138,6 +138,22 @@ export function validateReadingListRemoveResult(value: unknown): value is Protoc
   return (isRecord(value) && hasOnlyKeys(value, ["urls"]) && Array.isArray(value["urls"]) && value["urls"].every((item) => typeof item === "string"));
 }
 
+export function validateRecentListParams(value: unknown): value is Protocol.RecentListParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["limit"]) && (value["limit"] === undefined || (typeof value["limit"] === "number" && Number.isInteger(value["limit"]) && value["limit"] >= 1)));
+}
+
+export function validateRecentListResult(value: unknown): value is Protocol.RecentListResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "items"]) && value["contentTrust"] === "untrusted-page-content" && Array.isArray(value["items"]) && value["items"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["closedTime", "sessionId", "tabCount", "title", "type", "url"]) && typeof item["closedTime"] === "number" && Number.isInteger(item["closedTime"]) && typeof item["sessionId"] === "string" && (item["tabCount"] === undefined || (typeof item["tabCount"] === "number" && Number.isInteger(item["tabCount"]))) && typeof item["title"] === "string" && (item["type"] === "tab" || item["type"] === "window") && typeof item["url"] === "string")));
+}
+
+export function validateRecentRestoreParams(value: unknown): value is Protocol.RecentRestoreParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["sessionId"]) && (value["sessionId"] === undefined || (typeof value["sessionId"] === "string")));
+}
+
+export function validateRecentRestoreResult(value: unknown): value is Protocol.RecentRestoreResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["tabId", "windowId"]) && (value["tabId"] === undefined || (typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]))) && (value["windowId"] === undefined || (typeof value["windowId"] === "number" && Number.isInteger(value["windowId"]))));
+}
+
 export function validateTabGroupsAddParams(value: unknown): value is Protocol.TabGroupsAddParams {
   return (isRecord(value) && hasOnlyKeys(value, ["groupId", "tabIds"]) && typeof value["groupId"] === "number" && Number.isInteger(value["groupId"]) && value["groupId"] >= 0 && Array.isArray(value["tabIds"]) && value["tabIds"].length >= 1 && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0));
 }
@@ -291,6 +307,8 @@ export const RPC_PARAM_VALIDATORS = {
   "readingList.list": validateReadingListListParams,
   "readingList.markRead": validateReadingListMarkReadParams,
   "readingList.remove": validateReadingListRemoveParams,
+  "recent.list": validateRecentListParams,
+  "recent.restore": validateRecentRestoreParams,
   "tabGroups.add": validateTabGroupsAddParams,
   "tabGroups.create": validateTabGroupsCreateParams,
   "tabGroups.edit": validateTabGroupsEditParams,
@@ -331,6 +349,8 @@ export const RPC_RESULT_VALIDATORS = {
   "readingList.list": validateReadingListListResult,
   "readingList.markRead": validateReadingListMarkReadResult,
   "readingList.remove": validateReadingListRemoveResult,
+  "recent.list": validateRecentListResult,
+  "recent.restore": validateRecentRestoreResult,
   "tabGroups.add": validateTabGroupsAddResult,
   "tabGroups.create": validateTabGroupsCreateResult,
   "tabGroups.edit": validateTabGroupsEditResult,

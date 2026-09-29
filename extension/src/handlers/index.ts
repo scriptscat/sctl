@@ -3,6 +3,7 @@ import { registerBookmarkHandlers } from "./bookmarks";
 import { registerBrowsingDataHandlers } from "./browsingData";
 import { registerHistoryHandlers } from "./history";
 import { registerReadingListHandlers } from "./readingList";
+import { registerRecentlyClosedHandlers } from "./recentlyClosed";
 import { requireTab, requireWindow } from "./targets";
 import { registerTabGroupHandlers } from "./tabGroups";
 import { registerTabsManageHandlers } from "./tabsManage";
@@ -83,4 +84,5 @@ export function registerHandlers(registry: HandlerRegistry): void {
   registerTabGroupHandlers(registry);
   registerHistoryHandlers(registry);
   registerBrowsingDataHandlers(registry);
+  registerRecentlyClosedHandlers(registry);
 }

@@ -517,3 +517,49 @@ func TestBrowsingDataToolRestrictsTypesAndForwardsClear(t *testing.T) {
 		})
 	})
 }
+
+func TestRecentlyClosedToolListAndRestore(t *testing.T) {
+	Convey("recently_closed 的 list 和 restore 转发到相应的浏览器方法", t, func() {
+		p := loadProto(t)
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{"items": [], "contentTrust": "untrusted-page-content"}`)}}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+		So(err, ShouldBeNil)
+		props, required := inputSchemaOf(toolByName(res, "recently_closed"))
+		So(required, ShouldResemble, []any{"action"})
+		action, ok := props["action"].(map[string]any)
+		So(ok, ShouldBeTrue)
+		So(action["enum"], ShouldResemble, []any{"list", "restore"})
+
+		Convey("list 接受 limit 参数并转发", func() {
+			result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "recently_closed", Arguments: map[string]any{
+				"action": "list", "limit": 10, "browser": "work",
+			}})
+			So(err, ShouldBeNil)
+			So(result.IsError, ShouldBeFalse)
+			So(caller.actions, ShouldResemble, []string{"recent.list"})
+			So(caller.browserParams, ShouldResemble, []string{"work"})
+			So(string(caller.inputs[0]), ShouldEqual, `{"limit":10}`)
+		})
+
+		Convey("restore 接受可选的 sessionId 参数并转发", func() {
+			caller.result = control.CallResult{OK: true, Result: json.RawMessage(`{"tabId": 42}`)}
+			result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "recently_closed", Arguments: map[string]any{
+				"action": "restore", "sessionId": "tab-1",
+			}})
+			So(err, ShouldBeNil)
+			So(result.IsError, ShouldBeFalse)
+			So(caller.actions[len(caller.actions)-1], ShouldEqual, "recent.restore")
+			So(string(caller.inputs[len(caller.inputs)-1]), ShouldEqual, `{"sessionId":"tab-1"}`)
+		})
+
+		Convey("restore 不带 sessionId 也能调用", func() {
+			caller.result = control.CallResult{OK: true, Result: json.RawMessage(`{"windowId": 99}`)}
+			result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "recently_closed", Arguments: map[string]any{
+				"action": "restore",
+			}})
+			So(err, ShouldBeNil)
+			So(result.IsError, ShouldBeFalse)
+		})
+	})
+}

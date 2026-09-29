@@ -195,6 +195,20 @@ export interface ReadingListRemoveParams {
 export interface ReadingListRemoveResult {
   urls: Array<string>;
 }
+export interface RecentListParams {
+  limit?: number;
+}
+export interface RecentListResult {
+  contentTrust: "untrusted-page-content";
+  items: Array<{ closedTime: number; sessionId: string; tabCount?: number; title: string; type: "tab" | "window"; url: string; }>;
+}
+export interface RecentRestoreParams {
+  sessionId?: string;
+}
+export interface RecentRestoreResult {
+  tabId?: number;
+  windowId?: number;
+}
 export interface TabGroupsAddParams {
   groupId: number;
   tabIds: Array<number>;
@@ -330,6 +344,8 @@ export interface RpcMethodMap {
   "readingList.list": { params: ReadingListListParams; result: ReadingListListResult };
   "readingList.markRead": { params: ReadingListMarkReadParams; result: ReadingListMarkReadResult };
   "readingList.remove": { params: ReadingListRemoveParams; result: ReadingListRemoveResult };
+  "recent.list": { params: RecentListParams; result: RecentListResult };
+  "recent.restore": { params: RecentRestoreParams; result: RecentRestoreResult };
   "tabGroups.add": { params: TabGroupsAddParams; result: TabGroupsAddResult };
   "tabGroups.create": { params: TabGroupsCreateParams; result: TabGroupsCreateResult };
   "tabGroups.edit": { params: TabGroupsEditParams; result: TabGroupsEditResult };
@@ -483,6 +499,22 @@ export const RPC_METHODS = {
     effect: "write",
     blocking: "none",
     level: "L1",
+  },
+  "recent.list": {
+    params: "RecentListParams",
+    result: "RecentListResult",
+    scope: "recent:list",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "recent.restore": {
+    params: "RecentRestoreParams",
+    result: "RecentRestoreResult",
+    scope: "recent:restore",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
   },
   "tabGroups.add": {
     params: "TabGroupsAddParams",
