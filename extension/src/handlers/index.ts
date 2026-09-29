@@ -1,6 +1,7 @@
 import { type HandlerRegistry, type RpcHandler } from "@/background/registry";
 import { registerBookmarkHandlers } from "./bookmarks";
 import { registerBrowsingDataHandlers } from "./browsingData";
+import { registerCookiesHandlers } from "./cookies";
 import { registerDownloadsHandlers } from "./downloads";
 import { registerHistoryHandlers } from "./history";
 import { registerReadingListHandlers } from "./readingList";
@@ -87,4 +88,5 @@ export function registerHandlers(registry: HandlerRegistry): void {
   registerBrowsingDataHandlers(registry);
   registerRecentlyClosedHandlers(registry);
   registerDownloadsHandlers(registry);
+  registerCookiesHandlers(registry);
 }

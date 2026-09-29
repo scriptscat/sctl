@@ -129,6 +129,56 @@ export interface BrowsingDataClearParams {
 export interface BrowsingDataClearResult {
   types: Array<string>;
 }
+export interface CookiesClearParams {
+  all?: true;
+  confirm?: true;
+  domain?: string;
+}
+export interface CookiesClearResult {
+  deleted: number;
+}
+export interface CookiesGetParams {
+  name: string;
+  url: string;
+}
+export interface CookiesGetResult {
+  contentTrust: "untrusted-page-content";
+  cookie: { domain: string; expires?: number; httpOnly: boolean; name: string; partitionTopLevelSite?: string; path: string; sameSite: "no_restriction" | "lax" | "strict" | "unspecified"; secure: boolean; session: boolean; value: string; };
+}
+export interface CookiesListParams {
+  domain?: string;
+  limit?: number;
+  name?: string;
+  url?: string;
+}
+export interface CookiesListResult {
+  contentTrust: "untrusted-page-content";
+  hasMore: boolean;
+  items: Array<{ domain: string; expires?: number; httpOnly: boolean; name: string; partitionTopLevelSite?: string; path: string; sameSite: "no_restriction" | "lax" | "strict" | "unspecified"; secure: boolean; session: boolean; value: string; }>;
+}
+export interface CookiesRemoveParams {
+  confirm?: true;
+  name: string;
+  url: string;
+}
+export interface CookiesRemoveResult {
+  deleted: number;
+}
+export interface CookiesSetParams {
+  domain?: string;
+  expires?: number;
+  httpOnly?: boolean;
+  name: string;
+  path?: string;
+  sameSite?: "no_restriction" | "lax" | "strict";
+  secure?: boolean;
+  url: string;
+  value: string;
+}
+export interface CookiesSetResult {
+  contentTrust: "untrusted-page-content";
+  cookie: { domain: string; expires?: number; httpOnly: boolean; name: string; partitionTopLevelSite?: string; path: string; sameSite: "no_restriction" | "lax" | "strict" | "unspecified"; secure: boolean; session: boolean; value: string; };
+}
 export interface DownloadsCancelParams {
   confirm?: true;
   id: number;
@@ -392,6 +442,11 @@ export interface RpcMethodMap {
   "bookmarks.remove": { params: BookmarksRemoveParams; result: BookmarksRemoveResult };
   "bookmarks.search": { params: BookmarksSearchParams; result: BookmarksSearchResult };
   "browsingData.clear": { params: BrowsingDataClearParams; result: BrowsingDataClearResult };
+  "cookies.clear": { params: CookiesClearParams; result: CookiesClearResult };
+  "cookies.get": { params: CookiesGetParams; result: CookiesGetResult };
+  "cookies.list": { params: CookiesListParams; result: CookiesListResult };
+  "cookies.remove": { params: CookiesRemoveParams; result: CookiesRemoveResult };
+  "cookies.set": { params: CookiesSetParams; result: CookiesSetResult };
   "downloads.cancel": { params: DownloadsCancelParams; result: DownloadsCancelResult };
   "downloads.deleteFile": { params: DownloadsDeleteFileParams; result: DownloadsDeleteFileResult };
   "downloads.erase": { params: DownloadsEraseParams; result: DownloadsEraseResult };
@@ -499,6 +554,46 @@ export const RPC_METHODS = {
     effect: "write",
     blocking: "none",
     level: "L1",
+  },
+  "cookies.clear": {
+    params: "CookiesClearParams",
+    result: "CookiesClearResult",
+    scope: "cookies:clear",
+    effect: "write",
+    blocking: "none",
+    level: "L1",
+  },
+  "cookies.get": {
+    params: "CookiesGetParams",
+    result: "CookiesGetResult",
+    scope: "cookies:get",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "cookies.list": {
+    params: "CookiesListParams",
+    result: "CookiesListResult",
+    scope: "cookies:list",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "cookies.remove": {
+    params: "CookiesRemoveParams",
+    result: "CookiesRemoveResult",
+    scope: "cookies:remove",
+    effect: "write",
+    blocking: "none",
+    level: "L1",
+  },
+  "cookies.set": {
+    params: "CookiesSetParams",
+    result: "CookiesSetResult",
+    scope: "cookies:set",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
   },
   "downloads.cancel": {
     params: "DownloadsCancelParams",

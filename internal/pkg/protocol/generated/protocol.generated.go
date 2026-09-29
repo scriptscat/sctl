@@ -108,6 +108,99 @@ type BrowsingDataClearResult struct {
 	Types []string `json:"types"`
 }
 
+type CookiesClearParams struct {
+	All     *bool   `json:"all,omitempty"`
+	Confirm *bool   `json:"confirm,omitempty"`
+	Domain  *string `json:"domain,omitempty"`
+}
+
+type CookiesClearResult struct {
+	Deleted int `json:"deleted"`
+}
+
+type CookiesGetParams struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
+type CookiesGetResult struct {
+	ContentTrust string `json:"contentTrust"`
+	Cookie       struct {
+		Domain                string  `json:"domain"`
+		Expires               *int    `json:"expires,omitempty"`
+		HttpOnly              bool    `json:"httpOnly"`
+		Name                  string  `json:"name"`
+		PartitionTopLevelSite *string `json:"partitionTopLevelSite,omitempty"`
+		Path                  string  `json:"path"`
+		SameSite              string  `json:"sameSite"`
+		Secure                bool    `json:"secure"`
+		Session               bool    `json:"session"`
+		Value                 string  `json:"value"`
+	} `json:"cookie"`
+}
+
+type CookiesListParams struct {
+	Domain *string `json:"domain,omitempty"`
+	Limit  *int    `json:"limit,omitempty"`
+	Name   *string `json:"name,omitempty"`
+	URL    *string `json:"url,omitempty"`
+}
+
+type CookiesListResult struct {
+	ContentTrust string `json:"contentTrust"`
+	HasMore      bool   `json:"hasMore"`
+	Items        []struct {
+		Domain                string  `json:"domain"`
+		Expires               *int    `json:"expires,omitempty"`
+		HttpOnly              bool    `json:"httpOnly"`
+		Name                  string  `json:"name"`
+		PartitionTopLevelSite *string `json:"partitionTopLevelSite,omitempty"`
+		Path                  string  `json:"path"`
+		SameSite              string  `json:"sameSite"`
+		Secure                bool    `json:"secure"`
+		Session               bool    `json:"session"`
+		Value                 string  `json:"value"`
+	} `json:"items"`
+}
+
+type CookiesRemoveParams struct {
+	Confirm *bool  `json:"confirm,omitempty"`
+	Name    string `json:"name"`
+	URL     string `json:"url"`
+}
+
+type CookiesRemoveResult struct {
+	Deleted int `json:"deleted"`
+}
+
+type CookiesSetParams struct {
+	Domain   *string `json:"domain,omitempty"`
+	Expires  *int    `json:"expires,omitempty"`
+	HttpOnly *bool   `json:"httpOnly,omitempty"`
+	Name     string  `json:"name"`
+	Path     *string `json:"path,omitempty"`
+	SameSite *string `json:"sameSite,omitempty"`
+	Secure   *bool   `json:"secure,omitempty"`
+	URL      string  `json:"url"`
+	Value    string  `json:"value"`
+}
+
+type CookiesSetResult struct {
+	ContentTrust string `json:"contentTrust"`
+	Cookie       struct {
+		Domain                string  `json:"domain"`
+		Expires               *int    `json:"expires,omitempty"`
+		HttpOnly              bool    `json:"httpOnly"`
+		Name                  string  `json:"name"`
+		PartitionTopLevelSite *string `json:"partitionTopLevelSite,omitempty"`
+		Path                  string  `json:"path"`
+		SameSite              string  `json:"sameSite"`
+		Secure                bool    `json:"secure"`
+		Session               bool    `json:"session"`
+		Value                 string  `json:"value"`
+	} `json:"cookie"`
+}
+
 type DownloadsCancelParams struct {
 	Confirm *bool `json:"confirm,omitempty"`
 	Id      int   `json:"id"`
@@ -621,6 +714,11 @@ const (
 	MethodBookmarksRemove       Method = "bookmarks.remove"
 	MethodBookmarksSearch       Method = "bookmarks.search"
 	MethodBrowsingDataClear     Method = "browsingData.clear"
+	MethodCookiesClear          Method = "cookies.clear"
+	MethodCookiesGet            Method = "cookies.get"
+	MethodCookiesList           Method = "cookies.list"
+	MethodCookiesRemove         Method = "cookies.remove"
+	MethodCookiesSet            Method = "cookies.set"
 	MethodDownloadsCancel       Method = "downloads.cancel"
 	MethodDownloadsDeleteFile   Method = "downloads.deleteFile"
 	MethodDownloadsErase        Method = "downloads.erase"
@@ -681,6 +779,11 @@ var Methods = map[string]MethodMetadata{
 	"bookmarks.remove":        {Params: "BookmarksRemoveParams", Result: "BookmarksRemoveResult", Scope: "bookmarks:remove", Effect: "write", Blocking: "approval", Level: "L2", Peer: "browser", MergeField: ""},
 	"bookmarks.search":        {Params: "BookmarksSearchParams", Result: "BookmarksSearchResult", Scope: "bookmarks:search", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "nodes"},
 	"browsingData.clear":      {Params: "BrowsingDataClearParams", Result: "BrowsingDataClearResult", Scope: "browsingData:clear", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: ""},
+	"cookies.clear":           {Params: "CookiesClearParams", Result: "CookiesClearResult", Scope: "cookies:clear", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: ""},
+	"cookies.get":             {Params: "CookiesGetParams", Result: "CookiesGetResult", Scope: "cookies:get", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"cookies.list":            {Params: "CookiesListParams", Result: "CookiesListResult", Scope: "cookies:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "items"},
+	"cookies.remove":          {Params: "CookiesRemoveParams", Result: "CookiesRemoveResult", Scope: "cookies:remove", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: ""},
+	"cookies.set":             {Params: "CookiesSetParams", Result: "CookiesSetResult", Scope: "cookies:set", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
 	"downloads.cancel":        {Params: "DownloadsCancelParams", Result: "DownloadsCancelResult", Scope: "downloads:cancel", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: ""},
 	"downloads.deleteFile":    {Params: "DownloadsDeleteFileParams", Result: "DownloadsDeleteFileResult", Scope: "downloads:deleteFile", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: ""},
 	"downloads.erase":         {Params: "DownloadsEraseParams", Result: "DownloadsEraseResult", Scope: "downloads:erase", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: ""},

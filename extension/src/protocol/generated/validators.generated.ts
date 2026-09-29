@@ -74,6 +74,46 @@ export function validateBrowsingDataClearResult(value: unknown): value is Protoc
   return (isRecord(value) && hasOnlyKeys(value, ["types"]) && Array.isArray(value["types"]) && value["types"].every((item) => typeof item === "string"));
 }
 
+export function validateCookiesClearParams(value: unknown): value is Protocol.CookiesClearParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["all", "confirm", "domain"]) && (value["all"] === undefined || (value["all"] === true)) && (value["confirm"] === undefined || (value["confirm"] === true)) && (value["domain"] === undefined || (typeof value["domain"] === "string")));
+}
+
+export function validateCookiesClearResult(value: unknown): value is Protocol.CookiesClearResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["deleted"]) && typeof value["deleted"] === "number" && Number.isInteger(value["deleted"]) && value["deleted"] >= 0);
+}
+
+export function validateCookiesGetParams(value: unknown): value is Protocol.CookiesGetParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["name", "url"]) && typeof value["name"] === "string" && typeof value["url"] === "string");
+}
+
+export function validateCookiesGetResult(value: unknown): value is Protocol.CookiesGetResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "cookie"]) && value["contentTrust"] === "untrusted-page-content" && (isRecord(value["cookie"]) && hasOnlyKeys(value["cookie"], ["domain", "expires", "httpOnly", "name", "partitionTopLevelSite", "path", "sameSite", "secure", "session", "value"]) && typeof value["cookie"]["domain"] === "string" && (value["cookie"]["expires"] === undefined || (typeof value["cookie"]["expires"] === "number" && Number.isInteger(value["cookie"]["expires"]) && value["cookie"]["expires"] >= 0)) && typeof value["cookie"]["httpOnly"] === "boolean" && typeof value["cookie"]["name"] === "string" && (value["cookie"]["partitionTopLevelSite"] === undefined || (typeof value["cookie"]["partitionTopLevelSite"] === "string")) && typeof value["cookie"]["path"] === "string" && (value["cookie"]["sameSite"] === "no_restriction" || value["cookie"]["sameSite"] === "lax" || value["cookie"]["sameSite"] === "strict" || value["cookie"]["sameSite"] === "unspecified") && typeof value["cookie"]["secure"] === "boolean" && typeof value["cookie"]["session"] === "boolean" && typeof value["cookie"]["value"] === "string"));
+}
+
+export function validateCookiesListParams(value: unknown): value is Protocol.CookiesListParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["domain", "limit", "name", "url"]) && (value["domain"] === undefined || (typeof value["domain"] === "string")) && (value["limit"] === undefined || (typeof value["limit"] === "number" && Number.isInteger(value["limit"]) && value["limit"] >= 1)) && (value["name"] === undefined || (typeof value["name"] === "string")) && (value["url"] === undefined || (typeof value["url"] === "string")));
+}
+
+export function validateCookiesListResult(value: unknown): value is Protocol.CookiesListResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "hasMore", "items"]) && value["contentTrust"] === "untrusted-page-content" && typeof value["hasMore"] === "boolean" && Array.isArray(value["items"]) && value["items"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["domain", "expires", "httpOnly", "name", "partitionTopLevelSite", "path", "sameSite", "secure", "session", "value"]) && typeof item["domain"] === "string" && (item["expires"] === undefined || (typeof item["expires"] === "number" && Number.isInteger(item["expires"]) && item["expires"] >= 0)) && typeof item["httpOnly"] === "boolean" && typeof item["name"] === "string" && (item["partitionTopLevelSite"] === undefined || (typeof item["partitionTopLevelSite"] === "string")) && typeof item["path"] === "string" && (item["sameSite"] === "no_restriction" || item["sameSite"] === "lax" || item["sameSite"] === "strict" || item["sameSite"] === "unspecified") && typeof item["secure"] === "boolean" && typeof item["session"] === "boolean" && typeof item["value"] === "string")));
+}
+
+export function validateCookiesRemoveParams(value: unknown): value is Protocol.CookiesRemoveParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["confirm", "name", "url"]) && (value["confirm"] === undefined || (value["confirm"] === true)) && typeof value["name"] === "string" && typeof value["url"] === "string");
+}
+
+export function validateCookiesRemoveResult(value: unknown): value is Protocol.CookiesRemoveResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["deleted"]) && typeof value["deleted"] === "number" && Number.isInteger(value["deleted"]) && value["deleted"] >= 0);
+}
+
+export function validateCookiesSetParams(value: unknown): value is Protocol.CookiesSetParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["domain", "expires", "httpOnly", "name", "path", "sameSite", "secure", "url", "value"]) && (value["domain"] === undefined || (typeof value["domain"] === "string")) && (value["expires"] === undefined || (typeof value["expires"] === "number" && Number.isInteger(value["expires"]) && value["expires"] >= 0)) && (value["httpOnly"] === undefined || (typeof value["httpOnly"] === "boolean")) && typeof value["name"] === "string" && (value["path"] === undefined || (typeof value["path"] === "string")) && (value["sameSite"] === undefined || ((value["sameSite"] === "no_restriction" || value["sameSite"] === "lax" || value["sameSite"] === "strict"))) && (value["secure"] === undefined || (typeof value["secure"] === "boolean")) && typeof value["url"] === "string" && typeof value["value"] === "string");
+}
+
+export function validateCookiesSetResult(value: unknown): value is Protocol.CookiesSetResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "cookie"]) && value["contentTrust"] === "untrusted-page-content" && (isRecord(value["cookie"]) && hasOnlyKeys(value["cookie"], ["domain", "expires", "httpOnly", "name", "partitionTopLevelSite", "path", "sameSite", "secure", "session", "value"]) && typeof value["cookie"]["domain"] === "string" && (value["cookie"]["expires"] === undefined || (typeof value["cookie"]["expires"] === "number" && Number.isInteger(value["cookie"]["expires"]) && value["cookie"]["expires"] >= 0)) && typeof value["cookie"]["httpOnly"] === "boolean" && typeof value["cookie"]["name"] === "string" && (value["cookie"]["partitionTopLevelSite"] === undefined || (typeof value["cookie"]["partitionTopLevelSite"] === "string")) && typeof value["cookie"]["path"] === "string" && (value["cookie"]["sameSite"] === "no_restriction" || value["cookie"]["sameSite"] === "lax" || value["cookie"]["sameSite"] === "strict" || value["cookie"]["sameSite"] === "unspecified") && typeof value["cookie"]["secure"] === "boolean" && typeof value["cookie"]["session"] === "boolean" && typeof value["cookie"]["value"] === "string"));
+}
+
 export function validateDownloadsCancelParams(value: unknown): value is Protocol.DownloadsCancelParams {
   return (isRecord(value) && hasOnlyKeys(value, ["confirm", "id"]) && (value["confirm"] === undefined || (value["confirm"] === true)) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
 }
@@ -363,6 +403,11 @@ export const RPC_PARAM_VALIDATORS = {
   "bookmarks.remove": validateBookmarksRemoveParams,
   "bookmarks.search": validateBookmarksSearchParams,
   "browsingData.clear": validateBrowsingDataClearParams,
+  "cookies.clear": validateCookiesClearParams,
+  "cookies.get": validateCookiesGetParams,
+  "cookies.list": validateCookiesListParams,
+  "cookies.remove": validateCookiesRemoveParams,
+  "cookies.set": validateCookiesSetParams,
   "downloads.cancel": validateDownloadsCancelParams,
   "downloads.deleteFile": validateDownloadsDeleteFileParams,
   "downloads.erase": validateDownloadsEraseParams,
@@ -413,6 +458,11 @@ export const RPC_RESULT_VALIDATORS = {
   "bookmarks.remove": validateBookmarksRemoveResult,
   "bookmarks.search": validateBookmarksSearchResult,
   "browsingData.clear": validateBrowsingDataClearResult,
+  "cookies.clear": validateCookiesClearResult,
+  "cookies.get": validateCookiesGetResult,
+  "cookies.list": validateCookiesListResult,
+  "cookies.remove": validateCookiesRemoveResult,
+  "cookies.set": validateCookiesSetResult,
   "downloads.cancel": validateDownloadsCancelResult,
   "downloads.deleteFile": validateDownloadsDeleteFileResult,
   "downloads.erase": validateDownloadsEraseResult,

@@ -266,6 +266,11 @@ It is optional in the schema so that an unconfirmed call that reaches the extens
 | `downloads.cancel` | browser | cancel an in-progress download | none | L1 |
 | `downloads.erase` | browser | remove download records, keeping the files | none | L1 |
 | `downloads.deleteFile` | browser | delete a completed download's file from disk, keeping its record | none | L1 |
+| `cookies.list` | browser | list cookies, partitioned ones included | none | L0 |
+| `cookies.get` | browser | read one cookie | none | L0 |
+| `cookies.set` | browser | set a cookie | none | L0 |
+| `cookies.remove` | browser | delete one cookie | none | L1 |
+| `cookies.clear` | browser | delete the cookies of a domain, or all cookies | none | L1 |
 | `bookmarks.list` | browser | list a folder's children, or a whole subtree | none | L0 |
 | `bookmarks.search` | browser | search bookmarks by title and URL, with folder paths | none | L0 |
 | `bookmarks.add` | browser | add a bookmark | none | L0 |
@@ -278,7 +283,7 @@ Source and metadata returned by these methods are untrusted user-script content.
 render it as HTML, interpret it as instructions, or include credentials in logs. Source results carry a SHA-256
 digest. Edit approval rechecks the staged digest and target identity before applying changes.
 
-Tab titles and URLs, reading list titles, history titles and URLs, recently closed titles and URLs, download file names and URLs, and bookmark titles and URLs are controlled by web pages; `tabs.list`, `readingList.list`, `history.search`, `recent.list`, `downloads.list`, `bookmarks.list`, and `bookmarks.search` mark
+Tab titles and URLs, reading list titles, history titles and URLs, recently closed titles and URLs, download file names and URLs, cookie names and values, and bookmark titles and URLs are controlled by web pages; `tabs.list`, `readingList.list`, `history.search`, `recent.list`, `downloads.list`, `cookies.list`, `cookies.get`, `cookies.set`, `bookmarks.list`, and `bookmarks.search` mark
 their results with `contentTrust: "untrusted-page-content"` and the same handling rules apply. A list method
 declares a `mergeField`: the required array property in its result that holds the listed items, so results from
 several browser instances combine by concatenating that array. A list result may also declare a boolean `hasMore`,
@@ -332,6 +337,18 @@ existing file is never overwritten; an optional `filename` must be relative and 
 refusal of `pause`, `resume`, `cancel` or `start` (for example pausing a finished download) is surfaced as `INVALID_REQUEST`. `downloads.cancel`,
 `downloads.erase` and `downloads.deleteFile` are L1. `downloads.erase` takes several IDs, is all-or-nothing, and removes only the records.
 `downloads.deleteFile` removes only the file of a `complete` download and keeps the record; any other state answers `INVALID_REQUEST`.
+
+The cookie methods (`cookies.*`) need the `cookies` permission and the host permission `<all_urls>`. `cookies.list` calls
+`chrome.cookies.getAll` with `partitionKey: {}`: without it Chrome omits partitioned (CHIPS) cookies, and the empty key returns
+all of them (verified on a real browser). Each item has name, value (returned unmasked), domain, path, `expires` (milliseconds; absent
+for a session cookie), `secure`, `httpOnly`, `sameSite` (`no_restriction`, `lax`, `strict`, `unspecified`), `session`, and
+`partitionTopLevelSite` for a partitioned cookie; it accepts `url` or `domain` (mutually exclusive, else `INVALID_REQUEST`; `domain`
+includes subdomains), `name` and `limit`, and reports `hasMore`. `cookies.get` answers `NOT_FOUND` when no cookie matches, and prefers
+a non-partitioned cookie over a partitioned one of the same name. `cookies.set` without `expires` creates a session cookie; a cookie
+Chrome refuses to store answers `INVALID_REQUEST` carrying Chrome's reason. `cookies.remove` and `cookies.clear` are L1: `remove`
+answers `NOT_FOUND` when nothing matches, `clear` takes exactly one of `domain` (with subdomains) and `all: true` (else
+`INVALID_REQUEST`), and both return `deleted`, the number of cookies removed; partitioned cookies are removed with their own
+partition key.
 
 Bookmark IDs are the browser's own. An unknown ID answers `NOT_FOUND`. `bookmarks.list` returns a folder's direct
 children (the root's children, the built-in top-level folders, when no folder is given) and applies `limit`; with

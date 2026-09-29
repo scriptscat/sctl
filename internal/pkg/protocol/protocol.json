@@ -520,6 +520,52 @@
       "blocking": "none",
       "level": "L1",
       "peer": "browser"
+    },
+    "cookies.list": {
+      "params": "CookiesListParams",
+      "result": "CookiesListResult",
+      "scope": "cookies:list",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "mergeField": "items"
+    },
+    "cookies.get": {
+      "params": "CookiesGetParams",
+      "result": "CookiesGetResult",
+      "scope": "cookies:get",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "cookies.set": {
+      "params": "CookiesSetParams",
+      "result": "CookiesSetResult",
+      "scope": "cookies:set",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "cookies.remove": {
+      "params": "CookiesRemoveParams",
+      "result": "CookiesRemoveResult",
+      "scope": "cookies:remove",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L1",
+      "peer": "browser"
+    },
+    "cookies.clear": {
+      "params": "CookiesClearParams",
+      "result": "CookiesClearResult",
+      "scope": "cookies:clear",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L1",
+      "peer": "browser"
     }
   },
   "types": {
@@ -2778,6 +2824,363 @@
       },
       "required": [
         "types"
+      ],
+      "additionalProperties": false
+    },
+    "CookiesListParams": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "domain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "additionalProperties": false
+    },
+    "CookiesListResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              },
+              "domain": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "expires": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "secure": {
+                "type": "boolean"
+              },
+              "httpOnly": {
+                "type": "boolean"
+              },
+              "sameSite": {
+                "type": "string",
+                "enum": [
+                  "no_restriction",
+                  "lax",
+                  "strict",
+                  "unspecified"
+                ]
+              },
+              "session": {
+                "type": "boolean"
+              },
+              "partitionTopLevelSite": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "value",
+              "domain",
+              "path",
+              "secure",
+              "httpOnly",
+              "sameSite",
+              "session"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "items",
+        "hasMore",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "CookiesGetParams": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "url",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "CookiesGetResult": {
+      "type": "object",
+      "properties": {
+        "cookie": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            },
+            "domain": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "expires": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "secure": {
+              "type": "boolean"
+            },
+            "httpOnly": {
+              "type": "boolean"
+            },
+            "sameSite": {
+              "type": "string",
+              "enum": [
+                "no_restriction",
+                "lax",
+                "strict",
+                "unspecified"
+              ]
+            },
+            "session": {
+              "type": "boolean"
+            },
+            "partitionTopLevelSite": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "value",
+            "domain",
+            "path",
+            "secure",
+            "httpOnly",
+            "sameSite",
+            "session"
+          ],
+          "additionalProperties": false
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "cookie",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "CookiesSetParams": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "secure": {
+          "type": "boolean"
+        },
+        "httpOnly": {
+          "type": "boolean"
+        },
+        "sameSite": {
+          "type": "string",
+          "enum": [
+            "no_restriction",
+            "lax",
+            "strict"
+          ]
+        },
+        "expires": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "url",
+        "name",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "CookiesSetResult": {
+      "type": "object",
+      "properties": {
+        "cookie": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            },
+            "domain": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "expires": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "secure": {
+              "type": "boolean"
+            },
+            "httpOnly": {
+              "type": "boolean"
+            },
+            "sameSite": {
+              "type": "string",
+              "enum": [
+                "no_restriction",
+                "lax",
+                "strict",
+                "unspecified"
+              ]
+            },
+            "session": {
+              "type": "boolean"
+            },
+            "partitionTopLevelSite": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "value",
+            "domain",
+            "path",
+            "secure",
+            "httpOnly",
+            "sameSite",
+            "session"
+          ],
+          "additionalProperties": false
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "cookie",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "CookiesRemoveParams": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confirm": {
+          "const": true
+        }
+      },
+      "required": [
+        "url",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "CookiesRemoveResult": {
+      "type": "object",
+      "properties": {
+        "deleted": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "deleted"
+      ],
+      "additionalProperties": false
+    },
+    "CookiesClearParams": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "all": {
+          "const": true
+        },
+        "confirm": {
+          "const": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "CookiesClearResult": {
+      "type": "object",
+      "properties": {
+        "deleted": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "deleted"
       ],
       "additionalProperties": false
     }

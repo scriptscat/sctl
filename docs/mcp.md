@@ -258,8 +258,18 @@ without `..`, otherwise `INVALID_REQUEST`. `cancel`, `erase` (several `ids`, all
 completed download's file, keeps the record; `INVALID_REQUEST` unless the download is complete) run only with `confirm: true`. An
 unknown ID is `NOT_FOUND`.
 
+`cookies` reads and changes cookies, with `action` set to `list`, `get`, `set`, `rm` or `clear`. `list` returns cookies of all sites,
+partitioned (CHIPS) ones included (name, value, domain, path, `expires` in milliseconds since the epoch, `secure`, `httpOnly`,
+`sameSite`, `session`, and `partitionTopLevelSite` for partitioned cookies), optionally filtered by `url` or `domain` (not both;
+`domain` includes subdomains) and `name`, capped by `limit` (default 100, at most 1000) with `hasMore`. Cookie values are returned
+unmasked and, like names, are marked `contentTrust: "untrusted-page-content"`. `get` needs `url` and `name` and answers `NOT_FOUND` when
+the cookie does not exist. `set` writes a cookie for `url` (`name`, `value`, optional `domain`, `path`, `secure`, `httpOnly`,
+`sameSite` of `no_restriction`, `lax` or `strict`, and `expires`); without `expires` it is a session cookie, and a cookie Chrome
+refuses to store answers `INVALID_REQUEST` with Chrome's reason. `rm` (`url`, `name`; `NOT_FOUND` when absent) and `clear` (`domain`
+with its subdomains, or `all: true`; exactly one of them) run only with `confirm: true` and return the number of cookies deleted.
+
 Browser operations carry a destruction level. Most run immediately. A few are destructive enough to need explicit
-confirmation — the reading list's `rm`, history `rm` and `clear`, `browsing_data` `clear`, and downloads `cancel`, `erase` and `delete-file`: they run only when the call passes `confirm: true`, and
+confirmation — the reading list's `rm`, history `rm` and `clear`, `browsing_data` `clear`, downloads `cancel`, `erase` and `delete-file`, and cookies `rm` and `clear`: they run only when the call passes `confirm: true`, and
 without it the daemon answers `CONFIRMATION_REQUIRED` and nothing runs. The command-line equivalent is `--yes`.
 Deleting bookmarks needs human approval instead: the sctl Browser extension opens an approval window, and the call
 waits — sending progress notifications like the ScriptCat write tools — until the user approves (`CONFLICT` and

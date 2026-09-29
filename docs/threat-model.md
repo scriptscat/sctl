@@ -44,6 +44,14 @@ requester label attached to each queued request is the call's self-reported `cli
 page-controlled bookmark title in the list can claim anything; the only safe rule is to approve a request only when
 you know you started it.
 
+**Cookie values are returned unmasked.** `cookies list` and `cookies get` (MCP `cookies`) return every cookie value as the
+browser holds it, HttpOnly and Secure cookies included, with no masking and no opt-in switch: a cookie value is a site's login
+state. Any control-token holder can therefore read the login state of every site in a paired sctl Browser instance, and
+`cookies set`, `rm` and `clear` let it plant or delete cookies; none of these is human-gated (L0 and L1 only). The extension
+holds the host permission `<all_urls>` for this. `cookies list` also covers partitioned (CHIPS) cookies: a real-browser probe
+showed that `chrome.cookies.getAll` without a partition key omits them and that the empty key `partitionKey: {}` returns all of
+them, so the extension always passes it and the partitioned login state is exposed the same way.
+
 ## 2. Attack surface and countermeasures
 
 | Threat | Countermeasure | Residual risk |

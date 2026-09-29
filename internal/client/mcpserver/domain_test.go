@@ -610,3 +610,48 @@ func TestDownloadsToolForwardsEachActionToItsProtocolMethod(t *testing.T) {
 		So(caller.actions, ShouldBeEmpty)
 	})
 }
+
+func TestCookiesToolForwardsEachActionToItsProtocolMethod(t *testing.T) {
+	Convey("cookies 工具按 action 转发到 cookies.* 方法,browser 作为目标,confirm 留在方法输入里", t, func() {
+		p := loadProto(t)
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+		So(err, ShouldBeNil)
+		props, required := inputSchemaOf(toolByName(res, "cookies"))
+		So(required, ShouldResemble, []any{"action"})
+		action, ok := props["action"].(map[string]any)
+		So(ok, ShouldBeTrue)
+		So(action["enum"], ShouldResemble, []any{"list", "get", "set", "rm", "clear"})
+		So(props, ShouldContainKey, protocol.ConfirmParam)
+
+		for _, args := range []map[string]any{
+			{"action": "list", "domain": "example.com", "limit": 5},
+			{"action": "get", "url": "https://example.com/", "name": "sid"},
+			{"action": "set", "url": "https://example.com/", "name": "sid", "value": "1", "sameSite": "lax", "expires": 1788251400000, "browser": "work"},
+			{"action": "rm", "url": "https://example.com/", "name": "sid", "confirm": true},
+			{"action": "clear", "all": true, "confirm": true},
+		} {
+			result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "cookies", Arguments: args})
+			So(err, ShouldBeNil)
+			So(result.IsError, ShouldBeFalse)
+		}
+		So(caller.actions, ShouldResemble, []string{"cookies.list", "cookies.get", "cookies.set", "cookies.remove", "cookies.clear"})
+		So(string(caller.inputs[4]), ShouldEqual, `{"all":true,"confirm":true}`)
+		So(caller.browserParams[2], ShouldEqual, "work")
+	})
+
+	Convey("cookies 的 set 缺少 value 或 sameSite 取值不合法时在转发前被拒绝", t, func() {
+		p := loadProto(t)
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+		for _, args := range []map[string]any{
+			{"action": "set", "url": "https://example.com/", "name": "sid"},
+			{"action": "set", "url": "https://example.com/", "name": "sid", "value": "1", "sameSite": "none"},
+		} {
+			_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "cookies", Arguments: args})
+			So(err, ShouldNotBeNil)
+		}
+		So(caller.actions, ShouldBeEmpty)
+	})
+}

@@ -110,13 +110,14 @@ troubleshooting.
 | `sctl browsing-data clear` | Clear cache, cookies, storage and other browsing data by type, time, and origin. |
 | `sctl recent list\|restore` | List recently closed tabs and windows, or restore one (the most recent when no session ID is given). |
 | `sctl downloads list\|start\|pause\|resume\|cancel\|erase\|delete-file\|show` | List, start, pause, resume, cancel, erase, or delete the file of downloads on a paired sctl Browser instance. |
+| `sctl cookies list\|get\|set\|rm\|clear` | List (partitioned cookies included), read, set, or delete cookies on a paired sctl Browser instance; values are returned unmasked. |
 | `sctl bookmarks list\|search\|add\|mkdir\|move\|edit\|rm` | List, search, add, move, edit, or delete bookmarks and bookmark folders on a paired sctl Browser instance. |
 
 Run `sctl --help` or `sctl <command> --help` for usage and flags. Write operations block
 until the user approves, rejects, or closes the confirmation flow in ScriptCat; browser control commands run
 immediately with no approval step (see [`docs/threat-model.md`](./docs/threat-model.md)). `tabs`, `windows`,
-`reading-list`, `bookmarks`, `history`, `browsing-data`, `recent`, and `downloads` accept `--browser <name|id>` (or `SCTL_BROWSER`) to pick an instance when more than one is online.
-Destructive browser operations need explicit confirmation: `reading-list rm`, `history rm`, `history clear`, `browsing-data clear`, and `downloads cancel`, `erase` and `delete-file` run only with `--yes` (MCP:
+`reading-list`, `bookmarks`, `history`, `browsing-data`, `recent`, `downloads`, and `cookies` accept `--browser <name|id>` (or `SCTL_BROWSER`) to pick an instance when more than one is online.
+Destructive browser operations need explicit confirmation: `reading-list rm`, `history rm`, `history clear`, `browsing-data clear`, `downloads cancel`, `erase` and `delete-file`, and `cookies rm` and `clear` run only with `--yes` (MCP:
 `confirm: true`); without it nothing runs and the command exits with code 3. `bookmarks rm <id>...` needs human
 approval instead: the browser opens an approval window and the command waits, exiting 0 once the bookmarks are
 deleted, 1 when the request is rejected or the window is closed, 2 when nobody decides within 5 minutes or you
