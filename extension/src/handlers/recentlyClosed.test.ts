@@ -102,6 +102,33 @@ describe("recently closed handlers", () => {
       expect(items).toHaveLength(25);
     });
 
+    it("reports closedTime in milliseconds like every other protocol time, although Chrome gives seconds", async () => {
+      sessions.getRecentlyClosed.mockResolvedValue([
+        { lastModified: 1_700_000_000, tab: tab({ sessionId: "tab-1", title: "T", url: "https://a.example/" }) },
+        { lastModified: 1_600_000_000, window: win({ sessionId: "window-1", tabs: [] }) },
+      ]);
+
+      const items = listItems(await registry.dispatch("recent.list", {}));
+
+      expect(items.map((item) => item.closedTime)).toEqual([1_700_000_000_000, 1_600_000_000_000]);
+    });
+
+    it("reports hasMore when Chrome holds more closed items than the limit returns", async () => {
+      const closed = (n: number): chrome.sessions.Session[] =>
+        Array.from({ length: n }, (_, i) => ({
+          lastModified: 1000 - i,
+          tab: tab({ sessionId: `tab-${i}`, title: `Tab ${i}`, url: "https://example.com" }),
+        }));
+      sessions.getRecentlyClosed.mockResolvedValue(closed(6));
+
+      const limited = await registry.dispatch("recent.list", { limit: 5 });
+      const covering = await registry.dispatch("recent.list", { limit: 6 });
+
+      expect(limited).toMatchObject({ ok: true, result: { hasMore: true } });
+      expect(listItems(limited)).toHaveLength(5);
+      expect(covering).toMatchObject({ ok: true, result: { hasMore: false } });
+    });
+
     it("includes tabCount for window sessions", async () => {
       const mockSessions: chrome.sessions.Session[] = [
         {

@@ -58,7 +58,12 @@ func (f *limitFlag) apply(input map[string]any) error {
 
 // printHasMore 在列表结果还有未返回的条目时提示调大 --limit。提示写到 stderr:stdout 只承载结果本身。
 func printHasMore(hasMore bool) {
+	printHasMoreUpTo(hasMore, maxListLimit)
+}
+
+// printHasMoreUpTo 同 printHasMore,用于 --limit 上限不是 maxListLimit 的列表(recent list 最多 25)。
+func printHasMoreUpTo(hasMore bool, maxLimit int) {
 	if hasMore {
-		fmt.Fprintf(os.Stderr, "more items exist than shown; pass a larger --limit (at most %d) to see them\n", maxListLimit)
+		fmt.Fprintf(os.Stderr, "more items exist than shown; pass a larger --limit (at most %d) to see them\n", maxLimit)
 	}
 }

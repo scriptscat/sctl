@@ -295,7 +295,9 @@ meaning the instance has items it did not return. Methods without `mergeField` a
 whose parameters declare `limit` returns at most that many items per instance: 100 when it is omitted, and a value
 above 1000 is rejected with `INVALID_REQUEST`.
 
-The reading list methods answer `UNSUPPORTED` when the browser does not provide `chrome.readingList`.
+Every method of a data domain answers `UNSUPPORTED`, naming the missing API, when the browser does not provide that
+domain's `chrome.*` namespace (`bookmarks`, `readingList`, `tabGroups`, `history`, `sessions`, `downloads`, `cookies`,
+`browsingData`, `management`); `chrome.readingList` in particular only exists from Chrome 120.
 `readingList.add` answers `CONFLICT` for a URL that is already in the list, and its title defaults to the URL.
 `readingList.markRead` and `readingList.remove` are all-or-nothing: if any given URL is not in the list they
 answer `NOT_FOUND` and change nothing.
@@ -329,7 +331,7 @@ origins) limits the clearing to those origins and is only valid when every type 
 `fileSystems`, `indexedDB`, `localStorage`, `serviceWorkers`, `webSQL`, the types `chrome.browsingData` can filter by origin;
 combining it with `downloads`, `formData`, or `history` answers `INVALID_REQUEST` and nothing is cleared.
 
-`recent.list` returns at most 25 items (Chrome's retention limit; `limit` is 1 to 25, default 25), newest first, each with session ID, `type` (`tab` or `window`), `closedTime`, title and URL, and `tabCount` for windows. `recent.restore` reopens the session with the given `sessionId`, or the most recently closed one when none is given, and returns `tabId` or `windowId`; an unknown session answers `NOT_FOUND`.
+`recent.list` returns at most 25 items (Chrome's retention limit; `limit` is 1 to 25, default 25), newest first, each with session ID, `type` (`tab` or `window`), `closedTime` (milliseconds; Chrome reports seconds and the extension converts), title and URL, and `tabCount` for windows, and reports `hasMore`. `recent.restore` reopens the session with the given `sessionId`, or the most recently closed one when none is given, and returns `tabId` or `windowId`; an unknown session answers `NOT_FOUND`.
 
 The download methods (`downloads.*`) need the `downloads` permission and identify a download by its integer ID; an unknown ID
 answers `NOT_FOUND`. `downloads.list` returns downloads newest first (by start time), each with ID, URL, local file path
@@ -350,7 +352,7 @@ for a session cookie), `secure`, `httpOnly`, `sameSite` (`no_restriction`, `lax`
 includes subdomains), `name` and `limit`, and reports `hasMore`. `cookies.get` answers `NOT_FOUND` when no cookie matches, and prefers
 a non-partitioned cookie over a partitioned one of the same name. `cookies.set` without `expires` creates a session cookie; a cookie
 Chrome refuses to store answers `INVALID_REQUEST` carrying Chrome's reason. `cookies.remove` and `cookies.clear` are L1: `remove`
-answers `NOT_FOUND` when nothing matches, `clear` takes exactly one of `domain` (with subdomains) and `all: true` (else
+deletes the one cookie `cookies.get` would return for the same `url` and `name` and answers `NOT_FOUND` when nothing matches, `clear` takes exactly one of `domain` (with subdomains) and `all: true` (else
 `INVALID_REQUEST`), and both return `deleted`, the number of cookies removed; partitioned cookies are removed with their own
 partition key.
 
@@ -505,9 +507,10 @@ The sctl Browser extension gates its L2 methods the same way, in its own approva
    in step 3; the request stays executing across a service worker restart. While Chrome's dialog is open the deadline
    keeps running: a `$/cancelRequest`, the deadline, or a closed connection voids the request for the requester
    (`OPERATION_EXPIRED`) without withdrawing the dialog, whose outcome the window still shows. Closing the approval
-   window while the dialog is open rejects the other queued requests as usual; the uninstall's own outcome can then no
-   longer be reported, so it is answered `OPERATION_EXPIRED` at once, and whether the extension was uninstalled follows
-   the dialog.
+   window while the dialog is open rejects the other queued requests as usual but leaves the uninstall executing: the
+   window can no longer report the dialog's outcome, so the service worker learns a confirmed uninstall from
+   `chrome.management.onUninstalled` and answers the result; a dialog cancelled after the window closed cannot be
+   observed, and the request is answered `OPERATION_EXPIRED` at its deadline.
 
 ## 6. Generation and conformance
 

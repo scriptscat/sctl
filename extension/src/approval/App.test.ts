@@ -154,7 +154,7 @@ const COPY = {
     summary: "将删除 3 项：2 个书签、1 个文件夹（含 37 个书签、4 个子文件夹）",
     requestedSummary: "请求删除 3 项：2 个书签、1 个文件夹（含 37 个书签、4 个子文件夹）",
     from: "来自",
-    unverified: "（自报，未验证）",
+    unverified: "（自报，未经验证）",
     received: "14:31 收到",
     countdown: "4:56 后自动拒绝",
     irreversible: "删除后无法通过 sctl 撤销",

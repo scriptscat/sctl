@@ -2494,12 +2494,16 @@
             "additionalProperties": false
           }
         },
+        "hasMore": {
+          "type": "boolean"
+        },
         "contentTrust": {
           "const": "untrusted-page-content"
         }
       },
       "required": [
         "items",
+        "hasMore",
         "contentTrust"
       ],
       "additionalProperties": false

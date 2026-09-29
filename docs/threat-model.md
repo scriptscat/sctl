@@ -31,7 +31,8 @@ press approve on the extension's confirmation page (unless the corresponding glo
 **Browser control has no human gate, by design — except L2.** The `sctl browsers` / `tabs` / `windows` commands
 and the other L0 and L1 browser operations, with their MCP tools, are neither approved per operation nor limited to
 particular tabs: any holder of the control token can list, open, close, and activate tabs and list windows in
-**every** paired sctl Browser instance, immediately. This is a deliberate trade for low operating friction; the
+**every** paired sctl Browser instance, immediately, and can read all of its bookmarks, reading list, history,
+downloads, and cookie values (the login state of every site, below). This is a deliberate trade for low operating friction; the
 control token (same user on this host) is the only gate. The L1 destruction level
 ([protocol.md](./protocol.md#3-business-rpc)) is not a security boundary either: it only makes the caller state
 `confirm: true` in the call input so a destructive call is not made by accident, and any control-token holder can

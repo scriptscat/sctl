@@ -111,6 +111,24 @@ func TestReadingListToolForwardsEachActionToItsProtocolMethod(t *testing.T) {
 	})
 }
 
+func TestConfirmFalseIsForwardedAsUnconfirmedSoTheDaemonAnswersConfirmationRequired(t *testing.T) {
+	Convey("confirm: false 与不传 confirm 一样:照常转发、不带 confirm,由 daemon 以 CONFIRMATION_REQUIRED 拒绝,而不是报参数错误", t, func() {
+		p := loadProto(t)
+		caller := &fakeCaller{result: control.CallResult{OK: false, Error: &control.CallError{
+			Code: "CONFIRMATION_REQUIRED", Message: "readingList.remove requires explicit confirmation",
+		}}}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+		res, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+			Name: "reading_list", Arguments: map[string]any{"action": "rm", "urls": []string{"https://a.example/"}, "confirm": false},
+		})
+		So(err, ShouldBeNil)
+		So(res.IsError, ShouldBeTrue)
+		So(res.Content[0].(*mcp.TextContent).Text, ShouldContainSubstring, "CONFIRMATION_REQUIRED")
+		So(caller.actions, ShouldResemble, []string{"readingList.remove"})
+		So(string(caller.inputs[0]), ShouldEqual, `{"urls":["https://a.example/"]}`)
+	})
+}
+
 func TestReadingListToolRejectsArgumentsItsActionDoesNotAcceptBeforeForwarding(t *testing.T) {
 	Convey("参数按所选 action 对应方法的参数类型校验,不合法的调用不转发", t, func() {
 		p := loadProto(t)
@@ -126,7 +144,6 @@ func TestReadingListToolRejectsArgumentsItsActionDoesNotAcceptBeforeForwarding(t
 			{"action": "list", "limit": 0},
 			{"action": "list", "limit": 1001},
 			{"action": "rm", "urls": []string{}, "confirm": true},
-			{"action": "rm", "urls": []string{"https://a.example/"}, "confirm": false},
 			{"action": "add", "url": "https://a.example/", "unknown": 1},
 		} {
 			_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "reading_list", Arguments: args})
@@ -142,26 +159,31 @@ func TestReadingListToolRejectsArgumentsItsActionDoesNotAcceptBeforeForwarding(t
 }
 
 func TestProgressFollowsTheMethodsBlockingMode(t *testing.T) {
-	Convey("progress 只在方法 blocking 不是 none 时发送:与工具是否属于浏览器无关", t, func() {
+	Convey("浏览器方法只在 blocking 不是 none 时发 progress;ScriptCat 工具保持第 1 期行为,等待期间都发", t, func() {
 		old := progressInterval
 		progressInterval = 10 * time.Millisecond
 		defer func() { progressInterval = old }()
 
 		var unblockedProgress atomic.Int32
 		gatedProgress := make(chan struct{}, 64)
+		scriptProgress := make(chan struct{}, 64)
 		block := make(chan struct{})
 		// 断言失败提前退出时也放行阻塞的调用,否则会话关闭要等它们,测试会挂到超时。
 		release := sync.OnceFunc(func() { close(block) })
 		defer release()
-		caller := &fakeCaller{block: block, entered: make(chan struct{}, 2), result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
+		caller := &fakeCaller{block: block, entered: make(chan struct{}, 3), result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
 		opts := &mcp.ClientOptions{
 			ProgressNotificationHandler: func(_ context.Context, req *mcp.ProgressNotificationClientRequest) {
-				if req.Params.ProgressToken == "tok-none" {
+				progress := gatedProgress
+				switch req.Params.ProgressToken {
+				case "tok-none":
 					unblockedProgress.Add(1)
 					return
+				case "tok-script":
+					progress = scriptProgress
 				}
 				select {
-				case gatedProgress <- struct{}{}:
+				case progress <- struct{}{}:
 				default:
 				}
 			},
@@ -181,9 +203,10 @@ func TestProgressFollowsTheMethodsBlockingMode(t *testing.T) {
 			}
 			return resCh
 		}
-		// 先让 blocking 为 none 的 ScriptCat 调用阻塞在桥接侧,再以等待审批的领域 action 作时钟:
-		// 它滴答三次,说明前者阻塞期间已过去至少两个间隔。
-		unblocked := call("scripts_list", map[string]any{}, "tok-none")
+		// 先让 blocking 为 none 的浏览器领域 action 阻塞在桥接侧,再以等待审批的领域 action 作时钟:
+		// 它滴答三次,说明前者阻塞期间已过去至少两个间隔。blocking 为 none 的 ScriptCat 工具同样阻塞,也要滴答。
+		unblocked := call("reading_list", map[string]any{"action": "list"}, "tok-none")
+		script := call("scripts_list", map[string]any{}, "tok-script")
 		gated := call("bookmarks", map[string]any{"action": "remove", "ids": []string{"14"}}, "tok-gated")
 		for range 3 {
 			select {
@@ -192,8 +215,14 @@ func TestProgressFollowsTheMethodsBlockingMode(t *testing.T) {
 				t.Fatal("the approval-gated domain action reported no progress")
 			}
 		}
+		select {
+		case <-scriptProgress:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the phase-1 ScriptCat tool reported no progress while it waited")
+		}
 		release()
 		So((<-gated).IsError, ShouldBeFalse)
+		So((<-script).IsError, ShouldBeFalse)
 		So((<-unblocked).IsError, ShouldBeFalse)
 		So(unblockedProgress.Load(), ShouldEqual, 0)
 	})
@@ -459,7 +488,6 @@ func TestHistoryToolDeclaresAndForwardsEachAction(t *testing.T) {
 				{"action": "visits"},
 				{"action": "visits", "url": "https://a.example/", "startTime": 1},
 				{"action": "rm", "urls": []string{}, "confirm": true},
-				{"action": "rm", "urls": []string{"https://a.example/"}, "confirm": false},
 				{"action": "search", "limit": 1001},
 				{"action": "search", "startTime": -1},
 				{"action": "clear", "text": "x"},
@@ -506,7 +534,6 @@ func TestBrowsingDataToolRestrictsTypesAndForwardsClear(t *testing.T) {
 				{"action": "clear", "types": []string{"passwords"}, "confirm": true},
 				{"action": "clear", "types": []string{}, "confirm": true},
 				{"action": "clear", "confirm": true},
-				{"action": "clear", "types": []string{"cache"}, "confirm": false},
 			} {
 				_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "browsing_data", Arguments: args})
 				if err == nil {

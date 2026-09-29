@@ -159,7 +159,7 @@ var domainTools = []domainTool{
 		description: "Manage recently closed tabs and windows. " +
 			"list returns up to 25 recently closed items (Chrome retains at most 25) ordered newest first, " +
 			"each item containing session id, type (tab or window), closed time (milliseconds since the epoch), " +
-			"title, URL, and for window items also tab count; limit caps the count (default 25, at most 25). " +
+			"title, URL, and for window items also tab count; limit caps the count (default 25, at most 25) and hasMore tells whether items were left out. " +
 			"restore reopens a closed tab or window by session id and returns the restored tab or window id; " +
 			"without session id restores the most recently closed item; an unknown id returns NOT_FOUND.",
 		actions: []domainAction{
@@ -200,7 +200,7 @@ var domainTools = []domainTool{
 			"optionally only those matching url or domain (not both; domain includes subdomains) and name; limit caps the count (default 100, at most 1000) and hasMore tells whether entries were left out. " +
 			"get returns the cookie name of url, or NOT_FOUND. " +
 			"set writes a cookie for url; without expires it is a session cookie, and when the browser refuses (for example a Secure cookie on an http URL) the call fails with INVALID_REQUEST and the browser's reason. " +
-			"rm deletes the cookie name of url (NOT_FOUND when absent), and clear deletes every cookie of domain and its subdomains, or every cookie with all: true, partitioned cookies included; " +
+			"rm deletes the one cookie get would return (NOT_FOUND when absent), and clear deletes every cookie of domain and its subdomains, or every cookie with all: true, partitioned cookies included; " +
 			"both return the number deleted and are destructive, so they run only with confirm: true.",
 		actions: []domainAction{
 			{name: "list", method: "cookies.list"},
@@ -219,7 +219,8 @@ var domainTools = []domainTool{
 			"Disabling ScriptCat is allowed but disconnects it from the daemon. " +
 			"uninstall removes one extension, but only after a person approves the request in the browser's approval window and then confirms Chrome's own uninstall dialog: " +
 			"the call waits for both and returns the uninstalled extension's id and name; it fails with USER_REJECTED when the request is rejected, the approval window is closed before approval, or the uninstall is cancelled in Chrome's dialog, " +
-			"and with OPERATION_EXPIRED when nobody decides within 5 minutes or the approval window is closed while Chrome's dialog is open; whether the extension was then uninstalled follows that dialog. " +
+			"and with OPERATION_EXPIRED when nobody decides within 5 minutes; whether the extension was then uninstalled follows that dialog. " +
+			"Closing the approval window while Chrome's dialog is open does not affect the uninstall, whose result still follows that dialog. " +
 			"sctl Browser itself cannot be disabled or uninstalled, and extensions installed by enterprise policy cannot be either (INVALID_REQUEST, with the reason); " +
 			"an unknown id is NOT_FOUND, and uninstall opens no window when a check fails.",
 		actions: []domainAction{
@@ -339,6 +340,11 @@ func registerDomainTool(srv *mcp.Server, dt domainTool, proto *protocol.Protocol
 	}
 	srv.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		defaultArguments(req)
+		arguments, err := dropUnconfirmed(req.Params.Arguments)
+		if err != nil {
+			return nil, fmt.Errorf("decode %s arguments: %w", dt.name, err)
+		}
+		req.Params.Arguments = arguments
 		if err := validateArguments(dt.name, schema, req.Params.Arguments); err != nil {
 			return nil, err
 		}
@@ -362,6 +368,20 @@ func registerDomainTool(srv *mcp.Server, dt domainTool, proto *protocol.Protocol
 			return nil, err
 		}
 		method := methods[actionName]
-		return handleCall(ctx, req, method, input, proto.Actions[method].Blocking != protocol.BlockingNone, browser, caller)
+		return handleCall(ctx, req, method, input, sendsProgress(proto.Actions[method]), browser, caller)
 	})
+}
+
+// dropUnconfirmed 去掉值为 false 的 confirm:它与不传一样是「未确认」,应由 daemon 以 CONFIRMATION_REQUIRED 拒绝
+// (spec 破坏级别 L1),而不是被 schema 的 const true 当成参数错误。
+func dropUnconfirmed(arguments json.RawMessage) (json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(arguments, &fields); err != nil {
+		return nil, err
+	}
+	if string(fields[protocol.ConfirmParam]) != "false" {
+		return arguments, nil
+	}
+	delete(fields, protocol.ConfirmParam)
+	return json.Marshal(fields)
 }

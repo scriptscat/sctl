@@ -1,4 +1,5 @@
 import { HandlerError, type HandlerRegistry, type RpcHandler } from "@/background/registry";
+import { needs } from "./api";
 import type { CookiesListResult } from "@/protocol/generated/protocol.generated";
 import { listLimit, takePage } from "./list";
 
@@ -66,14 +67,18 @@ const handleList: RpcHandler<"cookies.list"> = async (params) => {
   };
 };
 
-const handleGet: RpcHandler<"cookies.get"> = async (params) => {
-  const found = await chrome.cookies.getAll({ ...ALL_PARTITIONS, url: params.url, name: params.name });
-  // 同名时优先非分区的那个，与浏览器发请求时的常见选择一致。
+// url 与 name 指定的那一个 Cookie：同名时优先非分区的那个，与浏览器发请求时的常见选择一致。get 与 rm 都针对它。
+async function requireCookie(url: string, name: string): Promise<chrome.cookies.Cookie> {
+  const found = await chrome.cookies.getAll({ ...ALL_PARTITIONS, url, name });
   const match = found.find((c) => c.partitionKey === undefined) ?? found[0];
   if (match === undefined) {
-    throw new HandlerError("NOT_FOUND", `no cookie ${params.name} for ${params.url}`);
+    throw new HandlerError("NOT_FOUND", `no cookie ${name} for ${url}`);
   }
-  return { contentTrust: "untrusted-page-content", cookie: toItem(match) };
+  return match;
+}
+
+const handleGet: RpcHandler<"cookies.get"> = async (params) => {
+  return { contentTrust: "untrusted-page-content", cookie: toItem(await requireCookie(params.url, params.name)) };
 };
 
 const handleSet: RpcHandler<"cookies.set"> = async (params) => {
@@ -108,24 +113,10 @@ const handleSet: RpcHandler<"cookies.set"> = async (params) => {
   return { contentTrust: "untrusted-page-content", cookie: toItem(stored) };
 };
 
+// rm 删除单个 Cookie（spec 破坏级别表），同名的分区 Cookie 是别的 Cookie，不在其内。
 const handleRemove: RpcHandler<"cookies.remove"> = async (params) => {
-  const found = await chrome.cookies.getAll({ ...ALL_PARTITIONS, url: params.url, name: params.name });
-  if (found.length === 0) {
-    throw new HandlerError("NOT_FOUND", `no cookie ${params.name} for ${params.url}`);
-  }
-  // 非分区 Cookie 同名时 remove 只删路径最匹配的一个；分区 Cookie 各有分区键，逐个删。
-  const targets = found.filter((c) => c.partitionKey !== undefined);
-  const unpartitioned = found.find((c) => c.partitionKey === undefined);
-  if (unpartitioned !== undefined) {
-    targets.unshift(unpartitioned);
-  }
-  let deleted = 0;
-  for (const cookie of targets) {
-    if (await removeCookie(params.url, cookie)) {
-      deleted += 1;
-    }
-  }
-  return { deleted };
+  const cookie = await requireCookie(params.url, params.name);
+  return { deleted: (await removeCookie(params.url, cookie)) ? 1 : 0 };
 };
 
 const handleClear: RpcHandler<"cookies.clear"> = async (params) => {
@@ -147,9 +138,9 @@ const handleClear: RpcHandler<"cookies.clear"> = async (params) => {
 };
 
 export function registerCookiesHandlers(registry: HandlerRegistry): void {
-  registry.register("cookies.list", handleList);
-  registry.register("cookies.get", handleGet);
-  registry.register("cookies.set", handleSet);
-  registry.register("cookies.remove", handleRemove);
-  registry.register("cookies.clear", handleClear);
+  registry.register("cookies.list", needs("cookies", handleList));
+  registry.register("cookies.get", needs("cookies", handleGet));
+  registry.register("cookies.set", needs("cookies", handleSet));
+  registry.register("cookies.remove", needs("cookies", handleRemove));
+  registry.register("cookies.clear", needs("cookies", handleClear));
 }

@@ -1,29 +1,26 @@
 import { HandlerError, type HandlerRegistry, type RpcHandler } from "@/background/registry";
+import { requireApi } from "./api";
 import { listLimit, takePage } from "./list";
 
-// chrome.readingList 从 Chrome 120 起才有，Edge 是否提供尚未确认，而最低版本仍是 116（spec 设计决策 7）：
-// 每次调用时检测，缺少时返回 UNSUPPORTED，而不是在 undefined 上崩成 INTERNAL_ERROR。
+// chrome.readingList 从 Chrome 120 起才有，Edge 是否提供尚未确认，而最低版本仍是 116（spec 设计决策 7）。
 function readingListApi(): typeof chrome.readingList {
-  // 类型声明总带着 readingList，运行时却可能没有。
-  const api = (chrome as { readingList?: typeof chrome.readingList }).readingList;
-  if (api === undefined) {
-    throw new HandlerError(
-      "UNSUPPORTED",
-      "this browser does not provide chrome.readingList (needs Chrome 120 or later)",
-    );
-  }
-  return api;
+  return requireApi("readingList", " (needs Chrome 120 or later)");
 }
 
-// 阅读列表只收 http/https 地址，别的地址 chrome 只会笼统地拒绝；在这里翻译成 INVALID_REQUEST。
-function requireListableUrl(url: string): void {
+// 阅读列表只收 http/https 地址，别的地址 chrome 只会笼统地拒绝。
+function isListableUrl(url: string): boolean {
   let protocol: string;
   try {
     protocol = new URL(url).protocol;
   } catch {
-    throw new HandlerError("INVALID_REQUEST", `${url} is not a valid URL`);
+    return false;
   }
-  if (protocol !== "http:" && protocol !== "https:") {
+  return protocol === "http:" || protocol === "https:";
+}
+
+// 添加时把不能收的地址翻译成 INVALID_REQUEST。
+function requireListableUrl(url: string): void {
+  if (!isListableUrl(url)) {
     throw new HandlerError("INVALID_REQUEST", `the reading list only holds http and https URLs, not ${url}`);
   }
 }
@@ -36,8 +33,8 @@ async function inList(api: typeof chrome.readingList, url: string): Promise<bool
 async function requireAllInList(api: typeof chrome.readingList, urls: string[]): Promise<string[]> {
   const unique = [...new Set(urls)];
   for (const url of unique) {
-    requireListableUrl(url);
-    if (!(await inList(api, url))) {
+    // 列表只收 http/https 地址，别的地址必然不在其中；不拿它去查询，chrome 对它只会笼统地拒绝。
+    if (!isListableUrl(url) || !(await inList(api, url))) {
       throw new HandlerError("NOT_FOUND", `${url} is not in the reading list`);
     }
   }

@@ -1,4 +1,5 @@
 import { HandlerError, type HandlerRegistry, type RpcHandler } from "@/background/registry";
+import { needs } from "./api";
 import { listLimit, takePage } from "./list";
 
 // chrome 的历史时间戳是带小数的毫秒；协议用整数，四舍五入不影响排序意义。
@@ -83,8 +84,8 @@ const handleClear: RpcHandler<"history.clear"> = async (params) => {
 };
 
 export function registerHistoryHandlers(registry: HandlerRegistry): void {
-  registry.register("history.search", handleSearch);
-  registry.register("history.visits", handleVisits);
-  registry.register("history.remove", handleRemove);
-  registry.register("history.clear", handleClear);
+  registry.register("history.search", needs("history", handleSearch));
+  registry.register("history.visits", needs("history", handleVisits));
+  registry.register("history.remove", needs("history", handleRemove));
+  registry.register("history.clear", needs("history", handleClear));
 }

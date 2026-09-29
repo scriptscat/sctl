@@ -9,7 +9,7 @@ CLI verbs (sctl get / edit / install / browsers / tabs / windows …) ┤
                           sctl serve (daemon; defaults to 127.0.0.1:8643)
                                                 ▲ WebSocket (each extension dials in + mutual HMAC handshake)
                      ScriptCat browser extension (authority for write approval and source disclosure)
-                     sctl Browser extension, one or more paired instances (tab/window control)
+                     sctl Browser extension, one or more paired instances (browser control; approval window for L2)
 ```
 
 `sctl mcp` and the CLI verbs are **separate processes** from `sctl serve`. They talk over the
@@ -32,7 +32,12 @@ Every method carries a destruction level (L0 / L1 / L2, see [protocol.md](./prot
 L1 confirmation is checked twice: `controlapi` rejects an L1 call whose input lacks `confirm: true` with
 `CONFIRMATION_REQUIRED` before `bridge` forwards anything, and the sctl Browser extension's handler registry
 (`extension/src/background/registry.ts`) checks again before running the handler. The daemon never decides L2 —
-it forwards the call and blocks, as for ScriptCat's gates.
+it forwards the call and blocks, as for ScriptCat's gates. The L2 gate lives entirely in the sctl Browser extension:
+its service worker validates the request, queues it in `chrome.storage.session` (so it survives the worker being
+suspended), badges the toolbar icon, and opens its own approval window (`extension/src/approval/`), a separate popup
+window of the extension. The offscreen document holds back the JSON-RPC answer until the window's decision is carried
+out, and forwards the daemon's cancellations and its own disconnects to the queue
+([protocol.md](./protocol.md#5-cancellation-and-approval)).
 
 ## Directory layout
 
@@ -86,7 +91,8 @@ internal/pkg/               # ── shared by both sides ──
 extension/                  # ── sctl Browser, the second extension kind (MV3, pnpm/Vite/React) ──
   src/background/           #   service worker: identity and settings storage, message routing, method dispatch
   src/offscreen/            #   holds the WebSocket and connection state, pairing and session handshake, retry/backoff
-  src/handlers/             #   tabs.*/windows.* method implementations (chrome.tabs / chrome.windows)
+  src/handlers/             #   browser method implementations, one module per domain (chrome.tabs, chrome.bookmarks, …)
+  src/approval/             #   L2 approval window UI (bookmark deletion, extension uninstall)
   src/popup/                #   popup UI: pairing, rename, forget, daemon address
   src/protocol/generated/   #   browser-only generated protocol TS (see protocol.md §6)
 ```

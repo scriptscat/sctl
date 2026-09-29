@@ -1,6 +1,6 @@
 // Package mcpserver 用官方 go-sdk 构建 sctl 的 stdio MCP server:把 protocol.json 定义的 bridge
 // action 暴露成 MCP 工具(第 1 期的方法一方法一工具,之后的浏览器领域按领域合并成一个工具),并在
-// 方法等待人工决定(blocking 不是 none)期间周期发送 progress 通知(支持的客户端可借此续期工具超时)。
+// 调用等待期间周期发送 progress 通知(支持的客户端可借此续期工具超时;哪些调用发见 sendsProgress)。
 //
 // 扁平信任:接入(enrollment)建立可信通道后,MCP agent 继承信任、无需各自配对,故 tools/list
 // 暴露全部工具;权威授权仍在扩展侧(写操作审批 / 源码披露闸门)。
@@ -168,7 +168,7 @@ func registerTool(srv *mcp.Server, td toolDef, action protocol.Action, caller Br
 				}
 			}
 		}
-		return handleCall(ctx, req, td.action, req.Params.Arguments, action.Blocking != protocol.BlockingNone, browser, caller)
+		return handleCall(ctx, req, td.action, req.Params.Arguments, sendsProgress(action), browser, caller)
 	})
 }
 
@@ -201,13 +201,17 @@ func registerBrowsersListTool(srv *mcp.Server, caller BridgeCaller) {
 	})
 }
 
+// sendsProgress 报告调用等待期间是否发 progress。浏览器方法只在等待人工决定(blocking 不是 none)时发,否则客户端
+// 会看到从不存在的审批;ScriptCat 方法保持第 1 期的行为,等待期间都发(第 1 期行为不变是第 2 期的约束)。
+func sendsProgress(action protocol.Action) bool {
+	return action.Peer != protocol.PeerBrowser || action.Blocking != protocol.BlockingNone
+}
+
 // handleCall 把方法 action 的输入 input 转发到 daemon。桥接业务错误(拒绝/过期/scope 等)作为 IsError
 // 工具结果返回(模型可见并自我纠正);传输/取消错误作为协议级错误返回。
-func handleCall(ctx context.Context, req *mcp.CallToolRequest, action string, input json.RawMessage, waitsForHuman bool, browser string, caller BridgeCaller) (*mcp.CallToolResult, error) {
-	// 只有等待人工决定的方法(blocking 不是 none)才发「等待浏览器审批」的 progress,即时执行的方法
-	// 不论属于哪个对端都不发,否则客户端会看到从不存在的审批。
+func handleCall(ctx context.Context, req *mcp.CallToolRequest, action string, input json.RawMessage, progress bool, browser string, caller BridgeCaller) (*mcp.CallToolResult, error) {
 	stop := func() {}
-	if waitsForHuman {
+	if progress {
 		stop = startProgress(ctx, req)
 	}
 	res, err := caller.Call(ctx, action, browser, input)

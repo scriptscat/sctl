@@ -5,10 +5,14 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 )
+
+// maxRecentLimit 是 Chrome 保留的最近关闭项数上限,也是 recent list --limit 的上限。
+const maxRecentLimit = 25
 
 // newRecentCmd 构造 `sctl recent`: list/restore，各对应一个 recent.* 浏览器方法。
 func newRecentCmd() *cobra.Command {
@@ -28,10 +32,10 @@ func newRecentListCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 	}
 	var limit int
-	cmd.Flags().IntVar(&limit, "limit", 25, "return at most this many items (1-25)")
+	cmd.Flags().IntVar(&limit, "limit", maxRecentLimit, fmt.Sprintf("return at most this many items (1-%d)", maxRecentLimit))
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if limit < 1 || limit > 25 {
-			return &ExitError{Code: exitError, Message: fmt.Sprintf("invalid --limit %d: must be between 1 and 25", limit)}
+		if limit < 1 || limit > maxRecentLimit {
+			return &ExitError{Code: exitError, Message: fmt.Sprintf("invalid --limit %d: must be between 1 and %d", limit, maxRecentLimit)}
 		}
 		input := map[string]any{}
 		if limit > 0 && cmd.Flags().Changed("limit") {
@@ -92,24 +96,30 @@ type recentRow struct {
 
 func printRecentTable(result json.RawMessage) error {
 	var payload struct {
-		Items []recentRow `json:"items"`
+		Items   []recentRow `json:"items"`
+		HasMore bool        `json:"hasMore"`
 	}
 	if err := json.Unmarshal(result, &payload); err != nil {
 		return printResultJSON(result)
 	}
 	if len(payload.Items) == 0 {
 		fmt.Fprintln(os.Stdout, "(no recently closed items)")
+		printHasMoreUpTo(payload.HasMore, maxRecentLimit)
 		return nil
 	}
 	multi := slices.ContainsFunc(payload.Items, func(r recentRow) bool { return r.Browser != nil })
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	header := "TYPE\tCLOSED\tTITLE\tURL"
+	header := "SESSION\tTYPE\tCLOSED\tTABS\tTITLE\tURL"
 	if multi {
 		header += "\tBROWSER"
 	}
 	fmt.Fprintln(tw, header)
 	for _, r := range payload.Items {
-		row := fmt.Sprintf("%s\t%s\t%s\t%s", r.Type, formatMillis(r.ClosedTime), terminalSafe(r.Title), terminalSafe(r.URL))
+		tabs := ""
+		if r.Type == "window" {
+			tabs = strconv.Itoa(r.TabCount)
+		}
+		row := fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s", terminalSafe(r.SessionID), r.Type, formatMillis(r.ClosedTime), tabs, terminalSafe(r.Title), terminalSafe(r.URL))
 		if multi {
 			row += "\t" + r.Browser.Name
 		}
@@ -118,5 +128,6 @@ func printRecentTable(result json.RawMessage) error {
 	if err := tw.Flush(); err != nil {
 		return err
 	}
+	printHasMoreUpTo(payload.HasMore, maxRecentLimit)
 	return nil
 }

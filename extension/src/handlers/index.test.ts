@@ -161,6 +161,36 @@ describe("browser method handlers", () => {
     );
   });
 
+  // 浏览器不提供某个领域的 API 时，这个领域的每个操作都回 UNSUPPORTED 并点名缺少的 API，而不是在 undefined 上崩成
+  // INTERNAL_ERROR。伪造的 chrome 只有 tabs 与 windows。
+  it("answers UNSUPPORTED naming the missing API for every method of a domain whose chrome namespace is absent", async () => {
+    const domains: Record<string, string> = {
+      bookmarks: "bookmarks",
+      tabGroups: "tabGroups",
+      history: "history",
+      browsingData: "browsingData",
+      recent: "sessions",
+      downloads: "downloads",
+      cookies: "cookies",
+      extensions: "management",
+    };
+    const checked: string[] = [];
+    for (const method of registry.methods()) {
+      const namespace = domains[method.split(".")[0]];
+      if (namespace === undefined) continue;
+      const outcome = registry.requiresApproval(method)
+        ? await registry.prepare(method, { ids: ["1"], id: "x" })
+        : await registry.dispatch(method, { confirm: true });
+      expect(outcome, method).toEqual({
+        ok: false,
+        code: "UNSUPPORTED",
+        message: expect.stringContaining(`chrome.${namespace}`) as unknown,
+      });
+      checked.push(method);
+    }
+    expect(checked).toHaveLength(36);
+  });
+
   describe("tabs.list", () => {
     it("lists every tab across all windows with page-controlled title and URL untouched", async () => {
       const tab = fakeTab({

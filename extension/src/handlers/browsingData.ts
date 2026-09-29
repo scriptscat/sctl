@@ -1,4 +1,5 @@
 import { HandlerError, type HandlerRegistry, type RpcHandler } from "@/background/registry";
+import { needs } from "./api";
 
 // chrome.browsingData 的 origins 只对 cookies、存储和缓存有效（@types/chrome RemovalOptions.origins）；
 // history、downloads、formData 没有来源维度，与 origins 同用会被 chrome 笼统拒绝，这里先翻译成 INVALID_REQUEST。
@@ -48,5 +49,5 @@ const handleClear: RpcHandler<"browsingData.clear"> = async (params) => {
 };
 
 export function registerBrowsingDataHandlers(registry: HandlerRegistry): void {
-  registry.register("browsingData.clear", handleClear);
+  registry.register("browsingData.clear", needs("browsingData", handleClear));
 }

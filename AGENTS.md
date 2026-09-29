@@ -44,10 +44,11 @@ internal/client/             internal/daemon/                      internal/pkg/
 
 The authority always lives on the extension side for ScriptCat's write and source-disclosure gates: the daemon
 approves no write and discloses no source on its own — it forwards the request and blocks until a human
-decides in the browser. Browser control (`sctl browsers`/`tabs`/`windows`/`reading-list`/`bookmarks`) is the
-deliberate exception: it has no human gate by design, so any control-token holder can drive a paired `sctl Browser`
-instance immediately. Only its L2 operations — currently deleting bookmarks — are gated: the `sctl Browser`
-extension holds them until a human approves in its own approval window. See
+decides in the browser. Browser control (`sctl browsers`, `tabs`, `windows`, `groups`, `reading-list`, `bookmarks`,
+`history`, `browsing-data`, `recent`, `downloads`, `cookies`, `extensions`) is the deliberate exception: it has no
+human gate by design, so any control-token holder can drive a paired `sctl Browser` instance immediately. Only its L2
+operations — deleting bookmarks and uninstalling an extension — are gated: the `sctl Browser` extension holds them
+until a human approves in its own approval window. See
 [`docs/threat-model.md`](./docs/threat-model.md). Full process model and package responsibilities are
 in [`docs/architecture.md`](./docs/architecture.md).
 

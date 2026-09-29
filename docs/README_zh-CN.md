@@ -15,13 +15,16 @@ CLI ─────────────────────────�
 
 ## 功能
 
-- 将 ScriptCat 操作与浏览器标签页/窗口控制暴露为可发现、具有 Schema 类型的 MCP 工具。
+- 将 ScriptCat 操作与浏览器标签页/窗口控制暴露为可发现、具有 Schema 类型的 MCP 工具，另有 10 个按领域合并的浏览器工具
+  （`bookmarks`、`reading_list`、`tabs_manage`、`tab_groups`、`history`、`recently_closed`、`downloads`、`cookies`、
+  `browsing_data`、`extensions`），用 `action` 参数选择操作。
 - 列出脚本并读取元数据或源码，支持按行读取和源码搜索。
 - 通过浏览器确认请求安装、基于内容锚点的编辑、启用/禁用和删除。
 - 在一个或多个已配对的 sctl Browser 实例上列出、打开、关闭、激活、移动、固定、静音、刷新、复制标签页,以及列出、打开、关闭、聚焦窗口和修改窗口状态。
 - 在已配对的 sctl Browser 实例上列出、创建、编辑和解散标签组。
 - 在已配对的 sctl Browser 实例上列出、添加、标记已读或未读、移除阅读列表条目。
 - 在已配对的 sctl Browser 实例上列出、搜索、添加、移动和编辑书签与书签文件夹，并在该浏览器里批准后删除它们。
+- 搜索和清除历史记录，恢复最近关闭的标签页和窗口，管理下载，读取和修改 Cookie，清除浏览数据，以及列出、启用、禁用扩展或在批准后卸载扩展。
 - 在仅监听回环地址的 WebSocket 上使用 JSON-RPC 2.0 和双向认证。
 - 单二进制交付，不依赖浏览器自动化或 Native Messaging Host。
 
@@ -115,7 +118,7 @@ ScriptCat 中批准、拒绝或关闭确认流程；浏览器控制命令按设�
 5 分钟内无人处理或按 Ctrl-C 为 2，批准前书签已发生变化为 3。
 `extensions uninstall <id>` 同样需要在审批窗口里批准，点「卸载」后 Chrome 还会弹出自己的确认框：扩展卸载后退出码为 0，
 被拒绝、关闭窗口或在 Chrome 确认框里取消为 1，5 分钟内无人处理或按 Ctrl-C 为 2，ID 不存在、目标是 sctl Browser 自己或企业策略安装的扩展为 3。
-`reading-list list` 默认最多返回 100 条，可用 `--limit` 提到 1000 条；还有更多条目时在 stderr 提示。`--since`、`--until` 接受 RFC 3339 时间，或 `7d`、`12h`、`30m` 这样的「多久以前」。
+带 `--limit` 的命令默认最多返回 100 条，可用 `--limit` 提到 1000 条（`recent list` 为 25 条，即 Chrome 保留的上限）；还有更多条目时在 stderr 提示。`--since`、`--until` 接受 RFC 3339 时间，或 `7d`、`12h`、`30m` 这样的「多久以前」。
 
 ## 许可证
 

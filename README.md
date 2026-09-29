@@ -17,7 +17,9 @@ confirmation UI in the extension.
 
 ## Features
 
-- Exposes ScriptCat operations and browser tab/window control as discoverable, schema-typed MCP tools.
+- Exposes ScriptCat operations and browser tab/window control as discoverable, schema-typed MCP tools, plus ten
+  per-domain browser tools (`bookmarks`, `reading_list`, `tabs_manage`, `tab_groups`, `history`, `recently_closed`,
+  `downloads`, `cookies`, `browsing_data`, `extensions`) that pick the operation with an `action` argument.
 - Lists scripts and reads metadata or source, including line windows and source search.
 - Requests installation, content-anchored editing, enable/disable, and deletion through browser approval.
 - Lists, opens, closes, activates, moves, pins, mutes, reloads, and duplicates tabs, and lists, opens, closes, focuses, and resizes windows across one or more paired sctl Browser instances.
@@ -25,6 +27,8 @@ confirmation UI in the extension.
 - Lists, adds, marks read or unread, and removes reading list entries on a paired sctl Browser instance.
 - Lists, searches, adds, moves, and edits bookmarks and bookmark folders on a paired sctl Browser instance, and
   deletes them after approval in that browser.
+- Searches and clears history, restores recently closed tabs and windows, manages downloads, reads and changes
+  cookies, clears browsing data, and lists, enables, disables, or (after approval) uninstalls extensions.
 - Uses JSON-RPC 2.0 over a WebSocket with mutual authentication; the listener defaults to loopback.
 - Ships as one binary; no browser automation or Native Messaging host is required.
 
@@ -125,8 +129,9 @@ deleted, 1 when the request is rejected or the window is closed, 2 when nobody d
 press Ctrl-C, and 3 when the bookmarks changed before approval. `extensions uninstall <id>` is approved the same way,
 and clicking Uninstall in the window then opens Chrome's own confirmation dialog: the command exits 0 once the
 extension is uninstalled, 1 when the request is rejected, the window is closed, or the uninstall is cancelled in Chrome's dialog, 2 when nobody decides within
-5 minutes or you press Ctrl-C, and 3 for an unknown ID, sctl Browser itself, or an extension installed by policy. `reading-list list` returns at most
-100 entries unless `--limit` (up to 1000) says otherwise, and notes on stderr when more remain. `--since` and `--until` accept an RFC 3339 time or a duration ago such as `7d`, `12h`, or `30m`.
+5 minutes or you press Ctrl-C, and 3 for an unknown ID, sctl Browser itself, or an extension installed by policy. Commands that take `--limit` return at
+most 100 items by default, and up to 1000 with `--limit` (`recent list`: 25, Chrome's retention limit), and note on
+stderr when more remain. `--since` and `--until` accept an RFC 3339 time or a duration ago such as `7d`, `12h`, or `30m`.
 
 ## License
 

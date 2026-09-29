@@ -330,6 +330,7 @@ export interface RecentListParams {
 }
 export interface RecentListResult {
   contentTrust: "untrusted-page-content";
+  hasMore: boolean;
   items: Array<{ closedTime: number; sessionId: string; tabCount?: number; title: string; type: "tab" | "window"; url: string; }>;
 }
 export interface RecentRestoreParams {

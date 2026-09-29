@@ -298,6 +298,14 @@ func TestBookmarksRemove(t *testing.T) {
 			So(errOut, ShouldContainSubstring, "waiting for approval in browser work")
 		})
 
+		Convey("--browser 给的是实例 ID 前缀时,提示点名它对应的浏览器名称", func() {
+			req := stubDaemonApproval(t, online, removed)
+			code, _, errOut := runCLICapture("bookmarks", "rm", "14", "--browser", "aaaa")
+			So(code, ShouldEqual, exitOK)
+			So(req.Browser, ShouldEqual, "aaaa")
+			So(errOut, ShouldContainSubstring, "waiting for approval in browser chrome-a")
+		})
+
 		Convey("-o json 原样输出结果", func() {
 			stubDaemonApproval(t, online, removed)
 			code, out, _ := runCLICapture("bookmarks", "rm", "14", "-o", "json")

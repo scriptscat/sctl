@@ -232,6 +232,21 @@ describe("cookies handlers", () => {
       });
     });
 
+    it("removes only the single cookie that get would return when partitioned cookies share the name", async () => {
+      cookies.getAll.mockResolvedValue([partitioned("sid"), cookie("sid")]);
+
+      const outcome = await registry.dispatch("cookies.remove", {
+        url: "https://example.com/",
+        name: "sid",
+        confirm: true,
+      });
+
+      expect(cookies.remove.mock.calls.map(([details]) => details)).toEqual([
+        { url: "https://example.com/", name: "sid" },
+      ]);
+      expect(outcome).toEqual({ ok: true, result: { deleted: 1 } });
+    });
+
     it("returns NOT_FOUND when absent and CONFIRMATION_REQUIRED without confirm, removing nothing", async () => {
       expect(
         await registry.dispatch("cookies.remove", { url: "https://example.com/", name: "sid", confirm: true }),

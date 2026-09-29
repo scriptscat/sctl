@@ -275,5 +275,19 @@ describe("reading list handlers", () => {
       });
       expect(readingList.removeEntry).not.toHaveBeenCalled();
     });
+
+    it("returns NOT_FOUND, not INVALID_REQUEST, for a URL the reading list cannot hold, since it is not in the list", async () => {
+      readingList.query.mockImplementation(listing([entry("https://a.example/", 1)]));
+
+      for (const url of ["not a url", "ftp://a.example/file"]) {
+        const outcome = await registry.dispatch("readingList.remove", {
+          urls: ["https://a.example/", url],
+          confirm: true,
+        });
+
+        expect(outcome).toEqual({ ok: false, code: "NOT_FOUND", message: expect.stringContaining(url) as unknown });
+      }
+      expect(readingList.removeEntry).not.toHaveBeenCalled();
+    });
   });
 });

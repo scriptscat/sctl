@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -43,26 +44,33 @@ func dispatchBrowserApproval(cmd *cobra.Command, action, browser string, input j
 	}, canceledVoided, onOK)
 }
 
-// approvingBrowser 给出等待提示里的审批地点。没给 --browser 时唯一在线的实例就是 daemon 会选中的那个;
-// 查不到或不唯一时只说「the browser」,真正的目标错误由随后的调用报告。
+// approvingBrowser 给出等待提示里的审批地点,点名浏览器的名称(spec「等待在浏览器 <名称> 中批准」)。
+// 给了 --browser 时按 daemon 的规则(名称精确匹配优先,否则唯一的实例 ID 前缀)找到它的名称;没给时唯一在线的实例就是
+// daemon 会选中的那个。查不到或不唯一时退回 --browser 原文或「the browser」,真正的目标错误由随后的调用报告。
 func approvingBrowser(ctx context.Context, c *control.Client, browser string) string {
+	fallback := "the browser"
 	if browser != "" {
-		return "browser " + terminalSafe(browser)
+		fallback = "browser " + terminalSafe(browser)
 	}
 	browsers, err := c.Browsers(ctx)
 	if err != nil {
-		return "the browser"
+		return fallback
 	}
-	var online []string
+	var candidates []string
 	for _, b := range browsers {
-		if b.Online {
-			online = append(online, b.Name)
+		switch {
+		case browser == "" && b.Online:
+			candidates = append(candidates, b.Name)
+		case browser != "" && b.Name == browser:
+			return "browser " + terminalSafe(b.Name)
+		case browser != "" && strings.HasPrefix(b.ID, browser):
+			candidates = append(candidates, b.Name)
 		}
 	}
-	if len(online) != 1 {
-		return "the browser"
+	if len(candidates) != 1 {
+		return fallback
 	}
-	return "browser " + terminalSafe(online[0])
+	return "browser " + terminalSafe(candidates[0])
 }
 
 const (

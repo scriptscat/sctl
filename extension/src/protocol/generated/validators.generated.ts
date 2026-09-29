@@ -275,7 +275,7 @@ export function validateRecentListParams(value: unknown): value is Protocol.Rece
 }
 
 export function validateRecentListResult(value: unknown): value is Protocol.RecentListResult {
-  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "items"]) && value["contentTrust"] === "untrusted-page-content" && Array.isArray(value["items"]) && value["items"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["closedTime", "sessionId", "tabCount", "title", "type", "url"]) && typeof item["closedTime"] === "number" && Number.isInteger(item["closedTime"]) && typeof item["sessionId"] === "string" && (item["tabCount"] === undefined || (typeof item["tabCount"] === "number" && Number.isInteger(item["tabCount"]))) && typeof item["title"] === "string" && (item["type"] === "tab" || item["type"] === "window") && typeof item["url"] === "string")));
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "hasMore", "items"]) && value["contentTrust"] === "untrusted-page-content" && typeof value["hasMore"] === "boolean" && Array.isArray(value["items"]) && value["items"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["closedTime", "sessionId", "tabCount", "title", "type", "url"]) && typeof item["closedTime"] === "number" && Number.isInteger(item["closedTime"]) && typeof item["sessionId"] === "string" && (item["tabCount"] === undefined || (typeof item["tabCount"] === "number" && Number.isInteger(item["tabCount"]))) && typeof item["title"] === "string" && (item["type"] === "tab" || item["type"] === "window") && typeof item["url"] === "string")));
 }
 
 export function validateRecentRestoreParams(value: unknown): value is Protocol.RecentRestoreParams {

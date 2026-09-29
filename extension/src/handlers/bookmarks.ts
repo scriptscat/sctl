@@ -1,4 +1,5 @@
 import { type ApprovalHandler, HandlerError, type HandlerRegistry, type RpcHandler } from "@/background/registry";
+import { needs, needsForApproval } from "./api";
 import type { BookmarksListResult } from "@/protocol/generated/protocol.generated";
 import type { BookmarkRemovalDetail, BookmarkRemovalEntry, BookmarkRemovalItem } from "@/shared/approvals";
 import { listLimit, takePage } from "./list";
@@ -357,11 +358,11 @@ const removeBookmarks: ApprovalHandler<"bookmarks.remove"> = {
 };
 
 export function registerBookmarkHandlers(registry: HandlerRegistry): void {
-  registry.register("bookmarks.list", handleList);
-  registry.register("bookmarks.search", handleSearch);
-  registry.register("bookmarks.add", handleAdd);
-  registry.register("bookmarks.mkdir", handleMkdir);
-  registry.register("bookmarks.move", handleMove);
-  registry.register("bookmarks.edit", handleEdit);
-  registry.registerApproval("bookmarks.remove", removeBookmarks);
+  registry.register("bookmarks.list", needs("bookmarks", handleList));
+  registry.register("bookmarks.search", needs("bookmarks", handleSearch));
+  registry.register("bookmarks.add", needs("bookmarks", handleAdd));
+  registry.register("bookmarks.mkdir", needs("bookmarks", handleMkdir));
+  registry.register("bookmarks.move", needs("bookmarks", handleMove));
+  registry.register("bookmarks.edit", needs("bookmarks", handleEdit));
+  registry.registerApproval("bookmarks.remove", needsForApproval("bookmarks", removeBookmarks));
 }

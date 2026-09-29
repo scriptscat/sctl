@@ -1,4 +1,5 @@
 import { HandlerError, type HandlerRegistry, type RpcHandler } from "@/background/registry";
+import { needs } from "./api";
 import { listLimit, takePage } from "./list";
 
 // chrome 的下载开始时间是 ISO 字符串；协议用毫秒整数。
@@ -131,12 +132,12 @@ const handleDeleteFile: RpcHandler<"downloads.deleteFile"> = async (params) => {
 };
 
 export function registerDownloadsHandlers(registry: HandlerRegistry): void {
-  registry.register("downloads.list", handleList);
-  registry.register("downloads.start", handleStart);
-  registry.register("downloads.pause", handlePause);
-  registry.register("downloads.resume", handleResume);
-  registry.register("downloads.cancel", handleCancel);
-  registry.register("downloads.erase", handleErase);
-  registry.register("downloads.deleteFile", handleDeleteFile);
-  registry.register("downloads.show", handleShow);
+  registry.register("downloads.list", needs("downloads", handleList));
+  registry.register("downloads.start", needs("downloads", handleStart));
+  registry.register("downloads.pause", needs("downloads", handlePause));
+  registry.register("downloads.resume", needs("downloads", handleResume));
+  registry.register("downloads.cancel", needs("downloads", handleCancel));
+  registry.register("downloads.erase", needs("downloads", handleErase));
+  registry.register("downloads.deleteFile", needs("downloads", handleDeleteFile));
+  registry.register("downloads.show", needs("downloads", handleShow));
 }

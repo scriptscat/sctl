@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { HandlerRegistry, runApproved } from "@/background/registry";
 import { validateExtensionsListResult } from "@/protocol/generated/validators.generated";
-import type { ExtensionUninstallDetail } from "@/shared/approvals";
+import type { ApprovalRequest, ExtensionUninstallDetail } from "@/shared/approvals";
 import { registerHandlers } from "./index";
-import { uninstallExtension } from "./extensions";
+import { uninstallExtension, uninstallObserved } from "./extensions";
 
 type GetAllFn = () => Promise<chrome.management.ExtensionInfo[]>;
 type GetFn = (id: string) => Promise<chrome.management.ExtensionInfo>;
@@ -278,6 +278,28 @@ describe("extensions handlers", () => {
 
       expect(outcome).toEqual({ ok: false, code: "INTERNAL_ERROR", message: "internal error" });
       expect(error).toHaveBeenCalled();
+    });
+  });
+
+  // 审批窗口在 Chrome 确认框打开期间被关掉时，窗口里等结论的回调随之消失；这时卸载成功只能从
+  // chrome.management.onUninstalled 得知，结论与窗口自己回报的一样。
+  describe("observing an uninstall outside the approval window", () => {
+    it("concludes the approved uninstall of exactly the extension Chrome reports as uninstalled", () => {
+      const tidy: ApprovalRequest = { kind: "extensions.uninstall", detail: uninstallDetail(TIDY) };
+      const removal: ApprovalRequest = {
+        kind: "bookmarks.remove",
+        detail: {
+          summary: { items: 1, bookmarks: 1, folders: 0, containedBookmarks: 0, containedFolders: 0 },
+          items: [{ id: TIDY.id, type: "bookmark", title: "B", url: "https://b.example/", parentId: "1", path: [] }],
+        },
+      };
+
+      expect(uninstallObserved(TIDY.id)(tidy)).toEqual({
+        ok: true,
+        result: { contentTrust: "untrusted-page-content", id: TIDY.id, name: "Tab Tidy" },
+      });
+      expect(uninstallObserved("someone-else")(tidy)).toBeNull();
+      expect(uninstallObserved(TIDY.id)(removal)).toBeNull();
     });
   });
 });

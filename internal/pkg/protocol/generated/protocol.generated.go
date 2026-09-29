@@ -424,6 +424,7 @@ type RecentListParams struct {
 
 type RecentListResult struct {
 	ContentTrust string `json:"contentTrust"`
+	HasMore      bool   `json:"hasMore"`
 	Items        []struct {
 		ClosedTime int    `json:"closedTime"`
 		SessionId  string `json:"sessionId"`

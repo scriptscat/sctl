@@ -1,4 +1,8 @@
 import { type ApprovalHandler, HandlerError, type HandlerRegistry, type RpcHandler } from "@/background/registry";
+import type { RpcResult } from "@/protocol/generated/protocol.generated";
+import type { ApprovalRequest, ExtensionUninstallDetail } from "@/shared/approvals";
+import type { RpcOutcome } from "@/shared/messages";
+import { needs, needsForApproval } from "./api";
 
 async function requireExtension(id: string): Promise<chrome.management.ExtensionInfo> {
   try {
@@ -94,14 +98,27 @@ export const uninstallExtension: ApprovalHandler<"extensions.uninstall"> = {
       }
       throw error;
     }
-    return { contentTrust: "untrusted-page-content", id: detail.id, name: detail.name };
+    return uninstalled(detail);
   },
   inWindow: true,
 };
 
+function uninstalled(detail: ExtensionUninstallDetail): RpcResult<"extensions.uninstall"> {
+  return { contentTrust: "untrusted-page-content", id: detail.id, name: detail.name };
+}
+
+// chrome.management.onUninstalled 报告 uninstalledId 被卸载时，已批准卸载它的请求就此得出结论（Approvals.observed）：
+// 审批窗口在 Chrome 确认框打开期间被关掉时，窗口已无法回报确认框的结果。
+export function uninstallObserved(uninstalledId: string): (request: ApprovalRequest) => RpcOutcome | null {
+  return (request) =>
+    request.kind === "extensions.uninstall" && request.detail.id === uninstalledId
+      ? { ok: true, result: uninstalled(request.detail) }
+      : null;
+}
+
 export function registerExtensionsHandlers(registry: HandlerRegistry): void {
-  registry.register("extensions.list", handleList);
-  registry.register("extensions.enable", handleEnable);
-  registry.register("extensions.disable", handleDisable);
-  registry.registerApproval("extensions.uninstall", uninstallExtension);
+  registry.register("extensions.list", needs("management", handleList));
+  registry.register("extensions.enable", needs("management", handleEnable));
+  registry.register("extensions.disable", needs("management", handleDisable));
+  registry.registerApproval("extensions.uninstall", needsForApproval("management", uninstallExtension));
 }

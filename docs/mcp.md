@@ -244,7 +244,8 @@ not managed) and runs only with `confirm: true`. `since` (milliseconds) defaults
 clearing to those origins and is `INVALID_REQUEST` when combined with `downloads`, `formData`, or `history`.
 
 `recently_closed` lists and restores recently closed tabs and windows, with `action` set to `list` or `restore`. `list` returns
-at most 25 items (Chrome's retention limit) newest first, capped by `limit`, and is marked
+at most 25 items (Chrome's retention limit) newest first, capped by `limit` with `hasMore` telling whether items were left out,
+and is marked
 `contentTrust: "untrusted-page-content"` because titles and URLs come from web pages. `restore` reopens the item with the
 given `sessionId`, or the most recently closed one without it, and returns the new `tabId` or `windowId`; an unknown
 session is `NOT_FOUND`. Neither needs confirmation.
@@ -265,7 +266,7 @@ partitioned (CHIPS) ones included (name, value, domain, path, `expires` in milli
 unmasked and, like names, are marked `contentTrust: "untrusted-page-content"`. `get` needs `url` and `name` and answers `NOT_FOUND` when
 the cookie does not exist. `set` writes a cookie for `url` (`name`, `value`, optional `domain`, `path`, `secure`, `httpOnly`,
 `sameSite` of `no_restriction`, `lax` or `strict`, and `expires`); without `expires` it is a session cookie, and a cookie Chrome
-refuses to store answers `INVALID_REQUEST` with Chrome's reason. `rm` (`url`, `name`; `NOT_FOUND` when absent) and `clear` (`domain`
+refuses to store answers `INVALID_REQUEST` with Chrome's reason. `rm` (`url`, `name`; deletes the one cookie `get` returns, `NOT_FOUND` when absent) and `clear` (`domain`
 with its subdomains, or `all: true`; exactly one of them) run only with `confirm: true` and return the number of cookies deleted.
 
 `extensions` manages installed extensions and apps, with `action` set to `list`, `enable`, `disable` or `uninstall`. `list`
@@ -275,8 +276,10 @@ authors and are marked `contentTrust: "untrusted-page-content"`. `enable` and `d
 `uninstall` removes one extension (`id`) after two human confirmations: approval in the sctl Browser approval window,
 then Chrome's own uninstall dialog, which opens when the user clicks Uninstall in the window. The call waits for both,
 sending progress notifications, and returns the uninstalled extension's `id` and name; a cancel in Chrome's dialog is
-`USER_REJECTED`, like a rejection. When the call is cancelled, times out, or the approval window is closed while Chrome's
-dialog is open, the call gets `OPERATION_EXPIRED` and whether the extension was uninstalled follows that dialog.
+`USER_REJECTED`, like a rejection. When the call is cancelled or times out while Chrome's dialog is open, the call gets
+`OPERATION_EXPIRED` and whether the extension was uninstalled follows that dialog. Closing the approval window while
+Chrome's dialog is open does not affect the uninstall: confirming the dialog still returns the result, while a cancel
+there can no longer be observed, so the call gets `OPERATION_EXPIRED` when the 5 minutes run out.
 `disable` and `uninstall` refuse the sctl Browser extension itself and extensions installed by enterprise policy
 (`INVALID_REQUEST`); an unknown ID is `NOT_FOUND`, and `uninstall` opens no window when a check fails.
 

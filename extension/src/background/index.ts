@@ -1,4 +1,5 @@
 import { registerHandlers } from "@/handlers";
+import { uninstallObserved } from "@/handlers/extensions";
 import { APPROVAL_PAGE, type ApprovalBroadcast } from "@/shared/approvals";
 import type { BackgroundMessage, OffscreenCommand } from "@/shared/messages";
 import { broadcast, listen, request } from "@/shared/messaging";
@@ -64,6 +65,13 @@ chrome.windows.onRemoved.addListener((windowId) => {
   approvals
     .windowRemoved(windowId)
     .catch((error: unknown) => console.error("failed to handle the closed approval window", error));
+});
+
+// 已批准的卸载在 Chrome 确认框里被确认：审批窗口在确认框打开期间被关掉时，结论只能从这里得知。
+chrome.management.onUninstalled.addListener((id) => {
+  approvals
+    .observed(uninstallObserved(id))
+    .catch((error: unknown) => console.error("failed to conclude an observed uninstall", error));
 });
 
 // 连接住在 offscreen 文档里；浏览器启动、扩展安装或 service worker 被唤醒时都确保它存在。

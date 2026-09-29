@@ -243,7 +243,7 @@ export const dictionary: Record<Lang, Strings> = {
       prev: "上一个请求",
       next: "下一个请求",
       from: "来自",
-      selfReported: "（自报，未验证）",
+      selfReported: "（自报，未经验证）",
       selfReportedHint: "这个标签由请求方自己填写，扩展无法核实它的真实身份。",
       noRequester: "未提供标签",
       received: (time: string) => `${time} 收到`,

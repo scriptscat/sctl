@@ -181,6 +181,20 @@ export class Approvals {
     });
   }
 
+  // 在窗口之外得知了交给窗口执行的请求的结论（卸载扩展：chrome.management.onUninstalled）。审批窗口在 Chrome
+  // 确认框打开期间被关掉时，窗口里等结论的回调随之消失，这是结论唯一的来源。conclusion 对与它无关的请求返回 null。
+  observed(conclusion: (request: ApprovalRequest) => RpcOutcome | null): Promise<void> {
+    return this.serialized(async (state) => {
+      for (const record of state.records) {
+        if (record.status !== "executing" || !this.deps.executesInWindow(record.kind)) continue;
+        const outcome = conclusion(requestOf(record));
+        if (outcome !== null) {
+          await this.settleExecution(record, outcome);
+        }
+      }
+    });
+  }
+
   private conclude(id: string, outcome: RpcOutcome): Promise<void> {
     return this.serialized(async (state) => {
       const record = state.records.find((r) => r.id === id);
@@ -230,32 +244,15 @@ export class Approvals {
     return this.serialized(async (state) => this.viewOf(state));
   }
 
-  // 关窗即拒绝全部等待中的请求；已结束的请求只是展示，随窗口一起清掉；service worker 里正在执行的请求不受影响，
-  // 结论照常应答。
+  // 关窗即拒绝全部等待中的请求；已结束的请求只是展示，随窗口一起清掉。执行中的请求不受影响：service worker 里执行的
+  // 照常应答；交给窗口的卸载扩展以 Chrome 确认框为准（spec「Chrome 确认框打开期间关闭审批窗口」），结论由 observed 得知，
+  // 得不到时照常在期限到时作废。
   private async windowGone(state: ApprovalState): Promise<void> {
-    await this.windowExecutionsLost(state);
     state.windowId = null;
     const pending = state.records.filter((r) => r.status === "pending");
     state.records = state.records.filter((r) => r.status === "executing");
     for (const record of pending) {
       await this.answer(record, rejection("the approval window was closed"));
-    }
-  }
-
-  // 窗口没了，它正在等的结论（卸载扩展时 Chrome 确认框的选择）也就无从得知：Chrome 的确认框不受影响，是否卸载
-  // 以用户在其中的选择为准；调用方与确认框期间取消、超时一样得到作废的结果，不再等到期限。
-  private async windowExecutionsLost(state: ApprovalState): Promise<void> {
-    const lost = state.records.filter((r) => r.status === "executing" && this.deps.executesInWindow(r.kind));
-    state.records = state.records.filter((r) => !lost.includes(r));
-    for (const record of lost) {
-      if (!record.detached) {
-        await this.answer(record, {
-          ok: false,
-          code: "OPERATION_EXPIRED",
-          message:
-            "the approval window closed while the browser's own confirmation dialog was open; the outcome follows that dialog",
-        });
-      }
     }
   }
 
@@ -266,7 +263,6 @@ export class Approvals {
         return;
       } catch {
         // 记下的窗口已经不在（例如关窗事件在 service worker 回收前没能处理），重新打开一个。
-        await this.windowExecutionsLost(state);
         state.windowId = null;
       }
     }
@@ -345,9 +341,12 @@ export class Approvals {
   }
 
   private async commit(state: ApprovalState): Promise<void> {
-    // 窗口已经关了，已结束的请求没有地方展示。
+    // 窗口已经关了，已结束的请求没有地方展示；交给窗口执行、请求方也已不再等待的请求，结论既无人应答也无处展示。
     if (state.windowId === null) {
-      state.records = state.records.filter((r) => !TERMINAL.has(r.status));
+      state.records = state.records.filter(
+        (r) =>
+          !TERMINAL.has(r.status) && !(r.detached && r.status === "executing" && this.deps.executesInWindow(r.kind)),
+      );
     }
     const closeWindow = state.windowId !== null && state.records.length === 0 ? state.windowId : null;
     if (closeWindow !== null) {

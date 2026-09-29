@@ -677,34 +677,62 @@ describe("requests carried out by the approval window", () => {
       expect(await statuses(restarted)).toEqual([["u1", "executing"]]);
     });
 
-    it("rejects the other queued requests when the window is closed, and voids the uninstall whose outcome the closed window can no longer report", async () => {
+    // 窗口关掉后它等的回调也没了：卸载请求不受影响，结论改由 chrome.management.onUninstalled 得知（observed）。
+    const uninstalledExtA = (request: ApprovalRequest): RpcOutcome | null =>
+      request.kind === "extensions.uninstall" && request.detail.id === "ext-a" ? UNINSTALLED("ext-a") : null;
+
+    it("rejects the other queued requests when the window is closed, but leaves the uninstall to Chrome's dialog and answers its observed outcome", async () => {
       const { w, approvals } = await withUninstall("r2", "r3");
       await approvals.decide("u1", "approve");
 
       await approvals.windowRemoved(100);
 
       expect(w.settled.map((s) => [s.requestId, s.outcome.ok ? "ok" : s.outcome.code])).toEqual([
-        ["u1", "OPERATION_EXPIRED"],
         ["r2", "USER_REJECTED"],
         ["r3", "USER_REJECTED"],
       ]);
-      expect(w.executed).toEqual([]);
-      expect((await approvals.view()).items).toEqual([]);
+      expect(await statuses(approvals)).toEqual([["u1", "executing"]]);
       expect(w.badge.text).toBe("");
+
+      await approvals.observed(() => null);
+      expect(w.settled).toHaveLength(2);
+      await approvals.observed(uninstalledExtA);
+
+      expect(w.settled[2]).toEqual({ requestId: "u1", outcome: UNINSTALLED("ext-a") });
+      expect((await approvals.view()).items).toEqual([]);
+      expect(w.executed).toEqual([]);
     });
 
-    it("voids the uninstall when its window turns out to be gone as a new request arrives", async () => {
+    it("answers OPERATION_EXPIRED at the deadline when the closed window's uninstall is never observed, and then forgets it", async () => {
+      const { w, approvals } = await withUninstall();
+      await approvals.decide("u1", "approve");
+      await approvals.windowRemoved(100);
+
+      w.timers.advance(LIMITS.writeDecisionTtlMs - EXPIRY_MARGIN_MS);
+      await approvals.view();
+
+      expect(w.settled.map((s) => [s.requestId, s.outcome.ok ? "ok" : s.outcome.code])).toEqual([
+        ["u1", "OPERATION_EXPIRED"],
+      ]);
+      expect((await approvals.view()).items).toEqual([]);
+    });
+
+    it("keeps the uninstall waiting on Chrome's dialog when its window turns out to be gone as a new request arrives", async () => {
       const { w, approvals } = await withUninstall();
       await approvals.decide("u1", "approve");
       w.windows.open.clear();
 
       await approvals.enqueue(w.context("r2"), removal("r2"));
 
-      expect(w.settled.map((s) => [s.requestId, s.outcome.ok ? "ok" : s.outcome.code])).toEqual([
-        ["u1", "OPERATION_EXPIRED"],
+      expect(w.settled).toEqual([]);
+      expect(await statuses(approvals)).toEqual([
+        ["u1", "executing"],
+        ["r2", "pending"],
       ]);
-      expect(await statuses(approvals)).toEqual([["r2", "pending"]]);
       expect(w.windows.created).toHaveLength(2);
+
+      await approvals.observed(uninstalledExtA);
+      expect(w.settled).toEqual([{ requestId: "u1", outcome: UNINSTALLED("ext-a") }]);
     });
   });
 });

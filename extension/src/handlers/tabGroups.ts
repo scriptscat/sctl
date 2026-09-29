@@ -1,4 +1,5 @@
 import { HandlerError, type HandlerRegistry, type RpcHandler } from "@/background/registry";
+import { needs } from "./api";
 import { requireAllTabs, requireTab, requireTabGroup, requireWindow } from "./targets";
 
 const GROUP_COLORS = ["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"];
@@ -89,9 +90,9 @@ const handleUngroup: RpcHandler<"tabGroups.ungroup"> = async (params) => {
 };
 
 export function registerTabGroupHandlers(registry: HandlerRegistry): void {
-  registry.register("tabGroups.list", handleList);
-  registry.register("tabGroups.create", handleCreate);
-  registry.register("tabGroups.add", handleAdd);
-  registry.register("tabGroups.edit", handleEdit);
-  registry.register("tabGroups.ungroup", handleUngroup);
+  registry.register("tabGroups.list", needs("tabGroups", handleList));
+  registry.register("tabGroups.create", needs("tabGroups", handleCreate));
+  registry.register("tabGroups.add", needs("tabGroups", handleAdd));
+  registry.register("tabGroups.edit", needs("tabGroups", handleEdit));
+  registry.register("tabGroups.ungroup", needs("tabGroups", handleUngroup));
 }
