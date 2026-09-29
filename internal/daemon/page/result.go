@@ -43,6 +43,7 @@ type navState struct {
 	committed    bool
 	sameDocument bool
 	loaded       bool
+	loadFired    bool
 	stopped      bool
 	windowOpened bool
 }
@@ -154,6 +155,17 @@ func onDOMContentLoaded(t *Tab, sessionID string, _ json.RawMessage) {
 	})
 }
 
+func onLoadEventFired(t *Tab, sessionID string, _ json.RawMessage) {
+	if sessionID != "" {
+		return
+	}
+	t.nav.note(func(s *navState) {
+		if s.committed {
+			s.loadFired = true
+		}
+	})
+}
+
 // onWindowOpen 记录标签页(含它的 iframe)要打开新窗口;事件来自这个标签页的会话,所以新标签页的
 // 打开者就是它。
 func onWindowOpen(t *Tab, _ string, _ json.RawMessage) {
@@ -167,6 +179,7 @@ var navigationEvents = map[string]eventHandler{
 	"Page.navigatedWithinDocument":  onMainFrameEvent(func(s *navState) { s.sameDocument = true }),
 	"Page.frameNavigated":           onMainFrameNavigated,
 	"Page.domContentEventFired":     onDOMContentLoaded,
+	"Page.loadEventFired":           onLoadEventFired,
 	"Page.windowOpen":               onWindowOpen,
 }
 

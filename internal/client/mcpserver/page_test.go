@@ -252,3 +252,89 @@ func TestPageToolsForwardToThePageEndpoint(t *testing.T) {
 		})
 	})
 }
+
+func TestPageNavigateAndWaitTools(t *testing.T) {
+	Convey("page_navigate 与 page_wait", t, func() {
+		p := loadProto(t)
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{"tabId":5}`)}}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+		call := func(name string, args map[string]any) error {
+			_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
+			return err
+		}
+
+		Convey("page_navigate 用 action 区分四种导航,以 navigate 动作转发,目标参数拆进请求字段", func() {
+			for _, c := range []struct {
+				args  map[string]any
+				input string
+			}{
+				{map[string]any{"action": "goto", "url": "https://example.test/", "wait": "networkidle", "tabId": 9, "timeoutMs": 45000}, `{"action":"goto","url":"https://example.test/","wait":"networkidle"}`},
+				{map[string]any{"action": "back"}, `{"action":"back"}`},
+				{map[string]any{"action": "forward", "wait": "domcontentloaded"}, `{"action":"forward","wait":"domcontentloaded"}`},
+				{map[string]any{"action": "reload", "activate": true}, `{"action":"reload"}`},
+			} {
+				caller.pages = nil
+				So(call("page_navigate", c.args), ShouldBeNil)
+				So(caller.pages, ShouldHaveLength, 1)
+				So(caller.pages[0].Action, ShouldEqual, "navigate")
+				So(string(caller.pages[0].Input), ShouldEqualJSON, c.input)
+			}
+			So(caller.pages[0].Activate, ShouldBeTrue)
+		})
+
+		Convey("page_wait 的每个条件作为动作输入转发", func() {
+			for _, c := range []struct {
+				args  map[string]any
+				input string
+			}{
+				{map[string]any{"text": "Done", "timeoutMs": 2000}, `{"text":"Done"}`},
+				{map[string]any{"gone": "Loading"}, `{"gone":"Loading"}`},
+				{map[string]any{"selector": "#ready"}, `{"selector":"#ready"}`},
+				{map[string]any{"selectorGone": ".spinner"}, `{"selectorGone":".spinner"}`},
+				{map[string]any{"url": "/done"}, `{"url":"/done"}`},
+				{map[string]any{"load": "load", "tabId": 3}, `{"load":"load"}`},
+			} {
+				caller.pages = nil
+				So(call("page_wait", c.args), ShouldBeNil)
+				So(caller.pages[0].Action, ShouldEqual, "wait")
+				So(string(caller.pages[0].Input), ShouldEqualJSON, c.input)
+			}
+		})
+
+		Convey("不符合 schema 的参数不转发", func() {
+			for name, args := range map[string][]map[string]any{
+				"page_navigate": {{}, {"action": "jump"}, {"action": "goto"}, {"action": "back", "url": "https://example.test/"}, {"action": "goto", "url": "x", "wait": "idle"}, {"action": "goto", "url": ""}},
+				"page_wait":     {{}, {"text": "a", "gone": "b"}, {"load": "idle"}, {"text": ""}, {"url": "a", "selector": "b"}},
+			} {
+				for _, a := range args {
+					So(call(name, a), ShouldNotBeNil)
+				}
+			}
+			So(caller.pages, ShouldBeEmpty)
+		})
+
+		Convey("静态描述写明等待状态、错误码与默认超时", func() {
+			tools, err := session.ListTools(context.Background(), nil)
+			So(err, ShouldBeNil)
+			wants := map[string][]string{
+				"page_navigate": {"goto", "back", "forward", "reload", "networkidle", "500 ms", "NAVIGATION_FAILED", "NOT_FOUND", "httpStatus", "30000", "untrusted"},
+				"page_wait":     {"text", "gone", "selectorGone", "TIMEOUT", "10000", "visible"},
+			}
+			seen := 0
+			for _, tool := range tools.Tools {
+				want, ok := wants[tool.Name]
+				if !ok {
+					continue
+				}
+				seen++
+				for _, sub := range want {
+					So(tool.Description, ShouldContainSubstring, sub)
+				}
+				schema, err := json.Marshal(tool.InputSchema)
+				So(err, ShouldBeNil)
+				So(string(schema), ShouldContainSubstring, `"timeoutMs"`)
+			}
+			So(seen, ShouldEqual, len(wants))
+		})
+	})
+}

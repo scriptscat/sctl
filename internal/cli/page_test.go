@@ -508,3 +508,129 @@ func TestPageInputActions(t *testing.T) {
 		})
 	})
 }
+
+func TestPageNavigation(t *testing.T) {
+	Convey("sctl page goto|back|forward|reload", t, func() {
+		t.Setenv("SCTL_BROWSER", "")
+		ok := control.CallResult{OK: true, Result: json.RawMessage(`{"contentTrust":"untrusted-page-content","tabId":5,"url":"https://example.test/next","title":"Next","navigated":true,"httpStatus":404}`)}
+
+		Convey("goto 请求 navigate 动作,带 url 与默认不带 wait;摘要写 tabId、URL 与状态码", func() {
+			stub := stubPageDaemon(t, ok)
+			code, out := runCLI("page", "goto", "https://example.test/next")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "tab 5 navigated to https://example.test/next (HTTP 404)\n")
+			So(stub.last.Action, ShouldEqual, "navigate")
+			So(string(stub.last.Input), ShouldEqualJSON, `{"action":"goto","url":"https://example.test/next"}`)
+			So(stub.last.TimeoutMs, ShouldEqual, 0)
+		})
+
+		Convey("--wait、--tab、--activate、--timeout、--browser 转发", func() {
+			stub := stubPageDaemon(t, ok)
+			code, _ := runCLI("page", "goto", "https://example.test/", "--wait", "networkidle", "--tab", "9", "--activate", "--timeout", "45s", "--browser", "work")
+			So(code, ShouldEqual, exitOK)
+			So(string(stub.last.Input), ShouldEqualJSON, `{"action":"goto","url":"https://example.test/","wait":"networkidle"}`)
+			So(*stub.last.TabID, ShouldEqual, 9)
+			So(stub.last.Activate, ShouldBeTrue)
+			So(stub.last.TimeoutMs, ShouldEqual, 45000)
+			So(stub.last.Browser, ShouldEqual, "work")
+		})
+
+		Convey("back、forward、reload 各自的动作输入", func() {
+			stub := stubPageDaemon(t, ok)
+			for _, name := range []string{"back", "forward", "reload"} {
+				code, _ := runCLI("page", name)
+				So(code, ShouldEqual, exitOK)
+				So(string(stub.last.Input), ShouldEqualJSON, `{"action":"`+name+`"}`)
+			}
+			code, _ := runCLI("page", "reload", "--wait", "domcontentloaded")
+			So(code, ShouldEqual, exitOK)
+			So(string(stub.last.Input), ShouldEqualJSON, `{"action":"reload","wait":"domcontentloaded"}`)
+		})
+
+		Convey("参数错误退出码 3,不发请求", func() {
+			stub := stubPageDaemon(t, ok)
+			for _, args := range [][]string{
+				{"page", "goto"},
+				{"page", "goto", "a", "b"},
+				{"page", "goto", "https://example.test/", "--wait", "idle"},
+				{"page", "back", "extra"},
+			} {
+				code, _ := runCLI(args...)
+				So(code, ShouldEqual, exitError)
+			}
+			So(stub.calls, ShouldEqual, 0)
+		})
+
+		Convey("-o json 输出完整结果,含 httpStatus", func() {
+			stubPageDaemon(t, ok)
+			code, out := runCLI("page", "back", "-o", "json")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldContainSubstring, `"httpStatus": 404`)
+		})
+
+		Convey("NAVIGATION_FAILED 与 NOT_FOUND 退出码 3,消息带原因", func() {
+			for code, message := range map[string]string{
+				"NAVIGATION_FAILED": "navigating to http://x/ failed: net::ERR_CONNECTION_REFUSED",
+				"NOT_FOUND":         "the tab has no history entry to go back to",
+			} {
+				stubPageDaemon(t, pageError(code, message))
+				exit, _, errOut, err := runCLIResult(strings.NewReader(""), "page", "back")
+				So(exit, ShouldEqual, exitError)
+				So(errOut+err.Error(), ShouldContainSubstring, message)
+			}
+		})
+	})
+}
+
+func TestPageWait(t *testing.T) {
+	Convey("sctl page wait", t, func() {
+		t.Setenv("SCTL_BROWSER", "")
+		ok := control.CallResult{OK: true, Result: json.RawMessage(`{"contentTrust":"untrusted-page-content","tabId":5,"url":"https://example.test/","title":"T","navigated":false}`)}
+
+		Convey("每个条件对应一个动作输入字段,摘要写 tabId 与 URL", func() {
+			stub := stubPageDaemon(t, ok)
+			for flag, want := range map[string][]string{
+				"--text":          {"Done", `{"text":"Done"}`},
+				"--gone":          {"Loading", `{"gone":"Loading"}`},
+				"--selector":      {"#ready", `{"selector":"#ready"}`},
+				"--selector-gone": {".spinner", `{"selectorGone":".spinner"}`},
+				"--url":           {"/done", `{"url":"/done"}`},
+				"--load":          {"networkidle", `{"load":"networkidle"}`},
+			} {
+				code, out := runCLI("page", "wait", flag, want[0])
+				So(code, ShouldEqual, exitOK)
+				So(out, ShouldEqual, "tab 5 at https://example.test/\n")
+				So(stub.last.Action, ShouldEqual, "wait")
+				So(string(stub.last.Input), ShouldEqualJSON, want[1])
+			}
+		})
+
+		Convey("--timeout 转发", func() {
+			stub := stubPageDaemon(t, ok)
+			code, _ := runCLI("page", "wait", "--text", "x", "--timeout", "3s")
+			So(code, ShouldEqual, exitOK)
+			So(stub.last.TimeoutMs, ShouldEqual, 3000)
+		})
+
+		Convey("没有条件、两个条件、非法状态与多余参数退出码 3,不发请求", func() {
+			stub := stubPageDaemon(t, ok)
+			for _, args := range [][]string{
+				{"page", "wait"},
+				{"page", "wait", "--text", "a", "--gone", "b"},
+				{"page", "wait", "--load", "idle"},
+				{"page", "wait", "--text", "a", "extra"},
+			} {
+				code, _ := runCLI(args...)
+				So(code, ShouldEqual, exitError)
+			}
+			So(stub.calls, ShouldEqual, 0)
+		})
+
+		Convey("TIMEOUT 退出码 3,消息带条件", func() {
+			stubPageDaemon(t, pageError("TIMEOUT", `page wait did not finish within 10s: waiting for text "x" to be visible`))
+			code, _, errOut, err := runCLIResult(strings.NewReader(""), "page", "wait", "--text", "x")
+			So(code, ShouldEqual, exitError)
+			So(errOut+err.Error(), ShouldContainSubstring, `waiting for text "x"`)
+		})
+	})
+}

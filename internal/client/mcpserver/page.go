@@ -27,7 +27,7 @@ const (
 		"fixed when the command starts. Every result reports the tabId it acted on."
 	pageParamActivate = "Make the tab the active tab of its window before the command, without focusing the window. " +
 		"Page commands run in background tabs by default; use it to retry after PAGE_HIDDEN."
-	pageParamTimeout = "Time limit for the command in milliseconds. Defaults to 10000."
+	pageParamTimeout = "Time limit for the command in milliseconds. Defaults to 10000, or 30000 for page_navigate."
 )
 
 // 作用于一个元素的页面工具共用的静态说明与参数。
@@ -155,6 +155,44 @@ var pageTools = []pageToolDef{
 			`"dx":{"type":"number","description":"Pixels to scroll the viewport to the right (negative: left). Only without a target."},` +
 			`"dy":{"type":"number","description":"Pixels to scroll the viewport down (negative: up). Only without a target."}` +
 			`},"additionalProperties":false}`,
+		activatable: true,
+	},
+	{
+		action: "navigate",
+		name:   "page_navigate",
+		description: "Navigate a browser tab: action goto loads url, back and forward move one entry in the tab's history, reload reloads the page. " +
+			"The call waits for the load state given by wait: load (default), domcontentloaded, or networkidle (no network request in flight for at least 500 ms). " +
+			"The result reports tabId, the page's url and title after the navigation, navigated, and httpStatus, the HTTP status of the main document. " +
+			"An HTTP error status such as 404 is not a failure; a network error such as a refused connection or DNS failure returns NAVIGATION_FAILED with Chrome's error text. " +
+			"back or forward with no history entry returns NOT_FOUND. Element refs from earlier snapshots expire (STALE_REF): take a new page_snapshot. " +
+			"The timeout defaults to 30000 ms (timeoutMs); on timeout TIMEOUT is returned. Runs in a background tab without switching tabs or focusing the window. " +
+			pageActionTrustDescription,
+		inputSchema: `{"type":"object","properties":{` +
+			`"action":{"type":"string","enum":["goto","back","forward","reload"],"description":"goto loads url; back and forward move one entry in the history; reload reloads the page."},` +
+			`"url":{"type":"string","minLength":1,"description":"URL to load. Required for goto, not allowed for the other actions."},` +
+			`"wait":{"type":"string","enum":["load","domcontentloaded","networkidle"],"description":"Load state to wait for. Defaults to load."}` +
+			`},"required":["action"],"additionalProperties":false,` +
+			`"if":{"properties":{"action":{"const":"goto"}}},"then":{"required":["url"]},"else":{"not":{"required":["url"]}}}`,
+		activatable: true,
+	},
+	{
+		action: "wait",
+		name:   "page_wait",
+		description: "Wait until exactly one condition on a page in a browser tab holds. " +
+			"text: the text is visible; gone: the text has disappeared (removed or hidden); selector: an element matching the CSS selector is visible; " +
+			"selectorGone: no visible element matches the CSS selector; url: the tab's URL contains the substring; load: the page reached the load state (load, domcontentloaded or networkidle). " +
+			"Text and selectors are matched in the main document only, not inside iframes. An invalid selector returns INVALID_REQUEST. " +
+			"The timeout defaults to 10000 ms (timeoutMs); on timeout TIMEOUT is returned and its message names the condition. " +
+			"The result reports tabId and the page's url and title. Runs in a background tab without switching tabs or focusing the window. " +
+			pageActionTrustDescription,
+		inputSchema: `{"type":"object","properties":{` +
+			`"text":{"type":"string","minLength":1,"description":"Wait for this text to be visible."},` +
+			`"gone":{"type":"string","minLength":1,"description":"Wait for this text to disappear."},` +
+			`"selector":{"type":"string","minLength":1,"description":"Wait for an element matching this CSS selector to be visible."},` +
+			`"selectorGone":{"type":"string","minLength":1,"description":"Wait until no visible element matches this CSS selector."},` +
+			`"url":{"type":"string","minLength":1,"description":"Wait for the tab's URL to contain this substring."},` +
+			`"load":{"type":"string","enum":["load","domcontentloaded","networkidle"],"description":"Wait for this load state."}` +
+			`},"oneOf":[{"required":["text"]},{"required":["gone"]},{"required":["selector"]},{"required":["selectorGone"]},{"required":["url"]},{"required":["load"]}],"additionalProperties":false}`,
 		activatable: true,
 	},
 	{

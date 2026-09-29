@@ -32,10 +32,11 @@ func newPageCmd() *cobra.Command {
 	flags := cmd.PersistentFlags()
 	flags.IntVar(&pageTab, "tab", 0, "target tab ID (default: the active tab of the browser's last-focused window, fixed when the command starts)")
 	flags.BoolVar(&pageActivate, "activate", false, "make the tab the active tab of its window first, without focusing the window")
-	flags.DurationVar(&pageTimeout, "timeout", 0, "time limit for the command, such as 30s (default 10s)")
+	flags.DurationVar(&pageTimeout, "timeout", 0, "time limit for the command, such as 30s (default 10s; 30s for goto, back, forward and reload)")
 	cmd.AddCommand(
 		newPageSnapshotCmd(), newPageClickCmd(), newPageHoverCmd(), newPageFillCmd(), newPageTypeCmd(), newPagePressCmd(),
 		newPageSelectCmd(), newPageUploadCmd(), newPageScrollCmd(), newPageEvalCmd(), newPageDetachCmd(),
+		newPageGotoCmd(), newPageBackCmd(), newPageForwardCmd(), newPageReloadCmd(), newPageWaitCmd(),
 	)
 	return cmd
 }

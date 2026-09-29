@@ -19,7 +19,7 @@ CLI ─────────────────────────�
 - 列出脚本并读取元数据或源码，支持按行读取和源码搜索。
 - 通过浏览器确认请求安装、基于内容锚点的编辑、启用/禁用和删除。
 - 在一个或多个已配对的 sctl Browser 实例上列出、打开、关闭、激活标签页,以及列出窗口。
-- 为已配对 sctl Browser 标签页的页面生成带元素引用的无障碍快照、点击或悬停元素、执行 JavaScript,在后台完成、不切换标签页。
+- 为已配对 sctl Browser 标签页的页面生成带元素引用的无障碍快照、点击或悬停元素、导航与等待、执行 JavaScript,在后台完成、不切换标签页。
 - 在仅监听回环地址的 WebSocket 上使用 JSON-RPC 2.0 和双向认证。
 - 单二进制交付，不依赖浏览器自动化或 Native Messaging Host。
 
@@ -103,6 +103,8 @@ Chrome DevTools Protocol 驱动页面时,Chrome 会在浏览器顶部显示"sctl
 | `sctl page select <ref> \| --selector <css> <value>...` | 按 value 或可见文本选择 `<select>` 的选项。 |
 | `sctl page upload <ref> \| --selector <css> <file>...` | 为 file input 设置文件;相对路径按当前目录解析。 |
 | `sctl page scroll [<ref> \| --selector <css>] [--dx N] [--dy N]` | 把元素滚入可视区域,或按像素滚动视口。 |
+| `sctl page goto <url> [--wait load\|domcontentloaded\|networkidle]` / `sctl page back` / `sctl page forward` / `sctl page reload` | 让标签页导航并等待加载状态(默认 `load`;`networkidle` 指至少 500 ms 内没有进行中的请求)。 |
+| `sctl page wait (--text T \| --gone T \| --selector S \| --selector-gone S \| --url P \| --load STATE)` | 等待文本可见或消失、元素可见或消失、URL 包含子串,或到达某个加载状态。 |
 | `sctl page eval <expression> [<ref>]` / `sctl page detach [--all]` | 在标签页的页面里执行 JavaScript(给了引用时表达式写成函数,如 `el => el.textContent`,元素作为参数传入),或断开一个标签页或全部标签页的调试器。 |
 
 运行 `sctl --help` 或 `sctl <command> --help` 查看用法和参数。写操作会阻塞，直到用户在
@@ -113,7 +115,7 @@ ScriptCat 中批准、拒绝或关闭确认流程；浏览器控制命令按设�
 `page` 命令作用于 `--tab <id>` 指定的标签页,未指定时作用于该浏览器最后获得焦点窗口中的激活标签页,在命令开始时确定。
 页面命令在后台执行:从不切换你正在看的标签页,也不聚焦窗口;`--activate` 先让标签页成为所在窗口的激活标签页,但不聚焦窗口。
 标签页上的第一条页面命令会附加调试器,调试提示条一直显示到该标签页空闲 5 分钟或执行 `sctl page detach`;附加期间页面会以为自己可见且有焦点。
-`--timeout` 覆盖默认的 10 秒上限,`-o json` 输出完整结果。命令执行中调试器被断开(例如关掉了提示条)时退出码为 2,其他错误为 3。
+`--timeout` 覆盖默认的 10 秒上限(导航为 30 秒),`-o json` 输出完整结果。命令执行中调试器被断开(例如关掉了提示条)时退出码为 2,其他错误为 3。
 
 `sctl page snapshot` 每个可见节点输出一行,按层级缩进:`- 角色 "名称" [状态…] [ref=eN]`;表单控件在冒号后写出当前值,
 链接在 `/url:` 子行写出地址,纯文本输出为 `text:` 行;所有 iframe(含跨域与嵌套的)都展开在 iframe 节点下面,无法附加的显示为 `[unavailable]`。`--root` 只输出以某个引用、
@@ -135,6 +137,16 @@ ScriptCat 中批准、拒绝或关闭确认流程；浏览器控制命令按设�
 带目标的 `scroll` 只要求元素已挂载;不带目标时在视口中心用鼠标滚轮按 `--dx`、`--dy` 像素滚动(负数向左、向上),二者至少给一个。
 `type` 与 `press` 作用于当前焦点元素:`type` 对每个字符发出可信的按键事件,换行按 `Enter`,美式键盘上没有对应键的字符直接插入;`press` 发出可信的
 `keydown` 与 `keyup`,修饰键 `Alt`、`Control`、`Meta`、`Shift` 用 `+` 连接。这些命令的摘要与 click 相同。
+
+`sctl page goto <url>`、`back`、`forward`、`reload` 让标签页导航,并按 `--wait` 等待:`load`(默认)、`domcontentloaded`,或 `networkidle`
+(至少 500 ms 内没有进行中的网络请求)。导航的默认超时是 30 秒,可用 `--timeout` 调整。摘要输出 tabId、URL 和主文档的 HTTP 状态码
+(例如 `tab 5 navigated to https://example.com/ (HTTP 200)`);404 这类 HTTP 错误状态码只是如实报告,不算失败。
+连接被拒、DNS 失败这类网络错误返回 `NAVIGATION_FAILED`,带上 Chrome 的错误文本;没有可后退或前进的历史时 `back`、`forward` 返回 `NOT_FOUND`。
+导航会让该标签页的引用失效。
+
+`sctl page wait` 恰好接受一个条件并轮询到它成立,超时返回写明条件的 `TIMEOUT`(默认 10 秒):`--text T` 等文本可见,`--gone T` 等文本消失(被移除或隐藏),
+`--selector S` 等匹配 CSS 选择器的元素可见,`--selector-gone S` 等没有可见元素匹配它,`--url P` 等标签页 URL 包含 `P`,`--load STATE` 等到达加载状态。
+文本与选择器只在主文档里匹配,不进入 iframe;选择器非法返回 `INVALID_REQUEST`。
 
 ## 许可证
 

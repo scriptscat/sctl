@@ -17,6 +17,8 @@ import (
 const (
 	// defaultTimeout 是动作的默认超时(spec 设计决策 8),包含在同一标签页上排队等待的时间。
 	defaultTimeout = 10 * time.Second
+	// navigationTimeout 是导航的默认超时:加载整个页面比一次元素检查慢得多。
+	navigationTimeout = 30 * time.Second
 	// idleTimeout 是调试器的空闲断开时间(spec 设计决策 3)。daemon 是这个计时的权威,
 	// 扩展侧更长的兜底计时只防 daemon 失联后提示条一直挂着。
 	idleTimeout = 5 * time.Minute
@@ -43,8 +45,11 @@ type Tab struct {
 	refs       *refTable
 	frames     *frameSessions
 	nav        *navWatch
+	net        *netWatch
 	// watchingFrames 表示这次附加已开启 Page 域,文档替换事件会送到 refs。只在标签页队列里读写。
 	watchingFrames bool
+	// watchingNetwork 表示这次附加已开启 Network 域。只在标签页队列里读写。
+	watchingNetwork bool
 }
 
 // ID 返回标签页 ID。
@@ -92,6 +97,8 @@ type browserHandler func(ctx context.Context, instanceID string, req Request) (a
 type action struct {
 	tab     handler
 	browser browserHandler
+	// timeout 是动作自己的默认超时,0 表示 defaultTimeout。
+	timeout time.Duration
 }
 
 // attachHook 在标签页每次附加后、第一个动作执行前按注册顺序运行,为这次附加准备页面状态。
@@ -166,6 +173,9 @@ func NewManager(cdp CDP, log *zap.Logger) *Manager {
 	for method, h := range navigationEvents {
 		m.addEventHandler(method, h)
 	}
+	for method, h := range networkEvents {
+		m.addEventHandler(method, h)
+	}
 	m.register("eval", runEval)
 	m.register("snapshot", runSnapshot)
 	m.register("click", runClick)
@@ -176,6 +186,8 @@ func NewManager(cdp CDP, log *zap.Logger) *Manager {
 	m.register("select", runSelect)
 	m.register("upload", runUpload)
 	m.register("scroll", runScroll)
+	m.addAction("navigate", action{tab: runNavigate, timeout: navigationTimeout})
+	m.register("wait", runWait)
 	m.registerBrowser("detach", m.detach)
 	return m
 }
@@ -218,6 +230,9 @@ func (m *Manager) Do(ctx context.Context, req Request) (json.RawMessage, error) 
 		return nil, invalidRequest("unknown page action " + req.Action)
 	}
 	timeout := defaultTimeout
+	if a.timeout > 0 {
+		timeout = a.timeout
+	}
 	if req.Timeout > 0 {
 		timeout = req.Timeout
 	}
@@ -390,7 +405,7 @@ func (m *Manager) attach(ctx context.Context, s *slot, instanceID string, tabID 
 	if t != nil {
 		return t, nil
 	}
-	t = &Tab{m: m, instanceID: instanceID, id: tabID, refs: newRefTable(), frames: newFrameSessions(), nav: newNavWatch()}
+	t = &Tab{m: m, instanceID: instanceID, id: tabID, refs: newRefTable(), frames: newFrameSessions(), nav: newNavWatch(), net: newNetWatch()}
 	m.mu.Lock()
 	s.attaching = t
 	m.mu.Unlock()

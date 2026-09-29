@@ -22,8 +22,8 @@ confirmation UI in the extension.
 - Requests installation, content-anchored editing, enable/disable, and deletion through browser approval.
 - Lists, opens, closes, and activates tabs and lists windows across one or more paired sctl Browser instances.
 - Takes accessibility snapshots with element refs of, clicks, hovers, fills, types into, selects options in,
-  uploads files to, scrolls, and evaluates JavaScript in, a page of a paired sctl Browser tab, in the background
-  without switching tabs.
+  uploads files to, scrolls, navigates, waits on, and evaluates JavaScript in, a page of a paired sctl Browser tab, in the
+  background without switching tabs.
 - Uses JSON-RPC 2.0 over a WebSocket with mutual authentication; the listener defaults to loopback.
 - Ships as one binary; no browser automation or Native Messaging host is required.
 
@@ -113,6 +113,8 @@ troubleshooting.
 | `sctl page select <ref> \| --selector <css> <value>...` | Choose `<select>` options by value or visible text. |
 | `sctl page upload <ref> \| --selector <css> <file>...` | Set the files of a file input; relative paths are resolved against the current directory. |
 | `sctl page scroll [<ref> \| --selector <css>] [--dx N] [--dy N]` | Scroll an element into view, or scroll the viewport by pixels. |
+| `sctl page goto <url> [--wait load\|domcontentloaded\|networkidle]` / `sctl page back` / `sctl page forward` / `sctl page reload` | Navigate a tab and wait for the load state (default `load`; `networkidle` means no request in flight for 500ms). |
+| `sctl page wait (--text T \| --gone T \| --selector S \| --selector-gone S \| --url P \| --load STATE)` | Wait until text is visible or gone, an element is visible or gone, the URL contains a substring, or a load state is reached. |
 | `sctl page eval <expression> [<ref>]` / `sctl page detach [--all]` | Evaluate JavaScript in a tab's page (with a ref, the expression is a function like `el => el.textContent` that receives the element), or detach the debugger from a tab or from every tab. |
 
 Run `sctl --help` or `sctl <command> --help` for usage and flags. Write operations block
@@ -125,7 +127,7 @@ when the command starts. They run in the background: they never switch the tab y
 window, and `--activate` makes the tab active in its window first without focusing the window. The first page
 command on a tab attaches the debugger, which shows the debugging infobar until the tab has been idle for
 5 minutes or you run `sctl page detach`; while attached, the page behaves as if it were visible and focused.
-`--timeout` overrides the default 10s limit, and `-o json` prints the full result. A page command exits with 2
+`--timeout` overrides the default 10s limit (30s for navigation), and `-o json` prints the full result. A page command exits with 2
 when the debugger detaches while it runs (for example, the infobar was dismissed) and with 3 on other errors.
 
 `sctl page snapshot` prints one line per visible node, indented by level: `- role "name" [states] [ref=eN]`, with
@@ -160,6 +162,19 @@ element attached; without one it scrolls the viewport with the mouse wheel at it
 trusted key event for each character, a newline as `Enter`, and inserts characters that have no US-keyboard key
 directly; `press` sends trusted `keydown` and `keyup` events, with modifiers `Alt`, `Control`, `Meta`, and `Shift`
 joined by `+`. These commands print the same one-line summary as click.
+
+`sctl page goto <url>`, `back`, `forward`, and `reload` navigate the tab and wait for `--wait`: `load` (the default),
+`domcontentloaded`, or `networkidle` (no network request in flight for at least 500ms). Their default timeout is 30s;
+`--timeout` changes it. The summary prints the tab ID, the URL, and the HTTP status of the main document (for example
+`tab 5 navigated to https://example.com/ (HTTP 200)`); an HTTP error status such as 404 is reported, not a failure.
+Network errors such as a refused connection or a DNS failure fail with `NAVIGATION_FAILED` and Chrome's error text, and
+`back` or `forward` with no history entry fails with `NOT_FOUND`. Navigating expires the tab's refs.
+
+`sctl page wait` takes exactly one condition and polls until it holds, or fails with `TIMEOUT` naming the condition
+(default 10s): `--text T` waits for the text to be visible, `--gone T` for the text to disappear (removed or hidden),
+`--selector S` for an element matching the CSS selector to be visible, `--selector-gone S` for no visible element to
+match it, `--url P` for the tab's URL to contain `P`, and `--load STATE` for a load state. Text and selectors are matched
+in the main document, not inside iframes; an invalid selector fails with `INVALID_REQUEST`.
 
 ## License
 

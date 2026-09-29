@@ -210,10 +210,10 @@ each item with its browser, while `tabs_open`, `tabs_close`, and `tabs_activate`
 approval step (see [threat-model.md](./threat-model.md)).
 
 The page tools `page_snapshot`, `page_click`, `page_hover`, `page_fill`, `page_type`, `page_press`, `page_select`,
-`page_upload`, `page_scroll`, `page_eval`, and `page_detach` work the same way and
+`page_upload`, `page_scroll`, `page_navigate`, `page_wait`, `page_eval`, and `page_detach` work the same way and
 also run without approval. Besides `browser`, each takes an optional `tabId`; without it, the tool acts on the active tab of the browser's
 last-focused window, fixed when the call starts, and every result reports the `tabId` it acted on. All but `page_snapshot` and `page_detach` also take `activate`, which makes the tab active in its window first without
-focusing the window, and all take `timeoutMs` (default 10000). Page tools run in background tabs and never switch tabs or focus a window. The
+focusing the window, and all take `timeoutMs` (default 10000; 30000 for `page_navigate`). Page tools run in background tabs and never switch tabs or focus a window. The
 first page tool call on a tab attaches the debugger and shows the infobar described in step 4 until the tab has
 been idle for 5 minutes or `page_detach` detaches it; while attached, the page behaves as if it were visible and
 focused. Page results other than `page_detach` are marked
@@ -256,6 +256,16 @@ files need the `multiple` attribute. `page_scroll` scrolls a target into view, o
 `INVALID_REQUEST`. `page_type` (`text`) and `page_press` (`key`, Playwright syntax such as `Enter`, `Control+A`,
 `Shift+Tab`, `Meta+V`) act on the focused element with trusted keyboard events; an unknown key returns
 `INVALID_REQUEST`. All of them return `tabId`, the page's `url` and `title`, and `navigated`.
+
+`page_navigate` takes `action` (`goto`, `back`, `forward`, or `reload`), `url` (required for `goto`, not allowed for the
+others), and `wait` (`load` by default, `domcontentloaded`, or `networkidle`, meaning no network request in flight for
+at least 500 ms). Besides `tabId`, `url`, `title`, and `navigated`, it returns `httpStatus`, the HTTP status of the main
+document; an HTTP error status such as 404 is not a failure. Network errors such as a refused connection or a DNS
+failure return `NAVIGATION_FAILED` with Chrome's error text, `back` or `forward` with no history entry returns
+`NOT_FOUND`, and navigating expires the tab's refs (`STALE_REF`). `page_wait` takes exactly one of `text` (visible),
+`gone` (text disappeared, removed or hidden), `selector` (a matching element is visible), `selectorGone` (no visible
+element matches), `url` (the URL contains the substring), or `load` (a load state), matched in the main document only;
+on timeout it returns `TIMEOUT` naming the condition, and an invalid selector returns `INVALID_REQUEST`.
 
 ## Troubleshooting
 
