@@ -37,7 +37,6 @@ export interface Strings {
   save: string;
   cancel: string;
   nameHint: string;
-  nameInvalid: string;
   nameTaken: (name: string) => string;
   id: string;
   browser: string;
@@ -48,7 +47,6 @@ export interface Strings {
   sinceHours: (n: number) => string;
   useHint: string;
   copy: string;
-  copied: string;
   forget: string;
   forgetTitle: string;
   forgetBefore: string;
@@ -106,7 +104,6 @@ export const dictionary: Record<Lang, Strings> = {
     save: "保存",
     cancel: "取消",
     nameHint: "小写字母、数字和 -，最多 32 个字符。保存后会重新连接一次。",
-    nameInvalid: "名称只能包含小写字母、数字和 -，长度 1-32 个字符。",
     nameTaken: (name: string) => `名称 ${name} 已被另一个浏览器使用，换一个吧。`,
     id: "实例 ID",
     browser: "浏览器",
@@ -117,7 +114,6 @@ export const dictionary: Record<Lang, Strings> = {
     sinceHours: (n: number) => `${n} 小时`,
     useHint: "在命令里指定这个浏览器",
     copy: "复制",
-    copied: "已复制",
     forget: "断开并忘记",
     forgetTitle: "断开并忘记这个 daemon？",
     forgetBefore: "扩展会删除本地保存的密钥，之后需要重新运行 sctl connect 配对。daemon 那边的密钥要另外运行",
@@ -175,7 +171,6 @@ export const dictionary: Record<Lang, Strings> = {
     save: "Save",
     cancel: "Cancel",
     nameHint: "Lowercase letters, digits and -, up to 32 characters. Saving reconnects once.",
-    nameInvalid: "Names may only use lowercase letters, digits and -, 1-32 characters.",
     nameTaken: (name: string) => `Another browser is already named ${name}. Pick a different name.`,
     id: "Instance ID",
     browser: "Browser",
@@ -186,7 +181,6 @@ export const dictionary: Record<Lang, Strings> = {
     sinceHours: (n: number) => `${n} h`,
     useHint: "Target this browser in commands",
     copy: "Copy",
-    copied: "Copied",
     forget: "Disconnect and forget",
     forgetTitle: "Disconnect and forget this daemon?",
     forgetBefore:
