@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -96,8 +97,16 @@ func TestToolsListExposesAllTools(t *testing.T) {
 		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
 		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
 		So(err, ShouldBeNil)
-		// 每个 protocol 方法映射一个工具,加上 browsers_list (不是方法)。
-		So(len(res.Tools), ShouldEqual, len(p.Actions)+1)
+		// 每个非内部 protocol 方法映射一个工具,加上 browsers_list (不是方法);内部方法(CDP 中转)不暴露。
+		public := 0
+		for _, action := range p.Actions {
+			if !action.Internal {
+				public++
+			}
+		}
+		So(len(res.Tools), ShouldEqual, public+1)
+		So(toolNames(res), ShouldNotContain, "debugger_send")
+		So(toolNames(res), ShouldNotContain, "debugger_detach")
 		So(toolNames(res), ShouldContain, "scripts_list")
 		So(toolNames(res), ShouldContain, "scripts_delete_request")
 		So(toolNames(res), ShouldContain, "browsers_list")
@@ -106,6 +115,24 @@ func TestToolsListExposesAllTools(t *testing.T) {
 		So(toolNames(res), ShouldContain, "tabs_close")
 		So(toolNames(res), ShouldContain, "tabs_activate")
 		So(toolNames(res), ShouldContain, "windows_list")
+	})
+}
+
+func TestToolsListOmitsInternalActions(t *testing.T) {
+	Convey("protocol.json 标记为 internal 的方法即使有工具定义也不注册为 MCP 工具", t, func() {
+		p := loadProto(t)
+		internal := *p
+		internal.Actions = maps.Clone(p.Actions)
+		action := internal.Actions["tabs.list"]
+		action.Internal = true
+		internal.Actions["tabs.list"] = action
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
+
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: &internal, Caller: caller}, nil)
+		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+		So(err, ShouldBeNil)
+		So(toolNames(res), ShouldNotContain, "tabs_list")
+		So(toolNames(res), ShouldContain, "tabs_open")
 	})
 }
 

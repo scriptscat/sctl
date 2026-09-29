@@ -86,6 +86,21 @@ func TestControlCallForwarding(t *testing.T) {
 	})
 }
 
+func TestControlCallRejectsInternalActions(t *testing.T) {
+	Convey("只供 daemon 内部使用的方法(CDP 中转)经 /control/call 调用 → INVALID_REQUEST,不转发给已声明它的浏览器", t, func() {
+		h := startTestServer(t)
+		b := h.connectBrowser(instanceA, "chrome-0123")
+
+		for _, req := range []control.CallRequest{
+			{Action: string(generated.MethodDebuggerSend), Input: json.RawMessage(`{"tabId":7,"method":"Runtime.evaluate","params":{"expression":"document.cookie"}}`)},
+			{Action: string(generated.MethodDebuggerDetach), Input: json.RawMessage(`{}`)},
+		} {
+			So(errCode(h.callControl(req)), ShouldEqual, generated.ErrorCodeInvalidRequest)
+		}
+		b.idle()
+	})
+}
+
 func TestControlWriteCancelPropagation(t *testing.T) {
 	Convey("写调用阻塞期间请求方取消 → 扩展收到指向原请求 ID 的 $/cancelRequest", t, func() {
 		h := startTestServer(t)

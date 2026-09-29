@@ -146,8 +146,9 @@ func (h *Handler) call(w http.ResponseWriter, r *http.Request) {
 		writeControlError(w, bridge.CodeInvalidRequest, "malformed request body")
 		return
 	}
-	_, ok := h.bridge.Action(req.Action)
-	if !ok {
+	// 内部方法(原始 CDP 中转)只由 daemon 内的组件经 Bridge 调用;对控制令牌持有者它们等同不存在。
+	action, ok := h.bridge.Action(req.Action)
+	if !ok || action.Internal {
 		writeControlError(w, bridge.CodeInvalidRequest, "unknown action")
 		return
 	}

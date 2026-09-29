@@ -43,6 +43,9 @@ type Action struct {
 	Peer     Peer   `json:"peer"`
 	// MergeField 是结果中的数组字段名:多个浏览器同时在线时 daemon 按它合并各实例的列表;非列表方法为空。
 	MergeField string `json:"mergeField,omitempty"`
+	// Internal 标记只供 daemon 内部组件调用的方法(如原始 CDP 中转):它们能以用户登录态驱动任意页面,
+	// 所以既不经 /control/call 对外开放,也不注册为 MCP 工具。
+	Internal bool `json:"internal,omitempty"`
 }
 
 // Peer 是协议定义的归属对端:方法由哪种扩展实现,错误码与握手常量由哪些扩展使用。

@@ -199,7 +199,7 @@ func (h *testHarness) doSessionHandshake(key []byte) *extClient {
 }
 
 // browserMethods 是浏览器实例在能力声明里给出的方法。
-var browserMethods = []string{"tabs.list", "tabs.open", "tabs.close", "tabs.activate", "windows.list"}
+var browserMethods = []string{"tabs.list", "tabs.open", "tabs.close", "tabs.activate", "windows.list", "debugger.send", "debugger.detach"}
 
 // pairedBrowser 在登记表里放一个已配对实例并返回其密钥;不连接。
 func (h *testHarness) pairedBrowser(id, name string) []byte {

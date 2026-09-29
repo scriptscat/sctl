@@ -21,11 +21,21 @@ export const ERROR_CODES = [
   "OPERATION_EXPIRED",
   "CONFLICT",
   "NOT_FOUND",
+  "PAYLOAD_TOO_LARGE",
   "INTERNAL_ERROR",
   "NO_BROWSER_CONNECTED",
   "BROWSER_OFFLINE",
   "BROWSER_NOT_FOUND",
-  "BROWSER_AMBIGUOUS"
+  "BROWSER_AMBIGUOUS",
+  "STALE_REF",
+  "TIMEOUT",
+  "TARGET_AMBIGUOUS",
+  "PAGE_NOT_AUTOMATABLE",
+  "PAGE_HIDDEN",
+  "DEBUGGER_DETACHED",
+  "DIALOG_OPEN",
+  "EVAL_ERROR",
+  "NAVIGATION_FAILED"
 ] as const;
 export const CRYPTO = {
   "mac": "HMAC-SHA-256",
@@ -56,6 +66,31 @@ export const PAIRING_CODE = {
   "length": 8,
   "display": "XXXX-XXXX"
 } as const;
+export interface DebuggerDetachParams {
+  tabId?: number;
+}
+export interface DebuggerDetachResult {
+  tabIds: Array<number>;
+}
+export interface DebuggerDetachedNotification {
+  reason: string;
+  tabId: number;
+}
+export interface DebuggerEventNotification {
+  method: string;
+  params?: Record<string, unknown>;
+  sessionId?: string;
+  tabId: number;
+}
+export interface DebuggerSendParams {
+  method: string;
+  params?: Record<string, unknown>;
+  sessionId?: string;
+  tabId: number;
+}
+export interface DebuggerSendResult {
+  result: Record<string, unknown>;
+}
 export interface TabsActivateParams {
   tabId: number;
 }
@@ -89,6 +124,8 @@ export interface WindowsListResult {
   windows: Array<{ focused: boolean; state: "normal" | "minimized" | "maximized" | "fullscreen" | "locked-fullscreen"; tabCount: number; windowId: number; }>;
 }
 export interface RpcMethodMap {
+  "debugger.detach": { params: DebuggerDetachParams; result: DebuggerDetachResult };
+  "debugger.send": { params: DebuggerSendParams; result: DebuggerSendResult };
   "tabs.activate": { params: TabsActivateParams; result: TabsActivateResult };
   "tabs.close": { params: TabsCloseParams; result: TabsCloseResult };
   "tabs.list": { params: TabsListParams; result: TabsListResult };
@@ -99,6 +136,20 @@ export type RpcMethod = keyof RpcMethodMap;
 export type RpcParams<M extends RpcMethod> = RpcMethodMap[M]["params"];
 export type RpcResult<M extends RpcMethod> = RpcMethodMap[M]["result"];
 export const RPC_METHODS = {
+  "debugger.detach": {
+    params: "DebuggerDetachParams",
+    result: "DebuggerDetachResult",
+    scope: "debugger:detach",
+    effect: "write",
+    blocking: "none",
+  },
+  "debugger.send": {
+    params: "DebuggerSendParams",
+    result: "DebuggerSendResult",
+    scope: "debugger:send",
+    effect: "write",
+    blocking: "none",
+  },
   "tabs.activate": {
     params: "TabsActivateParams",
     result: "TabsActivateResult",
@@ -138,3 +189,9 @@ export const RPC_METHODS = {
   RpcMethod,
   { params: string; result: string; scope: string; effect: string; blocking: string }
 >;
+export interface NotificationMap {
+  "debugger.detached": DebuggerDetachedNotification;
+  "debugger.event": DebuggerEventNotification;
+}
+export type NotificationMethod = keyof NotificationMap;
+export type NotificationParams<N extends NotificationMethod> = NotificationMap[N];

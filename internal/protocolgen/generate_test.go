@@ -183,7 +183,7 @@ func TestGenerateKeepsScriptCatTypeScriptByteIdenticalWhenBrowserMethodsExist(t 
 		"validators.generated.ts": scriptCatValidatorsSHA256,
 	} {
 		content := readFile(t, filepath.Join(out, name))
-		for _, browserOnly := range []string{"tabs.list", "TabsListParams", "BROWSER_OFFLINE", "browserSessionExt"} {
+		for _, browserOnly := range []string{"tabs.list", "TabsListParams", "BROWSER_OFFLINE", "browserSessionExt", "debugger.", "Notification", "STALE_REF"} {
 			if strings.Contains(content, browserOnly) {
 				t.Errorf("ScriptCat %s contains browser-owned %q", name, browserOnly)
 			}
@@ -216,7 +216,8 @@ func TestGenerateWritesBrowserTypeScriptWithOnlyBrowserContract(t *testing.T) {
 			t.Errorf("browser TypeScript does not contain %q", want)
 		}
 	}
-	for _, unwanted := range []string{"scripts.list", "ScriptsListParams", `"USER_REJECTED"`, `"sessionExt"`, "unknown"} {
+	// 未解析的 schema 渲染为裸 unknown;开放对象声明的 Record<string, unknown> 是有意的,不在此列。
+	for _, unwanted := range []string{"scripts.list", "ScriptsListParams", `"USER_REJECTED"`, `"sessionExt"`, ": unknown;", "<unknown>", "unknown[]"} {
 		if strings.Contains(typescript, unwanted) {
 			t.Errorf("browser TypeScript contains ScriptCat-only or unresolved %q", unwanted)
 		}
@@ -306,6 +307,24 @@ func TestGenerateRejectsInvalidPeerAnnotations(t *testing.T) {
 		"type that no method uses": func(def map[string]any) {
 			def["types"].(map[string]any)["Orphan"] = map[string]any{"type": "object", "properties": map[string]any{}}
 		},
+		"open object as a named type": func(def map[string]any) {
+			def["types"].(map[string]any)["DebuggerDetachedNotification"] = map[string]any{"type": "object", "additionalProperties": true}
+		},
+		"notification with unknown params type": func(def map[string]any) {
+			notification(def, "debugger.event")["params"] = "Missing"
+		},
+		"notification without peer": func(def map[string]any) {
+			delete(notification(def, "debugger.detached"), "peer")
+		},
+		"notification with unknown peer": func(def map[string]any) {
+			notification(def, "debugger.detached")["peer"] = "firefox"
+		},
+		"notification sharing a method name": func(def map[string]any) {
+			def["notifications"].(map[string]any)["tabs.list"] = map[string]any{"params": "DebuggerDetachedNotification", "peer": "browser"}
+		},
+		"notification in the session namespace": func(def map[string]any) {
+			def["notifications"].(map[string]any)["$debugger.event"] = map[string]any{"params": "DebuggerEventNotification", "peer": "browser"}
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
@@ -340,6 +359,10 @@ func resultProperty(def map[string]any, typeName, property string) map[string]an
 	return def["types"].(map[string]any)[typeName].(map[string]any)["properties"].(map[string]any)[property].(map[string]any)
 }
 
+func notification(def map[string]any, name string) map[string]any {
+	return def["notifications"].(map[string]any)[name].(map[string]any)
+}
+
 func method(def map[string]any, name string) map[string]any {
 	return def["methods"].(map[string]any)[name].(map[string]any)
 }
@@ -351,4 +374,61 @@ func readFile(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(content)
+}
+
+func TestGenerateEmitsDebuggerRelayAndNotificationsOnlyForGoAndBrowser(t *testing.T) {
+	t.Parallel()
+
+	out := t.TempDir()
+	browserOut := t.TempDir()
+	if err := protocolgen.Generate(filepath.Join("..", "pkg", "protocol"), out, browserOut); err != nil {
+		t.Fatalf("generate protocol contracts: %v", err)
+	}
+	// gofmt 按最长字段对齐,折叠空白后断言,期望值才不随同一结构体的其他字段变化。
+	goSource := strings.Join(strings.Fields(readFile(t, filepath.Join(out, "protocol.generated.go"))), " ")
+	for _, want := range []string{
+		`import "encoding/json"`,
+		`MethodDebuggerSend `,
+		`MethodDebuggerDetach `,
+		`Blocking: "none", Peer: "browser", MergeField: "", Internal: true}`,
+		`Blocking: "none", Peer: "browser", MergeField: "tabs", Internal: false}`,
+		`NotificationDebuggerEvent `,
+		`NotificationDebuggerDetached `,
+		`= "debugger.detached"`,
+		`"debugger.event": {Params: "DebuggerEventNotification", Peer: "browser"}`,
+		"type DebuggerEventNotification struct",
+		"SessionId *string `json:\"sessionId,omitempty\"`",
+		"Params json.RawMessage `json:\"params,omitempty\"`",
+		"Result json.RawMessage `json:\"result\"`",
+		`ErrorCodeStaleRef `,
+		`ErrorCodeNavigationFailed `,
+	} {
+		if !strings.Contains(goSource, want) {
+			t.Errorf("generated Go does not contain %q", want)
+		}
+	}
+
+	typescript := readFile(t, filepath.Join(browserOut, "protocol.generated.ts"))
+	for _, want := range []string{
+		`"debugger.send": { params: DebuggerSendParams; result: DebuggerSendResult };`,
+		"export interface DebuggerSendParams {\n  method: string;\n  params?: Record<string, unknown>;\n  sessionId?: string;\n  tabId: number;\n}",
+		"export interface DebuggerEventNotification {",
+		"export interface NotificationMap {\n  \"debugger.detached\": DebuggerDetachedNotification;\n  \"debugger.event\": DebuggerEventNotification;\n}",
+		"export type NotificationMethod = keyof NotificationMap;",
+		`"STALE_REF"`,
+		`"PAYLOAD_TOO_LARGE"`,
+	} {
+		if !strings.Contains(typescript, want) {
+			t.Errorf("browser TypeScript does not contain %q", want)
+		}
+	}
+	validators := readFile(t, filepath.Join(browserOut, "validators.generated.ts"))
+	for _, want := range []string{
+		`"debugger.event": validateDebuggerEventNotification,`,
+		`(value["params"] === undefined || ((isRecord(value["params"]))))`,
+	} {
+		if !strings.Contains(validators, want) {
+			t.Errorf("browser validators do not contain %q", want)
+		}
+	}
 }

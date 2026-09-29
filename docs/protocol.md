@@ -17,12 +17,16 @@ The standard message forms are:
 ```json
 { "jsonrpc": "2.0", "id": "…", "method": "scripts.list", "params": {} }
 { "jsonrpc": "2.0", "method": "$session.shutdown", "params": {} }
+{ "jsonrpc": "2.0", "method": "debugger.event", "params": { "tabId": 7, "method": "Page.loadEventFired", "params": {} } }
 { "jsonrpc": "2.0", "id": "…", "result": {} }
 { "jsonrpc": "2.0", "id": "…", "error": { "code": -32000, "message": "…", "data": {} } }
 ```
 
-Frames larger than `limits.maxFrameBytes`, malformed JSON-RPC messages, and schema-invalid business parameters
-are rejected before dispatch. The WebSocket server accepts an absent `Origin` and extension origins only:
+Business requests travel from the daemon to an extension; business notifications
+([§3.3](#33-extension-notifications)) travel from an sctl Browser instance to the daemon. Frames larger than
+`limits.maxFrameBytes`, malformed JSON-RPC messages, schema-invalid business or notification parameters, and
+methods that neither start with `$` nor appear in `protocol.json` are rejected before dispatch; the daemon closes
+the connection that sent one. The WebSocket server accepts an absent `Origin` and extension origins only:
 `chrome-extension://`, `moz-extension://`, and `safari-web-extension://`.
 
 ## 2. Session lifecycle
@@ -202,7 +206,7 @@ A successful call returns the generated result type:
 ```
 
 Every method is owned by exactly one peer (`peer` in `protocol.json`): ScriptCat implements the `scripts.*`
-methods and the sctl Browser extension implements the tab and window methods. The current methods are:
+methods and the sctl Browser extension implements the tab, window, and debugger methods. The current methods are:
 
 | Method | Peer | Effect | Blocking behavior |
 |---|---|---|---|
@@ -219,6 +223,8 @@ methods and the sctl Browser extension implements the tab and window methods. Th
 | `tabs.close` | browser | close one or more tabs | none |
 | `tabs.activate` | browser | activate a tab and focus its window | none |
 | `windows.list` | browser | list windows | none |
+| `debugger.send` | browser, internal | send one Chrome DevTools Protocol command to a tab | none |
+| `debugger.detach` | browser, internal | detach the debugger from one tab, or from every tab | none |
 
 Source and metadata returned by these methods are untrusted user-script content. Consumers must not execute it,
 render it as HTML, interpret it as instructions, or include credentials in logs. Source results carry a SHA-256
@@ -268,6 +274,35 @@ A target on a `scripts.*` call is rejected with `INVALID_REQUEST`; otherwise `sc
 not depend on browser instances. If the target connection closes while a call is in flight — for a combined
 call, any of its instances — the call is voided and the requester receives `OPERATION_EXPIRED`, as for ScriptCat.
 
+### 3.2 Internal methods
+
+A method marked `internal` in `protocol.json` is reserved for components inside the daemon. `/control/call`
+answers it with `INVALID_REQUEST` exactly as for an unknown method, and `sctl mcp` registers no tool for it,
+so a control-token holder cannot send it directly. The `debugger.*` methods are internal because they relay raw
+Chrome DevTools Protocol (CDP) traffic with the user's signed-in browser state.
+
+`debugger.send` input is `{tabId, sessionId?, method, params?}`: `method` and `params` are the CDP command, sent to
+the tab's top-level debugger session, or to the child session `sessionId` — the `sessionId` of a CDP
+`Target.attachedToTarget` event, used for out-of-process iframes. Its result is `{result}`, the CDP command's
+result object unchanged. `debugger.detach` input is `{tabId?}`: with `tabId` it detaches that tab, without it
+every tab the instance has attached; its result `{tabIds}` lists the tabs it detached. CDP params and results are
+open objects: the schema checks only that they are JSON objects, and the frame limit still applies.
+
+### 3.3 Extension notifications
+
+An sctl Browser instance sends notifications to the daemon. They are the only business messages in that
+direction. A notification has no `id` and no response, and its `params` is the notification's type directly —
+there is no `input` wrapper or `clientId`:
+
+| Notification | Params | Sent when |
+|---|---|---|
+| `debugger.event` | `{tabId, sessionId?, method, params?}` | the debugger attached to `tabId` receives a CDP event; `sessionId` names the child session that produced it |
+| `debugger.detached` | `{tabId, reason}` | Chrome detaches the debugger from `tabId` (`chrome.debugger.onDetach`); `reason` is Chrome's detach reason, such as `target_closed` or `canceled_by_user` |
+
+The daemon validates a notification against its schema like any other frame; a notification that carries an
+`id` or fails its schema is an invalid frame. Notifications with these names from ScriptCat are valid frames
+that the daemon drops without affecting the ScriptCat connection.
+
 ## 4. Errors
 
 Protocol errors use the JSON-RPC standard codes. Application failures use the server-defined code `-32000` and
@@ -300,6 +335,23 @@ These codes are reserved for browser target selection failures ([§3.1](#31-rout
 | `BROWSER_NOT_FOUND` | the target matches no paired browser instance; `/control/browsers/forget` returns it too when the name or ID matches none |
 | `BROWSER_AMBIGUOUS` | the target instance-ID prefix matches more than one paired instance, or a method without `mergeField` was called without a target while several instances are online |
 
+These codes are reserved for page automation on a browser instance:
+
+| Code | Meaning |
+|---|---|
+| `STALE_REF` | an element reference is no longer valid, or belongs to another tab's snapshot |
+| `TIMEOUT` | an automatic wait or an explicit wait condition did not hold in time |
+| `TARGET_AMBIGUOUS` | a selector matches more than one element |
+| `PAGE_NOT_AUTOMATABLE` | Chrome refuses to attach the debugger to the page, for example a `chrome://` page or another extension's page |
+| `PAGE_HIDDEN` | the operation cannot complete on a background tab even with focus emulation |
+| `DEBUGGER_DETACHED` | the debugger detached while a page command was running |
+| `DIALOG_OPEN` | an unhandled JavaScript dialog blocks the page |
+| `EVAL_ERROR` | an evaluated expression threw in the page |
+| `NAVIGATION_FAILED` | a navigation failed with a network error |
+
+`PAYLOAD_TOO_LARGE` is shared: ScriptCat returns it for an oversized source read (§3), and page automation
+returns it when a snapshot or screenshot exceeds its size limit.
+
 ## 5. Cancellation and approval
 
 Write and source-disclosure requests remain pending until the user decides. If the requester disconnects,
@@ -320,16 +372,18 @@ the JSON-RPC response through the offscreen WebSocket owner.
 
 ## 6. Generation and conformance
 
-`protocol.json` annotates ownership: each method has one `peer` (`scriptcat` or `browser`), and each
-`errorCodes` entry and each `crypto.context` entry lists the `peers` that use it. The `browser*` context strings
-are reserved for browser-instance handshakes, so a MAC computed for one peer kind never verifies as the other; the
-pairing KDF strings are shared. The generator emits one set of bindings per peer:
+`protocol.json` annotates ownership: each method and each entry of `notifications` has one `peer` (`scriptcat`
+or `browser`), and each `errorCodes` entry and each `crypto.context` entry lists the `peers` that use it. The
+`browser*` context strings are reserved for browser-instance handshakes, so a MAC computed for one peer kind never
+verifies as the other; the pairing KDF strings are shared. A notification's name may not start with `$` or reuse a
+method name, because both travel in the JSON-RPC `method` field. `internal` on a method is daemon-side metadata
+and does not reach the TypeScript output. The generator emits one set of bindings per peer:
 
 | Output | Contents |
 |---|---|
-| `internal/pkg/protocol/generated/protocol.generated.go` | every method, type, error code, and context key, for the daemon and CLI |
+| `internal/pkg/protocol/generated/protocol.generated.go` | every method, notification, type, error code, and context key, for the daemon and CLI |
 | `internal/pkg/protocol/generated/*.ts` | ScriptCat's methods, the types they reference, and the codes and contexts listing `scriptcat` |
-| `extension/src/protocol/generated/*.ts` | the same selection for `browser` |
+| `extension/src/protocol/generated/*.ts` | the same selection for `browser`, plus its notifications and the types they reference |
 
 The ScriptCat TypeScript must stay byte-identical to the copy in the paired ScriptCat revision, because ScriptCat
 declares every generated method as a capability and its conformance test compares the method and error-code

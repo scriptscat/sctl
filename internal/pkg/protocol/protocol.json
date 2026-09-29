@@ -121,6 +121,34 @@
       "blocking": "none",
       "peer": "browser",
       "mergeField": "windows"
+    },
+    "debugger.send": {
+      "params": "DebuggerSendParams",
+      "result": "DebuggerSendResult",
+      "scope": "debugger:send",
+      "effect": "write",
+      "blocking": "none",
+      "peer": "browser",
+      "internal": true
+    },
+    "debugger.detach": {
+      "params": "DebuggerDetachParams",
+      "result": "DebuggerDetachResult",
+      "scope": "debugger:detach",
+      "effect": "write",
+      "blocking": "none",
+      "peer": "browser",
+      "internal": true
+    }
+  },
+  "notifications": {
+    "debugger.event": {
+      "params": "DebuggerEventNotification",
+      "peer": "browser"
+    },
+    "debugger.detached": {
+      "params": "DebuggerDetachedNotification",
+      "peer": "browser"
     }
   },
   "types": {
@@ -806,6 +834,109 @@
         "windows"
       ],
       "additionalProperties": false
+    },
+    "DebuggerSendParams": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "tabId",
+        "method"
+      ],
+      "additionalProperties": false
+    },
+    "DebuggerSendResult": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "additionalProperties": false
+    },
+    "DebuggerDetachParams": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "DebuggerDetachResult": {
+      "type": "object",
+      "properties": {
+        "tabIds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "required": [
+        "tabIds"
+      ],
+      "additionalProperties": false
+    },
+    "DebuggerEventNotification": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "tabId",
+        "method"
+      ],
+      "additionalProperties": false
+    },
+    "DebuggerDetachedNotification": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tabId",
+        "reason"
+      ],
+      "additionalProperties": false
     }
   },
   "errorCodes": [
@@ -816,12 +947,21 @@
     { "code": "CONFLICT", "peers": ["scriptcat", "browser"] },
     { "code": "NOT_FOUND", "peers": ["scriptcat", "browser"] },
     { "code": "RATE_LIMITED", "peers": ["scriptcat"] },
-    { "code": "PAYLOAD_TOO_LARGE", "peers": ["scriptcat"] },
+    { "code": "PAYLOAD_TOO_LARGE", "peers": ["scriptcat", "browser"] },
     { "code": "INTERNAL_ERROR", "peers": ["scriptcat", "browser"] },
     { "code": "NO_BROWSER_CONNECTED", "peers": ["browser"] },
     { "code": "BROWSER_OFFLINE", "peers": ["browser"] },
     { "code": "BROWSER_NOT_FOUND", "peers": ["browser"] },
-    { "code": "BROWSER_AMBIGUOUS", "peers": ["browser"] }
+    { "code": "BROWSER_AMBIGUOUS", "peers": ["browser"] },
+    { "code": "STALE_REF", "peers": ["browser"] },
+    { "code": "TIMEOUT", "peers": ["browser"] },
+    { "code": "TARGET_AMBIGUOUS", "peers": ["browser"] },
+    { "code": "PAGE_NOT_AUTOMATABLE", "peers": ["browser"] },
+    { "code": "PAGE_HIDDEN", "peers": ["browser"] },
+    { "code": "DEBUGGER_DETACHED", "peers": ["browser"] },
+    { "code": "DIALOG_OPEN", "peers": ["browser"] },
+    { "code": "EVAL_ERROR", "peers": ["browser"] },
+    { "code": "NAVIGATION_FAILED", "peers": ["browser"] }
   ],
   "crypto": {
     "mac": "HMAC-SHA-256",

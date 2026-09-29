@@ -17,6 +17,9 @@ type definition struct {
 		Params string `json:"params"`
 		Result string `json:"result"`
 	} `json:"methods"`
+	Notifications map[string]struct {
+		Params string `json:"params"`
+	} `json:"notifications"`
 	Types map[string]json.RawMessage `json:"types"`
 }
 
@@ -34,14 +37,16 @@ type rpcRequest struct {
 }
 
 var (
-	loadOnce      sync.Once
-	methodSchemas map[string]*jsonschema.Schema
-	resultSchemas map[string]*jsonschema.Schema
-	loadErr       error
+	loadOnce            sync.Once
+	methodSchemas       map[string]*jsonschema.Schema
+	resultSchemas       map[string]*jsonschema.Schema
+	notificationSchemas map[string]*jsonschema.Schema
+	loadErr             error
 )
 
-// ValidateWireFrame validates a JSON-RPC message and the selected business method's input
-// method's params schema. Generated Go/TypeScript types cannot validate bytes supplied by a peer.
+// ValidateWireFrame validates a JSON-RPC message against the schema bound to its method: a business
+// request's params.input, or an extension notification's params. Generated Go/TypeScript types cannot
+// validate bytes supplied by a peer.
 func ValidateWireFrame(data []byte) error {
 	loadOnce.Do(load)
 	if loadErr != nil {
@@ -56,6 +61,17 @@ func ValidateWireFrame(data []byte) error {
 	}
 	if env.Method == "" {
 		return nil
+	}
+	if schema, ok := notificationSchemas[env.Method]; ok {
+		// 通知没有应答;带 id 的同名帧会让对端等一个永远不来的结果。
+		if len(env.ID) != 0 {
+			return fmt.Errorf("notification %q must not carry an id", env.Method)
+		}
+		params, err := jsonschema.UnmarshalJSON(bytes.NewReader(env.Params))
+		if err != nil {
+			return fmt.Errorf("decode %s params: %w", env.Method, err)
+		}
+		return schema.Validate(params)
 	}
 	schema, ok := methodSchemas[env.Method]
 	if !ok {
@@ -157,44 +173,34 @@ func load() {
 	}
 	methodSchemas = make(map[string]*jsonschema.Schema, len(def.Methods))
 	resultSchemas = make(map[string]*jsonschema.Schema, len(def.Methods))
+	notificationSchemas = make(map[string]*jsonschema.Schema, len(def.Notifications))
 	for method, metadata := range def.Methods {
-		raw, ok := def.Types[metadata.Params]
-		if !ok {
-			loadErr = fmt.Errorf("rpc %q references unknown params type %q", method, metadata.Params)
+		if methodSchemas[method], loadErr = compileType(def.Types, metadata.Params, "rpc "+method); loadErr != nil {
 			return
 		}
-		doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
-		if err != nil {
-			loadErr = err
-			return
-		}
-		c := jsonschema.NewCompiler()
-		if err := c.AddResource("params.schema.json", doc); err != nil {
-			loadErr = err
-			return
-		}
-		methodSchemas[method], loadErr = c.Compile("params.schema.json")
-		if loadErr != nil {
-			return
-		}
-		resultRaw, ok := def.Types[metadata.Result]
-		if !ok {
-			loadErr = fmt.Errorf("rpc %q references unknown result type %q", method, metadata.Result)
-			return
-		}
-		resultDoc, err := jsonschema.UnmarshalJSON(bytes.NewReader(resultRaw))
-		if err != nil {
-			loadErr = err
-			return
-		}
-		resultCompiler := jsonschema.NewCompiler()
-		if err := resultCompiler.AddResource("result.schema.json", resultDoc); err != nil {
-			loadErr = err
-			return
-		}
-		resultSchemas[method], loadErr = resultCompiler.Compile("result.schema.json")
-		if loadErr != nil {
+		if resultSchemas[method], loadErr = compileType(def.Types, metadata.Result, "rpc "+method); loadErr != nil {
 			return
 		}
 	}
+	for name, metadata := range def.Notifications {
+		if notificationSchemas[name], loadErr = compileType(def.Types, metadata.Params, "notification "+name); loadErr != nil {
+			return
+		}
+	}
+}
+
+func compileType(types map[string]json.RawMessage, name, owner string) (*jsonschema.Schema, error) {
+	raw, ok := types[name]
+	if !ok {
+		return nil, fmt.Errorf("%s references unknown type %q", owner, name)
+	}
+	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
+	if err != nil {
+		return nil, err
+	}
+	c := jsonschema.NewCompiler()
+	if err := c.AddResource("type.schema.json", doc); err != nil {
+		return nil, err
+	}
+	return c.Compile("type.schema.json")
 }

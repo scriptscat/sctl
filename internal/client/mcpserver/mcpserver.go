@@ -45,13 +45,14 @@ type Deps struct {
 	Caller  BridgeCaller
 }
 
-// New 按依赖构建 MCP server,注册 protocol.json 里定义的全部 bridge action 工具以及 browsers_list。
+// New 按依赖构建 MCP server,注册 protocol.json 里定义的全部非内部 bridge action 工具以及 browsers_list。
 // 方法是否是浏览器方法、是否汇总多实例,都取自 protocol.json 的 peer 与 mergeField,不按方法名推断。
 func New(d Deps) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{Name: d.Name, Version: d.Version}, &mcp.ServerOptions{})
 	for _, td := range toolDefs {
 		action, ok := d.Proto.Actions[td.action]
-		if !ok {
+		// 内部方法(原始 CDP 中转)只给 daemon 内的组件用,不直接交给 agent。
+		if !ok || action.Internal {
 			continue
 		}
 		browser := action.Peer == protocol.PeerBrowser

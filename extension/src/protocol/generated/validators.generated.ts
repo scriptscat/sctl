@@ -10,6 +10,30 @@ function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[])
   return Object.keys(value).every((key) => allowedKeys.has(key));
 }
 
+export function validateDebuggerDetachParams(value: unknown): value is Protocol.DebuggerDetachParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["tabId"]) && (value["tabId"] === undefined || (typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0)));
+}
+
+export function validateDebuggerDetachResult(value: unknown): value is Protocol.DebuggerDetachResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["tabIds"]) && Array.isArray(value["tabIds"]) && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item)));
+}
+
+export function validateDebuggerDetachedNotification(value: unknown): value is Protocol.DebuggerDetachedNotification {
+  return (isRecord(value) && hasOnlyKeys(value, ["reason", "tabId"]) && typeof value["reason"] === "string" && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0);
+}
+
+export function validateDebuggerEventNotification(value: unknown): value is Protocol.DebuggerEventNotification {
+  return (isRecord(value) && hasOnlyKeys(value, ["method", "params", "sessionId", "tabId"]) && typeof value["method"] === "string" && (value["params"] === undefined || ((isRecord(value["params"])))) && (value["sessionId"] === undefined || (typeof value["sessionId"] === "string")) && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0);
+}
+
+export function validateDebuggerSendParams(value: unknown): value is Protocol.DebuggerSendParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["method", "params", "sessionId", "tabId"]) && typeof value["method"] === "string" && (value["params"] === undefined || ((isRecord(value["params"])))) && (value["sessionId"] === undefined || (typeof value["sessionId"] === "string")) && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0);
+}
+
+export function validateDebuggerSendResult(value: unknown): value is Protocol.DebuggerSendResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["result"]) && (isRecord(value["result"])));
+}
+
 export function validateTabsActivateParams(value: unknown): value is Protocol.TabsActivateParams {
   return (isRecord(value) && hasOnlyKeys(value, ["tabId"]) && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0);
 }
@@ -51,6 +75,8 @@ export function validateWindowsListResult(value: unknown): value is Protocol.Win
 }
 
 export const RPC_PARAM_VALIDATORS = {
+  "debugger.detach": validateDebuggerDetachParams,
+  "debugger.send": validateDebuggerSendParams,
   "tabs.activate": validateTabsActivateParams,
   "tabs.close": validateTabsCloseParams,
   "tabs.list": validateTabsListParams,
@@ -59,9 +85,16 @@ export const RPC_PARAM_VALIDATORS = {
 } as const;
 
 export const RPC_RESULT_VALIDATORS = {
+  "debugger.detach": validateDebuggerDetachResult,
+  "debugger.send": validateDebuggerSendResult,
   "tabs.activate": validateTabsActivateResult,
   "tabs.close": validateTabsCloseResult,
   "tabs.list": validateTabsListResult,
   "tabs.open": validateTabsOpenResult,
   "windows.list": validateWindowsListResult,
+} as const;
+
+export const NOTIFICATION_PARAM_VALIDATORS = {
+  "debugger.detached": validateDebuggerDetachedNotification,
+  "debugger.event": validateDebuggerEventNotification,
 } as const;
