@@ -37,7 +37,7 @@ import type { PopupApi } from "@/shared/popup-api";
 import { createPopupApi } from "@/shared/popup-api";
 import type { ConnectionState } from "@/shared/state";
 import { formatConnectedSince } from "./format-duration";
-import { clearPairingDraft, loadPairingDraft, savePairingDraft } from "./pairing-draft";
+import { clearPairingDraft, loadPairingDraft, loadRePairFlow, savePairingDraft, saveRePairFlow } from "./pairing-draft";
 import { DEFAULT_PREFS, isDarkMode, loadPrefs, savePrefs, type Prefs } from "./preferences";
 import { chromeLocalStorage, chromeSessionStorage, type KeyValueStorage, type SessionStorage } from "./storage";
 
@@ -106,9 +106,11 @@ export function App({
         setPrefsLoaded(true);
       }
     });
-    void loadPairingDraft(sessionStorage).then((draft) => {
+    void Promise.all([loadPairingDraft(sessionStorage), loadRePairFlow(sessionStorage)]).then(([draft, rePairing]) => {
       if (!cancelled) {
         setCode(draft);
+        // 只有重新配对流程里真的输入过内容才直接回到表单；没有草稿时被拒页的说明更有用。
+        if (rePairing && draft) setPairAgain(true);
         setCodeDraftLoaded(true);
       }
     });
@@ -149,6 +151,12 @@ export function App({
     if (status !== "rejected") setPairAgain(false);
   }
 
+  // 离开 rejected（含配对成功）后，持久化的重新配对标记同样作废。
+  useEffect(() => {
+    if (status && status !== "rejected") void saveRePairFlow(sessionStorage, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
+
   // 草稿只在配对真正成功后清除：配对失败或连不上 daemon 时，用户常要先离开弹窗（去终端启动
   // sctl serve），重新打开时还要用同一个配对码。
   useEffect(() => {
@@ -185,6 +193,13 @@ export function App({
     setAddressDraft(state?.address ?? "");
     setAddressInvalid(false);
     setViewMode("settings");
+  };
+
+  // 输入框里残留的是上次已用掉的配对码，重新配对要从空开始；同时记下已进入该流程，重开弹窗时恢复。
+  const startPairAgain = () => {
+    setCode("");
+    setPairAgain(true);
+    void saveRePairFlow(sessionStorage, true);
   };
 
   const onCodeChange = (value: string) => {
@@ -542,7 +557,7 @@ export function App({
                 </Button>
               )}
               {state.status === "rejected" && !pairAgainActive && (
-                <Button onClick={() => setPairAgain(true)}>{s.pairAgain}</Button>
+                <Button onClick={startPairAgain}>{s.pairAgain}</Button>
               )}
             </>
           )}

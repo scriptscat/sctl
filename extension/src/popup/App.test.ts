@@ -362,6 +362,65 @@ describe("pairing code draft", () => {
     expect(sessionStorage.data.pairingCodeDraft).toBe("K7QM3XRD");
   });
 
+  it("starts the re-pair flow with an empty code input instead of the already used pairing code", async () => {
+    const { api, emit } = fakeApi({ ...BASE, status: "unpaired" });
+    const sessionStorage = fakeSessionStorage({ pairingCodeDraft: "K7QM3XRD" });
+    renderApp({ ...BASE, status: "unpaired" }, { sessionStorage, api });
+    const user = userEvent.setup();
+    await screen.findByDisplayValue("K7QM3XRD");
+    await user.click(screen.getByRole("button", { name: "Pair" }));
+    await act(async () => {
+      emit({ ...BASE, ...CONNECTED });
+      await Promise.resolve();
+    });
+    await screen.findByText(/sctl tabs list --browser/);
+    act(() => emit({ ...BASE, status: "rejected" }));
+    await user.click(await screen.findByRole("button", { name: "Pair again" }));
+    const input = screen.getByLabelText("Enter the pairing code it shows");
+    expect(input).toHaveValue("");
+    await user.type(input, "ZZ");
+    expect(input).toHaveValue("ZZ");
+  });
+
+  it("reopens straight into the pairing form with the draft while the user is in the re-pair flow", async () => {
+    const sessionStorage = fakeSessionStorage();
+    const first = renderApp({ ...BASE, status: "rejected" }, { sessionStorage });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Pair again" }));
+    await user.type(screen.getByLabelText("Enter the pairing code it shows"), "AB12");
+    first.unmount();
+
+    renderApp({ ...BASE, status: "rejected" }, { sessionStorage });
+    expect(await screen.findByDisplayValue("AB12")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pair again" })).not.toBeInTheDocument();
+  });
+
+  it("shows the rejected explanation on reopen when Pair again was never clicked", async () => {
+    const sessionStorage = fakeSessionStorage();
+    renderApp({ ...BASE, status: "rejected" }, { sessionStorage });
+    expect(await screen.findByRole("button", { name: "Pair again" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Enter the pairing code it shows")).not.toBeInTheDocument();
+  });
+
+  it("leaves the re-pair flow once pairing succeeds, so a later rejection explains itself again", async () => {
+    const sessionStorage = fakeSessionStorage();
+    const { api, emit } = fakeApi({ ...BASE, status: "rejected" });
+    const first = renderApp({ ...BASE, status: "rejected" }, { sessionStorage, api });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Pair again" }));
+    await user.type(screen.getByLabelText("Enter the pairing code it shows"), "AB12");
+    await act(async () => {
+      emit({ ...BASE, ...CONNECTED });
+      await Promise.resolve();
+    });
+    await screen.findByText(/sctl tabs list --browser/);
+    await vi.waitFor(() => expect(sessionStorage.data).toEqual({}));
+    first.unmount();
+
+    renderApp({ ...BASE, status: "rejected" }, { sessionStorage });
+    expect(await screen.findByRole("button", { name: "Pair again" })).toBeInTheDocument();
+  });
+
   it("clears the draft once pairing succeeds", async () => {
     const sessionStorage = fakeSessionStorage({ pairingCodeDraft: "K7QM3XRD" });
     const { api, emit } = fakeApi({ ...BASE, status: "unpaired" });
