@@ -181,7 +181,8 @@
 
 **JS 弹框：**
 
-- 标签页上有未处理的 JS 弹框时，除 `page dialog`、`page detach`、`page screenshot` 以外的页面命令，都返回 `DIALOG_OPEN`，退出码 3，带上弹框的类型和文字（不可信内容）。
+- 标签页上有未处理的 JS 弹框时，除 `page dialog`、`page detach` 以外的页面命令，都立即返回 `DIALOG_OPEN`，退出码 3，带上弹框的类型和文字（不可信内容）。
+- `page screenshot` 也在其中：真机验证显示，弹框打开期间页面渲染被阻塞，Chrome 125 与 153 上截图都拿不到图像，只能等到超时。立即返回 `DIALOG_OPEN` 并带上弹框文字，比白等超时更有用。
 - 弹框不会被自动接受或关闭。
 
 **命令行输出：**
