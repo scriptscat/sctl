@@ -38,11 +38,15 @@ framework and [cobra](https://github.com/spf13/cobra).
 
 ```text
 sctl mcp / CLI verbs  ──/control/* HTTP──▶  sctl serve (daemon)  ──WS──▶  ScriptCat extension (approval authority)
+                                                                 └─WS──▶  sctl Browser extension (1+ paired instances)
 internal/client/             internal/daemon/                      internal/pkg/ (shared by both sides)
 ```
 
-The authority always lives on the extension side: the daemon approves no write on its own — it forwards the
-request and blocks until a human decides in the browser. Full process model and package responsibilities are
+The authority always lives on the extension side for ScriptCat's write and source-disclosure gates: the daemon
+approves no write and discloses no source on its own — it forwards the request and blocks until a human
+decides in the browser. Browser control (`sctl browsers`/`tabs`/`windows`) is the deliberate exception: it has
+no human gate by design, so any control-token holder can drive a paired `sctl Browser` instance immediately —
+see [`docs/threat-model.md`](./docs/threat-model.md). Full process model and package responsibilities are
 in [`docs/architecture.md`](./docs/architecture.md).
 
 ## Engineering Principles

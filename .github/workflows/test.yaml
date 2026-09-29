@@ -50,6 +50,30 @@ jobs:
       - run: go vet ./...
       - run: go test -race ./...
 
+  extension:
+    name: extension
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v5
+      # pnpm 版本取自 extension/package.json 的 packageManager 字段。
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: extension/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: extension/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
   protocol-schema:
     name: protocol schema and ScriptCat mirror
     runs-on: ubuntu-latest

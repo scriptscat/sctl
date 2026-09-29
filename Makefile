@@ -7,6 +7,8 @@ BUILD_DIR ?= bin
 BINARY := $(BUILD_DIR)/sctl
 VERSION_PACKAGE := github.com/scriptscat/sctl/internal/cli
 SCRIPTCAT_DIR ?= ../scriptcat
+BROWSER_PROTOCOL_DIR := extension/src/protocol/generated
+PROTOCOL_GENERATED_DIRS := internal/pkg/protocol/generated $(BROWSER_PROTOCOL_DIR)
 
 .PHONY: help build test lint dev protocol-generate protocol-sync-scriptcat protocol-check clean
 
@@ -28,8 +30,8 @@ dev: ## 构建并启动本地 daemon（DEV_VERSION=0.1.0）
 	$(GO) build -ldflags "-X $(VERSION_PACKAGE).Version=$(DEV_VERSION)" -o $(BINARY) ./cmd/sctl
 	$(BINARY) serve
 
-protocol-generate: ## 从权威 schema 生成 Go、TypeScript 与 TypeScript 校验器
-	$(GO) run ./cmd/protocolgen -schema internal/pkg/protocol -out internal/pkg/protocol/generated
+protocol-generate: ## 从权威 schema 生成 Go、ScriptCat 与浏览器扩展的 TypeScript 及校验器
+	$(GO) run ./cmd/protocolgen -schema internal/pkg/protocol -out internal/pkg/protocol/generated -browser-out $(BROWSER_PROTOCOL_DIR)
 
 protocol-sync-scriptcat: protocol-generate ## 更新相邻 ScriptCat 仓库的生成产物
 	mkdir -p $(SCRIPTCAT_DIR)/src/app/service/service_worker/external_access/generated
@@ -40,7 +42,9 @@ protocol-sync-scriptcat: protocol-generate ## 更新相邻 ScriptCat 仓库的�
 		$(SCRIPTCAT_DIR)/src/app/service/service_worker/external_access/generated/validators.generated.ts
 
 protocol-check: protocol-generate ## 检查生成物已提交且可复现
-	git diff --exit-code -- internal/pkg/protocol/generated
+	git diff --exit-code -- $(PROTOCOL_GENERATED_DIRS)
+	@untracked="$$(git ls-files --others --exclude-standard -- $(PROTOCOL_GENERATED_DIRS))"; \
+		if [ -n "$$untracked" ]; then echo "未提交的生成物:"; echo "$$untracked"; exit 1; fi
 
 clean: ## 删除本地构建产物
 	rm -rf $(BUILD_DIR)

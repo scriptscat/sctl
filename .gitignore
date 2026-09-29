@@ -4,3 +4,4 @@ dist/
 .dev-kit
 # 一次性端到端验证脚本与证据(见 docs/verification.md),永远不进版本库
 /e2e/scratch/
+node_modules/

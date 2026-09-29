@@ -13,16 +13,19 @@ package control
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/scriptscat/sctl/internal/pkg/audit"
 )
 
 // 控制 API 路径。健康检查故意不鉴权(仅暴露「端口开着」这一威胁模型已接受的信息)。
 const (
-	PathHealth = "/control/health"
-	PathCall   = "/control/call"
-	PathEnroll = "/control/enroll"
-	PathStatus = "/control/status"
+	PathHealth        = "/control/health"
+	PathCall          = "/control/call"
+	PathEnroll        = "/control/enroll"
+	PathStatus        = "/control/status"
+	PathBrowsers      = "/control/browsers"
+	PathBrowserForget = "/control/browsers/forget"
 )
 
 // 控制 API 请求头。
@@ -39,11 +42,15 @@ const CLIClientID = "sctl-cli"
 
 // CallRequest 是 /control/call 的请求体:转发一次 bridge action 调用。
 type CallRequest struct {
-	Action string          `json:"action"`
-	Input  json.RawMessage `json:"input"`
+	Action string `json:"action"`
+	// Browser 是浏览器方法的可选目标:实例名称或实例 ID 前缀,由 daemon 解析(docs/protocol.md §3.1)。
+	Browser string          `json:"browser,omitempty"`
+	Input   json.RawMessage `json:"input"`
 }
 
 // CallResult 是 /control/call 的响应体,映射桥接的 JSON-RPC result/error。
+// 列表类浏览器方法未指定目标且多个浏览器在线时,Result 是各实例结果按 mergeField 拼接后的汇总,
+// 该数组的每一项多一个 "browser": {"id","name"} 字段;其余情况 Result 是单个对端的原始结果。
 type CallResult struct {
 	OK     bool            `json:"ok"`
 	Result json.RawMessage `json:"result,omitempty"`
@@ -69,15 +76,38 @@ type HealthResult struct {
 	Version string `json:"version"`
 }
 
-// StatusResult 是 /control/status 的响应体:daemon 与扩展连接概览,附守卫侧安全事件。
+// StatusResult 是 /control/status 的响应体:daemon 与扩展连接概览,附守卫侧安全事件与已配对浏览器实例。
 type StatusResult struct {
 	DaemonVersion string        `json:"daemonVersion"`
 	ExtConnected  bool          `json:"extConnected"`
 	SecurityCount int           `json:"securityCount"`
 	Security      []audit.Event `json:"security,omitempty"`
+	Browsers      []BrowserInfo `json:"browsers,omitempty"`
 }
 
 // EnrollResult 是 /control/enroll 的响应体:打开接入窗口后返回展示形配对码。
 type EnrollResult struct {
 	Code string `json:"code"`
+}
+
+// BrowserInfo 是一个已配对浏览器实例的当前视图,镜像 bridge.InstanceInfo(控制 API 不直接暴露
+// bridge 类型,见 internal/daemon/controlapi 的窄接口约定)。离线实例的 ConnectedAt 为零值,JSON 中省略。
+type BrowserInfo struct {
+	ID               string    `json:"id"`
+	Name             string    `json:"name"`
+	Online           bool      `json:"online"`
+	Product          string    `json:"product,omitempty"`
+	ProductVersion   string    `json:"productVersion,omitempty"`
+	ExtensionVersion string    `json:"extensionVersion,omitempty"`
+	ConnectedAt      time.Time `json:"connectedAt,omitzero"`
+}
+
+// BrowsersResult 是 /control/browsers 的响应体:全部已配对浏览器实例(在线与离线)。
+type BrowsersResult struct {
+	Browsers []BrowserInfo `json:"browsers"`
+}
+
+// ForgetBrowserRequest 是 /control/browsers/forget 的请求体:Ref 是实例名称或完整实例 ID。
+type ForgetBrowserRequest struct {
+	Ref string `json:"ref"`
 }

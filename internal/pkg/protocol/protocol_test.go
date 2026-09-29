@@ -1,6 +1,10 @@
 package protocol
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/scriptscat/sctl/internal/pkg/protocol/generated"
+)
 
 func TestLoad(t *testing.T) {
 	p, err := Load()
@@ -31,4 +35,69 @@ func TestLoad(t *testing.T) {
 			t.Fatalf("defaultUrl = %q", p.Transport.DefaultURL)
 		}
 	})
+}
+
+func TestLoadExposesMethodPeerAndListMergeField(t *testing.T) {
+	p, err := Load()
+	if err != nil {
+		t.Fatalf("load protocol: %v", err)
+	}
+	for name, want := range map[string]struct {
+		peer       Peer
+		mergeField string
+	}{
+		"scripts.list":  {PeerScriptCat, ""},
+		"tabs.list":     {PeerBrowser, "tabs"},
+		"windows.list":  {PeerBrowser, "windows"},
+		"tabs.open":     {PeerBrowser, ""},
+		"tabs.close":    {PeerBrowser, ""},
+		"tabs.activate": {PeerBrowser, ""},
+	} {
+		action, ok := p.Actions[name]
+		if !ok {
+			t.Errorf("%s is not a protocol action", name)
+			continue
+		}
+		if action.Peer != want.peer || action.MergeField != want.mergeField {
+			t.Errorf("%s: peer=%q mergeField=%q, want peer=%q mergeField=%q", name, action.Peer, action.MergeField, want.peer, want.mergeField)
+		}
+	}
+}
+
+func TestLoadKeepsBrowserHandshakeContextsDistinctFromScriptCat(t *testing.T) {
+	p, err := Load()
+	if err != nil {
+		t.Fatalf("load protocol: %v", err)
+	}
+	if got := p.Crypto.Context[generated.CryptoContextSessionExt]; got != "scriptcat-rpc-v1/ext" {
+		t.Fatalf("ScriptCat session context = %q, want the unchanged scriptcat-rpc-v1/ext", got)
+	}
+	scriptcat := map[string]bool{}
+	for _, key := range []string{generated.CryptoContextSessionExt, generated.CryptoContextSessionDaemon, generated.CryptoContextPairExt, generated.CryptoContextPairDaemon} {
+		scriptcat[p.Crypto.Context[key]] = true
+	}
+	seen := map[string]bool{}
+	for _, key := range []string{generated.CryptoContextBrowserSessionExt, generated.CryptoContextBrowserSessionDaemon, generated.CryptoContextBrowserPairExt, generated.CryptoContextBrowserPairDaemon} {
+		value := p.Crypto.Context[key]
+		if value == "" || scriptcat[value] || seen[value] {
+			t.Errorf("browser context %s = %q must be non-empty and unique across peers and directions", key, value)
+		}
+		seen[value] = true
+	}
+}
+
+func TestLoadListsBrowserTargetErrorCodes(t *testing.T) {
+	p, err := Load()
+	if err != nil {
+		t.Fatalf("load protocol: %v", err)
+	}
+	codes := map[string]bool{}
+	for _, code := range p.ErrorCodes {
+		codes[code.Code] = true
+	}
+	for _, want := range []string{generated.ErrorCodeNoBrowserConnected, generated.ErrorCodeBrowserOffline, generated.ErrorCodeBrowserNotFound, generated.ErrorCodeBrowserAmbiguous} {
+		if want == "" || !codes[want] {
+			t.Errorf("error code %q is not listed in protocol.json errorCodes", want)
+		}
+	}
 }

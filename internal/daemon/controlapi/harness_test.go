@@ -23,6 +23,7 @@ import (
 	"github.com/scriptscat/sctl/internal/daemon/bridge"
 	"github.com/scriptscat/sctl/internal/daemon/store"
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
+	"github.com/scriptscat/sctl/internal/pkg/protocolschema"
 )
 
 // 本包的测试跑真实全栈:bridge.Server + Handler 挂同一 listener,由 extClient 从 WS 面对拍。
@@ -45,9 +46,15 @@ type authChallengePayload struct {
 }
 
 type authResponsePayload struct {
-	Mode   string `json:"mode"`
-	NonceE string `json:"nonceE"`
-	HMAC   string `json:"hmac"`
+	Mode   string           `json:"mode"`
+	NonceE string           `json:"nonceE"`
+	HMAC   string           `json:"hmac"`
+	Peer   *authPeerPayload `json:"peer,omitempty"`
+}
+
+type authPeerPayload struct {
+	Kind       string `json:"kind"`
+	InstanceID string `json:"instanceId"`
 }
 
 type authOKPayload struct {
@@ -65,11 +72,12 @@ type cancelParams struct {
 
 // testHarness 承载一个运行中的 daemon(WS 面 + 控制 API)与用于对拍的密码学助手/存储。
 type testHarness struct {
-	srv    *bridge.Server
-	crypto *auth.Crypto
-	keys   *store.KeyStore
-	url    string
-	proto  *protocol.Protocol
+	srv      *bridge.Server
+	crypto   *auth.Crypto
+	keys     *store.KeyStore
+	browsers *store.BrowserRegistry
+	url      string
+	proto    *protocol.Protocol
 }
 
 func startTestServer(t *testing.T) *testHarness {
@@ -78,7 +86,11 @@ func startTestServer(t *testing.T) *testHarness {
 	So(err, ShouldBeNil)
 	dir := t.TempDir()
 	keys := store.NewKeyStore(filepath.Join(dir, "pairing.key"))
-	srv := bridge.NewServer(testVersion, p, keys, zap.NewNop())
+	browsers, err := store.LoadBrowserRegistry(filepath.Join(dir, "browsers.json"))
+	So(err, ShouldBeNil)
+	srv := bridge.NewServer(testVersion, p, keys, browsers, zap.NewNop())
+	// daemon 首次校验帧时才编译 schema,这笔一次性开销在高负载下能拖过读消息的 3s 时限;先在时限外付掉。
+	So(protocolschema.ValidateWireFrame([]byte(`{"jsonrpc":"2.0","id":"warm-up","method":"$session.ping","params":{}}`)), ShouldBeNil)
 
 	mux := http.NewServeMux()
 	New(srv, testControlToken, zap.NewNop()).Register(mux)
@@ -90,11 +102,12 @@ func startTestServer(t *testing.T) *testHarness {
 	go func() { _ = srv.Serve(ctx, ln, mux) }()
 
 	return &testHarness{
-		srv:    srv,
-		crypto: auth.NewCrypto(p),
-		keys:   keys,
-		url:    "ws://" + ln.Addr().String() + "/",
-		proto:  p,
+		srv:      srv,
+		crypto:   auth.NewCrypto(p),
+		keys:     keys,
+		browsers: browsers,
+		url:      "ws://" + ln.Addr().String() + "/",
+		proto:    p,
 	}
 }
 
@@ -182,6 +195,44 @@ func (h *testHarness) doSessionHandshake(key []byte) *extClient {
 	capabilitiesID := uuid.NewString()
 	e.writeRequest(methodCapabilities, capabilitiesID, map[string]any{"schemaVersion": "1.0.0", "methods": methods})
 	So(e.read().ID, ShouldEqual, capabilitiesID)
+	return e
+}
+
+// browserMethods 是浏览器实例在能力声明里给出的方法。
+var browserMethods = []string{"tabs.list", "tabs.open", "tabs.close", "tabs.activate", "windows.list"}
+
+// pairedBrowser 在登记表里放一个已配对实例并返回其密钥;不连接。
+func (h *testHarness) pairedBrowser(id, name string) []byte {
+	key, err := auth.NewLongTermKey()
+	So(err, ShouldBeNil)
+	So(h.browsers.Pair(store.BrowserInstance{ID: id, Name: name, Key: key}), ShouldBeNil)
+	return key
+}
+
+// connectBrowser 配对并按线上协议连接一个浏览器实例,返回完成能力声明的连接。
+func (h *testHarness) connectBrowser(id, name string) *extClient {
+	key := h.pairedBrowser(id, name)
+	e := dial(h.url)
+	challenge := e.read()
+	So(challenge.Method, ShouldEqual, methodAuthenticate)
+	var cp authChallengePayload
+	So(json.Unmarshal(challenge.Params, &cp), ShouldBeNil)
+
+	nonceE, _ := auth.RandomNonceHex(h.proto.Crypto.NonceBytes)
+	mac := h.crypto.BrowserExtHMAC(auth.ModeSession, id, key, cp.NonceD, nonceE)
+	e.writeResult(challenge.ID, authResponsePayload{Mode: modeSession, NonceE: nonceE, HMAC: mac, Peer: &authPeerPayload{Kind: "browser", InstanceID: id}})
+	So(e.read().Method, ShouldEqual, methodAuthenticated)
+	So(e.read().Method, ShouldEqual, methodHello)
+
+	capabilitiesID := uuid.NewString()
+	e.writeRequest(methodCapabilities, capabilitiesID, map[string]any{
+		"schemaVersion": "1.0.0",
+		"methods":       browserMethods,
+		"peer":          map[string]any{"name": name},
+	})
+	reply := e.read()
+	So(reply.ID, ShouldEqual, capabilitiesID)
+	So(reply.Error, ShouldBeNil)
 	return e
 }
 

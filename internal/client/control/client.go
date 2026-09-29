@@ -119,13 +119,14 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body []byt
 	return req, nil
 }
 
-// Call 转发一次 bridge action 调用并阻塞至应答/作废。ctx 取消(如 CLI Ctrl-C)会切断连接,
-// daemon 侧据此发 $/cancelRequest 作废该操作;此时 Do 返回 context.Canceled。
-func (c *Client) Call(ctx context.Context, action string, input json.RawMessage) (CallResult, error) {
+// Call 转发一次 bridge action 调用并阻塞至应答/作废。browser 是浏览器方法的可选目标
+// (名称或实例 ID 前缀),空串表示由 daemon 按在线实例选择;scripts.* 必须传空串。
+// ctx 取消(如 CLI Ctrl-C)会切断连接,daemon 侧据此发 $/cancelRequest 作废该操作;此时 Do 返回 context.Canceled。
+func (c *Client) Call(ctx context.Context, action, browser string, input json.RawMessage) (CallResult, error) {
 	if input == nil {
 		input = json.RawMessage(`{}`)
 	}
-	body, err := json.Marshal(CallRequest{Action: action, Input: input})
+	body, err := json.Marshal(CallRequest{Action: action, Browser: browser, Input: input})
 	if err != nil {
 		return CallResult{}, err
 	}
@@ -167,6 +168,59 @@ func (c *Client) Status(ctx context.Context) (StatusResult, error) {
 		return StatusResult{}, err
 	}
 	return res, nil
+}
+
+// Browsers 列出所有已配对的浏览器实例(在线与离线)。
+func (c *Client) Browsers(ctx context.Context) ([]BrowserInfo, error) {
+	req, err := c.newRequest(ctx, http.MethodGet, PathBrowsers, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, statusError(resp)
+	}
+	var res BrowsersResult
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return nil, err
+	}
+	return res.Browsers, nil
+}
+
+// ForgetBrowser 删除一个已配对浏览器实例的密钥与登记(按精确名称或精确实例 ID),
+// 若它在线则断开其连接;之后该实例的握手会失败。ref 不匹配任何已配对实例时返回错误。
+func (c *Client) ForgetBrowser(ctx context.Context, ref string) error {
+	body, err := json.Marshal(ForgetBrowserRequest{Ref: ref})
+	if err != nil {
+		return err
+	}
+	req, err := c.newRequest(ctx, http.MethodPost, PathBrowserForget, body)
+	if err != nil {
+		return err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return statusError(resp)
+	}
+	var res CallResult
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return err
+	}
+	if !res.OK {
+		if res.Error != nil {
+			return res.Error
+		}
+		return fmt.Errorf("forget browser %q failed", ref)
+	}
+	return nil
 }
 
 // Enroll 打开一次接入窗口,返回展示形配对码(供 sctl connect 在终端展示,用户输入扩展页面)。

@@ -1,5 +1,12 @@
 package mcpserver
 
+import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/scriptscat/sctl/internal/pkg/protocol"
+)
+
 // toolDef 把一个 bridge action 映射成一个 MCP 工具:工具名(点号换下划线以兼容各客户端)、
 // 静态描述(绝不拼入脚本可控文本,契合 contentTrust=untrusted-user-script-source),以及
 // 手写的 2020-12 输入 schema(权威校验仍在扩展侧;此处只作客户端提示)。
@@ -43,7 +50,51 @@ const (
 		`"required":["uuid","edits"],"additionalProperties":false}`
 )
 
-// toolDefs 是全部 bridge action 的工具定义,顺序稳定,注册时按 protocol.json 是否定义该 action 过滤。
+// browser 参数的说明按目标选择表区分(docs/protocol.md §3.1):未指定目标且多个浏览器在线时,
+// 列表类方法汇总全部在线浏览器,操作类方法报错。
+const (
+	browserParamList = "Name or instance ID prefix of the target browser. If not specified, lists from every online " +
+		"browser and tags each item with the browser it came from."
+	browserParamAction = "Name or instance ID prefix of the target browser. If not specified, the only online browser is " +
+		"used; if several browsers are online, returns error listing them."
+)
+
+// browserParamDescription 按方法是否声明 mergeField 选择 browser 参数的说明。
+func browserParamDescription(action protocol.Action) string {
+	if action.MergeField != "" {
+		return browserParamList
+	}
+	return browserParamAction
+}
+
+// schemaWithOptionalBrowser 在既有 schema 基础上加一个可选 browser 参数,供浏览器方法的工具向 MCP 客户端声明。
+func schemaWithOptionalBrowser(baseSchema, browserDescription string) string {
+	var parsed any
+	if err := json.Unmarshal([]byte(baseSchema), &parsed); err != nil {
+		panic(fmt.Sprintf("schemaWithOptionalBrowser: parse base schema: %v", err))
+	}
+	m, ok := parsed.(map[string]any)
+	if !ok {
+		panic("schemaWithOptionalBrowser: base schema is not a JSON object")
+	}
+	props, ok := m["properties"].(map[string]any)
+	if !ok {
+		panic("schemaWithOptionalBrowser: schema.properties is not a JSON object")
+	}
+	props["browser"] = map[string]any{
+		"type":        "string",
+		"description": browserDescription,
+	}
+	result, err := json.Marshal(m)
+	if err != nil {
+		panic(fmt.Sprintf("schemaWithOptionalBrowser: marshal modified schema: %v", err))
+	}
+	return string(result)
+}
+
+// toolDefs 是全部 bridge action 的工具定义,顺序稳定,注册时按 protocol.json 是否定义该 action 过滤;
+// 浏览器方法的 browser 参数在注册时按 protocol.json 的 peer 加上,不写在这里。
+// browsers_list 特殊处理:它不是 bridge action,由 registerBrowsersListTool 单独注册。
 var toolDefs = []toolDef{
 	{
 		action:      "scripts.list",
@@ -103,5 +154,35 @@ var toolDefs = []toolDef{
 			"replaceAll is true. The user reviews a line-by-line diff in the browser and must approve it before anything is " +
 			"written; nothing changes if they decline.",
 		inputSchema: schemaEditRequest,
+	},
+	{
+		action:      "tabs.list",
+		name:        "tabs_list",
+		description: "List tabs in every window, or only in windowId if given: tab ID, window ID, active status, pinned status, title, and URL.",
+		inputSchema: `{"type":"object","properties":{"windowId":{"type":"integer","minimum":0}},"additionalProperties":false}`,
+	},
+	{
+		action:      "tabs.open",
+		name:        "tabs_open",
+		description: "Open a new tab in a browser window at the specified URL and return the tab ID.",
+		inputSchema: `{"type":"object","properties":{"url":{"type":"string"},"windowId":{"type":"integer","minimum":0},"background":{"type":"boolean"}},"required":["url"],"additionalProperties":false}`,
+	},
+	{
+		action:      "tabs.close",
+		name:        "tabs_close",
+		description: "Close one or more tabs by their IDs.",
+		inputSchema: `{"type":"object","properties":{"tabIds":{"type":"array","minItems":1,"items":{"type":"integer","minimum":0}}},"required":["tabIds"],"additionalProperties":false}`,
+	},
+	{
+		action:      "tabs.activate",
+		name:        "tabs_activate",
+		description: "Activate a tab and bring its window to focus.",
+		inputSchema: `{"type":"object","properties":{"tabId":{"type":"integer","minimum":0}},"required":["tabId"],"additionalProperties":false}`,
+	},
+	{
+		action:      "windows.list",
+		name:        "windows_list",
+		description: "List all browser windows: window ID, focused status, window state, and tab count.",
+		inputSchema: schemaEmpty,
 	},
 }

@@ -35,6 +35,8 @@ const (
 	ReasonProtocol      Reason = "protocol_violation"
 	ReasonPairExpired   Reason = "pairing_expired"
 	ReasonPairExhausted Reason = "pairing_attempts_exhausted"
+	// ReasonUnknownInstance 表示声明的浏览器实例未配对(或已被忘记)。
+	ReasonUnknownInstance Reason = "unknown_instance"
 )
 
 // Event 是一条安全事件。字段集合是封闭的(见包注释)。

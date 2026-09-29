@@ -19,15 +19,18 @@ import (
 	"github.com/scriptscat/sctl/internal/daemon/store"
 	"github.com/scriptscat/sctl/internal/pkg/audit"
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
+	"github.com/scriptscat/sctl/internal/pkg/protocolschema"
 )
 
 // testHarness 承载一个运行中的 daemon 与用于对拍的密码学助手/存储。
 type testHarness struct {
-	srv    *Server
-	crypto *auth.Crypto
-	keys   *store.KeyStore
-	url    string
-	proto  *protocol.Protocol
+	srv      *Server
+	crypto   *auth.Crypto
+	keys     *store.KeyStore
+	browsers *store.BrowserRegistry
+	keyPath  string
+	url      string
+	proto    *protocol.Protocol
 }
 
 func startTestServer(t *testing.T) *testHarness {
@@ -35,8 +38,13 @@ func startTestServer(t *testing.T) *testHarness {
 	p, err := protocol.Load()
 	So(err, ShouldBeNil)
 	dir := t.TempDir()
-	keys := store.NewKeyStore(filepath.Join(dir, "pairing.key"))
-	srv := NewServer("0.1.0", p, keys, zap.NewNop())
+	keyPath := filepath.Join(dir, "pairing.key")
+	keys := store.NewKeyStore(keyPath)
+	browsers, err := store.LoadBrowserRegistry(filepath.Join(dir, "browsers.json"))
+	So(err, ShouldBeNil)
+	srv := NewServer("0.1.0", p, keys, browsers, zap.NewNop())
+	// daemon 首次校验帧时才编译 schema,这笔一次性开销在高负载下能拖过读消息的 3s 时限;先在时限外付掉。
+	So(protocolschema.ValidateWireFrame([]byte(`{"jsonrpc":"2.0","id":"warm-up","method":"$session.ping","params":{}}`)), ShouldBeNil)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	So(err, ShouldBeNil)
@@ -45,11 +53,13 @@ func startTestServer(t *testing.T) *testHarness {
 	go func() { _ = srv.Serve(ctx, ln, nil) }()
 
 	return &testHarness{
-		srv:    srv,
-		crypto: auth.NewCrypto(p),
-		keys:   keys,
-		url:    "ws://" + ln.Addr().String() + "/",
-		proto:  p,
+		srv:      srv,
+		crypto:   auth.NewCrypto(p),
+		keys:     keys,
+		browsers: browsers,
+		keyPath:  keyPath,
+		url:      "ws://" + ln.Addr().String() + "/",
+		proto:    p,
 	}
 }
 
@@ -92,8 +102,25 @@ func (e *extClient) writeResult(id string, result any) {
 	So(wsjson.Write(ctx, e.ws, message), ShouldBeNil)
 }
 
-// doSessionHandshake 以给定长期密钥完成会话握手,并消费 hello。
+// doSessionHandshake 以给定长期密钥完成会话握手与能力声明。
 func (h *testHarness) doSessionHandshake(key []byte) *extClient {
+	e := h.authenticateSession(key)
+	capabilitiesID := uuid.NewString()
+	e.writeRequest(methodCapabilities, capabilitiesID, capabilitiesParams{SchemaVersion: "1.0.0", Methods: h.allMethods()})
+	So(e.read().ID, ShouldEqual, capabilitiesID)
+	return e
+}
+
+func (h *testHarness) allMethods() []string {
+	methods := make([]string, 0, len(h.proto.Actions))
+	for method := range h.proto.Actions {
+		methods = append(methods, method)
+	}
+	return methods
+}
+
+// authenticateSession 以给定长期密钥完成会话认证,并消费 hello;能力声明留给调用方。
+func (h *testHarness) authenticateSession(key []byte) *extClient {
 	e := dial(h.url)
 	challenge := e.read()
 	So(challenge.Method, ShouldEqual, methodAuthenticate)
@@ -112,14 +139,50 @@ func (h *testHarness) doSessionHandshake(key []byte) *extClient {
 
 	hello := e.read()
 	So(hello.Method, ShouldEqual, methodHello)
-	methods := make([]string, 0, len(h.proto.Actions))
-	for method := range h.proto.Actions {
-		methods = append(methods, method)
-	}
-	capabilitiesID := uuid.NewString()
-	e.writeRequest(methodCapabilities, capabilitiesID, capabilitiesParams{SchemaVersion: "1.0.0", Methods: methods})
-	So(e.read().ID, ShouldEqual, capabilitiesID)
 	return e
+}
+
+// declareWithRegistrationFrozen 在持有服务锁(冻结连接登记)期间发出能力声明,报告回复是否在
+// 连接登记之前就到达了扩展;registered 在锁内求值,只能直接读字段。返回值之外还返回最终收到的回复。
+func (h *testHarness) declareWithRegistrationFrozen(e *extClient, params capabilitiesParams, registered func() bool) (replyBeforeRegistration bool, reply Message) {
+	replies := make(chan Message, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		var message Message
+		if _, data, err := e.ws.Read(ctx); err == nil {
+			_ = json.Unmarshal(data, &message)
+		}
+		replies <- message
+	}()
+
+	h.srv.mu.Lock()
+	e.writeRequest(methodCapabilities, uuid.NewString(), params)
+	select {
+	case message := <-replies:
+		replyBeforeRegistration = !registered()
+		replies <- message
+	case <-time.After(200 * time.Millisecond):
+	}
+	h.srv.mu.Unlock()
+	return replyBeforeRegistration, <-replies
+}
+
+func TestConnectionIsRegisteredBeforeCapabilitiesReply(t *testing.T) {
+	Convey("扩展收到 capabilities 回复时连接已登记,立即发起的调用不会得到 ErrNotConnected", t, func() {
+		h := startTestServer(t)
+		key, _ := auth.NewLongTermKey()
+		So(h.keys.Save(key), ShouldBeNil)
+		e := h.authenticateSession(key)
+
+		early, reply := h.declareWithRegistrationFrozen(e,
+			capabilitiesParams{SchemaVersion: "1.0.0", Methods: h.allMethods()},
+			func() bool { return h.srv.scriptCat != nil })
+		So(early, ShouldBeFalse)
+		So(reply.Error, ShouldBeNil)
+		So(reply.ID, ShouldNotBeBlank)
+		So(h.srv.ExtConnected(), ShouldBeTrue)
+	})
 }
 
 func TestSessionHandshakeFlow(t *testing.T) {
@@ -169,7 +232,7 @@ func TestSessionHandshakeFlow(t *testing.T) {
 			_, _, err := e.ws.Read(ctx)
 			So(err, ShouldNotBeNil)
 			h.srv.mu.Lock()
-			active := h.srv.active
+			active := h.srv.scriptCat
 			h.srv.mu.Unlock()
 			So(active, ShouldBeNil)
 		})
@@ -339,6 +402,30 @@ func TestBlockingCallAndCancel(t *testing.T) {
 			r := <-resCh
 			So(r.err, ShouldEqual, ErrDisconnected)
 		})
+	})
+}
+
+func TestRepeatedResponseDoesNotStallTheReadLoop(t *testing.T) {
+	Convey("对端对同一请求重复应答、而调用方已放弃等待时,投递不阻塞该连接的读循环", t, func() {
+		h := startTestServer(t)
+		// 调用方已因取消/超时离开等待、尚未撤下挂起项的瞬间:挂起项还在,却没有人再收应答。
+		c := &conn{closed: make(chan struct{})}
+		h.srv.mu.Lock()
+		h.srv.pending["req-1"] = &pendingCall{conn: c, method: "scripts.list", respCh: make(chan Response, 1)}
+		h.srv.mu.Unlock()
+		response := Message{JSONRPC: jsonRPCVersion, ID: "req-1", Result: json.RawMessage(`{"scripts":[],"contentTrust":"untrusted-user-script-metadata"}`)}
+
+		delivered := make(chan struct{})
+		go func() {
+			h.srv.handleRPCResponse(c, response)
+			h.srv.handleRPCResponse(c, response)
+			close(delivered)
+		}()
+		select {
+		case <-delivered:
+		case <-time.After(3 * time.Second):
+			t.Fatal("a repeated response blocked the read loop")
+		}
 	})
 }
 

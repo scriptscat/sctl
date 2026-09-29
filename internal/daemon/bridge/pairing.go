@@ -32,17 +32,29 @@ func (s *Server) BeginEnrollment() (display string, err error) {
 	return display, nil
 }
 
-func (s *Server) activeEnrollmentCode() (string, error) {
+func (s *Server) activeEnrollment() (*pendingEnrollment, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.enrollment == nil {
-		return "", errors.New("no enrollment window in progress")
+		return nil, errors.New("no enrollment window in progress")
 	}
 	if time.Now().After(s.enrollment.expiresAt) {
 		s.enrollment = nil
-		return "", errors.New("enrollment window expired")
+		return nil, errors.New("enrollment window expired")
 	}
-	return s.enrollment.code, nil
+	return s.enrollment, nil
+}
+
+// takeEnrollment 在下发密钥之前消费 e 所代表的接入窗口:配对码是一次性的,同时通过校验的两条连接
+// 只有先消费到的一条能拿到密钥。窗口已被另一条连接用掉、或已换成 sctl connect 新开的窗口时返回 false。
+func (s *Server) takeEnrollment(e *pendingEnrollment) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.enrollment != e {
+		return false
+	}
+	s.enrollment = nil
+	return true
 }
 
 // failEnrollmentAttempt 记一次接入失败,达到协议定义的尝试上限后作废接入窗口。
@@ -56,10 +68,4 @@ func (s *Server) failEnrollmentAttempt() {
 	if s.enrollment.attemptsLeft <= 0 {
 		s.enrollment = nil
 	}
-}
-
-func (s *Server) clearEnrollment() {
-	s.mu.Lock()
-	s.enrollment = nil
-	s.mu.Unlock()
 }

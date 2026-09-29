@@ -11,11 +11,13 @@ sctl exposes a WebSocket listener protected by a mutual authentication handshake
 permissions and a Native Messaging host installer while preserving single-binary distribution.
 
 **There are only two trust anchors:**
-- the **long-term shared key K** between the extension and the daemon, established once by **enrollment**: the
-  daemon prints a one-time code in the terminal (never over the wire), the user types it into the extension's
-  「外部接入 / External Access」 page, and K is derived and delivered under that code. Trust is **flat** — after
-  enrollment the CLI and every MCP agent inherit K through the extension ↔ daemon channel and never enroll
-  again; there is no per-client pairing, token, scope, or revocation.
+- the **long-term shared keys** between each peer extension and the daemon, each established once by
+  **enrollment**: the daemon prints a one-time code in the terminal (never over the wire), the user types it into
+  the extension (for ScriptCat, its 「外部接入 / External Access」 page), and the key is derived and delivered
+  under that code. ScriptCat holds one key K; every sctl Browser instance holds its own
+  instance key, so pairing, renaming, or forgetting a browser never affects ScriptCat's K. Trust is **flat** —
+  after enrollment the CLI and every MCP agent inherit trust through the extension ↔ daemon channels and never
+  enroll again; there is no per-client pairing, token, scope, or revocation.
 - the **control token** between the local frontend (`sctl mcp` / CLI verbs) and the daemon (written to a
   user-only file once the daemon has bound its port: POSIX mode 0600 or a protected current-user DACL on
   Windows).
@@ -26,14 +28,19 @@ MCP; even if a malicious local process gets the control token and calls sctl, th
 press approve on the extension's confirmation page (unless the corresponding global policy is set to
 "always-allow").
 
+**Browser control has no human gate, by design.** The `sctl browsers` / `tabs` / `windows` commands and their
+MCP tools are neither approved per operation nor limited to particular tabs: any holder of the control token can
+list, open, close, and activate tabs and list windows in **every** paired sctl Browser instance, immediately. This
+is a deliberate trade for low operating friction; the control token (same user on this host) is the only gate.
+
 ## 2. Attack surface and countermeasures
 
 | Threat | Countermeasure | Residual risk |
 |---|---|---|
 | A web page connects straight to the daemon with `new WebSocket("ws://127.0.0.1:8643")` | An **Origin whitelist** rejects any connection whose `Origin` is present and not an extension origin (`chrome-extension://` etc.) — a cheap pre-filter that a browser page cannot get past (the browser stamps Origin, page JS cannot forge it). Beyond that, a connection must complete the mutual HMAC handshake before it can send or receive any business message; without credentials it fails the challenge-response and is disconnected on the 5s timeout **with no reason echoed back** (close 1008). A non-browser process can forge any Origin, so the handshake remains the real gate. Both rejections are recorded in the daemon-side audit (§6) | A page can probe that the port is open |
 | A web page impersonates the local frontend with `fetch("http://127.0.0.1:8643/control/…")` | Apart from `/control/health`, every control API requires an `X-Sctl-Control-Token` header, compared in constant time against the daemon's user-only token; a web page cannot read that file, so it gets a 401 and the action never runs at all | Port / health information can be probed (see below) |
-| A local process grabs 8643 to impersonate the daemon, or connects in while impersonating the extension | **Mutual** HMAC-SHA-256 challenge-response between the extension and the daemon ([protocol.md](./protocol.md#21-authentication)); the long-term key K comes from a one-time enrollment code and never travels in plaintext; nonces are regenerated per connection, so replays are useless | See the "malicious same-user process" row |
-| A process that reaches the daemon requests a privileged action | Flat trust deliberately grants any control-token holder full read/list and the ability to *request* writes; the gate is not per-client authorization but the **per-operation human gate**: writes need browser approval and source reads need disclosure approval, both keyed by script (extension session). There is no per-client scope or request-frequency limit | Any process that obtains the control token has the same capabilities; write requests remain browser-gated unless always-allow is enabled |
+| A local process grabs 8643 to impersonate the daemon, or connects in while impersonating the extension | **Mutual** HMAC-SHA-256 challenge-response between the extension and the daemon ([protocol.md](./protocol.md#21-authentication)); long-term keys come from a one-time enrollment code and never travel in plaintext; nonces are regenerated per connection, so replays are useless. A browser instance's MAC also binds its peer kind and instance ID, so a recorded MAC cannot be replayed as ScriptCat or as another instance | See the "malicious same-user process" row |
+| A process that reaches the daemon requests a privileged action | Flat trust deliberately grants any control-token holder full read/list and the ability to *request* writes; the gate is not per-client authorization but the **per-operation human gate**: writes need browser approval and source reads need disclosure approval, both keyed by script (extension session). There is no per-client scope or request-frequency limit | Any process that obtains the control token has the same capabilities; write requests remain browser-gated unless always-allow is enabled, while browser control (tabs and windows in every paired sctl Browser instance) is not gated at all |
 | Write operations are abused (installing a malicious script / bulk deletion) | Two-phase confirmation plus a TOCTOU re-check at the moment of approval (staged `contentHash`, target `existingCodeHash`); calls are purely blocking, so a requester disconnect voids them. The install page's own enable toggle decides the enabled state (installs are usable immediately, like a normal install). "Always-allow" is an explicit security-downgrade switch (amber warning in the UI) | Under "always-allow" a write is no longer confirmed by a human — the user takes that risk |
 | Source code leaks | Source disclosure is gated by its own **source-read policy** (approval by default), applied to the CLI and MCP alike — the CLI is **not** exempt; reading is a privacy matter and is not covered by the write policy. Script-controlled text is always returned as structured data (`contentTrust: untrusted-user-script-source`) and must never be concatenated into a tool description | Under a "always-allow" source-read policy, reads are no longer confirmed — the user takes that risk |
 | The port's existence is found by scanning | Accepted: the extension is the client and cannot read a discovery file, so the default port 8643 has to be fixed; authentication is the backstop | The open port is visible |
@@ -41,14 +48,15 @@ press approve on the extension's confirmation page (unless the corresponding glo
 
 ## 3. Explicit non-goals
 
-- **A malicious local process with the user's full privileges**: it can read `pairing.key` / `control.token`
-  (both 0600) and can ptrace this user's processes. No purely local scheme can stop it; browser-side human
+- **A malicious local process with the user's full privileges**: it can read `pairing.key` / `browsers.json` /
+  `control.token` (all 0600) and can ptrace this user's processes. No purely local scheme can stop it; browser-side human
   approval of write operations is the only mitigation still in effect (unless the user turned on
-  "always-allow").
+  "always-allow"); browser control has no such gate, so it can drive every paired browser freely.
 - **Per-client isolation**: flat trust intentionally drops per-agent tokens, scopes, and individual
   revocation. Any same-user process that holds the control token has the same capabilities (full read/list,
-  request writes). Revocation collapses to the global kill switch (discard K) or removing the server from an
-  agent's own MCP config. This is the deliberate trade for single-enrollment simplicity; the per-operation
+  request writes). Revocation collapses to per-peer switches — discarding ScriptCat's K, or forgetting a browser
+  instance on the daemon, which deletes its key and registry entry, disconnects it, and makes its next handshake
+  fail — or removing the server from an agent's own MCP config. This is the deliberate trade for single-enrollment simplicity; the per-operation
   human gates (write approval, source disclosure) are what still bound damage.
 - **`clientId` as an authorization input**: the label a request carries (`sctl-cli`, `scriptcat-<name>`, or an
   MCP client's self-reported `clientInfo.name`) is unauthenticated and forgeable. It is used only for audit
@@ -73,7 +81,8 @@ on the daemon's listener (same port as the extension WS surface, separate path).
 - **No exemption for writes**: the control token only proves "same user on this host", it does not bypass
   browser-side human approval. Even holding the control token, a malicious local process still needs the user
   to press approve in the extension before a write happens (unless the corresponding "always-allow" policy is
-  on).
+  on). Browser control is the exception: the control token alone drives every paired sctl Browser instance
+  (§1).
 - **The health check is unauthenticated**: it returns only `{ok, version}` and leaks no key, script, or client
   information; it is equivalent to the already-accepted risk that an open port is probeable.
 - **Disconnect voids the request**: the frontend request (HTTP connection) drops → the daemon's request ctx is
@@ -83,8 +92,9 @@ on the daemon's listener (same port as the extension WS surface, separate path).
 
 | File | Access | Contents | Impact if leaked |
 |---|---|---|---|
-| `<dataDir>/pairing.key` | POSIX 0600; protected current-user DACL on Windows | The extension's long-term key K (hex), established by enrollment | Allows impersonating the extension when connecting to the daemon; still bound by write approval |
-| `<dataDir>/control.token` | POSIX 0600; protected current-user DACL on Windows | The local control-channel token (regenerated on every serve start) | Allows impersonating the local frontend to call the control API; writes still need browser approval |
+| `<dataDir>/pairing.key` | POSIX 0600; protected current-user DACL on Windows | ScriptCat's long-term key K (hex), established by enrollment | Allows impersonating ScriptCat when connecting to the daemon; still bound by write approval |
+| `<dataDir>/browsers.json` | POSIX 0600; protected current-user DACL on Windows | The registry of paired sctl Browser instances: instance ID, unique name, each instance's long-term key (hex), and last self-reported product and versions | Allows impersonating any paired browser instance when connecting to the daemon |
+| `<dataDir>/control.token` | POSIX 0600; protected current-user DACL on Windows | The local control-channel token (regenerated on every serve start) | Allows impersonating the local frontend to call the control API; writes still need browser approval, while tabs and windows in every paired sctl Browser instance can be controlled directly |
 
 Three iron rules: **a token's plaintext never goes over the wire, never enters a log, never enters a URL**;
 audit events **never record** a token, source code, or a URL containing credentials; keys are written atomically
@@ -102,10 +112,13 @@ extension session was ever established and therefore leave no extension-side rec
 | Event | Trigger |
 |---|---|
 | `origin.rejected` | A WS connection was rejected by the Origin whitelist (present, non-extension Origin) |
-| `handshake.failed` | Handshake HMAC verification failed / the 5s timeout elapsed / an invalid response to `$session.authenticate` was sent |
+| `handshake.failed` | Handshake HMAC verification failed / the 5s timeout elapsed / an invalid response to `$session.authenticate` was sent / a browser instance that is not paired (or was forgotten) tried a session handshake |
 | `pairing.failed` | The enrollment handshake HMAC failed, or there was no valid enrollment code |
 | `pairing.rate_limited` | Enrollment attempts exceeded 5 per minute |
 | `handshake.ok` | A session was established |
+
+Events for a connection that declared a well-formed browser instance identity carry `client: browser:<instanceId>`;
+ScriptCat events leave `client` empty.
 
 To view: `sctl status` prints one summary line aggregated by type, and `sctl status -o json` outputs the full
 events.

@@ -34,6 +34,16 @@ func newStatusCmd() *cobra.Command {
 				return printValueJSON(st)
 			}
 			fmt.Fprintf(os.Stdout, "daemon version: %s\nextension connected: %v\n", st.DaemonVersion, st.ExtConnected)
+			if len(st.Browsers) > 0 {
+				fmt.Fprintln(os.Stdout, "browsers:")
+				for _, b := range st.Browsers {
+					state := "offline"
+					if b.Online {
+						state = "online"
+					}
+					fmt.Fprintf(os.Stdout, "  %s (%s): %s\n", b.Name, b.ID, state)
+				}
+			}
 			// 人读输出只给一行摘要,完整事件走 -o json,避免刷屏淹没状态本身。
 			if summary := formatSecuritySummary(st.Security); summary != "" {
 				fmt.Fprintf(os.Stdout, "recent security events: %s\n", summary)

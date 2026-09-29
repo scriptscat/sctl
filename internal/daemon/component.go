@@ -52,7 +52,12 @@ func (b *daemonComponent) StartCancel(ctx context.Context, cancel context.Cancel
 		b.address = defaultAddress(p.Transport.DefaultPort)
 	}
 	keys := store.NewKeyStore(paths.KeyFile())
-	b.srv = bridge.NewServer(b.version, p, keys, logger.Ctx(ctx))
+	browsers, err := store.LoadBrowserRegistry(paths.BrowsersFile())
+	if err != nil {
+		logger.Ctx(ctx).Error("failed to load the browser instance registry", zap.Error(err))
+		return err
+	}
+	b.srv = bridge.NewServer(b.version, p, keys, browsers, logger.Ctx(ctx))
 
 	// 同步 net.Listen 使绑定失败在启动阶段即暴露(cago 会 panic,符合 fail-fast 约定)。
 	ln, err := net.Listen("tcp", b.address)

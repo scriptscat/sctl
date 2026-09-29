@@ -1,14 +1,21 @@
 package controlapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	. "github.com/smartystreets/goconvey/convey"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/scriptscat/sctl/internal/client/control"
+	"github.com/scriptscat/sctl/internal/pkg/protocol/generated"
 )
 
 func TestControlHealthAndAuth(t *testing.T) {
@@ -146,6 +153,141 @@ func TestControlClientLabelForwarding(t *testing.T) {
 	})
 }
 
+func decodeBrowsers(resp *http.Response) control.BrowsersResult {
+	defer resp.Body.Close()
+	var res control.BrowsersResult
+	So(json.NewDecoder(resp.Body).Decode(&res), ShouldBeNil)
+	return res
+}
+
+func browserByID(list []control.BrowserInfo, id string) (control.BrowserInfo, bool) {
+	for _, b := range list {
+		if b.ID == id {
+			return b, true
+		}
+	}
+	return control.BrowserInfo{}, false
+}
+
+func TestControlBrowsersList(t *testing.T) {
+	Convey("控制 API 列出已配对浏览器实例,在线与离线均含", t, func() {
+		h := startTestServer(t)
+		base := h.httpBase()
+		h.pairedBrowser(instanceA, "chrome-a")
+		h.connectBrowser(instanceB, "chrome-b")
+
+		resp, err := postControl(context.Background(), base, control.PathBrowsers, testControlToken, "", nil)
+		So(err, ShouldBeNil)
+		So(resp.StatusCode, ShouldEqual, http.StatusOK)
+		res := decodeBrowsers(resp)
+
+		So(res.Browsers, ShouldHaveLength, 2)
+		offline, ok := browserByID(res.Browsers, instanceA)
+		So(ok, ShouldBeTrue)
+		So(offline.Name, ShouldEqual, "chrome-a")
+		So(offline.Online, ShouldBeFalse)
+		So(offline.ConnectedAt.IsZero(), ShouldBeTrue)
+
+		online, ok := browserByID(res.Browsers, instanceB)
+		So(ok, ShouldBeTrue)
+		So(online.Name, ShouldEqual, "chrome-b")
+		So(online.Online, ShouldBeTrue)
+		So(online.ConnectedAt.IsZero(), ShouldBeFalse)
+
+		Convey("缺少控制令牌时被 401 拒绝", func() {
+			resp, err := postControl(context.Background(), base, control.PathBrowsers, "", "", nil)
+			So(err, ShouldBeNil)
+			resp.Body.Close()
+			So(resp.StatusCode, ShouldEqual, http.StatusUnauthorized)
+		})
+	})
+}
+
+func TestControlBrowserForget(t *testing.T) {
+	Convey("控制 API 忘记一个已配对浏览器实例", t, func() {
+		h := startTestServer(t)
+		base := h.httpBase()
+
+		Convey("按名称忘记一个离线实例:删除后不再出现在列表里", func() {
+			h.pairedBrowser(instanceA, "chrome-a")
+
+			resp, err := postControl(context.Background(), base, control.PathBrowserForget, testControlToken, "", control.ForgetBrowserRequest{Ref: "chrome-a"})
+			So(err, ShouldBeNil)
+			res := decodeCall(resp)
+			So(res.OK, ShouldBeTrue)
+
+			listResp, err := postControl(context.Background(), base, control.PathBrowsers, testControlToken, "", nil)
+			So(err, ShouldBeNil)
+			So(decodeBrowsers(listResp).Browsers, ShouldHaveLength, 0)
+		})
+
+		Convey("按完整实例 ID 忘记一个在线实例:断开连接并从列表移除", func() {
+			e := h.connectBrowser(instanceB, "chrome-b")
+
+			resp, err := postControl(context.Background(), base, control.PathBrowserForget, testControlToken, "", control.ForgetBrowserRequest{Ref: instanceB})
+			So(err, ShouldBeNil)
+			res := decodeCall(resp)
+			So(res.OK, ShouldBeTrue)
+
+			// 忘记后连接被服务端关闭:下一次读取以错误收尾,而不是继续收到消息。
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			_, _, err = e.ws.Read(ctx)
+			So(err, ShouldNotBeNil)
+
+			listResp, err := postControl(context.Background(), base, control.PathBrowsers, testControlToken, "", nil)
+			So(err, ShouldBeNil)
+			So(decodeBrowsers(listResp).Browsers, ShouldHaveLength, 0)
+		})
+
+		Convey("目标不匹配任何已配对实例 → BROWSER_NOT_FOUND,与路由时的目标错误码一致", func() {
+			resp, err := postControl(context.Background(), base, control.PathBrowserForget, testControlToken, "", control.ForgetBrowserRequest{Ref: "nope"})
+			So(err, ShouldBeNil)
+			res := decodeCall(resp)
+			So(res.OK, ShouldBeFalse)
+			So(res.Error.Code, ShouldEqual, generated.ErrorCodeBrowserNotFound)
+		})
+
+		Convey("缺少 ref 字段 → INVALID_REQUEST", func() {
+			resp, err := postControl(context.Background(), base, control.PathBrowserForget, testControlToken, "", control.ForgetBrowserRequest{})
+			So(err, ShouldBeNil)
+			res := decodeCall(resp)
+			So(res.OK, ShouldBeFalse)
+			So(res.Error.Code, ShouldEqual, "INVALID_REQUEST")
+		})
+
+		Convey("缺少控制令牌时被 401 拒绝", func() {
+			resp, err := postControl(context.Background(), base, control.PathBrowserForget, "", "", control.ForgetBrowserRequest{Ref: "chrome-a"})
+			So(err, ShouldBeNil)
+			resp.Body.Close()
+			So(resp.StatusCode, ShouldEqual, http.StatusUnauthorized)
+		})
+	})
+}
+
+func TestControlStatusIncludesBrowsers(t *testing.T) {
+	Convey("控制 API 的 status 附带已配对浏览器实例概览", t, func() {
+		h := startTestServer(t)
+		base := h.httpBase()
+		h.pairedBrowser(instanceA, "chrome-a")
+		h.connectBrowser(instanceB, "chrome-b")
+
+		resp, err := postControl(context.Background(), base, control.PathStatus, testControlToken, "", nil)
+		So(err, ShouldBeNil)
+		defer resp.Body.Close()
+		var st control.StatusResult
+		So(json.NewDecoder(resp.Body).Decode(&st), ShouldBeNil)
+
+		So(st.Browsers, ShouldHaveLength, 2)
+		offline, ok := browserByID(st.Browsers, instanceA)
+		So(ok, ShouldBeTrue)
+		So(offline.Online, ShouldBeFalse)
+		online, ok := browserByID(st.Browsers, instanceB)
+		So(ok, ShouldBeTrue)
+		So(online.Online, ShouldBeTrue)
+	})
+}
+
 func TestControlEnroll(t *testing.T) {
 	Convey("控制 enroll:打开接入窗口并返回展示形配对码", t, func() {
 		h := startTestServer(t)
@@ -158,5 +300,37 @@ func TestControlEnroll(t *testing.T) {
 		var res control.EnrollResult
 		So(json.NewDecoder(resp.Body).Decode(&res), ShouldBeNil)
 		So(res.Code, ShouldContainSubstring, "-")
+	})
+}
+
+// forgetFailingBridge 是只实现 ForgetInstance 的 Bridge 桩:登记表写盘失败时返回 cause。
+type forgetFailingBridge struct {
+	Bridge
+	cause error
+}
+
+func (b forgetFailingBridge) ForgetInstance(string) error { return b.cause }
+
+func TestControlBrowserForgetLogsRegistryFailure(t *testing.T) {
+	Convey("忘记浏览器时登记表写不进去:调用方收到 INTERNAL_ERROR,daemon 日志记下真实原因", t, func() {
+		core, logs := observer.New(zap.WarnLevel)
+		cause := errors.New("write browsers.json: no space left on device")
+		mux := http.NewServeMux()
+		New(forgetFailingBridge{cause: cause}, testControlToken, zap.New(core)).Register(mux)
+
+		body, err := json.Marshal(control.ForgetBrowserRequest{Ref: "chrome-a"})
+		So(err, ShouldBeNil)
+		req := httptest.NewRequest(http.MethodPost, control.PathBrowserForget, bytes.NewReader(body))
+		req.Header.Set(control.HeaderControlToken, testControlToken)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+
+		var res control.CallResult
+		So(json.NewDecoder(rec.Body).Decode(&res), ShouldBeNil)
+		So(res.OK, ShouldBeFalse)
+		So(res.Error.Code, ShouldEqual, "INTERNAL_ERROR")
+		logged := logs.FilterFieldKey("error").All()
+		So(logged, ShouldHaveLength, 1)
+		So(logged[0].ContextMap()["error"], ShouldEqual, cause.Error())
 	})
 }

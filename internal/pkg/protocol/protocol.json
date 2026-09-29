@@ -21,56 +21,106 @@
       "result": "ScriptsListResult",
       "scope": "scripts:list",
       "effect": "read",
-      "blocking": "none"
+      "blocking": "none",
+      "peer": "scriptcat"
     },
     "scripts.metadata.get": {
       "params": "ScriptUUIDParams",
       "result": "ScriptMetadata",
       "scope": "scripts:metadata:read",
       "effect": "read",
-      "blocking": "none"
+      "blocking": "none",
+      "peer": "scriptcat"
     },
     "scripts.source.get": {
       "params": "ScriptsSourceGetParams",
       "result": "ScriptSource",
       "scope": "scripts:source:read",
       "effect": "read",
-      "blocking": "disclosure"
+      "blocking": "disclosure",
+      "peer": "scriptcat"
     },
     "scripts.source.grep": {
       "params": "ScriptsSourceGrepParams",
       "result": "ScriptSourceGrepResult",
       "scope": "scripts:source:read",
       "effect": "read",
-      "blocking": "disclosure"
+      "blocking": "disclosure",
+      "peer": "scriptcat"
     },
     "scripts.install.request": {
       "params": "ScriptsInstallParams",
       "result": "ScriptMutationResult",
       "scope": "scripts:install:request",
       "effect": "write",
-      "blocking": "approval"
+      "blocking": "approval",
+      "peer": "scriptcat"
     },
     "scripts.toggle.request": {
       "params": "ScriptsToggleParams",
       "result": "ScriptsToggleResult",
       "scope": "scripts:toggle:request",
       "effect": "write",
-      "blocking": "approval"
+      "blocking": "approval",
+      "peer": "scriptcat"
     },
     "scripts.delete.request": {
       "params": "ScriptUUIDParams",
       "result": "ScriptsDeleteResult",
       "scope": "scripts:delete:request",
       "effect": "write",
-      "blocking": "approval"
+      "blocking": "approval",
+      "peer": "scriptcat"
     },
     "scripts.edit.request": {
       "params": "ScriptsEditParams",
       "result": "ScriptMutationResult",
       "scope": "scripts:edit:request",
       "effect": "write",
-      "blocking": "approval"
+      "blocking": "approval",
+      "peer": "scriptcat"
+    },
+    "tabs.list": {
+      "params": "TabsListParams",
+      "result": "TabsListResult",
+      "scope": "tabs:list",
+      "effect": "read",
+      "blocking": "none",
+      "peer": "browser",
+      "mergeField": "tabs"
+    },
+    "tabs.open": {
+      "params": "TabsOpenParams",
+      "result": "TabsOpenResult",
+      "scope": "tabs:open",
+      "effect": "write",
+      "blocking": "none",
+      "peer": "browser"
+    },
+    "tabs.close": {
+      "params": "TabsCloseParams",
+      "result": "TabsCloseResult",
+      "scope": "tabs:close",
+      "effect": "write",
+      "blocking": "none",
+      "peer": "browser"
+    },
+    "tabs.activate": {
+      "params": "TabsActivateParams",
+      "result": "TabsActivateResult",
+      "scope": "tabs:activate",
+      "effect": "write",
+      "blocking": "none",
+      "peer": "browser"
+    },
+    "windows.list": {
+      "params": "WindowsListParams",
+      "result": "WindowsListResult",
+      "scope": "windows:list",
+      "effect": "read",
+      "blocking": "none",
+      "peer": "browser",
+      "mergeField": "windows"
     }
   },
   "types": {
@@ -559,18 +609,219 @@
         "uuid",
         "deleted"
       ]
+    },
+    "TabsListParams": {
+      "type": "object",
+      "properties": {
+        "windowId": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "TabsListResult": {
+      "type": "object",
+      "properties": {
+        "tabs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "tabId": {
+                "type": "integer"
+              },
+              "windowId": {
+                "type": "integer"
+              },
+              "active": {
+                "type": "boolean"
+              },
+              "pinned": {
+                "type": "boolean"
+              },
+              "title": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "tabId",
+              "windowId",
+              "active",
+              "pinned",
+              "title",
+              "url"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "tabs",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "TabsOpenParams": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "windowId": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "background": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "TabsOpenResult": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "tabId"
+      ],
+      "additionalProperties": false
+    },
+    "TabsCloseParams": {
+      "type": "object",
+      "properties": {
+        "tabIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "required": [
+        "tabIds"
+      ],
+      "additionalProperties": false
+    },
+    "TabsCloseResult": {
+      "type": "object",
+      "properties": {
+        "tabIds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "required": [
+        "tabIds"
+      ],
+      "additionalProperties": false
+    },
+    "TabsActivateParams": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "tabId"
+      ],
+      "additionalProperties": false
+    },
+    "TabsActivateResult": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer"
+        },
+        "windowId": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "tabId",
+        "windowId"
+      ],
+      "additionalProperties": false
+    },
+    "WindowsListParams": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "WindowsListResult": {
+      "type": "object",
+      "properties": {
+        "windows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "windowId": {
+                "type": "integer"
+              },
+              "focused": {
+                "type": "boolean"
+              },
+              "state": {
+                "enum": [
+                  "normal",
+                  "minimized",
+                  "maximized",
+                  "fullscreen",
+                  "locked-fullscreen"
+                ]
+              },
+              "tabCount": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "windowId",
+              "focused",
+              "state",
+              "tabCount"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "windows"
+      ],
+      "additionalProperties": false
     }
   },
   "errorCodes": [
-    "INVALID_REQUEST",
-    "METHOD_NOT_FOUND",
-    "USER_REJECTED",
-    "OPERATION_EXPIRED",
-    "CONFLICT",
-    "NOT_FOUND",
-    "RATE_LIMITED",
-    "PAYLOAD_TOO_LARGE",
-    "INTERNAL_ERROR"
+    { "code": "INVALID_REQUEST", "peers": ["scriptcat", "browser"] },
+    { "code": "METHOD_NOT_FOUND", "peers": ["scriptcat", "browser"] },
+    { "code": "USER_REJECTED", "peers": ["scriptcat"] },
+    { "code": "OPERATION_EXPIRED", "peers": ["scriptcat", "browser"] },
+    { "code": "CONFLICT", "peers": ["scriptcat", "browser"] },
+    { "code": "NOT_FOUND", "peers": ["scriptcat", "browser"] },
+    { "code": "RATE_LIMITED", "peers": ["scriptcat"] },
+    { "code": "PAYLOAD_TOO_LARGE", "peers": ["scriptcat"] },
+    { "code": "INTERNAL_ERROR", "peers": ["scriptcat", "browser"] },
+    { "code": "NO_BROWSER_CONNECTED", "peers": ["browser"] },
+    { "code": "BROWSER_OFFLINE", "peers": ["browser"] },
+    { "code": "BROWSER_NOT_FOUND", "peers": ["browser"] },
+    { "code": "BROWSER_AMBIGUOUS", "peers": ["browser"] }
   ],
   "crypto": {
     "mac": "HMAC-SHA-256",
@@ -579,13 +830,17 @@
     "nonceBytes": 32,
     "encoding": "lowercase-hex",
     "context": {
-      "sessionExt": "scriptcat-rpc-v1/ext",
-      "sessionDaemon": "scriptcat-rpc-v1/daemon",
-      "pairExt": "scriptcat-rpc-v1/pair-ext",
-      "pairDaemon": "scriptcat-rpc-v1/pair-daemon",
-      "pairKdfSalt": "scriptcat-rpc-v1/pair-salt",
-      "pairKdfInfoMac": "scriptcat-rpc-v1/pair-mac",
-      "pairKdfInfoEnc": "scriptcat-rpc-v1/pair-enc"
+      "sessionExt": { "value": "scriptcat-rpc-v1/ext", "peers": ["scriptcat"] },
+      "sessionDaemon": { "value": "scriptcat-rpc-v1/daemon", "peers": ["scriptcat"] },
+      "pairExt": { "value": "scriptcat-rpc-v1/pair-ext", "peers": ["scriptcat"] },
+      "pairDaemon": { "value": "scriptcat-rpc-v1/pair-daemon", "peers": ["scriptcat"] },
+      "pairKdfSalt": { "value": "scriptcat-rpc-v1/pair-salt", "peers": ["scriptcat", "browser"] },
+      "pairKdfInfoMac": { "value": "scriptcat-rpc-v1/pair-mac", "peers": ["scriptcat", "browser"] },
+      "pairKdfInfoEnc": { "value": "scriptcat-rpc-v1/pair-enc", "peers": ["scriptcat", "browser"] },
+      "browserSessionExt": { "value": "sctl-browser-rpc-v1/ext", "peers": ["browser"] },
+      "browserSessionDaemon": { "value": "sctl-browser-rpc-v1/daemon", "peers": ["browser"] },
+      "browserPairExt": { "value": "sctl-browser-rpc-v1/pair-ext", "peers": ["browser"] },
+      "browserPairDaemon": { "value": "sctl-browser-rpc-v1/pair-daemon", "peers": ["browser"] }
     }
   },
   "limits": {

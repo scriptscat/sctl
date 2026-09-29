@@ -30,16 +30,21 @@ var (
 )
 
 // Server 是桥接 daemon 的 WS 服务核心:accept、双向认证握手、envelope 路由与阻塞写模型。
-// v1 只允许一个扩展实例:新完成握手的连接替换旧连接。
+// ScriptCat 只保留一条连接,新完成握手的 ScriptCat 连接替换旧连接;浏览器实例按实例 ID
+// 各保留一条连接,同一实例重连只替换它自己。
 //
-// 信任模型是扁平的:接入(enrollment)建立唯一长期密钥 K 即确立信任,CLI 与所有 MCP agent 都
-// 经这条可信通道继承信任,不再逐客户端配对/铸令牌/撤销(docs/threat-model.md)。
+// 信任模型是扁平的:接入(enrollment)为每个对端建立长期密钥即确立信任,CLI 与所有 MCP agent 都
+// 经这些可信通道继承信任,不再逐客户端配对/铸令牌/撤销(docs/threat-model.md)。
 type Server struct {
-	version string
-	proto   *protocol.Protocol
-	crypto  *auth.Crypto
-	keys    *store.KeyStore
-	log     *zap.Logger
+	version  string
+	proto    *protocol.Protocol
+	crypto   *auth.Crypto
+	keys     *store.KeyStore
+	browsers *store.BrowserRegistry
+	log      *zap.Logger
+
+	// regMu 串行化浏览器实例的登记与忘记,使登记表与在线表的联合修改原子。
+	regMu sync.Mutex
 
 	audit *audit.Recorder
 
@@ -53,7 +58,8 @@ type Server struct {
 
 	mu         sync.Mutex
 	conns      map[*conn]struct{}
-	active     *conn
+	scriptCat  *conn
+	online     map[string]*conn
 	pending    map[string]*pendingCall
 	enrollment *pendingEnrollment
 
@@ -63,8 +69,8 @@ type Server struct {
 	shutdownOnce sync.Once
 }
 
-// NewServer 用协议定义的常量与持久化后端构造服务。
-func NewServer(version string, p *protocol.Protocol, keys *store.KeyStore, log *zap.Logger) *Server {
+// NewServer 用协议定义的常量与持久化后端构造服务:keys 存 ScriptCat 的长期密钥,browsers 存浏览器实例的登记与密钥。
+func NewServer(version string, p *protocol.Protocol, keys *store.KeyStore, browsers *store.BrowserRegistry, log *zap.Logger) *Server {
 	if log == nil {
 		log = zap.NewNop()
 	}
@@ -73,6 +79,7 @@ func NewServer(version string, p *protocol.Protocol, keys *store.KeyStore, log *
 		proto:            p,
 		crypto:           auth.NewCrypto(p),
 		keys:             keys,
+		browsers:         browsers,
 		log:              log,
 		audit:            audit.NewRecorder(auditCapacity, log),
 		enrollAttempts:   ratelimit.NewLimiter(5, time.Minute),
@@ -82,6 +89,7 @@ func NewServer(version string, p *protocol.Protocol, keys *store.KeyStore, log *
 		pingInterval:     time.Duration(p.Limits.PingIntervalMs) * time.Millisecond,
 		maxFrameBytes:    int64(p.Limits.MaxFrameBytes),
 		conns:            make(map[*conn]struct{}),
+		online:           make(map[string]*conn),
 		pending:          make(map[string]*pendingCall),
 	}
 }
@@ -95,11 +103,11 @@ func (s *Server) Action(name string) (protocol.Action, bool) {
 	return a, ok
 }
 
-// ExtConnected 报告当前是否有完成握手的扩展连接。
+// ExtConnected 报告当前是否有完成握手的 ScriptCat 连接。
 func (s *Server) ExtConnected() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.active != nil
+	return s.scriptCat != nil
 }
 
 // AuditSnapshot 返回守卫侧安全事件的快照。
@@ -131,19 +139,25 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener, mux *http.ServeMux)
 	return err
 }
 
-// shutdown 通知扩展、断开所有连接并关闭 HTTP server。幂等。
+// shutdown 通知所有已建立会话的扩展、断开所有连接并关闭 HTTP server。幂等。
 func (s *Server) shutdown() {
 	s.shutdownOnce.Do(func() {
 		s.mu.Lock()
-		active := s.active
+		established := make([]*conn, 0, len(s.online)+1)
+		if s.scriptCat != nil {
+			established = append(established, s.scriptCat)
+		}
+		for _, c := range s.online {
+			established = append(established, c)
+		}
 		conns := make([]*conn, 0, len(s.conns))
 		for c := range s.conns {
 			conns = append(conns, c)
 		}
 		s.mu.Unlock()
 
-		if active != nil {
-			_ = active.sendNotification(methodShutdown, struct{}{})
+		for _, c := range established {
+			_ = c.sendNotification(methodShutdown, struct{}{})
 		}
 		for _, c := range conns {
 			c.close(websocket.StatusGoingAway, "server shutdown")
@@ -197,27 +211,62 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		// 只有被守卫判定为安全信号的失败才进审计;本地故障(密钥读写失败等)不混入。
 		var ae *authError
 		if errors.As(err, &ae) {
-			s.audit.Record(audit.Event{Type: ae.evType, Reason: ae.reason})
+			s.audit.Record(audit.Event{Type: ae.evType, Reason: ae.reason, Client: c.auditClient()})
 		}
 		c.close(websocket.StatusPolicyViolation, "")
 		return
 	}
 
-	s.audit.Record(audit.Event{Type: audit.TypeHandshakeOK})
+	s.audit.Record(audit.Event{Type: audit.TypeHandshakeOK, Client: c.auditClient()})
 	if err := c.sendNotification(methodHello, helloParams{DaemonVersion: s.version}); err != nil {
 		s.log.Debug("failed to send hello", zap.Error(err))
 		c.close(websocket.StatusInternalError, "")
 		return
 	}
-	if err := c.receiveCapabilities(); err != nil {
+	capabilitiesID, err := c.receiveCapabilities()
+	if err != nil {
 		s.log.Debug("failed to negotiate extension capabilities", zap.Error(err))
 		c.close(websocket.StatusProtocolError, "invalid capabilities")
 		return
 	}
-	s.setActive(c)
-	s.log.Info("extension completed the handshake and is connected")
+	// 先登记再回复:扩展一收到回复就可能发起调用,此时连接必须已可路由。
+	if err := s.register(c); err != nil {
+		s.rejectRegistration(c, capabilitiesID, err)
+		return
+	}
+	if err := c.sendResult(capabilitiesID, struct{}{}); err != nil {
+		s.log.Debug("failed to reply to capabilities", zap.Error(err))
+		return
+	}
+	s.log.Info("extension completed the handshake and is connected", zap.String("peer", string(c.kind)))
 	go c.heartbeatLoop()
 	c.readLoop()
+}
+
+// register 使完成能力声明的连接可被调用。
+func (s *Server) register(c *conn) error {
+	if c.kind == protocol.PeerBrowser {
+		return s.registerBrowser(c)
+	}
+	s.setScriptCat(c)
+	return nil
+}
+
+// rejectRegistration 处理登记失败:名称冲突在认证后的通道上回 CONFLICT(握手失败本身不回显原因),
+// 其余情况直接断开。
+func (s *Server) rejectRegistration(c *conn, capabilitiesID string, err error) {
+	switch {
+	case errors.Is(err, store.ErrNameTaken):
+		if sendErr := c.sendError(capabilitiesID, CodeConflict, "name "+c.peer.Name+" is used by another browser"); sendErr != nil {
+			s.log.Debug("failed to reply to capabilities", zap.Error(sendErr))
+		}
+		c.close(websocket.StatusNormalClosure, "")
+	case errors.Is(err, store.ErrInstanceNotFound):
+		c.close(websocket.StatusPolicyViolation, "")
+	default:
+		s.log.Warn("failed to register browser instance", zap.Error(err))
+		c.close(websocket.StatusInternalError, "")
+	}
 }
 
 func (s *Server) newConn(ws *websocket.Conn) *conn {
@@ -229,6 +278,7 @@ func (s *Server) newConn(ws *websocket.Conn) *conn {
 		closed: make(chan struct{}),
 		ctx:    ctx,
 		cancel: cancel,
+		kind:   protocol.PeerScriptCat,
 	}
 	s.mu.Lock()
 	s.conns[c] = struct{}{}
@@ -239,20 +289,23 @@ func (s *Server) newConn(ws *websocket.Conn) *conn {
 func (s *Server) removeConn(c *conn) {
 	s.mu.Lock()
 	delete(s.conns, c)
-	if s.active == c {
-		s.active = nil
+	if s.scriptCat == c {
+		s.scriptCat = nil
+	}
+	if s.online[c.instanceID] == c {
+		delete(s.online, c.instanceID)
 	}
 	s.mu.Unlock()
 	c.close(websocket.StatusNormalClosure, "")
 }
 
-// setActive 将 c 设为唯一活动连接,替换并断开旧连接(v1 单实例)。
-func (s *Server) setActive(c *conn) {
+// setScriptCat 将 c 设为唯一的 ScriptCat 连接,替换并断开旧的 ScriptCat 连接。
+func (s *Server) setScriptCat(c *conn) {
 	s.mu.Lock()
-	old := s.active
-	s.active = c
+	old := s.scriptCat
+	s.scriptCat = c
 	s.mu.Unlock()
 	if old != nil && old != c {
-		old.close(websocket.StatusNormalClosure, "replaced by new connection")
+		old.closeInBackground(websocket.StatusNormalClosure, "replaced by new connection")
 	}
 }

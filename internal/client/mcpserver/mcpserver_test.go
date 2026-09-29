@@ -3,11 +3,14 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	. "github.com/smartystreets/goconvey/convey"
 
@@ -17,21 +20,29 @@ import (
 
 // fakeCaller 是 BridgeCaller 的测试桩:可配置阻塞、返回值,并记录收到的调用。
 type fakeCaller struct {
-	mu      sync.Mutex
-	actions []string
-	inputs  []json.RawMessage
-	block   chan struct{} // 非 nil 则 Call 阻塞至其关闭或 ctx 取消
-	result  control.CallResult
-	err     error
-	sawCtx  atomic.Bool // Call 是否因 ctx 取消而返回
+	mu            sync.Mutex
+	actions       []string
+	inputs        []json.RawMessage
+	browserParams []string      // 记录每次 Call 的目标浏览器参数
+	block         chan struct{} // 非 nil 则 Call 阻塞至其关闭或 ctx 取消
+	entered       chan struct{} // 非 nil 则每次 Call 进入时发送一次,让测试确知调用已抵达桥接侧
+	result        control.CallResult
+	err           error
+	sawCtx        atomic.Bool           // Call 是否因 ctx 取消而返回
+	browsersList  []control.BrowserInfo // Browsers 的返回值
+	browsersErr   error
 }
 
-func (f *fakeCaller) Call(ctx context.Context, action string, input json.RawMessage) (control.CallResult, error) {
+func (f *fakeCaller) Call(ctx context.Context, action, browser string, input json.RawMessage) (control.CallResult, error) {
 	f.mu.Lock()
 	f.actions = append(f.actions, action)
+	f.browserParams = append(f.browserParams, browser)
 	f.inputs = append(f.inputs, append(json.RawMessage(nil), input...))
 	block := f.block
 	f.mu.Unlock()
+	if f.entered != nil {
+		f.entered <- struct{}{}
+	}
 	if block != nil {
 		select {
 		case <-block:
@@ -41,6 +52,10 @@ func (f *fakeCaller) Call(ctx context.Context, action string, input json.RawMess
 		}
 	}
 	return f.result, f.err
+}
+
+func (f *fakeCaller) Browsers(ctx context.Context) ([]control.BrowserInfo, error) {
+	return f.browsersList, f.browsersErr
 }
 
 // connect 用内存 transport 把一个 mcpserver 与一个测试 MCP client 对接。
@@ -74,16 +89,23 @@ func toolNames(res *mcp.ListToolsResult) []string {
 }
 
 func TestToolsListExposesAllTools(t *testing.T) {
-	Convey("扁平信任:tools/list 暴露 protocol.json 定义的全部工具(不再按 scope 过滤)", t, func() {
+	Convey("扁平信任:tools/list 暴露 protocol.json 定义的全部方法(工具)与特殊的 browsers_list", t, func() {
 		p := loadProto(t)
 		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
 
 		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
 		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
 		So(err, ShouldBeNil)
-		So(len(res.Tools), ShouldEqual, len(p.Actions))
+		// 每个 protocol 方法映射一个工具,加上 browsers_list (不是方法)。
+		So(len(res.Tools), ShouldEqual, len(p.Actions)+1)
 		So(toolNames(res), ShouldContain, "scripts_list")
 		So(toolNames(res), ShouldContain, "scripts_delete_request")
+		So(toolNames(res), ShouldContain, "browsers_list")
+		So(toolNames(res), ShouldContain, "tabs_list")
+		So(toolNames(res), ShouldContain, "tabs_open")
+		So(toolNames(res), ShouldContain, "tabs_close")
+		So(toolNames(res), ShouldContain, "tabs_activate")
+		So(toolNames(res), ShouldContain, "windows_list")
 	})
 }
 
@@ -175,6 +197,33 @@ func TestToolSchemasRejectInvalidCrossFieldArgumentsBeforeForwarding(t *testing.
 		caller.mu.Lock()
 		defer caller.mu.Unlock()
 		So(caller.actions, ShouldBeEmpty)
+	})
+}
+
+func TestBrowserToolSchemasMatchTheProtocolParams(t *testing.T) {
+	Convey("浏览器工具向 MCP 客户端声明的输入 schema 与 protocol.json 的参数类型一致,不在手写副本里丢约束", t, func() {
+		p := loadProto(t)
+		var definition struct {
+			Types map[string]any `json:"types"`
+		}
+		So(json.Unmarshal(protocol.DefinitionJSON, &definition), ShouldBeNil)
+
+		checked := 0
+		var drifted []string
+		for _, td := range toolDefs {
+			action, ok := p.Actions[td.action]
+			if !ok || action.Peer != protocol.PeerBrowser {
+				continue
+			}
+			var declared any
+			So(json.Unmarshal([]byte(td.inputSchema), &declared), ShouldBeNil)
+			if !reflect.DeepEqual(declared, definition.Types[action.Params]) {
+				drifted = append(drifted, td.name+" vs "+action.Params)
+			}
+			checked++
+		}
+		So(checked, ShouldBeGreaterThan, 0)
+		So(drifted, ShouldBeEmpty)
 	})
 }
 
@@ -280,7 +329,7 @@ func TestBlockingProgressAndCancel(t *testing.T) {
 		Convey("请求方取消 ctx → 调用观察到取消并返回错误", func() {
 			block := make(chan struct{})
 			defer close(block)
-			caller := &fakeCaller{block: block}
+			caller := &fakeCaller{block: block, entered: make(chan struct{}, 1)}
 			session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
 
 			callCtx, cancel := context.WithCancel(context.Background())
@@ -289,8 +338,13 @@ func TestBlockingProgressAndCancel(t *testing.T) {
 				_, err := session.CallTool(callCtx, &mcp.CallToolParams{Name: "scripts_list", Arguments: map[string]any{}})
 				errCh <- err
 			}()
-			// 给调用一点时间抵达阻塞点,再取消。
-			time.Sleep(50 * time.Millisecond)
+			// 必须等调用确实抵达桥接侧再取消:若取消先于服务端派发到达,go-sdk 直接丢弃这个请求,
+			// 桥接调用根本不会发生,本用例要验证的「进行中的调用被作废」也就无从观察。
+			select {
+			case <-caller.entered:
+			case <-time.After(2 * time.Second):
+				t.Fatal("调用未抵达桥接调用")
+			}
 			cancel()
 
 			select {
@@ -310,5 +364,231 @@ func TestBlockingProgressAndCancel(t *testing.T) {
 			}
 			So(caller.sawCtx.Load(), ShouldBeTrue)
 		})
+	})
+}
+
+func TestToolDescriptionsAreStatic(t *testing.T) {
+	Convey("MCP 工具描述为静态文本，从不拼入页面控制数据如标签页标题与 URL", t, func() {
+		p := loadProto(t)
+		// 模拟浏览器调用返回包含特征标记字符串的标签页数据。
+		markerTitle := "MARKER_TITLE_TESTDATA_12345"
+		markerURL := "MARKER_URL_TESTDATA_67890"
+		tabsResult := map[string]any{
+			"tabs": []map[string]any{
+				{
+					"id":       1,
+					"windowId": 1,
+					"active":   true,
+					"pinned":   false,
+					"title":    markerTitle,
+					"url":      markerURL,
+				},
+			},
+		}
+		resultJSON, err := json.Marshal(tabsResult)
+		So(err, ShouldBeNil)
+
+		caller := &fakeCaller{
+			result: control.CallResult{OK: true, Result: resultJSON},
+		}
+
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+
+		// 第一次列出工具，记录描述。
+		res1, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+		So(err, ShouldBeNil)
+		desc1 := make(map[string]string)
+		for _, tool := range res1.Tools {
+			desc1[tool.Name] = tool.Description
+		}
+
+		// 调用 tabs_list，让模拟器返回包含特征标记的数据。
+		_, err = session.CallTool(context.Background(), &mcp.CallToolParams{
+			Name:      "tabs_list",
+			Arguments: map[string]any{},
+		})
+		So(err, ShouldBeNil)
+
+		// 第二次列出工具，再次记录描述。
+		res2, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+		So(err, ShouldBeNil)
+		desc2 := make(map[string]string)
+		for _, tool := range res2.Tools {
+			desc2[tool.Name] = tool.Description
+		}
+
+		So(desc2, ShouldContainKey, "tabs_list")
+
+		Convey("任何工具描述都不含标签页标题的特征标记", func() {
+			for _, desc := range desc2 {
+				So(desc, ShouldNotContainSubstring, markerTitle)
+			}
+		})
+
+		Convey("任何工具描述都不含标签页 URL 的特征标记", func() {
+			for _, desc := range desc2 {
+				So(desc, ShouldNotContainSubstring, markerURL)
+			}
+		})
+
+		Convey("工具描述前后一致，不随数据调用而改变", func() {
+			So(desc1, ShouldResemble, desc2)
+		})
+	})
+}
+
+func TestBrowserToolsForwardTheOptionalBrowserArgument(t *testing.T) {
+	Convey("浏览器工具把可选的 browser 参数作为目标转发给 daemon,且不混入方法输入", t, func() {
+		p := loadProto(t)
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{"tabId":7}`)}}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+
+		_, err := session.CallTool(context.Background(), &mcp.CallToolParams{
+			Name:      "tabs_open",
+			Arguments: map[string]any{"url": "https://example.com", "browser": "work"},
+		})
+		So(err, ShouldBeNil)
+		_, err = session.CallTool(context.Background(), &mcp.CallToolParams{Name: "windows_list", Arguments: map[string]any{}})
+		So(err, ShouldBeNil)
+
+		So(caller.actions, ShouldResemble, []string{"tabs.open", "windows.list"})
+		So(caller.browserParams, ShouldResemble, []string{"work", ""})
+		So(string(caller.inputs[0]), ShouldEqual, `{"url":"https://example.com"}`)
+	})
+
+	Convey("除 browsers_list 外,每个浏览器工具都声明可选的 browser 参数", t, func() {
+		p := loadProto(t)
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: &fakeCaller{}}, nil)
+		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+		So(err, ShouldBeNil)
+		for _, name := range []string{"tabs_list", "tabs_open", "tabs_close", "tabs_activate", "windows_list"} {
+			So(schemaPropsOf(toolByName(res, name)), ShouldContainKey, "browser")
+		}
+		So(schemaPropsOf(toolByName(res, "browsers_list")), ShouldNotContainKey, "browser")
+	})
+}
+
+func TestBrowserParameterDescribesListAggregation(t *testing.T) {
+	Convey("browser 参数的说明与目标选择表一致:列表类工具汇总所有在线浏览器,操作类工具要求指定", t, func() {
+		p := loadProto(t)
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: &fakeCaller{}}, nil)
+		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+		So(err, ShouldBeNil)
+		browserDescription := func(tool string) string {
+			prop, ok := schemaPropsOf(toolByName(res, tool))["browser"].(map[string]any)
+			So(ok, ShouldBeTrue)
+			desc, _ := prop["description"].(string)
+			return desc
+		}
+		for _, name := range []string{"tabs_list", "windows_list"} {
+			So(browserDescription(name), ShouldContainSubstring, "every online browser")
+			So(browserDescription(name), ShouldNotContainSubstring, "returns error")
+		}
+		for _, name := range []string{"tabs_open", "tabs_close", "tabs_activate"} {
+			So(browserDescription(name), ShouldContainSubstring, "returns error")
+		}
+	})
+}
+
+func TestBrowserToolsNeverReportWaitingForApproval(t *testing.T) {
+	Convey("浏览器工具没有人工审批,等待期间不发「等待浏览器审批」的 progress", t, func() {
+		p := loadProto(t)
+		old := progressInterval
+		progressInterval = 10 * time.Millisecond
+		defer func() { progressInterval = old }()
+
+		var browserProgress atomic.Int32
+		scriptProgress := make(chan struct{}, 64)
+		block := make(chan struct{})
+		caller := &fakeCaller{block: block, entered: make(chan struct{}, 2), result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
+		opts := &mcp.ClientOptions{
+			ProgressNotificationHandler: func(_ context.Context, req *mcp.ProgressNotificationClientRequest) {
+				if req.Params.ProgressToken == "tok-browser" {
+					browserProgress.Add(1)
+					return
+				}
+				select {
+				case scriptProgress <- struct{}{}:
+				default:
+				}
+			},
+		}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, opts)
+
+		call := func(name string, args map[string]any, token string) <-chan *mcp.CallToolResult {
+			resCh := make(chan *mcp.CallToolResult, 1)
+			go func() {
+				res, _ := session.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args, Meta: mcp.Meta{"progressToken": token}})
+				resCh <- res
+			}()
+			select {
+			case <-caller.entered:
+			case <-time.After(5 * time.Second):
+				t.Fatalf("%s did not reach the bridge", name)
+			}
+			return resCh
+		}
+		// 浏览器调用先抵达桥接侧并阻塞;随后一个有审批的调用作为时钟:它的 progress 滴答了三次,
+		// 说明浏览器调用阻塞期间已过去至少两个间隔,若浏览器调用也有 ticker 必已触发。不用固定睡眠,
+		// 负载再高也不会在调用抵达前就放行而让本用例空过。
+		browserRes := call("tabs_list", map[string]any{}, "tok-browser")
+		scriptRes := call("scripts_toggle_request", map[string]any{"uuid": "x", "enable": true}, "tok-script")
+		for range 3 {
+			select {
+			case <-scriptProgress:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the approval call reported no progress")
+			}
+		}
+		close(block)
+		So((<-scriptRes).IsError, ShouldBeFalse)
+		So((<-browserRes).IsError, ShouldBeFalse)
+		So(browserProgress.Load(), ShouldEqual, 0)
+	})
+}
+
+func TestToolsWithoutRequiredArgumentsAcceptAnOmittedArgumentsObject(t *testing.T) {
+	Convey("MCP 允许省略 arguments:没有必填参数的工具照常执行,按空参数对象转发", t, func() {
+		p := loadProto(t)
+		caller := &fakeCaller{
+			result:       control.CallResult{OK: true, Result: json.RawMessage(`{"windows":[]}`)},
+			browsersList: []control.BrowserInfo{},
+		}
+		// Go SDK 的 client 会把缺省的 arguments 补成 {},其他客户端不会;这里直接写原始 JSON-RPC 帧。
+		ctx := context.Background()
+		st, ct := mcp.NewInMemoryTransports()
+		_, err := New(Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}).Connect(ctx, st, nil)
+		So(err, ShouldBeNil)
+		conn, err := ct.Connect(ctx)
+		So(err, ShouldBeNil)
+		t.Cleanup(func() { _ = conn.Close() })
+		send := func(frame string) {
+			msg, err := jsonrpc.DecodeMessage([]byte(frame))
+			So(err, ShouldBeNil)
+			So(conn.Write(ctx, msg), ShouldBeNil)
+		}
+		roundTrip := func(frame string) *jsonrpc.Response {
+			send(frame)
+			reply, err := conn.Read(ctx)
+			So(err, ShouldBeNil)
+			resp, ok := reply.(*jsonrpc.Response)
+			So(ok, ShouldBeTrue)
+			return resp
+		}
+		roundTrip(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"raw","version":"v0"}}}`)
+		send(`{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}`)
+
+		for i, name := range []string{"windows_list", "tabs_list", "scripts_list", "browsers_list"} {
+			resp := roundTrip(fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"name":%q}}`, i+2, name))
+			So(resp.Error, ShouldBeNil)
+			var result mcp.CallToolResult
+			So(json.Unmarshal(resp.Result, &result), ShouldBeNil)
+			So(result.IsError, ShouldBeFalse)
+		}
+		So(caller.actions, ShouldResemble, []string{"windows.list", "tabs.list", "scripts.list"})
+		So(caller.browserParams, ShouldResemble, []string{"", "", ""})
+		for _, input := range caller.inputs {
+			So(string(input), ShouldEqual, `{}`)
+		}
 	})
 }

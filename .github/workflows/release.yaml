@@ -95,9 +95,42 @@ jobs:
           path: dist/*.${{ matrix.format }}
           if-no-files-found: error
 
+  extension:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: extension/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: extension/pnpm-lock.yaml
+      - name: 构建并打包浏览器扩展
+        working-directory: extension
+        run: |
+          set -euo pipefail
+          # 扩展版本号与 sctl 发布版本一致;预发布后缀由构建写进 manifest 的 version_name。
+          VERSION="${GITHUB_REF_NAME#v}"
+          COMMIT_TIMESTAMP=$(git show -s --format=%ct HEAD)
+          PACKAGE="sctl-browser-extension-${VERSION}"
+          pnpm install --frozen-lockfile
+          SCTL_EXTENSION_VERSION="$VERSION" pnpm build
+          mkdir -p ../dist
+          cp -R dist "../dist/${PACKAGE}"
+          find "../dist/${PACKAGE}" -exec touch -d "@${COMMIT_TIMESTAMP}" {} +
+          (cd ../dist && find "$PACKAGE" | sort | zip -X -q "${PACKAGE}.zip" -@)
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-extension
+          path: dist/*.zip
+          if-no-files-found: error
+
   release:
     name: Create Release
-    needs: build
+    needs: [build, extension]
     runs-on: ubuntu-latest
     permissions:
       contents: write # 创建 GitHub Release 并上传产物

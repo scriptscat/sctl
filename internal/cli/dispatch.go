@@ -20,15 +20,28 @@ import (
 // exitVoided。桥接业务错误按 code 映射:USER_REJECTED→exitRejected,OPERATION_EXPIRED→exitVoided,
 // 其余→exitError。
 func dispatch(cmd *cobra.Command, action string, input json.RawMessage, onOK func(result json.RawMessage) error) error {
-	return dispatchAction(cmd, action, input, false, onOK)
+	return dispatchAction(cmd, action, "", input, false, canceledVoided, onOK)
 }
 
 // dispatchBlocking 与 dispatch 相同,但用于写动词:调用前告知用户正在等待浏览器裁决。
 func dispatchBlocking(cmd *cobra.Command, action string, input json.RawMessage, onOK func(result json.RawMessage) error) error {
-	return dispatchAction(cmd, action, input, true, onOK)
+	return dispatchAction(cmd, action, "", input, true, canceledVoided, onOK)
 }
 
-func dispatchAction(cmd *cobra.Command, action string, input json.RawMessage, blocking bool, onOK func(result json.RawMessage) error) error {
+// dispatchBrowser 与 dispatch 相同,但携带一个显式的目标浏览器(名称或实例-ID 前缀;空串交给
+// daemon 按在线实例解析,见 docs/protocol.md §3.1)。用于 tabs.*/windows.* 等浏览器方法命令;
+// 这些方法不做逐次人工审批(spec 设计决策 3),所以从不走 blocking 提示。
+func dispatchBrowser(cmd *cobra.Command, action, browser string, input json.RawMessage, onOK func(result json.RawMessage) error) error {
+	return dispatchAction(cmd, action, browser, input, false, canceledUnconfirmed, onOK)
+}
+
+const (
+	canceledVoided = "canceled, operation voided"
+	// 浏览器方法收到即执行,没有可作废的挂起操作(扩展忽略 $/cancelRequest):取消只是不再等结果。
+	canceledUnconfirmed = "canceled before the result arrived; the browser may already have carried out the operation"
+)
+
+func dispatchAction(cmd *cobra.Command, action, browser string, input json.RawMessage, blocking bool, canceled string, onOK func(result json.RawMessage) error) error {
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt)
 	defer stop()
 
@@ -41,10 +54,10 @@ func dispatchAction(cmd *cobra.Command, action string, input json.RawMessage, bl
 	if blocking {
 		fmt.Fprintln(os.Stderr, "waiting for approval in the browser… (Ctrl-C cancels and voids this operation)")
 	}
-	res, err := client.Call(ctx, action, input)
+	res, err := client.Call(ctx, action, browser, input)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			return &ExitError{Code: exitVoided, Message: "canceled, operation voided"}
+			return &ExitError{Code: exitVoided, Message: canceled}
 		}
 		return &ExitError{Code: exitError, Message: err.Error()}
 	}
@@ -55,6 +68,10 @@ func dispatchAction(cmd *cobra.Command, action string, input json.RawMessage, bl
 			}
 		}
 		return nil
+	}
+	// daemon 的候选列表对 CLI 与 MCP 通用;只有 CLI 知道目标写在 --browser 上。
+	if browser == "" && res.Error != nil && res.Error.Code == "BROWSER_AMBIGUOUS" {
+		return &ExitError{Code: exitError, Message: res.Error.Error() + "; pass --browser <name> or set SCTL_BROWSER"}
 	}
 	return mapBridgeError(res.Error)
 }

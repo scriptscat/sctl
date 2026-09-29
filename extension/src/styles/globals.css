@@ -1,0 +1,136 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  /* 只用系统字体，不打包字体文件。 */
+  --font-sans:
+    system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC",
+    sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --font-heading: var(--font-sans);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+}
+
+/*
+ * 同门配色：以 ScriptCat 的天蓝色为基础（docs/specs 扩展弹窗「视觉规范」表，浅色/深色各一套，
+ * 2b4dd1a 修订）。品牌天蓝 --brand 只用于不承载文字的装饰元素（连线区的图标等）；凡是作文字颜色、
+ * 或作白字按钮底色的地方一律用 --primary，浅色模式取同色相的加深值以满足 4.5:1 对比度，深色模式两者
+ * 数值相同，因为原值已经达标。
+ * 按钮悬停底色 --primary-hover/--bad-hover 各是对应底色在 oklch 里向文字的反方向移 12%（浅色加深、深色提亮），
+ * 让悬停时文字对比度只升不降；不用 bg-primary/80 这类透明度写法，它在浅色下会把白字按钮洗到 4.5:1 以下。
+ */
+:root {
+  --radius: 0.625rem;
+  --background: #ffffff;
+  --foreground: #1b2733;
+  --card: #ffffff;
+  --card-foreground: #1b2733;
+  --popover: #ffffff;
+  --popover-foreground: #1b2733;
+  --brand: #1296db;
+  --primary: #0e77ae;
+  --primary-foreground: #ffffff;
+  --primary-hover: #0a6392;
+  --secondary: #f2f7fb;
+  --secondary-foreground: #1b2733;
+  --muted: #f2f7fb;
+  --muted-foreground: #5c6b7a;
+  --accent: #f2f7fb;
+  --accent-foreground: #1b2733;
+  --destructive: #d2352c;
+  --border: #dce5ed;
+  --input: #dce5ed;
+  --ring: #1296db;
+  --surface: #f2f7fb;
+  --ok: #128155;
+  --warn: #9d6504;
+  --bad: #d2352c;
+  --bad-foreground: #ffffff;
+  --bad-hover: #b12b23;
+}
+
+.dark {
+  --background: #131a21;
+  --foreground: #e4ecf3;
+  --card: #131a21;
+  --card-foreground: #e4ecf3;
+  --popover: #131a21;
+  --popover-foreground: #e4ecf3;
+  --brand: #3aa9e6;
+  --primary: #3aa9e6;
+  --primary-foreground: #0a1622;
+  --primary-hover: #59b4ea;
+  --secondary: #1a232c;
+  --secondary-foreground: #e4ecf3;
+  --muted: #1a232c;
+  --muted-foreground: #8c9ba9;
+  --accent: #1a232c;
+  --accent-foreground: #e4ecf3;
+  --destructive: #f06a5f;
+  --border: #283440;
+  --input: #283440;
+  --ring: #3aa9e6;
+  --surface: #1a232c;
+  --ok: #3cc98a;
+  --warn: #e9a93a;
+  --bad: #f06a5f;
+  /* 与深色主色按钮一样用深色文字：白字在 #F06A5F 上的对比度不到 4.5:1。 */
+  --bad-foreground: #0a1622;
+  --bad-hover: #f47e72;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* 重连时流动的连线：琥珀色虚线沿方向流动，表示状态而不仅是颜色。 */
+@keyframes tether-flow {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+.tether-flow {
+  animation: tether-flow 1.2s linear infinite;
+}
+
+/* 两个动画（流动连线、配对中的转圈）在「减少动态效果」时停止（docs/specs 无障碍要求）。 */
+@media (prefers-reduced-motion: reduce) {
+  .tether-flow {
+    animation: none;
+  }
+  .animate-spin {
+    animation: none;
+  }
+}

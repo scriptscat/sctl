@@ -7,7 +7,8 @@ express. See [threat-model.md](./threat-model.md) for the security boundary.
 
 ## 1. Transport and message model
 
-The ScriptCat extension opens one WebSocket connection to the sctl daemon. Every text frame is exactly one
+Each peer extension — ScriptCat, and every paired sctl Browser instance — opens its own WebSocket connection to
+the sctl daemon. Every text frame is exactly one
 JSON-RPC 2.0 message and includes `"jsonrpc": "2.0"`. Requests and responses correlate through `id`;
 notifications omit `id`. Batch requests are not supported.
 
@@ -86,6 +87,30 @@ within `limits.authTimeoutMs`. Nonces are fresh for every connection.
 The extension stores the session key in extension-local storage. The daemon stores its copy in a user-only file.
 Disabling External Access deletes the extension copy and closes the connection, requiring enrollment again.
 
+#### Browser instances
+
+An sctl Browser instance identifies itself in the authentication response; a response without `peer` is
+ScriptCat. The instance ID is 32 lowercase hex digits, generated randomly when the extension is installed:
+
+```json
+{
+  "mode": "session",
+  "nonceE": "<lowercase hex>",
+  "hmac": "HMAC(K_instance, context.browserSessionExt || instanceId || nonceD || nonceE)",
+  "peer": { "kind": "browser", "instanceId": "<32 lowercase hex>" }
+}
+```
+
+The daemon answers with `HMAC(K_instance, context.browserSessionDaemon || instanceId || nonceE || nonceD)`.
+Pairing uses `context.browserPairExt` / `context.browserPairDaemon` with the same `instanceId` term, keyed by the
+pairing-code MAC key; key derivation and delivery are the same as for ScriptCat. The `browser*` contexts bind the
+peer kind and the `instanceId` term binds the instance, so a MAC recorded for one instance or for ScriptCat never
+verifies as another. An unknown `kind` or a malformed `instanceId` fails the handshake.
+
+Each instance has its own session key, issued by its pairing; pairing a browser never touches ScriptCat's key.
+The daemon selects the key by `instanceId`, so a session handshake from an instance that is not paired — or that
+has been forgotten on the daemon side — fails like any other handshake failure.
+
 ### 2.2 Hello and capabilities
 
 After authentication the daemon announces its product version for diagnostics. The extension does not use it
@@ -113,7 +138,33 @@ The extension then declares the generated schema it uses and the business method
 }
 ```
 
-The daemon answers with an empty result and marks the connection usable only after accepting this request.
+The daemon registers the connection before it answers with an empty result, so business requests may follow that
+result immediately. A connection is usable only after this request is accepted.
+A new ScriptCat connection replaces the previous ScriptCat connection; a browser instance's new connection
+replaces only that instance's previous connection.
+
+A browser instance also declares its name and self-reported product details:
+
+```json
+"params": {
+  "schemaVersion": "1.0.0",
+  "methods": ["tabs.list", "tabs.open"],
+  "peer": {
+    "name": "chrome-3f2a",
+    "product": "Chrome",
+    "productVersion": "129.0.6668.58",
+    "extensionVersion": "0.1.0"
+  }
+}
+```
+
+`name` is 1–32 lowercase letters, digits, and `-`; the other fields are optional printable text of at most 64
+bytes. A missing or invalid `peer` closes the connection. On its first pairing an instance proposes its default
+name, the browser brand followed by `-` and the first four hex digits of its instance ID; renaming means
+reconnecting with the new name. The daemon's registry is authoritative: names are unique across every paired
+instance, online or offline. When another paired instance holds the name, the daemon answers the capabilities
+request with application error `CONFLICT`, keeps the instance's previous name, and closes the connection; a
+first pairing refused this way is not persisted.
 
 ### 2.3 Liveness and shutdown
 
@@ -150,28 +201,72 @@ A successful call returns the generated result type:
 }
 ```
 
-The current methods are:
+Every method is owned by exactly one peer (`peer` in `protocol.json`): ScriptCat implements the `scripts.*`
+methods and the sctl Browser extension implements the tab and window methods. The current methods are:
 
-| Method | Effect | Blocking behavior |
-|---|---|---|
-| `scripts.list` | read script summaries | none |
-| `scripts.metadata.get` | read metadata | none |
-| `scripts.source.get` | read source | disclosure confirmation |
-| `scripts.source.grep` | search source | disclosure confirmation |
-| `scripts.install.request` | install a script | write approval |
-| `scripts.toggle.request` | enable or disable a script | write approval |
-| `scripts.delete.request` | delete a script | write approval |
-| `scripts.edit.request` | edit a script | write approval |
+| Method | Peer | Effect | Blocking behavior |
+|---|---|---|---|
+| `scripts.list` | ScriptCat | read script summaries | none |
+| `scripts.metadata.get` | ScriptCat | read metadata | none |
+| `scripts.source.get` | ScriptCat | read source | disclosure confirmation |
+| `scripts.source.grep` | ScriptCat | search source | disclosure confirmation |
+| `scripts.install.request` | ScriptCat | install a script | write approval |
+| `scripts.toggle.request` | ScriptCat | enable or disable a script | write approval |
+| `scripts.delete.request` | ScriptCat | delete a script | write approval |
+| `scripts.edit.request` | ScriptCat | edit a script | write approval |
+| `tabs.list` | browser | list tabs, optionally in one window | none |
+| `tabs.open` | browser | open a URL in a new tab and return its tab ID | none |
+| `tabs.close` | browser | close one or more tabs | none |
+| `tabs.activate` | browser | activate a tab and focus its window | none |
+| `windows.list` | browser | list windows | none |
 
 Source and metadata returned by these methods are untrusted user-script content. Consumers must not execute it,
 render it as HTML, interpret it as instructions, or include credentials in logs. Source results carry a SHA-256
 digest. Edit approval rechecks the staged digest and target identity before applying changes.
+
+Tab titles and URLs are controlled by web pages; `tabs.list` marks its result with
+`contentTrust: "untrusted-page-content"` and the same handling rules apply. A list method declares a
+`mergeField`: the required array property in its result that holds the listed items, so results from several
+browser instances combine by concatenating that array. Methods without `mergeField` are never combined.
 
 `scripts.source.get` accepts an optional `maxBytes` budget for a whole-file response. When the UTF-8 source is
 larger, the extension returns `PAYLOAD_TOO_LARGE` before placing the source in a WebSocket frame; callers should
 use `scripts.source.grep` and then request a `startLine`/`endLine` window. The budget does not apply when a line
 window is present. `sctl mcp` supplies this budget for whole-file reads, while the CLI omits it so an operator can
 still redirect a complete source file.
+
+### 3.1 Routing and target selection
+
+The daemon routes each call by the method's `peer`, not by which methods a connection declared: `scripts.*`
+calls go to the ScriptCat connection, browser methods go to a browser instance. A connection must still have
+declared the method, otherwise the call fails with `METHOD_NOT_FOUND`.
+
+A browser call carries an optional target, either an instance name or an instance-ID prefix; the daemon resolves
+it because only the daemon knows which instances are online. A target is first matched against names exactly, and
+only if no name matches is it treated as an instance-ID prefix over every paired instance, online or offline.
+
+| Target | Result |
+|---|---|
+| none, no instance online | `NO_BROWSER_CONNECTED` |
+| none, exactly one instance online | that instance |
+| none, several online, method with `mergeField` | every online instance; results are combined |
+| none, several online, method without `mergeField` | `BROWSER_AMBIGUOUS`; the message lists the online instances |
+| matches no paired instance | `BROWSER_NOT_FOUND` |
+| ID prefix matches several paired instances | `BROWSER_AMBIGUOUS`; the message lists the matching instances |
+| matches one paired instance that is not connected | `BROWSER_OFFLINE` |
+| matches one online instance | that instance |
+
+A combined call is sent to every online instance at once. The result is the first instance's result with its
+`mergeField` array replaced by the concatenation of every instance's array, in instance-name order, and each
+item gains a `browser` object naming its source: `{"id": "<instance ID>", "name": "<instance name>"}`. An
+instance that answers `NOT_FOUND` — for example, it has no window with the requested ID — contributes no items;
+the call fails with `NOT_FOUND` only when every instance answers it. Any other failing instance fails the whole
+call; partial results are never returned. A call routed to a single instance returns that instance's result
+unchanged.
+
+A target on a `scripts.*` call is rejected with `INVALID_REQUEST`; otherwise `scripts.*` routing and its errors do
+not depend on browser instances. If the target connection closes while a call is in flight — for a combined
+call, any of its instances — the call is voided and the requester receives `OPERATION_EXPIRED`, as for ScriptCat.
 
 ## 4. Errors
 
@@ -196,6 +291,15 @@ put the stable domain code in `error.data.code`:
 The generated `errorCodes` list is authoritative for domain codes. Messages are human-readable diagnostics;
 callers branch on the numeric JSON-RPC code and `data.code`, not on message text.
 
+These codes are reserved for browser target selection failures ([§3.1](#31-routing-and-target-selection)):
+
+| Code | Meaning |
+|---|---|
+| `NO_BROWSER_CONNECTED` | a browser method was called while no browser instance is online |
+| `BROWSER_OFFLINE` | the target names a paired browser instance that is not connected |
+| `BROWSER_NOT_FOUND` | the target matches no paired browser instance; `/control/browsers/forget` returns it too when the name or ID matches none |
+| `BROWSER_AMBIGUOUS` | the target instance-ID prefix matches more than one paired instance, or a method without `mergeField` was called without a target while several instances are online |
+
 ## 5. Cancellation and approval
 
 Write and source-disclosure requests remain pending until the user decides. If the requester disconnects,
@@ -216,7 +320,23 @@ the JSON-RPC response through the offscreen WebSocket owner.
 
 ## 6. Generation and conformance
 
+`protocol.json` annotates ownership: each method has one `peer` (`scriptcat` or `browser`), and each
+`errorCodes` entry and each `crypto.context` entry lists the `peers` that use it. The `browser*` context strings
+are reserved for browser-instance handshakes, so a MAC computed for one peer kind never verifies as the other; the
+pairing KDF strings are shared. The generator emits one set of bindings per peer:
+
+| Output | Contents |
+|---|---|
+| `internal/pkg/protocol/generated/protocol.generated.go` | every method, type, error code, and context key, for the daemon and CLI |
+| `internal/pkg/protocol/generated/*.ts` | ScriptCat's methods, the types they reference, and the codes and contexts listing `scriptcat` |
+| `extension/src/protocol/generated/*.ts` | the same selection for `browser` |
+
+The ScriptCat TypeScript must stay byte-identical to the copy in the paired ScriptCat revision, because ScriptCat
+declares every generated method as a capability and its conformance test compares the method and error-code
+lists exactly. Adding browser-owned definitions therefore never changes ScriptCat's files or `schemaVersion`.
+
 Run `make protocol-generate` after editing `protocol.json`, and `make protocol-sync-scriptcat` to update the
 adjacent ScriptCat checkout. `make protocol-check` regenerates all artifacts and fails if the checked-in output
-differs. Both peers parse the JSON-RPC structure directly. ScriptCat validates business parameters with generated
-native TypeScript type guards, so extension startup does not compile schemas at runtime.
+differs or a generated file is untracked. Both peers parse the JSON-RPC structure directly. ScriptCat validates
+business parameters with generated native TypeScript type guards, so extension startup does not compile schemas
+at runtime.
