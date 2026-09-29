@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clearPairingDraft, loadPairingDraft, savePairingDraft } from "./pairing-draft";
+import { loadPairingDraft, savePairingDraft } from "./pairing-draft";
 import type { SessionStorage } from "./storage";
 
 function fakeSession(initial: Record<string, unknown> = {}): SessionStorage & { data: Record<string, unknown> } {
@@ -39,12 +39,6 @@ describe("pairing code draft", () => {
   it("clears the draft once the code is emptied", async () => {
     const storage = fakeSession({ pairingCodeDraft: "AB12-CD34" });
     await savePairingDraft(storage, "");
-    await expect(loadPairingDraft(storage)).resolves.toBe("");
-  });
-
-  it("clears the draft explicitly after a successful pairing", async () => {
-    const storage = fakeSession({ pairingCodeDraft: "AB12-CD34" });
-    await clearPairingDraft(storage);
     await expect(loadPairingDraft(storage)).resolves.toBe("");
   });
 });

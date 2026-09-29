@@ -37,7 +37,7 @@ import type { PopupApi } from "@/shared/popup-api";
 import { createPopupApi } from "@/shared/popup-api";
 import type { ConnectionState } from "@/shared/state";
 import { formatConnectedSince } from "./format-duration";
-import { clearPairingDraft, loadPairingDraft, loadRePairFlow, savePairingDraft, saveRePairFlow } from "./pairing-draft";
+import { loadPairingDraft, loadRePairFlow, savePairingDraft, saveRePairFlow } from "./pairing-draft";
 import { DEFAULT_PREFS, isDarkMode, loadPrefs, savePrefs, type Prefs } from "./preferences";
 import { chromeLocalStorage, chromeSessionStorage, type KeyValueStorage, type SessionStorage } from "./storage";
 
@@ -93,12 +93,18 @@ export function App({
     let cancelled = false;
     // getState 的回复绕经 service worker，广播直接从 offscreen 发来，可能先到；先到的广播比回复更新，不能被回复覆盖。
     let broadcastSeen = false;
+    // 会话存储与连接状态各自异步到达；草稿读出时要按已经收到的最新状态判断它还适不适用。
+    let latest: ConnectionState["status"] | undefined;
+    const receive = (s: ConnectionState) => {
+      latest = s.status;
+      setState(s);
+    };
     void api.getState().then((s) => {
-      if (!cancelled && !broadcastSeen) setState(s);
+      if (!cancelled && !broadcastSeen) receive(s);
     });
     const unsubscribe = api.subscribe((s) => {
       broadcastSeen = true;
-      if (!cancelled) setState(s);
+      if (!cancelled) receive(s);
     });
     void loadPrefs(localStorage).then((p) => {
       if (!cancelled) {
@@ -108,9 +114,11 @@ export function App({
     });
     void Promise.all([loadPairingDraft(sessionStorage), loadRePairFlow(sessionStorage)]).then(([draft, rePairing]) => {
       if (!cancelled) {
-        setCode(draft);
-        // 只有重新配对流程里真的输入过内容才直接回到表单；没有草稿时被拒页的说明更有用。
-        if (rePairing && draft) setPairAgain(true);
+        // 已连接时草稿是那次成功配对用掉的配对码（配对在弹窗关闭后才完成），不再恢复。
+        setCode(latest === "connected" ? "" : draft);
+        // 只有重新配对流程里真的输入过内容才直接回到表单；没有草稿时被拒页的说明更有用。状态若已离开
+        // rejected，标记属于已经结束的那次拒绝（弹窗没来得及清掉它），恢复它会让之后的新拒绝跳过说明。
+        if (rePairing && draft && (latest === undefined || latest === "rejected")) setPairAgain(true);
         setCodeDraftLoaded(true);
       }
     });
@@ -149,6 +157,10 @@ export function App({
   if (status !== pairAgainStatus) {
     setPairAgainStatus(status);
     if (status !== "rejected") setPairAgain(false);
+    // 草稿只在配对真正成功后清空（持久化 effect 随之删掉存储里的草稿）：配对失败或连不上 daemon 时，
+    // 用户常要先离开弹窗（去终端启动 sctl serve），重新打开时还要用同一个配对码。成功后清空输入框本身，
+    // 之后被 forget 再出现的配对表单才不会带着已经用掉的码。
+    if (status === "connected") setCode("");
   }
 
   // 离开 rejected（含配对成功）后，持久化的重新配对标记同样作废。
@@ -156,15 +168,6 @@ export function App({
     if (status && status !== "rejected") void saveRePairFlow(sessionStorage, false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
-
-  // 草稿只在配对真正成功后清除：配对失败或连不上 daemon 时，用户常要先离开弹窗（去终端启动
-  // sctl serve），重新打开时还要用同一个配对码。
-  useEffect(() => {
-    if (status === "connected" && codeDraftLoaded) {
-      void clearPairingDraft(sessionStorage);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, codeDraftLoaded]);
 
   // 重连倒计时与已连接时长都要随时间推进，重连中每秒、已连接每分钟够用；tick 本身只用来触发重渲染。
   const [, forceTick] = useState(0);
@@ -263,7 +266,8 @@ export function App({
     setViewMode(prevViewMode === "settings" ? "main" : prevViewMode);
   };
 
-  if (!state) {
+  // 草稿读出之前不显示任何可交互内容：否则迟到的读取会覆盖用户已经输入的配对码或刚清空的重新配对输入框。
+  if (!state || !codeDraftLoaded) {
     return <main className="w-[360px] p-4 text-sm text-muted-foreground">{s.product}</main>;
   }
 

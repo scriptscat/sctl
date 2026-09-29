@@ -22,6 +22,8 @@ const MAX_RETRY_MS = 30_000;
 // daemon 以 1008 关闭即握手被拒，原因从不回显（docs/protocol.md §2.1）。
 const CLOSE_POLICY_VIOLATION = 1008;
 const CLOSE_NORMAL = 1000;
+// 浏览器在连接没能建立时报告的关闭码。
+const CLOSE_ABNORMAL = 1006;
 // 应用层失败统一用 -32000，领域错误码放在 error.data.code（docs/protocol.md §4）。
 const RPC_APPLICATION_ERROR = -32000;
 const NONCE_PATTERN = new RegExp(`^[0-9a-f]{${CRYPTO.nonceBytes * 2}}$`);
@@ -233,7 +235,7 @@ export class Connection {
       close: (code) => this.onClose(attempt, code),
     };
     const attempt: Attempt = {
-      socket: this.deps.createSocket(websocketUrl(config.address), events),
+      socket: this.createSocket(websocketUrl(config.address), events),
       auth,
       name: config.name,
       phase: "challenge",
@@ -248,6 +250,32 @@ export class Connection {
       inFlight: 0,
     };
     this.attempt = attempt;
+    // 连不上也不报错的地址（丢包、只接 TCP 不应答升级）要等浏览器自己的连接超时，远长于配对码的有效期，
+    // 期间配对表单一直停在"配对中"无法操作；建立连接因此同样限定在 authTimeoutMs 内。
+    this.armTimeout(attempt);
+  }
+
+  // 浏览器会同步拒绝某些地址（例如被屏蔽的端口会抛 SecurityError）。把它当作一次没能打开的连接：
+  // 关闭事件异步送达，与真实套接字一致，调用方在 open() 之后设置的状态不会盖过它得出的结论。
+  private createSocket(url: string, events: SocketEvents): SocketLike {
+    try {
+      return this.deps.createSocket(url, events);
+    } catch (error) {
+      console.warn("the browser refused to open a WebSocket to the daemon", error);
+      this.deps.timers.setTimeout(() => events.close(CLOSE_ABNORMAL), 0);
+      return { send: () => undefined, close: () => undefined };
+    }
+  }
+
+  // 超时后放弃这次尝试；连接打开时重新计时，认证本身仍有完整的 authTimeoutMs。
+  private armTimeout(attempt: Attempt): void {
+    this.clearAuthTimer(attempt);
+    attempt.authTimer = this.deps.timers.setTimeout(() => {
+      attempt.authTimer = null;
+      if (attempt === this.attempt) {
+        attempt.socket.close(CLOSE_NORMAL);
+      }
+    }, LIMITS.authTimeoutMs);
   }
 
   private onOpen(attempt: Attempt): void {
@@ -255,13 +283,7 @@ export class Connection {
       return;
     }
     attempt.opened = true;
-    // 认证必须在 authTimeoutMs 内完成，否则放弃这次尝试。
-    attempt.authTimer = this.deps.timers.setTimeout(() => {
-      attempt.authTimer = null;
-      if (attempt === this.attempt) {
-        attempt.socket.close(CLOSE_NORMAL);
-      }
-    }, LIMITS.authTimeoutMs);
+    this.armTimeout(attempt);
   }
 
   private onMessage(attempt: Attempt, data: string): void {

@@ -1,4 +1,5 @@
 import { CRYPTO } from "@/protocol/generated/protocol.generated";
+import { bytesToHex } from "@/shared/hex";
 
 // WebCrypto 的 BufferSource 要求 ArrayBuffer 后备，所有原语统一使用这个别名。
 export type Bytes = Uint8Array<ArrayBuffer>;
@@ -19,10 +20,6 @@ const encoder = new TextEncoder();
 
 function utf8(text: string): Bytes {
   return new Uint8Array(encoder.encode(text));
-}
-
-export function bytesToHex(bytes: Uint8Array): string {
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 export function hexToBytes(hex: string): Bytes {

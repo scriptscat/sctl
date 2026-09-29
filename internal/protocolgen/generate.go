@@ -268,6 +268,10 @@ func validateDefinition(def definition) error {
 			return fmt.Errorf("rpc %q has invalid blocking mode %q", name, method.Blocking)
 		}
 		if method.MergeField != "" {
+			// 只有浏览器方法会有多个同时在线的目标,daemon 也只为它们合并。
+			if method.Peer != protocol.PeerBrowser {
+				return fmt.Errorf("rpc %q: mergeField is only meaningful for browser methods", name)
+			}
 			if err := validateMergeField(def.Types[method.Result], method.MergeField); err != nil {
 				return fmt.Errorf("rpc %q: %w", name, err)
 			}
@@ -303,12 +307,20 @@ func validateDefinition(def definition) error {
 	return nil
 }
 
-// validateMergeField 要求合并字段是结果类型中必填的数组属性,daemon 才能无条件地拼接各实例的列表。
+// validateMergeField 要求合并字段是结果类型中必填的对象数组属性,daemon 才能无条件地拼接各实例的列表;
+// 合并时每一项都会加上来源浏览器的 browser 字段,项本身不能已有同名属性。
 func validateMergeField(result json.RawMessage, field string) error {
 	schema := parseSchema(result)
 	property, ok := schema.Properties[field]
 	if !ok || !requiredSet(schema)[field] || parseSchema(property).Type != "array" {
 		return fmt.Errorf("mergeField %q is not a required array property of the result", field)
+	}
+	items := parseSchema(parseSchema(property).Items)
+	if items.Type != "object" {
+		return fmt.Errorf("mergeField %q items must be objects", field)
+	}
+	if _, taken := items.Properties["browser"]; taken {
+		return fmt.Errorf("mergeField %q items must not declare the browser property the merge adds", field)
 	}
 	return nil
 }

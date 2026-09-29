@@ -1,3 +1,5 @@
+import { bytesToHex } from "./hex";
+
 // 实例 ID 与名称的格式由 daemon 在握手边界校验（docs/protocol.md §2.1、§2.2），这里与之保持一致。
 const NAME_PATTERN = /^[a-z0-9-]{1,32}$/;
 const INSTANCE_ID_BYTES = 16;
@@ -26,7 +28,7 @@ const CHROMIUM: ProductInfo = { brand: "Chromium", slug: "chromium", product: "C
 
 export function newInstanceId(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(INSTANCE_ID_BYTES));
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  return bytesToHex(bytes);
 }
 
 export function detectProduct(brands: readonly BrandInfo[] | undefined): ProductInfo {

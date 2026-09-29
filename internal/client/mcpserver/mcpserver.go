@@ -82,6 +82,13 @@ func compileInputSchema(name, inputSchema string) *jsonschema.Schema {
 	return schema
 }
 
+// defaultArguments 把省略的 arguments(MCP 允许)当作空对象,之后的校验与转发都只面对一个 JSON 对象。
+func defaultArguments(req *mcp.CallToolRequest) {
+	if len(req.Params.Arguments) == 0 {
+		req.Params.Arguments = json.RawMessage(`{}`)
+	}
+}
+
 // validateArguments 在转发之前按工具 schema 校验 MCP 客户端给的参数。
 func validateArguments(name string, schema *jsonschema.Schema, arguments json.RawMessage) error {
 	input, err := jsonschema.UnmarshalJSON(bytes.NewReader(arguments))
@@ -121,6 +128,7 @@ func registerTool(srv *mcp.Server, td toolDef, browserMethod bool, caller Bridge
 	}
 	action := td.action
 	srv.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		defaultArguments(req)
 		if err := validateArguments(td.name, schema, req.Params.Arguments); err != nil {
 			return nil, err
 		}
@@ -162,6 +170,7 @@ func registerBrowsersListTool(srv *mcp.Server, caller BridgeCaller) {
 		InputSchema: json.RawMessage(schemaEmpty),
 	}
 	srv.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		defaultArguments(req)
 		if err := validateArguments(toolName, schema, req.Params.Arguments); err != nil {
 			return nil, err
 		}

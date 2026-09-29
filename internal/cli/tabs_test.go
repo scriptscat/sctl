@@ -1,6 +1,12 @@
 package cli
 
 import (
+	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -286,5 +292,46 @@ func TestBrowserTargetErrorExitCodes(t *testing.T) {
 			code, _ := runCLI("tabs", "list", "--window", "999")
 			So(code, ShouldEqual, exitError)
 		})
+	})
+}
+
+// stubDaemonHolding 起一个收到 /control/call 后一直不回复的假 daemon,返回请求抵达时关闭的通道。
+func stubDaemonHolding(t *testing.T) <-chan struct{} {
+	t.Helper()
+	arrived := make(chan struct{})
+	mux := http.NewServeMux()
+	mux.HandleFunc(control.PathHealth, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc(control.PathCall, func(_ http.ResponseWriter, r *http.Request) {
+		// 读完请求体服务端才会察觉客户端断开并取消 r.Context()。
+		_, _ = io.Copy(io.Discard, r.Body)
+		close(arrived)
+		<-r.Context().Done()
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	t.Setenv("SCTL_BRIDGE_ADDR", strings.TrimPrefix(srv.URL, "http://"))
+	dir := t.TempDir()
+	t.Setenv("SCTL_DATA_DIR", dir)
+	So(os.WriteFile(filepath.Join(dir, "control.token"), []byte("tok"), 0o600), ShouldBeNil)
+	return arrived
+}
+
+func TestCancelingABrowserAction(t *testing.T) {
+	Convey("Ctrl-C 取消浏览器操作:退出码 2,但不声称操作已作废,因为浏览器操作即时生效、无法撤回", t, func() {
+		arrived := stubDaemonHolding(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go func() {
+			<-arrived
+			cancel()
+		}()
+		code, _, _, err := runCLIContext(ctx, strings.NewReader(""), "tabs", "close", "5")
+		So(code, ShouldEqual, exitVoided)
+		So(err, ShouldNotBeNil)
+		So(err.Error(), ShouldNotContainSubstring, "voided")
+		So(err.Error(), ShouldContainSubstring, "may already")
 	})
 }

@@ -283,6 +283,16 @@ func TestGenerateRejectsInvalidPeerAnnotations(t *testing.T) {
 		"merge field missing from result": func(def map[string]any) {
 			method(def, "windows.list")["mergeField"] = "tabs"
 		},
+		"merge field whose items are not objects": func(def map[string]any) {
+			resultProperty(def, "TabsListResult", "tabs")["items"] = map[string]any{"type": "integer"}
+		},
+		"merge field whose items already carry a browser property": func(def map[string]any) {
+			items := resultProperty(def, "TabsListResult", "tabs")["items"].(map[string]any)
+			items["properties"].(map[string]any)["browser"] = map[string]any{"type": "string"}
+		},
+		"merge field on a ScriptCat method": func(def map[string]any) {
+			method(def, "scripts.list")["mergeField"] = "scripts"
+		},
 		"error code without peers": func(def map[string]any) {
 			def["errorCodes"].([]any)[0].(map[string]any)["peers"] = []any{}
 		},
@@ -324,6 +334,10 @@ func TestGenerateRejectsInvalidPeerAnnotations(t *testing.T) {
 			}
 		})
 	}
+}
+
+func resultProperty(def map[string]any, typeName, property string) map[string]any {
+	return def["types"].(map[string]any)[typeName].(map[string]any)["properties"].(map[string]any)[property].(map[string]any)
 }
 
 func method(def map[string]any, name string) map[string]any {

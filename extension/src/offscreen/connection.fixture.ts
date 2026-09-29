@@ -218,8 +218,13 @@ export function harness(start: Partial<ConnectionConfig> = {}) {
   let persistence: Promise<void> = Promise.resolve();
   // 测试可以让持久化失败，模拟 service worker 写存储出错。
   let persistFailure: Error | null = null;
+  // 测试可以让 WebSocket 构造抛错，模拟浏览器拒绝连接某个地址（例如被屏蔽的端口）。
+  let socketRefusal: Error | null = null;
   const connection = new Connection({
     createSocket: (url, events) => {
+      if (socketRefusal) {
+        throw socketRefusal;
+      }
       const socket = new FakeSocket(url, events);
       sockets.push(socket);
       return socket;
@@ -258,6 +263,9 @@ export function harness(start: Partial<ConnectionConfig> = {}) {
     setOutcome: (next: RpcOutcome) => {
       outcome = next;
     },
+    refuseSockets: (error: Error | null) => {
+      socketRefusal = error;
+    },
     failPersistence: (error: Error) => {
       persistFailure = error;
     },
@@ -269,6 +277,12 @@ export function harness(start: Partial<ConnectionConfig> = {}) {
       return release;
     },
   };
+}
+
+// 放行挂起的 Promise 之后，后续步骤只由已决议的 Promise 推进（没有 I/O 和计时器），在下一个宏任务之前必然全部跑完；
+// 等一个宏任务边界即可，不依赖任何时长。
+export function drainMicrotasks(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 // 等待异步握手（WebCrypto 走线程池）推进到条件成立。

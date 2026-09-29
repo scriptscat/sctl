@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/coder/websocket/wsjson"
 	"github.com/google/uuid"
 	. "github.com/smartystreets/goconvey/convey"
 	"go.uber.org/zap"
@@ -195,6 +196,64 @@ func TestBrowserPairing(t *testing.T) {
 			again := h.connectBrowser(instanceA, key, "chrome-0123")
 			again.alive()
 		})
+	})
+}
+
+// pairingResponse 为实例 id 构造一个用配对码 display 签名的正确配对应答。
+func (h *testHarness) pairingResponse(display, id, nonceD string) authResponseResult {
+	kpMac, _, err := h.crypto.DerivePairingKeys(display)
+	So(err, ShouldBeNil)
+	nonceE, _ := auth.RandomNonceHex(h.proto.Crypto.NonceBytes)
+	mac := h.crypto.BrowserExtHMAC(auth.ModePairing, id, kpMac, nonceD, nonceE)
+	return authResponseResult{Mode: modePairing, NonceE: nonceE, HMAC: mac, Peer: browserPeer(id)}
+}
+
+// authenticatedOrClosed 读出握手应答:收到 $session.authenticated 为 true,daemon 关闭连接为 false。
+func (e *extClient) authenticatedOrClosed() bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	_, data, err := e.ws.Read(ctx)
+	if err != nil {
+		So(errors.Is(err, context.DeadlineExceeded), ShouldBeFalse)
+		return false
+	}
+	var msg Message
+	So(json.Unmarshal(data, &msg), ShouldBeNil)
+	So(msg.Method, ShouldEqual, methodAuthenticated)
+	return true
+}
+
+func TestOnePairingCodeEnrollsOneBrowser(t *testing.T) {
+	Convey("两个浏览器同时用同一个配对码配对,只有一个拿到实例密钥", t, func() {
+		// 竞争窗口只有一次网络写那么宽,单轮未必命中;多轮里任何一轮两边都成功即说明码被用了两次。
+		for range 40 {
+			h := startTestServer(t)
+			display, err := h.srv.BeginEnrollment()
+			So(err, ShouldBeNil)
+			a, challengeA, nonceA := h.challenge()
+			b, challengeB, nonceB := h.challenge()
+			respA := h.pairingResponse(display, instanceA, nonceA)
+			respB := h.pairingResponse(display, instanceB, nonceB)
+
+			written := make(chan error, 1)
+			go func() {
+				message, err := newResult(challengeA.ID, respA)
+				if err == nil {
+					err = wsjson.Write(context.Background(), a.ws, message)
+				}
+				written <- err
+			}()
+			b.writeResult(challengeB.ID, respB)
+			So(<-written, ShouldBeNil)
+
+			authenticated := 0
+			for _, e := range []*extClient{a, b} {
+				if e.authenticatedOrClosed() {
+					authenticated++
+				}
+			}
+			So(authenticated, ShouldEqual, 1)
+		}
 	})
 }
 

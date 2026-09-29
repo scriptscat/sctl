@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -56,6 +57,11 @@ func runCLIStdin(stdin io.Reader, args ...string) (int, string, string) {
 
 // runCLIResult 与 runCLIStdin 相同,另外返回命令的错误本身(其 Message 由 main 打印到 stderr)。
 func runCLIResult(stdin io.Reader, args ...string) (int, string, string, error) {
+	return runCLIContext(context.Background(), stdin, args...)
+}
+
+// runCLIContext 与 runCLIResult 相同,但命令在 ctx 下执行;取消 ctx 等同于用户按下 Ctrl-C。
+func runCLIContext(ctx context.Context, stdin io.Reader, args ...string) (int, string, string, error) {
 	if address := os.Getenv("SCTL_BRIDGE_ADDR"); address != "" {
 		args = append([]string{"--listen-address", address}, args...)
 	}
@@ -76,7 +82,7 @@ func runCLIResult(stdin io.Reader, args ...string) (int, string, string, error) 
 	root := NewRootCmd()
 	root.SetArgs(args)
 	root.SetIn(stdin)
-	err := root.Execute()
+	err := root.ExecuteContext(ctx)
 
 	wOut.Close()
 	wErr.Close()

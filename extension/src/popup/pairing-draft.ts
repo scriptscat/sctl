@@ -18,10 +18,6 @@ export async function savePairingDraft(storage: SessionStorage, code: string): P
   await storage.set({ [KEY]: code });
 }
 
-export async function clearPairingDraft(storage: SessionStorage): Promise<void> {
-  await storage.remove(KEY);
-}
-
 // 被 daemon forget 之后用户点了"重新配对"：弹窗关闭重开时靠它回到配对表单，而不是又落回被拒页。
 // 与草稿分开存，因为草稿也可能是普通未配对路径留下的。
 const RE_PAIR_KEY = "rePairFlow";

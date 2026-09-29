@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { LIMITS } from "@/protocol/generated/protocol.generated";
 import {
   INSTANCE_ID,
   PAIRING_CODE,
@@ -7,6 +8,7 @@ import {
   authenticate,
   conflict,
   harness,
+  drainMicrotasks,
   hello,
   until,
 } from "./connection.fixture";
@@ -107,6 +109,31 @@ describe("session handshake", () => {
 });
 
 describe("reconnect backoff", () => {
+  it("keeps retrying when the browser refuses to open a socket to the address", () => {
+    const h = harness();
+    h.socket().drop(1006);
+    h.connection.setAddress("127.0.0.1:9000");
+    h.socket().drop(1006);
+    h.refuseSockets(new DOMException("The port 9000 is not allowed.", "SecurityError"));
+    h.timers.advance(1000);
+
+    expect(h.state()).toMatchObject({ status: "reconnecting", attempt: 2, retryAt: h.timers.now() + 2000 });
+    h.refuseSockets(null);
+    h.timers.advance(2000);
+    expect(h.sockets).toHaveLength(3);
+  });
+
+  it("gives up a connection that never opens within the auth timeout and retries", () => {
+    const h = harness();
+    const socket = h.socket();
+    h.timers.advance(LIMITS.authTimeoutMs);
+    expect(socket.closedWith).not.toBeNull();
+    // 浏览器关闭一个仍在连接中的套接字时以 1006 报告关闭。
+    socket.drop(1006);
+
+    expect(h.state()).toMatchObject({ status: "reconnecting", attempt: 1 });
+  });
+
   it("retries an unreachable daemon after 1 s, doubling each time up to 30 s", () => {
     const h = harness();
     const delays: number[] = [];
@@ -206,6 +233,28 @@ describe("pairing", () => {
     expect(h.persisted.keys).toEqual([]);
   });
 
+  it("reports pairing as unreachable when the browser refuses to open a socket to the address", () => {
+    const h = harness({ key: null, address: "127.0.0.1:6000" });
+    h.refuseSockets(new DOMException("The port 6000 is not allowed.", "SecurityError"));
+    h.connection.pair(PAIRING_CODE);
+    expect(h.state().status).toBe("pairing");
+    h.timers.advance(0);
+
+    expect(h.state()).toMatchObject({ status: "pair-unreachable", address: "127.0.0.1:6000" });
+    expect(h.timers.pending()).toBe(0);
+  });
+
+  it("reports a pairing whose connection never opens as unreachable after the auth timeout", () => {
+    const h = harness({ key: null });
+    h.connection.pair(PAIRING_CODE);
+    const socket = h.socket();
+    h.timers.advance(LIMITS.authTimeoutMs);
+    expect(socket.closedWith).not.toBeNull();
+    socket.drop(1006);
+
+    expect(h.state().status).toBe("pair-unreachable");
+  });
+
   it("reports an unreachable daemon as pair-unreachable with the address it tried", () => {
     const h = harness({ key: null, address: "127.0.0.1:9000" });
     h.connection.pair(PAIRING_CODE);
@@ -257,7 +306,7 @@ describe("pairing", () => {
 
     h.connection.forget();
     release();
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await drainMicrotasks();
     h.connection.setAddress("127.0.0.1:9000");
 
     expect(h.state().status).toBe("unpaired");

@@ -3,12 +3,14 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	. "github.com/smartystreets/goconvey/convey"
 
@@ -542,5 +544,51 @@ func TestBrowserToolsNeverReportWaitingForApproval(t *testing.T) {
 		So((<-scriptRes).IsError, ShouldBeFalse)
 		So((<-browserRes).IsError, ShouldBeFalse)
 		So(browserProgress.Load(), ShouldEqual, 0)
+	})
+}
+
+func TestToolsWithoutRequiredArgumentsAcceptAnOmittedArgumentsObject(t *testing.T) {
+	Convey("MCP 允许省略 arguments:没有必填参数的工具照常执行,按空参数对象转发", t, func() {
+		p := loadProto(t)
+		caller := &fakeCaller{
+			result:       control.CallResult{OK: true, Result: json.RawMessage(`{"windows":[]}`)},
+			browsersList: []control.BrowserInfo{},
+		}
+		// Go SDK 的 client 会把缺省的 arguments 补成 {},其他客户端不会;这里直接写原始 JSON-RPC 帧。
+		ctx := context.Background()
+		st, ct := mcp.NewInMemoryTransports()
+		_, err := New(Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}).Connect(ctx, st, nil)
+		So(err, ShouldBeNil)
+		conn, err := ct.Connect(ctx)
+		So(err, ShouldBeNil)
+		t.Cleanup(func() { _ = conn.Close() })
+		send := func(frame string) {
+			msg, err := jsonrpc.DecodeMessage([]byte(frame))
+			So(err, ShouldBeNil)
+			So(conn.Write(ctx, msg), ShouldBeNil)
+		}
+		roundTrip := func(frame string) *jsonrpc.Response {
+			send(frame)
+			reply, err := conn.Read(ctx)
+			So(err, ShouldBeNil)
+			resp, ok := reply.(*jsonrpc.Response)
+			So(ok, ShouldBeTrue)
+			return resp
+		}
+		roundTrip(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"raw","version":"v0"}}}`)
+		send(`{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}`)
+
+		for i, name := range []string{"windows_list", "tabs_list", "scripts_list", "browsers_list"} {
+			resp := roundTrip(fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"name":%q}}`, i+2, name))
+			So(resp.Error, ShouldBeNil)
+			var result mcp.CallToolResult
+			So(json.Unmarshal(resp.Result, &result), ShouldBeNil)
+			So(result.IsError, ShouldBeFalse)
+		}
+		So(caller.actions, ShouldResemble, []string{"windows.list", "tabs.list", "scripts.list"})
+		So(caller.browserParams, ShouldResemble, []string{"", "", ""})
+		for _, input := range caller.inputs {
+			So(string(input), ShouldEqual, `{}`)
+		}
 	})
 }

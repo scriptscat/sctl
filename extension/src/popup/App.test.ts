@@ -62,6 +62,17 @@ function fakeSessionStorage(initial: Record<string, unknown> = {}): SessionStora
   };
 }
 
+// 让会话存储的读取挂起到返回的函数被调用为止，用来安排读取与连接状态到达的先后。
+function holdReads(storage: SessionStorage): () => void {
+  const read = storage.get.bind(storage);
+  let release: () => void = () => undefined;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  storage.get = (keys) => released.then(() => read(keys));
+  return release;
+}
+
 const BASE = { instanceId: "3f2a9c0e5b7d41e8a6f0c2d4e6f80a1b", name: "chrome-3f2a", address: "127.0.0.1:8643" };
 const CONNECTED = {
   status: "connected" as const,
@@ -419,6 +430,51 @@ describe("pairing code draft", () => {
 
     renderApp({ ...BASE, status: "rejected" }, { sessionStorage });
     expect(await screen.findByRole("button", { name: "Pair again" })).toBeInTheDocument();
+  });
+
+  it("waits for the saved draft before showing the pairing form, so a late read cannot replace what the user typed", async () => {
+    const sessionStorage = fakeSessionStorage({ pairingCodeDraft: "K7QM3XRD" });
+    const releaseRead = holdReads(sessionStorage);
+    const { api } = renderApp({ ...BASE, status: "unpaired" }, { sessionStorage });
+    // act 会把已经决议的 getState 回复及其渲染一并冲刷完。
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(api.getState).toHaveBeenCalled();
+    expect(screen.queryByLabelText("Enter the pairing code it shows")).not.toBeInTheDocument();
+    releaseRead();
+    expect(await screen.findByDisplayValue("K7QM3XRD")).toBeInTheDocument();
+  });
+
+  it("does not resume a re-pair flow whose rejection already ended before the popup read it", async () => {
+    // 上次弹窗在点下配对后立刻关闭，没来得及清掉标记；配对随后成功了。
+    const sessionStorage = fakeSessionStorage({ rePairFlow: true, pairingCodeDraft: "AB12" });
+    const releaseRead = holdReads(sessionStorage);
+    const { api, emit } = renderApp({ ...BASE, ...CONNECTED }, { sessionStorage });
+    // 连接状态先到并渲染完毕，会话存储随后才读出来。
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(api.getState).toHaveBeenCalled();
+    releaseRead();
+    await screen.findByText(/sctl tabs list --browser/);
+    await vi.waitFor(() => expect(sessionStorage.data).toEqual({}));
+    act(() => emit({ ...BASE, status: "rejected" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("The daemon no longer recognises this browser");
+    expect(screen.getByRole("button", { name: "Pair again" })).toBeInTheDocument();
+  });
+
+  it("offers an empty code input when the instance is forgotten after pairing in the same popup", async () => {
+    const sessionStorage = fakeSessionStorage({ pairingCodeDraft: "K7QM3XRD" });
+    const { api, emit } = fakeApi({ ...BASE, status: "unpaired" });
+    renderApp({ ...BASE, status: "unpaired" }, { sessionStorage, api });
+    const user = userEvent.setup();
+    await screen.findByDisplayValue("K7QM3XRD");
+    await user.click(screen.getByRole("button", { name: "Pair" }));
+    act(() => emit({ ...BASE, status: "pairing" }));
+    act(() => emit({ ...BASE, ...CONNECTED }));
+    act(() => emit({ ...BASE, status: "unpaired" }));
+    expect(screen.getByLabelText("Enter the pairing code it shows")).toHaveValue("");
   });
 
   it("clears the draft once pairing succeeds", async () => {

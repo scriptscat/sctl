@@ -188,17 +188,20 @@ func (c *conn) handshakePairing(ctx context.Context, nonceD string, resp authRes
 	if !s.enrollAttempts.Allow("enrollment") {
 		return authFail(audit.TypePairingRateLimited, audit.ReasonPairExhausted, "too many enrollment attempts")
 	}
-	code, err := s.activeEnrollmentCode()
+	enrollment, err := s.activeEnrollment()
 	if err != nil {
 		return authFail(audit.TypePairingFailed, audit.ReasonPairExpired, "%w", err)
 	}
-	kpMac, kpEnc, err := s.crypto.DerivePairingKeys(code)
+	kpMac, kpEnc, err := s.crypto.DerivePairingKeys(enrollment.code)
 	if err != nil {
 		return fmt.Errorf("derive enrollment keys: %w", err)
 	}
 	if !c.extMACValid(auth.ModePairing, kpMac, nonceD, resp) {
 		s.failEnrollmentAttempt()
 		return authFail(audit.TypePairingFailed, audit.ReasonHMACMismatch, "enrollment handshake HMAC verification failed")
+	}
+	if !s.takeEnrollment(enrollment) {
+		return authFail(audit.TypePairingFailed, audit.ReasonPairExpired, "enrollment window already used")
 	}
 
 	k, err := auth.NewLongTermKey()
@@ -220,7 +223,6 @@ func (c *conn) handshakePairing(ctx context.Context, nonceD string, resp authRes
 	} else if err := s.keys.Save(k); err != nil {
 		return fmt.Errorf("persist long-term key: %w", err)
 	}
-	s.clearEnrollment()
 	c.key = k
 	return nil
 }
