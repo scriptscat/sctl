@@ -4,7 +4,7 @@
   "description": "__MSG_extDescription__",
   "default_locale": "en",
   "minimum_chrome_version": "116",
-  "permissions": ["tabs", "storage", "offscreen"],
+  "permissions": ["tabs", "storage", "offscreen", "readingList"],
   "background": {
     "service_worker": "background.js",
     "type": "module"

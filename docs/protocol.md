@@ -202,7 +202,7 @@ A successful call returns the generated result type:
 ```
 
 Every method is owned by exactly one peer (`peer` in `protocol.json`): ScriptCat implements the `scripts.*`
-methods and the sctl Browser extension implements the tab and window methods. Every method also carries a
+methods and the sctl Browser extension implements the tab, window, and reading list methods. Every method also carries a
 destruction `level`:
 
 | Level | Meaning | Enforced by |
@@ -231,16 +231,27 @@ It is optional in the schema so that an unconfirmed call that reaches the extens
 | `tabs.close` | browser | close one or more tabs | none | L0 |
 | `tabs.activate` | browser | activate a tab and focus its window | none | L0 |
 | `windows.list` | browser | list windows | none | L0 |
+| `readingList.list` | browser | list reading list entries, newest first | none | L0 |
+| `readingList.add` | browser | add a URL to the reading list | none | L0 |
+| `readingList.markRead` | browser | mark reading list entries read or unread | none | L0 |
+| `readingList.remove` | browser | remove entries from the reading list | none | L1 |
 
 Source and metadata returned by these methods are untrusted user-script content. Consumers must not execute it,
 render it as HTML, interpret it as instructions, or include credentials in logs. Source results carry a SHA-256
 digest. Edit approval rechecks the staged digest and target identity before applying changes.
 
-Tab titles and URLs are controlled by web pages; `tabs.list` marks its result with
-`contentTrust: "untrusted-page-content"` and the same handling rules apply. A list method declares a
-`mergeField`: the required array property in its result that holds the listed items, so results from several
-browser instances combine by concatenating that array. A list result may also declare a boolean `hasMore`,
-meaning the instance has items it did not return. Methods without `mergeField` are never combined.
+Tab titles and URLs, and reading list titles, are controlled by web pages; `tabs.list` and `readingList.list` mark
+their results with `contentTrust: "untrusted-page-content"` and the same handling rules apply. A list method
+declares a `mergeField`: the required array property in its result that holds the listed items, so results from
+several browser instances combine by concatenating that array. A list result may also declare a boolean `hasMore`,
+meaning the instance has items it did not return. Methods without `mergeField` are never combined. A list method
+whose parameters declare `limit` returns at most that many items per instance: 100 when it is omitted, and a value
+above 1000 is rejected with `INVALID_REQUEST`.
+
+The reading list methods answer `UNSUPPORTED` when the browser does not provide `chrome.readingList`.
+`readingList.add` answers `CONFLICT` for a URL that is already in the list, and its title defaults to the URL.
+`readingList.markRead` and `readingList.remove` are all-or-nothing: if any given URL is not in the list they
+answer `NOT_FOUND` and change nothing.
 
 A browser method's result must fit in one frame of at most `limits.maxFrameBytes` UTF-8 bytes, because the daemon
 drops a connection that sends a larger frame. When the serialized response would exceed it, the sctl Browser

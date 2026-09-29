@@ -46,12 +46,16 @@ func TestLoadExposesMethodPeerAndListMergeField(t *testing.T) {
 		peer       Peer
 		mergeField string
 	}{
-		"scripts.list":  {PeerScriptCat, ""},
-		"tabs.list":     {PeerBrowser, "tabs"},
-		"windows.list":  {PeerBrowser, "windows"},
-		"tabs.open":     {PeerBrowser, ""},
-		"tabs.close":    {PeerBrowser, ""},
-		"tabs.activate": {PeerBrowser, ""},
+		"scripts.list":         {PeerScriptCat, ""},
+		"tabs.list":            {PeerBrowser, "tabs"},
+		"windows.list":         {PeerBrowser, "windows"},
+		"tabs.open":            {PeerBrowser, ""},
+		"tabs.close":           {PeerBrowser, ""},
+		"tabs.activate":        {PeerBrowser, ""},
+		"readingList.list":     {PeerBrowser, "entries"},
+		"readingList.add":      {PeerBrowser, ""},
+		"readingList.markRead": {PeerBrowser, ""},
+		"readingList.remove":   {PeerBrowser, ""},
 	} {
 		action, ok := p.Actions[name]
 		if !ok {
@@ -76,8 +80,17 @@ func TestLoadExposesEachMethodsDestructionLevel(t *testing.T) {
 		"tabs.list":              LevelDirect,
 		"tabs.close":             LevelDirect,
 		"windows.list":           LevelDirect,
+		"readingList.list":       LevelDirect,
+		"readingList.add":        LevelDirect,
+		"readingList.markRead":   LevelDirect,
+		"readingList.remove":     LevelConfirm,
 	} {
-		if got := p.Actions[name].Level; got != want {
+		action, ok := p.Actions[name]
+		if !ok {
+			t.Errorf("%s is not a protocol action", name)
+			continue
+		}
+		if got := action.Level; got != want {
 			t.Errorf("%s level = %q, want %q", name, got, want)
 		}
 	}

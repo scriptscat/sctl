@@ -158,6 +158,29 @@ func TestBrowserTargetSelection(t *testing.T) {
 				So(merged.Windows[2].Browser.Name, ShouldEqual, "edge-fedc")
 			})
 
+			Convey("readingList.list 按 entries 汇总,任一浏览器还有未返回的条目时 hasMore 为 true", func() {
+				ch := h.goCall(control.CallRequest{Action: "readingList.list", Input: json.RawMessage(`{"limit":1}`)})
+				a.answer("readingList.list", json.RawMessage(`{"contentTrust":"untrusted-page-content","hasMore":false,"entries":[{"url":"https://a.example/","title":"A","read":false,"createdAt":1,"updatedAt":2}]}`))
+				b.answer("readingList.list", json.RawMessage(`{"contentTrust":"untrusted-page-content","hasMore":true,"entries":[{"url":"https://b.example/","title":"B","read":true,"createdAt":3,"updatedAt":4}]}`))
+				res := <-ch
+				So(res.OK, ShouldBeTrue)
+				var merged struct {
+					HasMore bool `json:"hasMore"`
+					Entries []struct {
+						URL     string `json:"url"`
+						Browser struct {
+							Name string `json:"name"`
+						} `json:"browser"`
+					} `json:"entries"`
+				}
+				So(json.Unmarshal(res.Result, &merged), ShouldBeNil)
+				So(merged.HasMore, ShouldBeTrue)
+				So(merged.Entries, ShouldHaveLength, 2)
+				So(merged.Entries[0].URL, ShouldEqual, "https://a.example/")
+				So(merged.Entries[0].Browser.Name, ShouldEqual, "chrome-0123")
+				So(merged.Entries[1].Browser.Name, ShouldEqual, "edge-fedc")
+			})
+
 			Convey("未指定目标的操作类调用返回 BROWSER_AMBIGUOUS 并列出在线候选,不转发", func() {
 				res := h.callControl(control.CallRequest{Action: "tabs.open", Input: json.RawMessage(`{"url":"https://example.com/"}`)})
 				So(errCode(res), ShouldEqual, generated.ErrorCodeBrowserAmbiguous)

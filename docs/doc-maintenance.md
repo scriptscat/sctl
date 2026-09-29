@@ -46,7 +46,7 @@ authoritative source, never recalled from memory or copied from earlier prose.
 | A function / type exists **under that exact name** | `git grep -n 'func WriteFileAtomic' -- internal` — renames are the #1 source of drift |
 | Dependency direction between packages | `go list -f '{{.ImportPath}} {{join .Imports " "}}' ./...` |
 | Protocol constants (port, timeouts, TTLs, limits, method set) | `internal/pkg/protocol/protocol.json` is the authority; docs only explain semantics |
-| "N MCP tools" | Count the `toolDefs` entries in `internal/client/mcpserver/tools.go` whose `action` is a `methods` key in `internal/pkg/protocol/protocol.json` — `mcpserver.New` registers only those; not every protocol method has a tool |
+| "N MCP tools" | Count the `toolDefs` entries in `internal/client/mcpserver/tools.go` whose `action` is a `methods` key in `internal/pkg/protocol/protocol.json` (`mcpserver.New` registers only those), plus the `domainTools` entries in `internal/client/mcpserver/domain.go`, plus one for `browsers_list`. A `toolDefs` tool serves one method; a domain tool serves several through its `action` argument (count those in its `actions`), so the tool count is not the method count |
 | "N release artifacts" | The build matrix plus the `extension` job in `.github/workflows/release.yaml` |
 | Extension toolchain (Node, pnpm) | `node-version` in the `extension` job of `.github/workflows/test.yaml`; `packageManager` in `extension/package.json` |
 | Extension commands | The `scripts` in `extension/package.json` |

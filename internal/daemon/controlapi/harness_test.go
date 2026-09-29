@@ -84,13 +84,6 @@ func startTestServer(t *testing.T) *testHarness {
 	t.Helper()
 	p, err := protocol.Load()
 	So(err, ShouldBeNil)
-	return startTestServerWithProtocol(t, p)
-}
-
-// startTestServerWithProtocol 用注入的协议定义启动 daemon,让测试能驱动当前协议里尚不存在的方法属性
-// (例如 L1 级别)。
-func startTestServerWithProtocol(t *testing.T, p *protocol.Protocol) *testHarness {
-	t.Helper()
 	dir := t.TempDir()
 	keys := store.NewKeyStore(filepath.Join(dir, "pairing.key"))
 	browsers, err := store.LoadBrowserRegistry(filepath.Join(dir, "browsers.json"))
@@ -206,7 +199,10 @@ func (h *testHarness) doSessionHandshake(key []byte) *extClient {
 }
 
 // browserMethods 是浏览器实例在能力声明里给出的方法。
-var browserMethods = []string{"tabs.list", "tabs.open", "tabs.close", "tabs.activate", "windows.list"}
+var browserMethods = []string{
+	"tabs.list", "tabs.open", "tabs.close", "tabs.activate", "windows.list",
+	"readingList.list", "readingList.add", "readingList.markRead", "readingList.remove",
+}
 
 // pairedBrowser 在登记表里放一个已配对实例并返回其密钥;不连接。
 func (h *testHarness) pairedBrowser(id, name string) []byte {

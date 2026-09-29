@@ -21,6 +21,7 @@ confirmation UI in the extension.
 - Lists scripts and reads metadata or source, including line windows and source search.
 - Requests installation, content-anchored editing, enable/disable, and deletion through browser approval.
 - Lists, opens, closes, and activates tabs and lists windows across one or more paired sctl Browser instances.
+- Lists, adds, marks read or unread, and removes reading list entries on a paired sctl Browser instance.
 - Uses JSON-RPC 2.0 over a WebSocket with mutual authentication; the listener defaults to loopback.
 - Ships as one binary; no browser automation or Native Messaging host is required.
 
@@ -98,11 +99,15 @@ troubleshooting.
 | `sctl browsers [list]` / `sctl browsers forget <name\|id>` | List paired sctl Browser instances, or forget one. |
 | `sctl tabs list\|open\|close\|activate` | List, open, close, or activate tabs on a paired sctl Browser instance. |
 | `sctl windows list` | List windows on a paired sctl Browser instance. |
+| `sctl reading-list list\|add\|mark-read\|rm` | List, add, mark read or unread, or remove reading list entries on a paired sctl Browser instance. |
 
 Run `sctl --help` or `sctl <command> --help` for usage and flags. Write operations block
 until the user approves, rejects, or closes the confirmation flow in ScriptCat; browser control commands run
-immediately with no approval step (see [`docs/threat-model.md`](./docs/threat-model.md)). `tabs` and `windows`
-accept `--browser <name|id>` (or `SCTL_BROWSER`) to pick an instance when more than one is online.
+immediately with no approval step (see [`docs/threat-model.md`](./docs/threat-model.md)). `tabs`, `windows`, and
+`reading-list` accept `--browser <name|id>` (or `SCTL_BROWSER`) to pick an instance when more than one is online.
+Destructive browser operations need explicit confirmation: `reading-list rm` runs only with `--yes` (MCP:
+`confirm: true`); without it nothing runs and the command exits with code 3. `reading-list list` returns at most
+100 entries unless `--limit` (up to 1000) says otherwise, and notes on stderr when more remain.
 
 ## License
 

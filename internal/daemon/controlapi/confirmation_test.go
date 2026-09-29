@@ -2,60 +2,45 @@ package controlapi
 
 import (
 	"encoding/json"
-	"maps"
 	"testing"
 
 	. "github.com/smartystreets/goconvey/convey"
 
 	"github.com/scriptscat/sctl/internal/client/control"
-	"github.com/scriptscat/sctl/internal/pkg/protocol"
 	"github.com/scriptscat/sctl/internal/pkg/protocol/generated"
 )
 
-// withLevel 返回把 method 改标为 level 的协议副本:当前协议里还没有真正的 L1 浏览器方法,
-// 只能借一个已有方法驱动 daemon 的确认检查。
-func withLevel(t *testing.T, method string, level protocol.Level) *protocol.Protocol {
-	t.Helper()
-	p, err := protocol.Load()
-	So(err, ShouldBeNil)
-	copied := *p
-	copied.Actions = maps.Clone(p.Actions)
-	action := copied.Actions[method]
-	action.Level = level
-	copied.Actions[method] = action
-	return &copied
-}
-
 func TestL1CallWithoutConfirmationIsRejectedBeforeForwarding(t *testing.T) {
-	Convey("L1 方法缺少 input.confirm === true 时 daemon 返回 CONFIRMATION_REQUIRED 且不转发给扩展", t, func() {
-		h := startTestServerWithProtocol(t, withLevel(t, "tabs.close", protocol.LevelConfirm))
+	Convey("L1 方法 readingList.remove 缺少 input.confirm === true 时 daemon 返回 CONFIRMATION_REQUIRED 且不转发给扩展", t, func() {
+		h := startTestServer(t)
 		a := h.connectBrowser(instanceA, "chrome-0123")
 
 		for _, input := range []string{
-			`{"tabIds":[1]}`,
-			`{"tabIds":[1],"confirm":false}`,
-			`{"tabIds":[1],"confirm":"true"}`,
-			`{"tabIds":[1],"confirm":1}`,
+			`{"urls":["https://a.example/"]}`,
+			`{"urls":["https://a.example/"],"confirm":false}`,
+			`{"urls":["https://a.example/"],"confirm":"true"}`,
+			`{"urls":["https://a.example/"],"confirm":1}`,
 			`[]`,
 		} {
-			res := h.callControl(control.CallRequest{Action: "tabs.close", Input: json.RawMessage(input)})
+			res := h.callControl(control.CallRequest{Action: "readingList.remove", Input: json.RawMessage(input)})
 			So(res.OK, ShouldBeFalse)
 			So(errCode(res), ShouldEqual, generated.ErrorCodeConfirmationRequired)
-			So(res.Error.Message, ShouldContainSubstring, "confirm")
+			So(res.Error.Message, ShouldContainSubstring, "--yes")
+			So(res.Error.Message, ShouldContainSubstring, "confirm: true")
 		}
 		a.idle()
 
 		Convey("带 confirm: true 时照常转发并返回扩展的结果", func() {
-			ch := h.goCall(control.CallRequest{Action: "tabs.close", Input: json.RawMessage(`{"tabIds":[1],"confirm":true}`)})
+			ch := h.goCall(control.CallRequest{Action: "readingList.remove", Input: json.RawMessage(`{"urls":["https://a.example/"],"confirm":true}`)})
 			req := a.read()
-			So(req.Method, ShouldEqual, "tabs.close")
+			So(req.Method, ShouldEqual, "readingList.remove")
 			var params rpcRequestParams
 			So(json.Unmarshal(req.Params, &params), ShouldBeNil)
-			So(string(params.Input), ShouldEqual, `{"tabIds":[1],"confirm":true}`)
-			a.writeResult(req.ID, json.RawMessage(`{"tabIds":[1]}`))
+			So(string(params.Input), ShouldEqual, `{"urls":["https://a.example/"],"confirm":true}`)
+			a.writeResult(req.ID, json.RawMessage(`{"urls":["https://a.example/"]}`))
 			res := <-ch
 			So(res.OK, ShouldBeTrue)
-			So(string(res.Result), ShouldEqual, `{"tabIds":[1]}`)
+			So(string(res.Result), ShouldEqual, `{"urls":["https://a.example/"]}`)
 		})
 	})
 }

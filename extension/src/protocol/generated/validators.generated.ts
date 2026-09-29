@@ -10,6 +10,38 @@ function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[])
   return Object.keys(value).every((key) => allowedKeys.has(key));
 }
 
+export function validateReadingListAddParams(value: unknown): value is Protocol.ReadingListAddParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["title", "url"]) && (value["title"] === undefined || (typeof value["title"] === "string")) && typeof value["url"] === "string");
+}
+
+export function validateReadingListAddResult(value: unknown): value is Protocol.ReadingListAddResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["title", "url"]) && typeof value["title"] === "string" && typeof value["url"] === "string");
+}
+
+export function validateReadingListListParams(value: unknown): value is Protocol.ReadingListListParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["limit", "read"]) && (value["limit"] === undefined || (typeof value["limit"] === "number" && Number.isInteger(value["limit"]) && value["limit"] >= 1)) && (value["read"] === undefined || (typeof value["read"] === "boolean")));
+}
+
+export function validateReadingListListResult(value: unknown): value is Protocol.ReadingListListResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "entries", "hasMore"]) && value["contentTrust"] === "untrusted-page-content" && Array.isArray(value["entries"]) && value["entries"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["createdAt", "read", "title", "updatedAt", "url"]) && typeof item["createdAt"] === "number" && Number.isInteger(item["createdAt"]) && typeof item["read"] === "boolean" && typeof item["title"] === "string" && typeof item["updatedAt"] === "number" && Number.isInteger(item["updatedAt"]) && typeof item["url"] === "string")) && typeof value["hasMore"] === "boolean");
+}
+
+export function validateReadingListMarkReadParams(value: unknown): value is Protocol.ReadingListMarkReadParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["read", "urls"]) && (value["read"] === undefined || (typeof value["read"] === "boolean")) && Array.isArray(value["urls"]) && value["urls"].length >= 1 && value["urls"].every((item) => typeof item === "string"));
+}
+
+export function validateReadingListMarkReadResult(value: unknown): value is Protocol.ReadingListMarkReadResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["read", "urls"]) && typeof value["read"] === "boolean" && Array.isArray(value["urls"]) && value["urls"].every((item) => typeof item === "string"));
+}
+
+export function validateReadingListRemoveParams(value: unknown): value is Protocol.ReadingListRemoveParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["confirm", "urls"]) && (value["confirm"] === undefined || (value["confirm"] === true)) && Array.isArray(value["urls"]) && value["urls"].length >= 1 && value["urls"].every((item) => typeof item === "string"));
+}
+
+export function validateReadingListRemoveResult(value: unknown): value is Protocol.ReadingListRemoveResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["urls"]) && Array.isArray(value["urls"]) && value["urls"].every((item) => typeof item === "string"));
+}
+
 export function validateTabsActivateParams(value: unknown): value is Protocol.TabsActivateParams {
   return (isRecord(value) && hasOnlyKeys(value, ["tabId"]) && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0);
 }
@@ -51,6 +83,10 @@ export function validateWindowsListResult(value: unknown): value is Protocol.Win
 }
 
 export const RPC_PARAM_VALIDATORS = {
+  "readingList.add": validateReadingListAddParams,
+  "readingList.list": validateReadingListListParams,
+  "readingList.markRead": validateReadingListMarkReadParams,
+  "readingList.remove": validateReadingListRemoveParams,
   "tabs.activate": validateTabsActivateParams,
   "tabs.close": validateTabsCloseParams,
   "tabs.list": validateTabsListParams,
@@ -59,6 +95,10 @@ export const RPC_PARAM_VALIDATORS = {
 } as const;
 
 export const RPC_RESULT_VALIDATORS = {
+  "readingList.add": validateReadingListAddResult,
+  "readingList.list": validateReadingListListResult,
+  "readingList.markRead": validateReadingListMarkReadResult,
+  "readingList.remove": validateReadingListRemoveResult,
   "tabs.activate": validateTabsActivateResult,
   "tabs.close": validateTabsCloseResult,
   "tabs.list": validateTabsListResult,

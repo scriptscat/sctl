@@ -203,6 +203,17 @@ with several instances online, `tabs_list` and `windows_list` combine every onli
 each item with its browser, while `tabs_open`, `tabs_close`, and `tabs_activate` return an error listing them. Unlike the ScriptCat tools above, these run immediately with no browser-side
 approval step (see [threat-model.md](./threat-model.md)).
 
+Later browser domains are exposed as one tool per domain instead of one tool per operation. `reading_list` manages
+the browser's reading list: its required `action` argument selects `list`, `add`, `mark-read`, or `rm`, and the
+remaining arguments belong to that action. The tool description lists which arguments each action takes;
+arguments that the chosen action does not take are rejected before anything is sent. It accepts the same optional
+`browser` argument: with several instances online and no target, `list` combines every online instance while the
+other actions return an error listing them. A browser without the reading list API answers `UNSUPPORTED`.
+
+Browser operations carry a destruction level. Most run immediately. A few are destructive enough to need explicit
+confirmation — currently only the reading list's `rm`: it runs only when the call passes `confirm: true`, and
+without it the daemon answers `CONFIRMATION_REQUIRED` and nothing runs. The command-line equivalent is `--yes`.
+
 ## Troubleshooting
 
 | Symptom | Check |

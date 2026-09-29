@@ -21,10 +21,12 @@ type Protocol struct {
 	SessionMethods []string          `json:"sessionMethods"`
 	Scopes         []string          `json:"scopes"`
 	Actions        map[string]Action `json:"methods"`
-	ErrorCodes     []ErrorCode       `json:"errorCodes"`
-	Crypto         Crypto            `json:"crypto"`
-	Limits         Limits            `json:"limits"`
-	PairingCode    PairingCode       `json:"pairingCode"`
+	// Types 是 protocol.json 的类型定义(JSON Schema 原文),供需要按方法参数派生 schema 的一方使用。
+	Types       map[string]json.RawMessage `json:"types"`
+	ErrorCodes  []ErrorCode                `json:"errorCodes"`
+	Crypto      Crypto                     `json:"crypto"`
+	Limits      Limits                     `json:"limits"`
+	PairingCode PairingCode                `json:"pairingCode"`
 }
 
 type Transport struct {
@@ -58,6 +60,9 @@ const (
 	// LevelApproval 要求用户在浏览器里批准后才执行。
 	LevelApproval Level = "L2"
 )
+
+// BlockingNone 是 blocking 的取值之一:方法收到即执行,不等待人工决定。
+const BlockingNone = "none"
 
 // ConfirmParam 是 L1 方法参数里承载显式确认的字段名,值必须恰好是 true。
 const ConfirmParam = "confirm"

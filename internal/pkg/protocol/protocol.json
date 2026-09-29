@@ -134,6 +134,43 @@
       "level": "L0",
       "peer": "browser",
       "mergeField": "windows"
+    },
+    "readingList.list": {
+      "params": "ReadingListListParams",
+      "result": "ReadingListListResult",
+      "scope": "readingList:list",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "mergeField": "entries"
+    },
+    "readingList.add": {
+      "params": "ReadingListAddParams",
+      "result": "ReadingListAddResult",
+      "scope": "readingList:add",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "readingList.markRead": {
+      "params": "ReadingListMarkReadParams",
+      "result": "ReadingListMarkReadResult",
+      "scope": "readingList:markRead",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "readingList.remove": {
+      "params": "ReadingListRemoveParams",
+      "result": "ReadingListRemoveResult",
+      "scope": "readingList:remove",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L1",
+      "peer": "browser"
     }
   },
   "types": {
@@ -817,6 +854,171 @@
       },
       "required": [
         "windows"
+      ],
+      "additionalProperties": false
+    },
+    "ReadingListListParams": {
+      "type": "object",
+      "properties": {
+        "read": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "additionalProperties": false
+    },
+    "ReadingListListResult": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "read": {
+                "type": "boolean"
+              },
+              "createdAt": {
+                "type": "integer"
+              },
+              "updatedAt": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "url",
+              "title",
+              "read",
+              "createdAt",
+              "updatedAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "entries",
+        "hasMore",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "ReadingListAddParams": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "ReadingListAddResult": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "title"
+      ],
+      "additionalProperties": false
+    },
+    "ReadingListMarkReadParams": {
+      "type": "object",
+      "properties": {
+        "urls": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "read": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "urls"
+      ],
+      "additionalProperties": false
+    },
+    "ReadingListMarkReadResult": {
+      "type": "object",
+      "properties": {
+        "urls": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "read": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "urls",
+        "read"
+      ],
+      "additionalProperties": false
+    },
+    "ReadingListRemoveParams": {
+      "type": "object",
+      "properties": {
+        "urls": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "confirm": {
+          "const": true
+        }
+      },
+      "required": [
+        "urls"
+      ],
+      "additionalProperties": false
+    },
+    "ReadingListRemoveResult": {
+      "type": "object",
+      "properties": {
+        "urls": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "urls"
       ],
       "additionalProperties": false
     }

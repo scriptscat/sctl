@@ -89,15 +89,22 @@ func toolNames(res *mcp.ListToolsResult) []string {
 }
 
 func TestToolsListExposesAllTools(t *testing.T) {
-	Convey("扁平信任:tools/list 暴露 protocol.json 定义的全部方法(工具)与特殊的 browsers_list", t, func() {
+	Convey("扁平信任:tools/list 暴露第 1 期的逐方法工具、按领域合并的工具与特殊的 browsers_list", t, func() {
 		p := loadProto(t)
 		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
 
 		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
 		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
 		So(err, ShouldBeNil)
-		// 每个 protocol 方法映射一个工具,加上 browsers_list (不是方法)。
-		So(len(res.Tools), ShouldEqual, len(p.Actions)+1)
+		legacy := 0
+		for _, td := range toolDefs {
+			if _, ok := p.Actions[td.action]; ok {
+				legacy++
+			}
+		}
+		// 逐方法工具各映射一个方法,每个领域工具合并多个方法,再加上 browsers_list (不是方法)。
+		So(len(res.Tools), ShouldEqual, legacy+len(domainTools)+1)
+		So(toolNames(res), ShouldContain, "reading_list")
 		So(toolNames(res), ShouldContain, "scripts_list")
 		So(toolNames(res), ShouldContain, "scripts_delete_request")
 		So(toolNames(res), ShouldContain, "browsers_list")

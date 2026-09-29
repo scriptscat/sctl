@@ -1,4 +1,5 @@
 import { HandlerError, type HandlerRegistry, type RpcHandler } from "@/background/registry";
+import { registerReadingListHandlers } from "./readingList";
 
 // chrome.tabs.get/chrome.windows.get 对不存在的 ID 只会 reject，这里把它翻译成协议的 NOT_FOUND 领域错误。
 async function requireTab(tabId: number): Promise<chrome.tabs.Tab> {
@@ -79,11 +80,12 @@ const handleWindowsList: RpcHandler<"windows.list"> = async () => {
   };
 };
 
-// 标签页与窗口方法的处理函数在这里注册；注册了哪些方法，扩展就向 daemon 声明哪些能力。
+// 全部浏览器方法的处理函数在这里注册；注册了哪些方法，扩展就向 daemon 声明哪些能力。
 export function registerHandlers(registry: HandlerRegistry): void {
   registry.register("tabs.list", handleTabsList);
   registry.register("tabs.open", handleTabsOpen);
   registry.register("tabs.close", handleTabsClose);
   registry.register("tabs.activate", handleTabsActivate);
   registry.register("windows.list", handleWindowsList);
+  registerReadingListHandlers(registry);
 }

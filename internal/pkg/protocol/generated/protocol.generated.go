@@ -4,6 +4,52 @@ package generated
 const SchemaVersion = "1.0.0"
 const JSONRPCVersion = "2.0"
 
+type ReadingListAddParams struct {
+	Title *string `json:"title,omitempty"`
+	URL   string  `json:"url"`
+}
+
+type ReadingListAddResult struct {
+	Title string `json:"title"`
+	URL   string `json:"url"`
+}
+
+type ReadingListListParams struct {
+	Limit *int  `json:"limit,omitempty"`
+	Read  *bool `json:"read,omitempty"`
+}
+
+type ReadingListListResult struct {
+	ContentTrust string `json:"contentTrust"`
+	Entries      []struct {
+		CreatedAt int    `json:"createdAt"`
+		Read      bool   `json:"read"`
+		Title     string `json:"title"`
+		UpdatedAt int    `json:"updatedAt"`
+		URL       string `json:"url"`
+	} `json:"entries"`
+	HasMore bool `json:"hasMore"`
+}
+
+type ReadingListMarkReadParams struct {
+	Read *bool    `json:"read,omitempty"`
+	Urls []string `json:"urls"`
+}
+
+type ReadingListMarkReadResult struct {
+	Read bool     `json:"read"`
+	Urls []string `json:"urls"`
+}
+
+type ReadingListRemoveParams struct {
+	Confirm *bool    `json:"confirm,omitempty"`
+	Urls    []string `json:"urls"`
+}
+
+type ReadingListRemoveResult struct {
+	Urls []string `json:"urls"`
+}
+
 type ScriptMetadata struct {
 	Author       *string  `json:"author,omitempty"`
 	Connects     []string `json:"connects"`
@@ -189,6 +235,10 @@ type WindowsListResult struct {
 type Method string
 
 const (
+	MethodReadingListAdd        Method = "readingList.add"
+	MethodReadingListList       Method = "readingList.list"
+	MethodReadingListMarkRead   Method = "readingList.markRead"
+	MethodReadingListRemove     Method = "readingList.remove"
 	MethodScriptsDeleteRequest  Method = "scripts.delete.request"
 	MethodScriptsEditRequest    Method = "scripts.edit.request"
 	MethodScriptsInstallRequest Method = "scripts.install.request"
@@ -207,6 +257,10 @@ const (
 type MethodMetadata struct{ Params, Result, Scope, Effect, Blocking, Level, Peer, MergeField string }
 
 var Methods = map[string]MethodMetadata{
+	"readingList.add":         {Params: "ReadingListAddParams", Result: "ReadingListAddResult", Scope: "readingList:add", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"readingList.list":        {Params: "ReadingListListParams", Result: "ReadingListListResult", Scope: "readingList:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "entries"},
+	"readingList.markRead":    {Params: "ReadingListMarkReadParams", Result: "ReadingListMarkReadResult", Scope: "readingList:markRead", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"readingList.remove":      {Params: "ReadingListRemoveParams", Result: "ReadingListRemoveResult", Scope: "readingList:remove", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: ""},
 	"scripts.delete.request":  {Params: "ScriptUUIDParams", Result: "ScriptsDeleteResult", Scope: "scripts:delete:request", Effect: "write", Blocking: "approval", Level: "L2", Peer: "scriptcat", MergeField: ""},
 	"scripts.edit.request":    {Params: "ScriptsEditParams", Result: "ScriptMutationResult", Scope: "scripts:edit:request", Effect: "write", Blocking: "approval", Level: "L2", Peer: "scriptcat", MergeField: ""},
 	"scripts.install.request": {Params: "ScriptsInstallParams", Result: "ScriptMutationResult", Scope: "scripts:install:request", Effect: "write", Blocking: "approval", Level: "L2", Peer: "scriptcat", MergeField: ""},

@@ -60,6 +60,38 @@ export const PAIRING_CODE = {
   "length": 8,
   "display": "XXXX-XXXX"
 } as const;
+export interface ReadingListAddParams {
+  title?: string;
+  url: string;
+}
+export interface ReadingListAddResult {
+  title: string;
+  url: string;
+}
+export interface ReadingListListParams {
+  limit?: number;
+  read?: boolean;
+}
+export interface ReadingListListResult {
+  contentTrust: "untrusted-page-content";
+  entries: Array<{ createdAt: number; read: boolean; title: string; updatedAt: number; url: string; }>;
+  hasMore: boolean;
+}
+export interface ReadingListMarkReadParams {
+  read?: boolean;
+  urls: Array<string>;
+}
+export interface ReadingListMarkReadResult {
+  read: boolean;
+  urls: Array<string>;
+}
+export interface ReadingListRemoveParams {
+  confirm?: true;
+  urls: Array<string>;
+}
+export interface ReadingListRemoveResult {
+  urls: Array<string>;
+}
 export interface TabsActivateParams {
   tabId: number;
 }
@@ -93,6 +125,10 @@ export interface WindowsListResult {
   windows: Array<{ focused: boolean; state: "normal" | "minimized" | "maximized" | "fullscreen" | "locked-fullscreen"; tabCount: number; windowId: number; }>;
 }
 export interface RpcMethodMap {
+  "readingList.add": { params: ReadingListAddParams; result: ReadingListAddResult };
+  "readingList.list": { params: ReadingListListParams; result: ReadingListListResult };
+  "readingList.markRead": { params: ReadingListMarkReadParams; result: ReadingListMarkReadResult };
+  "readingList.remove": { params: ReadingListRemoveParams; result: ReadingListRemoveResult };
   "tabs.activate": { params: TabsActivateParams; result: TabsActivateResult };
   "tabs.close": { params: TabsCloseParams; result: TabsCloseResult };
   "tabs.list": { params: TabsListParams; result: TabsListResult };
@@ -103,6 +139,38 @@ export type RpcMethod = keyof RpcMethodMap;
 export type RpcParams<M extends RpcMethod> = RpcMethodMap[M]["params"];
 export type RpcResult<M extends RpcMethod> = RpcMethodMap[M]["result"];
 export const RPC_METHODS = {
+  "readingList.add": {
+    params: "ReadingListAddParams",
+    result: "ReadingListAddResult",
+    scope: "readingList:add",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "readingList.list": {
+    params: "ReadingListListParams",
+    result: "ReadingListListResult",
+    scope: "readingList:list",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "readingList.markRead": {
+    params: "ReadingListMarkReadParams",
+    result: "ReadingListMarkReadResult",
+    scope: "readingList:markRead",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "readingList.remove": {
+    params: "ReadingListRemoveParams",
+    result: "ReadingListRemoveResult",
+    scope: "readingList:remove",
+    effect: "write",
+    blocking: "none",
+    level: "L1",
+  },
   "tabs.activate": {
     params: "TabsActivateParams",
     result: "TabsActivateResult",

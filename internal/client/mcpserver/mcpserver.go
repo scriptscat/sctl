@@ -1,6 +1,6 @@
 // Package mcpserver 用官方 go-sdk 构建 sctl 的 stdio MCP server:把 protocol.json 定义的 bridge
-// action 暴露成 MCP 工具,并在阻塞等待(写审批 / 源码披露)期间周期发送 progress 通知(支持的
-// 客户端可借此续期工具超时)。
+// action 暴露成 MCP 工具(第 1 期的方法一方法一工具,之后的浏览器领域按领域合并成一个工具),并在
+// 方法等待人工决定(blocking 不是 none)期间周期发送 progress 通知(支持的客户端可借此续期工具超时)。
 //
 // 扁平信任:接入(enrollment)建立可信通道后,MCP agent 继承信任、无需各自配对,故 tools/list
 // 暴露全部工具;权威授权仍在扩展侧(写操作审批 / 源码披露闸门)。
@@ -45,8 +45,9 @@ type Deps struct {
 	Caller  BridgeCaller
 }
 
-// New 按依赖构建 MCP server,注册 protocol.json 里定义的全部 bridge action 工具以及 browsers_list。
-// 方法是否是浏览器方法、是否汇总多实例,都取自 protocol.json 的 peer 与 mergeField,不按方法名推断。
+// New 按依赖构建 MCP server,注册 protocol.json 里定义的逐方法工具、按领域合并的工具以及 browsers_list。
+// 方法是否是浏览器方法、是否汇总多实例、是否等待人工决定,都取自 protocol.json 的 peer、mergeField 与
+// blocking,不按方法名推断。
 func New(d Deps) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{Name: d.Name, Version: d.Version}, &mcp.ServerOptions{})
 	for _, td := range toolDefs {
@@ -58,7 +59,10 @@ func New(d Deps) *mcp.Server {
 		if browser {
 			td.inputSchema = schemaWithOptionalBrowser(td.inputSchema, browserParamDescription(action))
 		}
-		registerTool(srv, td, browser, d.Caller)
+		registerTool(srv, td, action, d.Caller)
+	}
+	for _, dt := range domainTools {
+		registerDomainTool(srv, dt, d.Proto, d.Caller)
 	}
 	// browsers_list 特殊处理:不是 bridge action,由控制 API 直接提供已配对实例列表。
 	registerBrowsersListTool(srv, d.Caller)
@@ -108,25 +112,36 @@ func splitBrowserParam(arguments json.RawMessage) (string, json.RawMessage, erro
 	if err := json.Unmarshal(arguments, &fields); err != nil {
 		return "", nil, err
 	}
-	var browser string
-	if raw, ok := fields["browser"]; ok {
-		if err := json.Unmarshal(raw, &browser); err != nil {
-			return "", nil, err
-		}
-		delete(fields, "browser")
+	browser, err := takeString(fields, "browser")
+	if err != nil {
+		return "", nil, err
 	}
 	rest, err := json.Marshal(fields)
 	return browser, rest, err
 }
 
-func registerTool(srv *mcp.Server, td toolDef, browserMethod bool, caller BridgeCaller) {
+// takeString 取出并删掉 fields 里可选的字符串参数 key;缺省时返回空串。
+func takeString(fields map[string]json.RawMessage, key string) (string, error) {
+	raw, ok := fields[key]
+	if !ok {
+		return "", nil
+	}
+	var value string
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return "", err
+	}
+	delete(fields, key)
+	return value, nil
+}
+
+func registerTool(srv *mcp.Server, td toolDef, action protocol.Action, caller BridgeCaller) {
 	schema := compileInputSchema(td.name, td.inputSchema)
 	tool := &mcp.Tool{
 		Name:        td.name,
 		Description: td.description,
 		InputSchema: json.RawMessage(td.inputSchema),
 	}
-	action := td.action
+	browserMethod := action.Peer == protocol.PeerBrowser
 	srv.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		defaultArguments(req)
 		if err := validateArguments(td.name, schema, req.Params.Arguments); err != nil {
@@ -140,7 +155,7 @@ func registerTool(srv *mcp.Server, td toolDef, browserMethod bool, caller Bridge
 				return nil, fmt.Errorf("split %s arguments: %w", td.name, err)
 			}
 		}
-		if action == "scripts.source.get" {
+		if td.action == "scripts.source.get" {
 			var args map[string]any
 			if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
 				return nil, fmt.Errorf("decode %s arguments: %w", td.name, err)
@@ -153,7 +168,7 @@ func registerTool(srv *mcp.Server, td toolDef, browserMethod bool, caller Bridge
 				}
 			}
 		}
-		return handleCall(ctx, req, action, browserMethod, browser, caller)
+		return handleCall(ctx, req, td.action, req.Params.Arguments, action.Blocking != protocol.BlockingNone, browser, caller)
 	})
 }
 
@@ -186,15 +201,16 @@ func registerBrowsersListTool(srv *mcp.Server, caller BridgeCaller) {
 	})
 }
 
-// handleCall 转发工具调用到 daemon。桥接业务错误(拒绝/过期/scope 等)作为 IsError 工具结果返回
-// (模型可见并自我纠正);传输/取消错误作为协议级错误返回。
-func handleCall(ctx context.Context, req *mcp.CallToolRequest, action string, browserMethod bool, browser string, caller BridgeCaller) (*mcp.CallToolResult, error) {
-	// 浏览器方法没有人工审批(spec 设计决策 3),不发「等待浏览器审批」的 progress。
+// handleCall 把方法 action 的输入 input 转发到 daemon。桥接业务错误(拒绝/过期/scope 等)作为 IsError
+// 工具结果返回(模型可见并自我纠正);传输/取消错误作为协议级错误返回。
+func handleCall(ctx context.Context, req *mcp.CallToolRequest, action string, input json.RawMessage, waitsForHuman bool, browser string, caller BridgeCaller) (*mcp.CallToolResult, error) {
+	// 只有等待人工决定的方法(blocking 不是 none)才发「等待浏览器审批」的 progress,即时执行的方法
+	// 不论属于哪个对端都不发,否则客户端会看到从不存在的审批。
 	stop := func() {}
-	if !browserMethod {
+	if waitsForHuman {
 		stop = startProgress(ctx, req)
 	}
-	res, err := caller.Call(ctx, action, browser, req.Params.Arguments)
+	res, err := caller.Call(ctx, action, browser, input)
 	stop()
 	if err != nil {
 		return nil, err
