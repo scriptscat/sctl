@@ -385,7 +385,8 @@ func (b *snapshotBuilder) node(doc *axDocument, n *axNode) *item {
 	return it
 }
 
-// iframe 输出 iframe 节点,并把它的文档展开在它下面。拿不到内容的 iframe 输出为 [unavailable]。
+// iframe 输出 iframe 节点,并把它的文档(同进程的经父会话,跨进程的经子会话)展开在它下面。拿不到内容的
+// iframe 输出为 [unavailable]。
 func (b *snapshotBuilder) iframe(ctx context.Context, doc *axDocument, n *axNode) ([]*item, error) {
 	unavailable := []*item{{role: "iframe", unavailable: true}}
 	var described struct {
@@ -399,10 +400,23 @@ func (b *snapshotBuilder) iframe(ctx context.Context, doc *axDocument, n *axNode
 		}
 		return nil, err
 	}
-	if described.Node.FrameID == "" {
+	frameID := described.Node.FrameID
+	if frameID == "" {
 		return unavailable, nil
 	}
-	child, err := b.document(ctx, doc.sessionID, described.Node.FrameID)
+	// 跨进程的 iframe 在父会话里读不到,改从它自己的子会话读;没有被附加上的(例如扩展页面)只能是 unavailable。
+	childSession, outOfProcess, err := b.t.frameSession(ctx, frameID)
+	if err != nil {
+		if isCDPError(err) {
+			return unavailable, nil
+		}
+		return nil, err
+	}
+	sessionID := doc.sessionID
+	if outOfProcess {
+		sessionID = childSession
+	}
+	child, err := b.document(ctx, sessionID, frameID)
 	if err != nil {
 		if isCDPError(err) {
 			return unavailable, nil

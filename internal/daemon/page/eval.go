@@ -3,6 +3,7 @@ package page
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"go.uber.org/zap"
@@ -28,6 +29,8 @@ const serializeFunction = `function () {
 
 type evalInput struct {
 	Expression string `json:"expression"`
+	// Ref 非空时 Expression 是一个函数,以引用指向的元素为参数调用。
+	Ref string `json:"ref"`
 }
 
 type evalResult struct {
@@ -66,6 +69,9 @@ func runEval(ctx context.Context, t *Tab, input json.RawMessage) (any, error) {
 	if strings.TrimSpace(in.Expression) == "" {
 		return nil, invalidRequest("page eval needs an expression")
 	}
+	if in.Ref != "" {
+		return evalOnElement(ctx, t, in)
+	}
 	var res evaluateResult
 	err := t.send(ctx, "Runtime.evaluate", map[string]any{
 		"expression":   in.Expression,
@@ -75,19 +81,66 @@ func runEval(ctx context.Context, t *Tab, input json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer releaseEvalObjects(ctx, t)
+	defer releaseEvalObjects(ctx, t, "")
+	return evalOutcome(ctx, t, "", res)
+}
+
+// evalOnElement 以引用指向的元素为参数调用函数表达式。它在元素所在的会话里执行:跨进程 iframe 里的元素
+// 只能在它自己的 frame 中取到。
+func evalOnElement(ctx context.Context, t *Tab, in evalInput) (any, error) {
+	if !refPattern.MatchString(in.Ref) {
+		return nil, invalidRequest(fmt.Sprintf("page eval takes a snapshot ref such as e5 as its target, not %q", in.Ref))
+	}
+	el, err := t.resolveRef(ctx, in.Ref)
+	if err != nil {
+		return nil, err
+	}
+	var node struct {
+		Object remoteObject `json:"object"`
+	}
+	err = t.sendTo(ctx, el.sessionID, "DOM.resolveNode", map[string]any{"backendNodeId": el.backendNodeID, "objectGroup": evalObjectGroup}, &node)
+	if err != nil {
+		if isCDPError(err) {
+			return nil, staleRef(in.Ref, t.id)
+		}
+		return nil, err
+	}
+	defer releaseEvalObjects(ctx, t, el.sessionID)
+	var res evaluateResult
+	err = t.sendTo(ctx, el.sessionID, "Runtime.callFunctionOn", map[string]any{
+		"objectId":            node.Object.ObjectID,
+		"functionDeclaration": in.Expression,
+		"arguments":           []map[string]string{{"objectId": node.Object.ObjectID}},
+		"awaitPromise":        true,
+		"objectGroup":         evalObjectGroup,
+	}, &res)
+	if err != nil {
+		if isCDPError(err) {
+			// Chrome 拒绝不是函数的表达式("Given expression does not evaluate to a function")。
+			return nil, &Error{
+				Code:    generated.ErrorCodeEvalError,
+				Message: "with a target, the expression must be a function that takes the element, such as el => el.textContent: " + err.Error(),
+			}
+		}
+		return nil, err
+	}
+	return evalOutcome(ctx, t, el.sessionID, res)
+}
+
+// evalOutcome 把执行结果转换为动作结果;页面抛出的异常是 EVAL_ERROR。
+func evalOutcome(ctx context.Context, t *Tab, sessionID string, res evaluateResult) (any, error) {
 	if res.ExceptionDetails != nil {
 		return nil, &Error{Code: generated.ErrorCodeEvalError, Message: exceptionMessage(res.ExceptionDetails)}
 	}
-	value, err := evalValue(ctx, t, res.Result)
+	value, err := evalValue(ctx, t, sessionID, res.Result)
 	if err != nil {
 		return nil, err
 	}
 	return evalResult{ContentTrust: contentTrustPage, TabID: t.ID(), Value: value}, nil
 }
 
-// evalValue 把 Runtime.evaluate 的结果转换为 JSON:JSON 原生值原样返回,其余返回字符串形式。
-func evalValue(ctx context.Context, t *Tab, obj remoteObject) (json.RawMessage, error) {
+// evalValue 把执行结果转换为 JSON:JSON 原生值原样返回,其余返回字符串形式。远程对象在 sessionID 会话里。
+func evalValue(ctx context.Context, t *Tab, sessionID string, obj remoteObject) (json.RawMessage, error) {
 	switch {
 	case obj.Type == "undefined":
 		return json.Marshal("undefined")
@@ -102,7 +155,7 @@ func evalValue(ctx context.Context, t *Tab, obj remoteObject) (json.RawMessage, 
 		Result           remoteObject      `json:"result"`
 		ExceptionDetails *exceptionDetails `json:"exceptionDetails"`
 	}
-	err := t.send(ctx, "Runtime.callFunctionOn", map[string]any{
+	err := t.sendTo(ctx, sessionID, "Runtime.callFunctionOn", map[string]any{
 		"objectId":            obj.ObjectID,
 		"functionDeclaration": serializeFunction,
 		"returnByValue":       true,
@@ -140,8 +193,8 @@ func exceptionMessage(d *exceptionDetails) string {
 }
 
 // releaseEvalObjects 沿用命令的 ctx:命令已超时或调试器已分离时不再发送,否则这条命令会让扩展重新附加。
-func releaseEvalObjects(ctx context.Context, t *Tab) {
-	if err := t.send(ctx, "Runtime.releaseObjectGroup", map[string]string{"objectGroup": evalObjectGroup}, nil); err != nil {
+func releaseEvalObjects(ctx context.Context, t *Tab, sessionID string) {
+	if err := t.sendTo(ctx, sessionID, "Runtime.releaseObjectGroup", map[string]string{"objectGroup": evalObjectGroup}, nil); err != nil {
 		t.m.log.Debug("failed to release eval objects", zap.Int("tabId", t.ID()), zap.Error(err))
 	}
 }

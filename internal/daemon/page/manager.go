@@ -40,6 +40,7 @@ type Tab struct {
 	instanceID string
 	id         int
 	refs       *refTable
+	frames     *frameSessions
 	// watchingFrames 表示这次附加已开启 Page 域,文档替换事件会送到 refs。只在标签页队列里读写。
 	watchingFrames bool
 }
@@ -121,6 +122,8 @@ type slot struct {
 	refs int
 	// tab 非 nil 表示已附加并完成附加钩子。
 	tab *Tab
+	// attaching 是正在运行附加钩子的 Tab:钩子开启的事件(如自动附加的子会话)在钩子返回前就会到达。
+	attaching *Tab
 	// idle 与 idleSeq:每次开始命令或重新计时都递增 idleSeq,已触发但晚到的旧计时器据此放弃。
 	idle    Timer
 	idleSeq uint64
@@ -153,8 +156,11 @@ func NewManager(cdp CDP, log *zap.Logger) *Manager {
 		slots:   map[tabKey]*slot{},
 	}
 	m.addAttachHook(enableFocusEmulation)
+	m.addAttachHook(autoAttachFrames)
 	m.addEventHandler("Page.frameNavigated", onFrameNavigated)
 	m.addEventHandler("Page.frameDetached", onFrameDetached)
+	m.addEventHandler("Target.attachedToTarget", onTargetAttached)
+	m.addEventHandler("Target.detachedFromTarget", onTargetDetached)
 	m.register("eval", runEval)
 	m.register("snapshot", runSnapshot)
 	m.registerBrowser("detach", m.detach)
@@ -180,8 +186,8 @@ func (m *Manager) addAttachHook(h attachHook) {
 	m.hooks = append(m.hooks, h)
 }
 
-// addEventHandler 让 method 事件送到发生它的已附加标签页。标签页附加完成之前与分离之后的事件被丢弃:
-// 下一次附加得到的 Tab 从空状态开始。
+// addEventHandler 让 method 事件送到发生它的已附加(或正在运行附加钩子的)标签页。附加之前与分离之后的
+// 事件被丢弃:下一次附加得到的 Tab 从空状态开始。
 func (m *Manager) addEventHandler(method string, h eventHandler) {
 	m.events[method] = append(m.events[method], h)
 }
@@ -347,6 +353,7 @@ func (m *Manager) stopIdle(s *slot) {
 func (m *Manager) clearTab(key tabKey, s *slot, cause error) {
 	m.stopIdle(s)
 	s.tab = nil
+	s.attaching = nil
 	if s.cancel != nil {
 		s.cancel(cause)
 	}
@@ -361,15 +368,22 @@ func (m *Manager) attach(ctx context.Context, s *slot, instanceID string, tabID 
 	if t != nil {
 		return t, nil
 	}
-	t = &Tab{m: m, instanceID: instanceID, id: tabID, refs: newRefTable()}
+	t = &Tab{m: m, instanceID: instanceID, id: tabID, refs: newRefTable(), frames: newFrameSessions()}
+	m.mu.Lock()
+	s.attaching = t
+	m.mu.Unlock()
 	for _, hook := range m.hooks {
 		if err := hook(ctx, t); err != nil {
+			m.mu.Lock()
+			s.attaching = nil
+			m.mu.Unlock()
 			m.abandonAttach(instanceID, tabID, err)
 			return nil, err
 		}
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	s.attaching = nil
 	// 钩子运行期间收到的分离通知已取消 ctx;此时附加已经失效,不能记为已附加。
 	if ctx.Err() != nil {
 		return nil, context.Cause(ctx)
@@ -437,6 +451,9 @@ func (m *Manager) onEvent(instanceID string, params json.RawMessage) {
 	var t *Tab
 	if s := m.slots[tabKey{instanceID, n.TabId}]; s != nil {
 		t = s.tab
+		if t == nil {
+			t = s.attaching
+		}
 	}
 	m.mu.Unlock()
 	if t == nil {
