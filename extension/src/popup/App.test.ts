@@ -4,14 +4,16 @@ import { createElement } from "react";
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ApprovalItem, ApprovalView } from "@/shared/approvals";
 import type { PairResult, RenameResult, SetAddressResult } from "@/shared/messages";
 import type { PopupApi } from "@/shared/popup-api";
 import type { ConnectionState } from "@/shared/state";
 import { App } from "./App";
 import type { KeyValueStorage, SessionStorage } from "./storage";
 
-function fakeApi(initial: ConnectionState) {
+function fakeApi(initial: ConnectionState, approvals: ApprovalView = { browserName: "chrome-3f2a", items: [] }) {
   let listeners: Array<(s: ConnectionState) => void> = [];
+  let approvalListeners: Array<(view: ApprovalView) => void> = [];
   const api = {
     getState: vi.fn(() => Promise.resolve(initial)),
     subscribe: vi.fn((listener: (s: ConnectionState) => void) => {
@@ -25,11 +27,22 @@ function fakeApi(initial: ConnectionState) {
     retryNow: vi.fn(() => Promise.resolve()),
     forget: vi.fn(() => Promise.resolve()),
     setAddress: vi.fn<(address: string) => Promise<SetAddressResult>>(() => Promise.resolve({ ok: true })),
+    getApprovals: vi.fn(() => Promise.resolve(approvals)),
+    subscribeApprovals: vi.fn((listener: (view: ApprovalView) => void) => {
+      approvalListeners.push(listener);
+      return () => {
+        approvalListeners = approvalListeners.filter((l) => l !== listener);
+      };
+    }),
+    focusApprovals: vi.fn(() => Promise.resolve()),
   } satisfies PopupApi;
   return {
     api,
     emit: (next: ConnectionState) => {
       for (const listener of listeners) listener(next);
+    },
+    emitApprovals: (next: ApprovalView) => {
+      for (const listener of approvalListeners) listener(next);
     },
   };
 }
@@ -582,6 +595,80 @@ describe("accessibility", () => {
   it("marks pairing errors with role=alert", async () => {
     renderApp({ ...BASE, status: "pair-failed", reason: "code-rejected" });
     expect(await screen.findByRole("alert")).toBeInTheDocument();
+  });
+});
+
+// 弹窗只需要状态，其余字段对入口行没有影响。
+function approvalsWith(...statuses: ApprovalItem["status"][]): ApprovalView {
+  return {
+    browserName: BASE.name,
+    items: statuses.map(
+      (status, i) =>
+        ({
+          id: `r${i}`,
+          kind: "bookmarks.remove",
+          detail: {
+            summary: { items: 0, bookmarks: 0, folders: 0, containedBookmarks: 0, containedFolders: 0 },
+            items: [],
+          },
+          requester: null,
+          receivedAt: 0,
+          expiresAt: 1,
+          status,
+          outcome: null,
+        }) satisfies ApprovalItem,
+    ),
+  };
+}
+
+describe("pending approvals entry", () => {
+  it.each([
+    ["zh", "2 个待批准请求", "查看"],
+    ["en", "2 requests awaiting approval", "View"],
+  ] as const)(
+    "shows how many requests await approval and focuses the window on click in %s",
+    async (lang, text, view) => {
+      const user = userEvent.setup();
+      const { api } = fakeApi({ ...BASE, ...CONNECTED }, approvalsWith("pending", "pending", "done"));
+      renderApp({ ...BASE, ...CONNECTED }, { lang, api });
+
+      const row = await screen.findByRole("button", { name: `${text} · ${view}` });
+      await user.click(row);
+      expect(api.focusApprovals).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("uses the singular for one request in English", async () => {
+    const { api } = fakeApi({ ...BASE, ...CONNECTED }, approvalsWith("pending"));
+    renderApp({ ...BASE, ...CONNECTED }, { api });
+    expect(await screen.findByRole("button", { name: "1 request awaiting approval · View" })).toBeInTheDocument();
+  });
+
+  it("hides the entry when nothing is waiting for a decision", async () => {
+    const { api } = fakeApi({ ...BASE, ...CONNECTED }, approvalsWith("done", "executing", "expired"));
+    renderApp({ ...BASE, ...CONNECTED }, { api });
+    await screen.findByRole("group", { name: "Instance name" });
+    expect(screen.queryByRole("button", { name: /awaiting approval/ })).not.toBeInTheDocument();
+  });
+
+  it("hides the entry outside the connected state", async () => {
+    const state: ConnectionState = { ...BASE, status: "reconnecting", attempt: 1, retryAt: null };
+    const { api } = fakeApi(state, approvalsWith("pending"));
+    renderApp(state, { api });
+    await screen.findByRole("group", { name: "Instance name" });
+    expect(screen.queryByRole("button", { name: /awaiting approval/ })).not.toBeInTheDocument();
+  });
+
+  it("follows queue changes broadcast while the popup is open", async () => {
+    const { api, emitApprovals } = fakeApi({ ...BASE, ...CONNECTED });
+    renderApp({ ...BASE, ...CONNECTED }, { api });
+    await screen.findByRole("group", { name: "Instance name" });
+    expect(screen.queryByRole("button", { name: /awaiting approval/ })).not.toBeInTheDocument();
+
+    act(() => emitApprovals(approvalsWith("pending", "pending", "pending")));
+    expect(screen.getByRole("button", { name: "3 requests awaiting approval · View" })).toBeInTheDocument();
+    act(() => emitApprovals(approvalsWith()));
+    expect(screen.queryByRole("button", { name: /awaiting approval/ })).not.toBeInTheDocument();
   });
 });
 

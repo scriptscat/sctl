@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ApprovalView } from "./approvals";
 import { listen, type RuntimeLike } from "./messaging";
 import { createPopupApi } from "./popup-api";
 import type { ConnectionState } from "./state";
@@ -103,6 +104,41 @@ describe("popup message API", () => {
     await offscreen.sendMessage({ target: "popup", type: "state", state: STATE });
 
     expect(seen).toEqual([STATE]);
+    expect(runtime.count()).toBe(0);
+  });
+
+  it("asks the background for the approval queue and to bring the approval window forward", async () => {
+    const runtime = new FakeRuntime();
+    const received: unknown[] = [];
+    const view: ApprovalView = { browserName: "chrome-3f2a", items: [] };
+    listen(runtime.as("background"), "background", (message) => {
+      received.push(message);
+      return Promise.resolve(message.type === "approvalView" ? view : undefined);
+    });
+    const api = createPopupApi(runtime.as("popup"));
+
+    await expect(api.getApprovals()).resolves.toEqual(view);
+    await api.focusApprovals();
+    expect(received).toEqual([
+      { target: "background", type: "approvalView" },
+      { target: "background", type: "approvalFocus" },
+    ]);
+  });
+
+  it("delivers approval queue broadcasts, and nothing else, to subscribers until they unsubscribe", async () => {
+    const runtime = new FakeRuntime();
+    const api = createPopupApi(runtime.as("popup"));
+    const seen: ApprovalView[] = [];
+    const unsubscribe = api.subscribeApprovals((view) => seen.push(view));
+    const background = runtime.as("background");
+    const view: ApprovalView = { browserName: "chrome-3f2a", items: [] };
+
+    await background.sendMessage({ target: "approval", type: "approvals", view });
+    await background.sendMessage({ target: "popup", type: "state", state: STATE });
+    unsubscribe();
+    await background.sendMessage({ target: "approval", type: "approvals", view });
+
+    expect(seen).toEqual([view]);
     expect(runtime.count()).toBe(0);
   });
 });
