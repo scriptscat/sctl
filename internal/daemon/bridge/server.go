@@ -62,6 +62,7 @@ type Server struct {
 	online     map[string]*conn
 	pending    map[string]*pendingCall
 	enrollment *pendingEnrollment
+	listener   BrowserListener
 
 	httpServer   *http.Server
 	baseCtx      context.Context
@@ -292,11 +293,16 @@ func (s *Server) removeConn(c *conn) {
 	if s.scriptCat == c {
 		s.scriptCat = nil
 	}
-	if s.online[c.instanceID] == c {
+	wasOnline := c.kind == protocol.PeerBrowser && s.online[c.instanceID] == c
+	if wasOnline {
 		delete(s.online, c.instanceID)
 	}
 	s.mu.Unlock()
 	c.close(websocket.StatusNormalClosure, "")
+	// 被替换或被忘记的连接早已移出在线表并通知过,这里只处理自己断开的那一条。
+	if wasOnline {
+		s.instanceGone(c.instanceID)
+	}
 }
 
 // setScriptCat 将 c 设为唯一的 ScriptCat 连接,替换并断开旧的 ScriptCat 连接。
