@@ -70,7 +70,8 @@ func (e *extClient) answerEval(tabID int) {
 	e.writeResult(req.ID, json.RawMessage(`{"result":{}}`))
 }
 
-// answerAttach 应答附加后的准备命令,顺序与附加钩子一致:焦点模拟,然后开启 iframe 自动附加(扁平会话)。
+// answerAttach 应答附加后的准备命令,顺序与附加钩子一致:焦点模拟,开启 iframe 自动附加(扁平会话),
+// 然后开启 Page 域(JS 弹框与文档替换事件)。
 func (e *extClient) answerAttach(tabID int) {
 	req := e.debuggerSend(tabID, "Emulation.setFocusEmulationEnabled")
 	e.writeResult(req.ID, json.RawMessage(`{"result":{}}`))
@@ -80,6 +81,8 @@ func (e *extClient) answerAttach(tabID int) {
 	}
 	So(json.Unmarshal(req.Params, &sent), ShouldBeNil)
 	So(string(sent.Input.Params), ShouldEqual, `{"autoAttach":true,"flatten":true,"waitForDebuggerOnStart":false}`)
+	e.writeResult(req.ID, json.RawMessage(`{"result":{}}`))
+	req = e.debuggerSend(tabID, "Page.enable")
 	e.writeResult(req.ID, json.RawMessage(`{"result":{}}`))
 }
 

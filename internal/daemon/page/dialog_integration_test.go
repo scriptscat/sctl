@@ -1,0 +1,127 @@
+package page_test
+
+import (
+	"context"
+	"encoding/json"
+	"testing"
+	"time"
+
+	. "github.com/smartystreets/goconvey/convey"
+	"go.uber.org/zap"
+
+	"github.com/scriptscat/sctl/internal/daemon/page"
+	"github.com/scriptscat/sctl/internal/daemon/page/pagetest"
+	"github.com/scriptscat/sctl/internal/pkg/protocol/generated"
+)
+
+// promptly 是打开弹框的动作必须返回的期限:远小于动作的默认超时,证明它不是等到超时才返回。
+const promptly = 5 * time.Second
+
+func TestDialogsInChrome(t *testing.T) {
+	chrome := pagetest.Start(t)
+	base := pagetest.Serve(t, "testdata")
+
+	Convey("JS 弹框在真 Chrome 的后台标签页上", t, func() {
+		m := page.NewManager(chrome, zap.NewNop())
+		chrome.SetListener(m)
+		tab := openInBackground(t, chrome, m, base+"/dialog.html")
+		clickButton := func(id string) error {
+			started := time.Now()
+			_, err := act(m, tab, "click", map[string]any{"selector": "#" + id}, callTimeout)
+			So(time.Since(started), ShouldBeLessThan, promptly+callTimeout/10)
+			return err
+		}
+		handle := func(input map[string]any) (json.RawMessage, error) {
+			raw, err := json.Marshal(input)
+			So(err, ShouldBeNil)
+			return m.Do(context.Background(), page.Request{Action: "dialog", TabID: &tab, Timeout: callTimeout, Input: raw})
+		}
+
+		Convey("没有弹框:page dialog 返回 NOT_FOUND", func() {
+			_, err := handle(map[string]any{"action": "accept"})
+			So(codeOf(err), ShouldEqual, generated.ErrorCodeNotFound)
+		})
+
+		Convey("alert:点击立即返回 DIALOG_OPEN,其他命令被拒,截图可用,accept 后页面继续", func() {
+			err := clickButton("alert")
+			So(codeOf(err), ShouldEqual, generated.ErrorCodeDialogOpen)
+			So(err.Error(), ShouldContainSubstring, "alert")
+			So(err.Error(), ShouldContainSubstring, "hello <alert>")
+
+			_, err = eval(m, tab, `1`)
+			So(codeOf(err), ShouldEqual, generated.ErrorCodeDialogOpen)
+			_, err = act(m, tab, "snapshot", map[string]any{}, promptly)
+			So(codeOf(err), ShouldEqual, generated.ErrorCodeDialogOpen)
+
+			// 截图不被 DIALOG_OPEN 拒绝而是真的去截:headless Chrome 的渲染进程被弹框卡住时不出图,
+			// 此时报告的是"没有图像"的 DIALOG_OPEN(而不是 PAGE_HIDDEN),有图像时则成功。
+			_, _, err = takeShot(m, tab, map[string]any{})
+			if err != nil {
+				So(codeOf(err), ShouldEqual, generated.ErrorCodeDialogOpen)
+				So(err.Error(), ShouldContainSubstring, "no image")
+			}
+
+			_, err = handle(map[string]any{"action": "accept"})
+			So(err, ShouldBeNil)
+			v, err := eval(m, tab, `window.alerted === true`)
+			So(err, ShouldBeNil)
+			So(string(v), ShouldEqual, "true")
+			_, err = handle(map[string]any{"action": "accept"})
+			So(codeOf(err), ShouldEqual, generated.ErrorCodeNotFound)
+		})
+
+		Convey("confirm:accept 使页面得到 true,dismiss 得到 false", func() {
+			So(codeOf(clickButton("confirm")), ShouldEqual, generated.ErrorCodeDialogOpen)
+			_, err := handle(map[string]any{"action": "accept"})
+			So(err, ShouldBeNil)
+			v, err := eval(m, tab, `window.confirmed`)
+			So(err, ShouldBeNil)
+			So(string(v), ShouldEqual, "true")
+
+			So(codeOf(clickButton("confirm")), ShouldEqual, generated.ErrorCodeDialogOpen)
+			_, err = handle(map[string]any{"action": "dismiss"})
+			So(err, ShouldBeNil)
+			v, err = eval(m, tab, `window.confirmed`)
+			So(err, ShouldBeNil)
+			So(string(v), ShouldEqual, "false")
+		})
+
+		Convey("prompt:--text 成为页面收到的输入", func() {
+			So(codeOf(clickButton("prompt")), ShouldEqual, generated.ErrorCodeDialogOpen)
+			_, err := handle(map[string]any{"action": "accept", "text": "Ada"})
+			So(err, ShouldBeNil)
+			v, err := eval(m, tab, `window.answer`)
+			So(err, ShouldBeNil)
+			So(string(v), ShouldEqual, `"Ada"`)
+
+			So(codeOf(clickButton("prompt")), ShouldEqual, generated.ErrorCodeDialogOpen)
+			_, err = handle(map[string]any{"action": "dismiss"})
+			So(err, ShouldBeNil)
+			v, err = eval(m, tab, `window.answer`)
+			So(err, ShouldBeNil)
+			So(string(v), ShouldEqual, "null")
+		})
+
+		Convey("beforeunload:离开页面时弹出,dismiss 留在原页,accept 离开", func() {
+			_, err := act(m, tab, "click", map[string]any{"selector": "#arm"}, callTimeout)
+			So(err, ShouldBeNil)
+
+			started := time.Now()
+			_, err = act(m, tab, "navigate", map[string]any{"action": "goto", "url": base + "/nav-a.html"}, callTimeout)
+			So(codeOf(err), ShouldEqual, generated.ErrorCodeDialogOpen)
+			So(err.Error(), ShouldContainSubstring, "beforeunload")
+			So(time.Since(started), ShouldBeLessThan, promptly)
+
+			_, err = handle(map[string]any{"action": "dismiss"})
+			So(err, ShouldBeNil)
+			So(evalString(m, tab, `location.pathname`), ShouldEqual, "/dialog.html")
+
+			_, err = act(m, tab, "navigate", map[string]any{"action": "goto", "url": base + "/nav-a.html"}, callTimeout)
+			So(codeOf(err), ShouldEqual, generated.ErrorCodeDialogOpen)
+			_, err = handle(map[string]any{"action": "accept"})
+			So(err, ShouldBeNil)
+			waitLoaded(t, m, tab)
+			So(evalString(m, tab, `location.pathname`), ShouldEqual, "/nav-a.html")
+		})
+	})
+}

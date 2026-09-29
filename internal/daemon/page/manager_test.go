@@ -285,7 +285,7 @@ func TestManagerAttachSetup(t *testing.T) {
 			So(err, ShouldBeNil)
 			_, err = probe(m, Request{TabID: tabRef(3)})
 			So(err, ShouldBeNil)
-			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", probeMethod, probeMethod})
+			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod, probeMethod})
 			cdp.mu.Lock()
 			So(string(cdp.sent[0].Params), ShouldEqual, `{"enabled":true}`)
 			So(string(cdp.sent[1].Params), ShouldEqual, `{"autoAttach":true,"flatten":true,"waitForDebuggerOnStart":false}`)
@@ -295,7 +295,7 @@ func TestManagerAttachSetup(t *testing.T) {
 		Convey("每个标签页各自开启一次", func() {
 			_, _ = probe(m, Request{TabID: tabRef(3)})
 			_, _ = probe(m, Request{TabID: tabRef(4)})
-			So(cdp.methods(4), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", probeMethod})
+			So(cdp.methods(4), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod})
 		})
 
 		Convey("附加被拒时返回 PAGE_NOT_AUTOMATABLE,下一条命令重新尝试附加", func() {
@@ -309,7 +309,7 @@ func TestManagerAttachSetup(t *testing.T) {
 			cdp.setSend(nil)
 			_, err = probe(m, Request{TabID: tabRef(3)})
 			So(err, ShouldBeNil)
-			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", probeMethod})
+			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod})
 		})
 	})
 }
@@ -369,7 +369,7 @@ func TestManagerIdleDetach(t *testing.T) {
 			So(cdp.detachCalls(), ShouldResemble, [][]int{{3}})
 			_, err := probe(m, Request{TabID: tabRef(3)})
 			So(err, ShouldBeNil)
-			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", probeMethod, "Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", probeMethod})
+			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod, "Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod})
 		})
 
 		Convey("期间的新命令重新计时", func() {
@@ -412,7 +412,7 @@ func TestManagerDetachNotifications(t *testing.T) {
 			m.OnNotification(testInstance, "debugger.detached", json.RawMessage(`{"tabId":3,"reason":"target_closed"}`))
 			_, err := probe(m, Request{TabID: tabRef(3)})
 			So(err, ShouldBeNil)
-			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", probeMethod, "Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", probeMethod})
+			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod, "Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod})
 		})
 
 		Convey("其他实例或其他标签页的分离通知不影响这个标签页", func() {
@@ -420,7 +420,7 @@ func TestManagerDetachNotifications(t *testing.T) {
 			m.OnNotification(testInstance, "debugger.detached", json.RawMessage(`{"tabId":4,"reason":"target_closed"}`))
 			_, err := probe(m, Request{TabID: tabRef(3)})
 			So(err, ShouldBeNil)
-			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", probeMethod, probeMethod})
+			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod, probeMethod})
 		})
 
 		Convey("实例断开清空它的全部标签页状态,空闲计时不再对它发断开", func() {
@@ -429,7 +429,7 @@ func TestManagerDetachNotifications(t *testing.T) {
 			So(cdp.detachCalls(), ShouldBeEmpty)
 			_, err := probe(m, Request{TabID: tabRef(3)})
 			So(err, ShouldBeNil)
-			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", probeMethod, "Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", probeMethod})
+			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod, "Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod})
 		})
 
 		Convey("实例断开时正在执行的命令返回 DEBUGGER_DETACHED", func() {
@@ -488,11 +488,11 @@ func TestManagerDetachAction(t *testing.T) {
 			res, err := m.Do(context.Background(), Request{Action: "detach", TabID: tabRef(3)})
 			So(err, ShouldBeNil)
 			So(string(res), ShouldEqual, `{"tabId":3,"tabIds":[3]}`)
-			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", probeMethod})
+			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod})
 
 			_, err = probe(m, Request{TabID: tabRef(3)})
 			So(err, ShouldBeNil)
-			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", probeMethod, "Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", probeMethod})
+			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod, "Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod})
 		})
 
 		Convey("未指定标签页时断开默认标签页", func() {
@@ -520,7 +520,7 @@ func TestManagerDetachAction(t *testing.T) {
 			So(cdp.detachCalls(), ShouldResemble, [][]int{nil})
 			_, err = probe(m, Request{TabID: tabRef(4)})
 			So(err, ShouldBeNil)
-			So(cdp.methods(4), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", probeMethod, "Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", probeMethod})
+			So(cdp.methods(4), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod, "Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod})
 		})
 
 		Convey("断开不激活标签页:带 --activate 返回 INVALID_REQUEST", func() {

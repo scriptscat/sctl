@@ -46,6 +46,7 @@ type Tab struct {
 	frames     *frameSessions
 	nav        *navWatch
 	net        *netWatch
+	dialog     *dialogState
 	// watchingFrames 表示这次附加已开启 Page 域,文档替换事件会送到 refs。只在标签页队列里读写。
 	watchingFrames bool
 	// watchingNetwork 表示这次附加已开启 Network 域。只在标签页队列里读写。
@@ -99,6 +100,8 @@ type action struct {
 	browser browserHandler
 	// timeout 是动作自己的默认超时,0 表示 defaultTimeout。
 	timeout time.Duration
+	// dialogSafe 表示动作在 JS 弹框打开时仍可执行(处理弹框本身与截图),它不会被弹框拒绝或中断。
+	dialogSafe bool
 }
 
 // attachHook 在标签页每次附加后、第一个动作执行前按注册顺序运行,为这次附加准备页面状态。
@@ -138,6 +141,8 @@ type slot struct {
 	idleSeq uint64
 	// cancel 取消正在执行的命令,cause 是交给调用方的错误。
 	cancel context.CancelCauseFunc
+	// dialogSafe 是正在执行的命令是否允许在弹框打开时继续。
+	dialogSafe bool
 }
 
 // Manager 持有全部浏览器实例上的页面自动化状态。
@@ -166,6 +171,9 @@ func NewManager(cdp CDP, log *zap.Logger) *Manager {
 	}
 	m.addAttachHook(enableFocusEmulation)
 	m.addAttachHook(autoAttachFrames)
+	m.addAttachHook(enablePage)
+	m.addEventHandler("Page.javascriptDialogOpening", onDialogOpening)
+	m.addEventHandler("Page.javascriptDialogClosed", onDialogClosed)
 	m.addEventHandler("Page.frameNavigated", onFrameNavigated)
 	m.addEventHandler("Page.frameDetached", onFrameDetached)
 	m.addEventHandler("Target.attachedToTarget", onTargetAttached)
@@ -186,7 +194,8 @@ func NewManager(cdp CDP, log *zap.Logger) *Manager {
 	m.register("select", runSelect)
 	m.register("upload", runUpload)
 	m.register("scroll", runScroll)
-	m.addAction("screenshot", action{tab: runScreenshot, timeout: screenshotActionTimeout})
+	m.addAction("screenshot", action{tab: runScreenshot, timeout: screenshotActionTimeout, dialogSafe: true})
+	m.addAction("dialog", action{tab: runDialog, dialogSafe: true})
 	m.addAction("navigate", action{tab: runNavigate, timeout: navigationTimeout})
 	m.register("wait", runWait)
 	m.registerBrowser("detach", m.detach)
@@ -223,6 +232,9 @@ func (m *Manager) addEventHandler(method string, h eventHandler) {
 func enableFocusEmulation(ctx context.Context, t *Tab) error {
 	return t.send(ctx, "Emulation.setFocusEmulationEnabled", map[string]bool{"enabled": true}, nil)
 }
+
+// enablePage 在附加时开启 Page 域:JS 弹框事件必须从附加起就能收到,否则弹框打开时没有打开状态可拒绝命令。
+func enablePage(ctx context.Context, t *Tab) error { return t.watchFrames(ctx) }
 
 // Do 执行一次页面动作,返回 JSON 结果。调用方取消时返回 ctx 的错误,其余失败都是 *Error。
 func (m *Manager) Do(ctx context.Context, req Request) (json.RawMessage, error) {
@@ -266,7 +278,7 @@ func (m *Manager) dispatch(ctx context.Context, a action, req Request) (any, err
 	if err != nil {
 		return nil, err
 	}
-	return m.onTab(ctx, tabKey{instanceID, tabID}, func(ctx context.Context, s *slot) (any, error) {
+	return m.onTab(ctx, tabKey{instanceID, tabID}, a.dialogSafe, func(ctx context.Context, s *slot) (any, error) {
 		if req.Activate {
 			if err := m.cdp.SelectTab(ctx, instanceID, tabID); err != nil {
 				return nil, err
@@ -275,6 +287,9 @@ func (m *Manager) dispatch(ctx context.Context, a action, req Request) (any, err
 		t, err := m.attach(ctx, s, instanceID, tabID)
 		if err != nil {
 			return nil, err
+		}
+		if d := t.dialog.current(); d != nil && !a.dialogSafe {
+			return nil, dialogOpenError(tabID, *d)
 		}
 		return a.tab(ctx, t, req.Input)
 	})
@@ -307,7 +322,7 @@ func isTimeout(err error) bool {
 }
 
 // onTab 在 key 的串行队列里执行 fn,并在结束后为已附加的标签页重新开始空闲计时。
-func (m *Manager) onTab(ctx context.Context, key tabKey, fn func(ctx context.Context, s *slot) (any, error)) (any, error) {
+func (m *Manager) onTab(ctx context.Context, key tabKey, dialogSafe bool, fn func(ctx context.Context, s *slot) (any, error)) (any, error) {
 	s, err := m.acquire(ctx, key)
 	if err != nil {
 		return nil, err
@@ -316,6 +331,7 @@ func (m *Manager) onTab(ctx context.Context, key tabKey, fn func(ctx context.Con
 	m.mu.Lock()
 	m.stopIdle(s)
 	s.cancel = cancel
+	s.dialogSafe = dialogSafe
 	m.mu.Unlock()
 	defer func() {
 		cancel(nil)
@@ -406,7 +422,7 @@ func (m *Manager) attach(ctx context.Context, s *slot, instanceID string, tabID 
 	if t != nil {
 		return t, nil
 	}
-	t = &Tab{m: m, instanceID: instanceID, id: tabID, refs: newRefTable(), frames: newFrameSessions(), nav: newNavWatch(), net: newNetWatch()}
+	t = &Tab{m: m, instanceID: instanceID, id: tabID, refs: newRefTable(), frames: newFrameSessions(), nav: newNavWatch(), net: newNetWatch(), dialog: &dialogState{}}
 	m.mu.Lock()
 	s.attaching = t
 	m.mu.Unlock()
@@ -576,7 +592,7 @@ func (m *Manager) detach(ctx context.Context, instanceID string, req Request) (a
 		return nil, err
 	}
 	key := tabKey{instanceID, tabID}
-	return m.onTab(ctx, key, func(ctx context.Context, s *slot) (any, error) {
+	return m.onTab(ctx, key, true, func(ctx context.Context, s *slot) (any, error) {
 		tabIDs, err := m.cdp.Detach(ctx, instanceID, &tabID)
 		if err != nil {
 			return nil, err

@@ -117,6 +117,7 @@ troubleshooting.
 | `sctl page wait (--text T \| --gone T \| --selector S \| --selector-gone S \| --url P \| --load STATE)` | Wait until text is visible or gone, an element is visible or gone, the URL contains a substring, or a load state is reached. |
 | `sctl page screenshot [-f FILE] [--full \| <ref> \| --selector <css>] [--format png\|jpeg] [--quality N]` | Save a screenshot of the viewport, the whole page, or one element to a file, and print the path. |
 | `sctl page eval <expression> [<ref>]` / `sctl page detach [--all]` | Evaluate JavaScript in a tab's page (with a ref, the expression is a function like `el => el.textContent` that receives the element), or detach the debugger from a tab or from every tab. |
+| `sctl page dialog accept [--text T] \| dismiss` | Accept or dismiss the JS dialog (alert, confirm, prompt, beforeunload) open in a tab; `--text` is the prompt input. |
 
 Run `sctl --help` or `sctl <command> --help` for usage and flags. Write operations block
 until the user approves, rejects, or closes the confirmation flow in ScriptCat; browser control commands run
@@ -130,6 +131,13 @@ command on a tab attaches the debugger, which shows the debugging infobar until 
 5 minutes or you run `sctl page detach`; while attached, the page behaves as if it were visible and focused.
 `--timeout` overrides the default 10s limit (30s for navigation), and `-o json` prints the full result. A page command exits with 2
 when the debugger detaches while it runs (for example, the infobar was dismissed) and with 3 on other errors.
+
+While a JS dialog is open in a tab, every page command except `sctl page dialog`, `detach` and `screenshot` fails with
+`DIALOG_OPEN` (exit 3), naming the dialog type and its text (page-controlled content). Dialogs are never handled
+automatically: handle one with `sctl page dialog accept` or `dismiss`, which fails with `NOT_FOUND` when none is
+open. A command already running when a dialog opens, such as a click that triggers an `alert`, returns `DIALOG_OPEN` at
+once instead of waiting for its timeout; the dialog stays open and the action may already have taken effect. A screenshot
+is still attempted while a dialog is open, but a page blocked by the dialog may not render it, and then it fails with `DIALOG_OPEN`.
 
 `sctl page snapshot` prints one line per visible node, indented by level: `- role "name" [states] [ref=eN]`, with
 the current value of form controls after a colon, link URLs in `/url:` child lines, and plain text in `text:`

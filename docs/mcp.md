@@ -210,7 +210,7 @@ each item with its browser, while `tabs_open`, `tabs_close`, and `tabs_activate`
 approval step (see [threat-model.md](./threat-model.md)).
 
 The page tools `page_snapshot`, `page_click`, `page_hover`, `page_fill`, `page_type`, `page_press`, `page_select`,
-`page_upload`, `page_scroll`, `page_navigate`, `page_wait`, `page_screenshot`, `page_eval`, and `page_detach` work the same way and
+`page_upload`, `page_scroll`, `page_navigate`, `page_wait`, `page_screenshot`, `page_eval`, `page_dialog`, and `page_detach` work the same way and
 also run without approval. Besides `browser`, each takes an optional `tabId`; without it, the tool acts on the active tab of the browser's
 last-focused window, fixed when the call starts, and every result reports the `tabId` it acted on. All but `page_snapshot` and `page_detach` also take `activate`, which makes the tab active in its window first without
 focusing the window, and all take `timeoutMs` (default 10000; 30000 for `page_navigate`). Page tools run in background tabs and never switch tabs or focus a window. The
@@ -226,6 +226,14 @@ they also expire when the page navigates, the element is removed, or the debugge
 one from another tab, returns `STALE_REF`. A snapshot over 1 MiB returns `PAYLOAD_TOO_LARGE`; pass `root` to
 narrow it. Iframes, including cross-origin and nested ones, are expanded under their iframe node; one that
 cannot be attached shows `[unavailable]`.
+
+While a JS dialog (alert, confirm, prompt, beforeunload) is open in a tab, every page tool except `page_dialog`,
+`page_detach` and `page_screenshot` returns `DIALOG_OPEN`, whose message names the dialog type and its text
+(untrusted page content). Dialogs are never handled automatically: `page_dialog` takes `action` (`accept` or
+`dismiss`) and an optional `text` for a prompt, and returns `NOT_FOUND` when no dialog is open. A tool call that is running
+when a dialog opens, such as a click that triggers an `alert`, returns `DIALOG_OPEN` at once and leaves the dialog open; the
+action may already have taken effect. `page_screenshot` is still attempted while a dialog is open, but a page blocked by the dialog
+may not render, and then it returns `DIALOG_OPEN`.
 
 `page_eval` takes an optional `ref` from the tab's latest snapshot. With it, `expression` must be a function that
 receives the element, such as `el => el.textContent`, and it runs in the element's own frame, so elements inside

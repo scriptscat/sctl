@@ -59,6 +59,36 @@ func TestPageToolsForwardToThePageEndpoint(t *testing.T) {
 			}
 		})
 
+		Convey("page_dialog 把 action 与 text 作为动作输入,目标参数拆进请求字段", func() {
+			_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "page_dialog", Arguments: map[string]any{
+				"action": "accept", "text": "Ada", "tabId": 4,
+			}})
+			So(err, ShouldBeNil)
+			req := caller.pages[0]
+			So(req.Action, ShouldEqual, "dialog")
+			So(*req.TabID, ShouldEqual, 4)
+			So(string(req.Input), ShouldEqualJSON, `{"action":"accept","text":"Ada"}`)
+		})
+
+		Convey("page_dialog 拒绝缺失或未知的 action;静态描述提到 DIALOG_OPEN 与 NOT_FOUND", func() {
+			for _, args := range []map[string]any{{}, {"action": "ignore"}, {"action": "accept", "extra": 1}} {
+				_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "page_dialog", Arguments: args})
+				So(err, ShouldNotBeNil)
+			}
+			So(caller.pages, ShouldBeEmpty)
+			tools, err := session.ListTools(context.Background(), nil)
+			So(err, ShouldBeNil)
+			found := false
+			for _, tool := range tools.Tools {
+				if tool.Name == "page_dialog" {
+					found = true
+					So(tool.Description, ShouldContainSubstring, "DIALOG_OPEN")
+					So(tool.Description, ShouldContainSubstring, "NOT_FOUND")
+				}
+			}
+			So(found, ShouldBeTrue)
+		})
+
 		Convey("省略可选参数时请求不带目标,标签页交给 daemon 选择", func() {
 			_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "page_detach", Arguments: map[string]any{"all": true}})
 			So(err, ShouldBeNil)

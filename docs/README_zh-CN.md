@@ -107,6 +107,7 @@ Chrome DevTools Protocol 驱动页面时,Chrome 会在浏览器顶部显示"sctl
 | `sctl page wait (--text T \| --gone T \| --selector S \| --selector-gone S \| --url P \| --load STATE)` | 等待文本可见或消失、元素可见或消失、URL 包含子串,或到达某个加载状态。 |
 | `sctl page screenshot [-f FILE] [--full \| <ref> \| --selector <css>] [--format png\|jpeg] [--quality N]` | 把视口、整页或某个元素截图存成文件,并输出文件路径。 |
 | `sctl page eval <expression> [<ref>]` / `sctl page detach [--all]` | 在标签页的页面里执行 JavaScript(给了引用时表达式写成函数,如 `el => el.textContent`,元素作为参数传入),或断开一个标签页或全部标签页的调试器。 |
+| `sctl page dialog accept [--text T] \| dismiss` | 接受或取消标签页里打开的 JS 弹框(alert、confirm、prompt、beforeunload);`--text` 是 prompt 的输入内容。 |
 
 运行 `sctl --help` 或 `sctl <command> --help` 查看用法和参数。写操作会阻塞，直到用户在
 ScriptCat 中批准、拒绝或关闭确认流程；浏览器控制命令按设计没有审批步骤、立即执行(参见
@@ -117,6 +118,11 @@ ScriptCat 中批准、拒绝或关闭确认流程；浏览器控制命令按设�
 页面命令在后台执行:从不切换你正在看的标签页,也不聚焦窗口;`--activate` 先让标签页成为所在窗口的激活标签页,但不聚焦窗口。
 标签页上的第一条页面命令会附加调试器,调试提示条一直显示到该标签页空闲 5 分钟或执行 `sctl page detach`;附加期间页面会以为自己可见且有焦点。
 `--timeout` 覆盖默认的 10 秒上限(导航为 30 秒),`-o json` 输出完整结果。命令执行中调试器被断开(例如关掉了提示条)时退出码为 2,其他错误为 3。
+
+标签页上有未处理的 JS 弹框时,除 `sctl page dialog`、`detach` 与 `screenshot` 外的页面命令都返回 `DIALOG_OPEN`(退出码 3),并写明弹框类型与文字(网页控制的内容)。
+弹框从不自动处理:用 `sctl page dialog accept` 或 `dismiss` 处理,没有打开的弹框时返回 `NOT_FOUND`。
+命令执行中弹框打开(例如点击触发了 `alert`)时,该命令立即返回 `DIALOG_OPEN` 而不是等到超时;弹框保持打开,动作可能已经生效。
+弹框打开期间截图仍会尝试,但被弹框卡住的页面可能无法出图,此时返回 `DIALOG_OPEN`。
 
 `sctl page snapshot` 每个可见节点输出一行,按层级缩进:`- 角色 "名称" [状态…] [ref=eN]`;表单控件在冒号后写出当前值,
 链接在 `/url:` 子行写出地址,纯文本输出为 `text:` 行;所有 iframe(含跨域与嵌套的)都展开在 iframe 节点下面,无法附加的显示为 `[unavailable]`。`--root` 只输出以某个引用、

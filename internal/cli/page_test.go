@@ -634,3 +634,62 @@ func TestPageWait(t *testing.T) {
 		})
 	})
 }
+
+func TestPageDialog(t *testing.T) {
+	Convey("sctl page dialog", t, func() {
+		t.Setenv("SCTL_BROWSER", "")
+		ok := control.CallResult{OK: true, Result: json.RawMessage(`{"contentTrust":"untrusted-page-content","tabId":5,"action":"accept","dialogType":"prompt"}`)}
+
+		Convey("accept --text 转发为 accept 动作与 prompt 输入,摘要一行写明标签页、动作与弹框类型", func() {
+			stub := stubPageDaemon(t, ok)
+			code, out := runCLI("page", "dialog", "accept", "--text", "Ada", "--tab", "5", "--browser", "work")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "tab 5 accepted prompt dialog\n")
+			So(stub.last.Action, ShouldEqual, "dialog")
+			So(*stub.last.TabID, ShouldEqual, 5)
+			So(stub.last.Browser, ShouldEqual, "work")
+			So(string(stub.last.Input), ShouldEqual, `{"action":"accept","text":"Ada"}`)
+		})
+
+		Convey("dismiss 不带 text", func() {
+			stub := stubPageDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"tabId":5,"action":"dismiss","dialogType":"confirm"}`)})
+			code, out := runCLI("page", "dialog", "dismiss")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "tab 5 dismissed confirm dialog\n")
+			So(string(stub.last.Input), ShouldEqual, `{"action":"dismiss"}`)
+		})
+
+		Convey("-o json 输出完整结果", func() {
+			stubPageDaemon(t, ok)
+			code, out := runCLI("page", "dialog", "accept", "-o", "json")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldContainSubstring, `"dialogType": "prompt"`)
+		})
+
+		Convey("--text 只用于 accept;动作缺失或未知:退出码 3,不发请求", func() {
+			stub := stubPageDaemon(t, ok)
+			for _, args := range [][]string{
+				{"page", "dialog", "dismiss", "--text", "x"},
+				{"page", "dialog"},
+				{"page", "dialog", "ignore"},
+				{"page", "dialog", "accept", "dismiss"},
+			} {
+				code, _ := runCLI(args...)
+				So(code, ShouldEqual, exitError)
+			}
+			So(stub.calls, ShouldEqual, 0)
+		})
+
+		Convey("没有弹框:NOT_FOUND 退出码 3;弹框打开时其他页面命令的 DIALOG_OPEN 也是 3 并带消息", func() {
+			stubPageDaemon(t, pageError("NOT_FOUND", "tab 5 has no open JS dialog"))
+			exit, _, _, err := runCLIResult(strings.NewReader(""), "page", "dialog", "accept")
+			So(exit, ShouldEqual, exitError)
+			So(err.Error(), ShouldContainSubstring, "no open JS dialog")
+
+			stubPageDaemon(t, pageError("DIALOG_OPEN", "tab 5 has an open alert dialog"))
+			exit, _, _, err = runCLIResult(strings.NewReader(""), "page", "eval", "1")
+			So(exit, ShouldEqual, exitError)
+			So(err.Error(), ShouldContainSubstring, "open alert dialog")
+		})
+	})
+}
