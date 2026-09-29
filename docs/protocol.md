@@ -222,6 +222,8 @@ methods and the sctl Browser extension implements the tab, window, and debugger 
 | `tabs.open` | browser | open a URL in a new tab and return its tab ID | none |
 | `tabs.close` | browser | close one or more tabs | none |
 | `tabs.activate` | browser | activate a tab and focus its window | none |
+| `tabs.current` | browser, internal | return the active tab of the last-focused normal window | none |
+| `tabs.select` | browser, internal | make a tab the active tab of its window without focusing the window | none |
 | `windows.list` | browser | list windows | none |
 | `debugger.send` | browser, internal | send one Chrome DevTools Protocol command to a tab | none |
 | `debugger.detach` | browser, internal | detach the debugger from one tab, or from every tab | none |
@@ -279,7 +281,9 @@ call, any of its instances — the call is voided and the requester receives `OP
 A method marked `internal` in `protocol.json` is reserved for components inside the daemon. `/control/call`
 answers it with `INVALID_REQUEST` exactly as for an unknown method, and `sctl mcp` registers no tool for it,
 so a control-token holder cannot send it directly. The `debugger.*` methods are internal because they relay raw
-Chrome DevTools Protocol (CDP) traffic with the user's signed-in browser state.
+Chrome DevTools Protocol (CDP) traffic with the user's signed-in browser state. `tabs.current` and `tabs.select`
+are internal because they exist only to serve the daemon's page automation, which reaches callers through
+`/control/page` instead.
 
 `debugger.send` input is `{tabId, sessionId?, method, params?}`: `method` and `params` are the CDP command, sent to
 the tab's top-level debugger session, or to the child session `sessionId` — the `sessionId` of a CDP
@@ -287,6 +291,21 @@ the tab's top-level debugger session, or to the child session `sessionId` — th
 result object unchanged. `debugger.detach` input is `{tabId?}`: with `tabId` it detaches that tab, without it
 every tab the instance has attached; its result `{tabIds}` lists the tabs it detached. CDP params and results are
 open objects: the schema checks only that they are JSON objects, and the frame limit still applies.
+
+`tabs.current` input is `{}`; its result `{tabId, windowId}` is the active tab of the last-focused window of type
+`normal`. The daemon asks for it once when a page command names no tab: the last-focused window stays the user's
+browser window while they type in a terminal, when no browser window has focus at all. It answers `NOT_FOUND`
+when no normal window is open. `tabs.select` input is `{tabId}`; it makes that tab the active tab of its window
+without focusing the window, unlike `tabs.activate`, and answers `NOT_FOUND` for an unknown tab. Its result is
+`{tabId, windowId}`.
+
+The daemon drives the debugger lifecycle. A page command on a tab the daemon has not attached sends
+`Emulation.setFocusEmulationEnabled {enabled: true}` through `debugger.send` first; that first send makes the
+extension attach. The daemon then treats the tab as attached until it sends `debugger.detach` — after 5 minutes
+without a page command on the tab, or on `page detach` — or until the extension reports `debugger.detached` for
+it, or the instance disconnects. Page commands on the same tab run one at a time in arrival order. A
+`debugger.detached` notification for a tab, or the instance disconnecting, fails the command running on that tab
+with `DEBUGGER_DETACHED`, and the next page command attaches again.
 
 ### 3.3 Extension notifications
 

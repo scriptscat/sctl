@@ -113,6 +113,24 @@
       "blocking": "none",
       "peer": "browser"
     },
+    "tabs.current": {
+      "params": "TabsCurrentParams",
+      "result": "TabsCurrentResult",
+      "scope": "tabs:current",
+      "effect": "read",
+      "blocking": "none",
+      "peer": "browser",
+      "internal": true
+    },
+    "tabs.select": {
+      "params": "TabsActivateParams",
+      "result": "TabsActivateResult",
+      "scope": "tabs:select",
+      "effect": "write",
+      "blocking": "none",
+      "peer": "browser",
+      "internal": true
+    },
     "windows.list": {
       "params": "WindowsListParams",
       "result": "WindowsListResult",
@@ -773,6 +791,27 @@
       "additionalProperties": false
     },
     "TabsActivateResult": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer"
+        },
+        "windowId": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "tabId",
+        "windowId"
+      ],
+      "additionalProperties": false
+    },
+    "TabsCurrentParams": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "TabsCurrentResult": {
       "type": "object",
       "properties": {
         "tabId": {

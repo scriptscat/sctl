@@ -46,9 +46,18 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      # 页面自动化的真 Chrome 集成测试(internal/daemon/page)直连 headless Chrome。设置了 SCTL_TEST_CHROME
+      # 后找不到或启动不了 Chrome 会让测试失败,而不是像本地那样跳过。
+      - uses: browser-actions/setup-chrome@v1
+        id: setup-chrome
+        with:
+          chrome-version: stable
+          install-dependencies: true
       - run: go build ./...
       - run: go vet ./...
       - run: go test -race ./...
+        env:
+          SCTL_TEST_CHROME: ${{ steps.setup-chrome.outputs.chrome-path }}
 
   extension:
     name: extension

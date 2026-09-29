@@ -50,6 +50,14 @@ export function validateTabsCloseResult(value: unknown): value is Protocol.TabsC
   return (isRecord(value) && hasOnlyKeys(value, ["tabIds"]) && Array.isArray(value["tabIds"]) && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item)));
 }
 
+export function validateTabsCurrentParams(value: unknown): value is Protocol.TabsCurrentParams {
+  return (isRecord(value) && hasOnlyKeys(value, []));
+}
+
+export function validateTabsCurrentResult(value: unknown): value is Protocol.TabsCurrentResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["tabId", "windowId"]) && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && typeof value["windowId"] === "number" && Number.isInteger(value["windowId"]));
+}
+
 export function validateTabsListParams(value: unknown): value is Protocol.TabsListParams {
   return (isRecord(value) && hasOnlyKeys(value, ["windowId"]) && (value["windowId"] === undefined || (typeof value["windowId"] === "number" && Number.isInteger(value["windowId"]) && value["windowId"] >= 0)));
 }
@@ -79,8 +87,10 @@ export const RPC_PARAM_VALIDATORS = {
   "debugger.send": validateDebuggerSendParams,
   "tabs.activate": validateTabsActivateParams,
   "tabs.close": validateTabsCloseParams,
+  "tabs.current": validateTabsCurrentParams,
   "tabs.list": validateTabsListParams,
   "tabs.open": validateTabsOpenParams,
+  "tabs.select": validateTabsActivateParams,
   "windows.list": validateWindowsListParams,
 } as const;
 
@@ -89,8 +99,10 @@ export const RPC_RESULT_VALIDATORS = {
   "debugger.send": validateDebuggerSendResult,
   "tabs.activate": validateTabsActivateResult,
   "tabs.close": validateTabsCloseResult,
+  "tabs.current": validateTabsCurrentResult,
   "tabs.list": validateTabsListResult,
   "tabs.open": validateTabsOpenResult,
+  "tabs.select": validateTabsActivateResult,
   "windows.list": validateWindowsListResult,
 } as const;
 

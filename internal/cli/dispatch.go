@@ -17,8 +17,8 @@ import (
 // 阻塞调用,再把结果/错误映射为退出码。onOK 负责把成功结果打印出来。
 //
 // Ctrl-C 会取消 ctx → 切断到 daemon 的连接 → daemon 向扩展发 $/cancelRequest 作废操作;此处映射为
-// exitVoided。桥接业务错误按 code 映射:USER_REJECTED→exitRejected,OPERATION_EXPIRED→exitVoided,
-// 其余→exitError。
+// exitVoided。桥接业务错误按 code 映射:USER_REJECTED→exitRejected,OPERATION_EXPIRED 与
+// DEBUGGER_DETACHED→exitVoided,其余→exitError。
 func dispatch(cmd *cobra.Command, action string, input json.RawMessage, onOK func(result json.RawMessage) error) error {
 	return dispatchAction(cmd, action, "", input, false, canceledVoided, onOK)
 }
@@ -42,6 +42,25 @@ const (
 )
 
 func dispatchAction(cmd *cobra.Command, action, browser string, input json.RawMessage, blocking bool, canceled string, onOK func(result json.RawMessage) error) error {
+	return dispatchWith(cmd, browser, blocking, canceled, func(ctx context.Context, client *control.Client) (control.CallResult, error) {
+		return client.Call(ctx, action, browser, input)
+	}, onOK)
+}
+
+// dispatchPage 是 `sctl page` 子命令的骨架:与 dispatchBrowser 相同,但走 /control/page,并带上 page 命令树
+// 共用的 --browser/--tab/--activate/--timeout。页面命令同样没有人工审批,取消只是不再等结果。
+func dispatchPage(cmd *cobra.Command, action string, input json.RawMessage, onOK func(result json.RawMessage) error) error {
+	req, err := pageRequest(cmd, action, input)
+	if err != nil {
+		return err
+	}
+	return dispatchWith(cmd, req.Browser, false, canceledUnconfirmed, func(ctx context.Context, client *control.Client) (control.CallResult, error) {
+		return client.Page(ctx, req)
+	}, onOK)
+}
+
+// dispatchWith 连上已有 daemon,以可被 Ctrl-C 取消的 ctx 发起 call,再把结果/错误映射为退出码。
+func dispatchWith(cmd *cobra.Command, browser string, blocking bool, canceled string, call func(ctx context.Context, client *control.Client) (control.CallResult, error), onOK func(result json.RawMessage) error) error {
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt)
 	defer stop()
 
@@ -54,7 +73,7 @@ func dispatchAction(cmd *cobra.Command, action, browser string, input json.RawMe
 	if blocking {
 		fmt.Fprintln(os.Stderr, "waiting for approval in the browser… (Ctrl-C cancels and voids this operation)")
 	}
-	res, err := client.Call(ctx, action, browser, input)
+	res, err := call(ctx, client)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return &ExitError{Code: exitVoided, Message: canceled}
@@ -86,6 +105,9 @@ func mapBridgeError(e *control.CallError) error {
 		return &ExitError{Code: exitRejected, Message: "operation rejected by the user"}
 	case "OPERATION_EXPIRED":
 		return &ExitError{Code: exitVoided, Message: "operation voided or timed out"}
+	case "DEBUGGER_DETACHED":
+		// 与作废同类:命令被外部事件打断(用户关掉调试提示条、标签页关闭、浏览器断开),重试可能成功。
+		return &ExitError{Code: exitVoided, Message: e.Error()}
 	default:
 		return &ExitError{Code: exitError, Message: e.Error()}
 	}

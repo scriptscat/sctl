@@ -104,6 +104,11 @@ export interface TabsCloseParams {
 export interface TabsCloseResult {
   tabIds: Array<number>;
 }
+export type TabsCurrentParams = Record<string, never>;
+export interface TabsCurrentResult {
+  tabId: number;
+  windowId: number;
+}
 export interface TabsListParams {
   windowId?: number;
 }
@@ -128,8 +133,10 @@ export interface RpcMethodMap {
   "debugger.send": { params: DebuggerSendParams; result: DebuggerSendResult };
   "tabs.activate": { params: TabsActivateParams; result: TabsActivateResult };
   "tabs.close": { params: TabsCloseParams; result: TabsCloseResult };
+  "tabs.current": { params: TabsCurrentParams; result: TabsCurrentResult };
   "tabs.list": { params: TabsListParams; result: TabsListResult };
   "tabs.open": { params: TabsOpenParams; result: TabsOpenResult };
+  "tabs.select": { params: TabsActivateParams; result: TabsActivateResult };
   "windows.list": { params: WindowsListParams; result: WindowsListResult };
 }
 export type RpcMethod = keyof RpcMethodMap;
@@ -164,6 +171,13 @@ export const RPC_METHODS = {
     effect: "write",
     blocking: "none",
   },
+  "tabs.current": {
+    params: "TabsCurrentParams",
+    result: "TabsCurrentResult",
+    scope: "tabs:current",
+    effect: "read",
+    blocking: "none",
+  },
   "tabs.list": {
     params: "TabsListParams",
     result: "TabsListResult",
@@ -175,6 +189,13 @@ export const RPC_METHODS = {
     params: "TabsOpenParams",
     result: "TabsOpenResult",
     scope: "tabs:open",
+    effect: "write",
+    blocking: "none",
+  },
+  "tabs.select": {
+    params: "TabsActivateParams",
+    result: "TabsActivateResult",
+    scope: "tabs:select",
     effect: "write",
     blocking: "none",
   },

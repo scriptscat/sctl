@@ -3,6 +3,7 @@ import { HandlerRegistry } from "@/background/registry";
 import {
   validateTabsActivateResult,
   validateTabsCloseResult,
+  validateTabsCurrentResult,
   validateTabsListResult,
   validateTabsOpenResult,
   validateWindowsListResult,
@@ -99,13 +100,15 @@ describe("browser method handlers", () => {
     vi.unstubAllGlobals();
   });
 
-  it("declares capabilities for exactly the five tab/window methods and the two debugger methods", () => {
+  it("declares capabilities for exactly the tab/window methods, the page-target helpers and the two debugger methods", () => {
     expect(new Set(registry.methods())).toEqual(
       new Set([
         "tabs.list",
         "tabs.open",
         "tabs.close",
         "tabs.activate",
+        "tabs.current",
+        "tabs.select",
         "windows.list",
         "debugger.send",
         "debugger.detach",
@@ -258,6 +261,56 @@ describe("browser method handlers", () => {
       chromeMock.tabs.get.mockRejectedValue(new Error("No tab with id: 77."));
 
       const outcome = await registry.dispatch("tabs.activate", { tabId: 77 });
+
+      expect(outcome).toEqual({ ok: false, code: "NOT_FOUND", message: expect.stringContaining("77") as unknown });
+      expect(chromeMock.tabs.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("tabs.current", () => {
+    it("returns the active tab of the last-focused normal window", async () => {
+      chromeMock.windows.getLastFocused.mockResolvedValue(
+        fakeWindow({
+          id: 4,
+          tabs: [fakeTab({ id: 20, windowId: 4 }), fakeTab({ id: 21, windowId: 4, active: true })],
+        }),
+      );
+
+      const outcome = await registry.dispatch("tabs.current", {});
+
+      // 只看普通窗口：弹出窗口、开发者工具窗口不是用户正在浏览的页面。
+      expect(chromeMock.windows.getLastFocused).toHaveBeenCalledWith({ populate: true, windowTypes: ["normal"] });
+      expect(outcome).toEqual({ ok: true, result: { tabId: 21, windowId: 4 } });
+      if (outcome.ok) {
+        expect(validateTabsCurrentResult(outcome.result)).toBe(true);
+      }
+    });
+
+    it("returns NOT_FOUND when there is no normal window", async () => {
+      chromeMock.windows.getLastFocused.mockRejectedValue(new Error("No last-focused window"));
+
+      const outcome = await registry.dispatch("tabs.current", {});
+
+      expect(outcome).toEqual({ ok: false, code: "NOT_FOUND", message: expect.any(String) as unknown });
+    });
+  });
+
+  describe("tabs.select", () => {
+    it("activates the tab inside its window without focusing the window", async () => {
+      chromeMock.tabs.get.mockResolvedValue(fakeTab({ id: 11, windowId: 6 }));
+      chromeMock.tabs.update.mockResolvedValue(undefined);
+
+      const outcome = await registry.dispatch("tabs.select", { tabId: 11 });
+
+      expect(chromeMock.tabs.update).toHaveBeenCalledWith(11, { active: true });
+      expect(chromeMock.windows.update).not.toHaveBeenCalled();
+      expect(outcome).toEqual({ ok: true, result: { tabId: 11, windowId: 6 } });
+    });
+
+    it("returns NOT_FOUND when the tab does not exist", async () => {
+      chromeMock.tabs.get.mockRejectedValue(new Error("No tab with id: 77."));
+
+      const outcome = await registry.dispatch("tabs.select", { tabId: 77 });
 
       expect(outcome).toEqual({ ok: false, code: "NOT_FOUND", message: expect.stringContaining("77") as unknown });
       expect(chromeMock.tabs.update).not.toHaveBeenCalled();

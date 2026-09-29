@@ -181,6 +181,14 @@ type TabsCloseResult struct {
 	TabIds []int `json:"tabIds"`
 }
 
+type TabsCurrentParams struct {
+}
+
+type TabsCurrentResult struct {
+	TabId    int `json:"tabId"`
+	WindowId int `json:"windowId"`
+}
+
 type TabsListParams struct {
 	WindowId *int `json:"windowId,omitempty"`
 }
@@ -234,8 +242,10 @@ const (
 	MethodScriptsToggleRequest  Method = "scripts.toggle.request"
 	MethodTabsActivate          Method = "tabs.activate"
 	MethodTabsClose             Method = "tabs.close"
+	MethodTabsCurrent           Method = "tabs.current"
 	MethodTabsList              Method = "tabs.list"
 	MethodTabsOpen              Method = "tabs.open"
+	MethodTabsSelect            Method = "tabs.select"
 	MethodWindowsList           Method = "windows.list"
 )
 
@@ -257,8 +267,10 @@ var Methods = map[string]MethodMetadata{
 	"scripts.toggle.request":  {Params: "ScriptsToggleParams", Result: "ScriptsToggleResult", Scope: "scripts:toggle:request", Effect: "write", Blocking: "approval", Peer: "scriptcat", MergeField: "", Internal: false},
 	"tabs.activate":           {Params: "TabsActivateParams", Result: "TabsActivateResult", Scope: "tabs:activate", Effect: "write", Blocking: "none", Peer: "browser", MergeField: "", Internal: false},
 	"tabs.close":              {Params: "TabsCloseParams", Result: "TabsCloseResult", Scope: "tabs:close", Effect: "write", Blocking: "none", Peer: "browser", MergeField: "", Internal: false},
+	"tabs.current":            {Params: "TabsCurrentParams", Result: "TabsCurrentResult", Scope: "tabs:current", Effect: "read", Blocking: "none", Peer: "browser", MergeField: "", Internal: true},
 	"tabs.list":               {Params: "TabsListParams", Result: "TabsListResult", Scope: "tabs:list", Effect: "read", Blocking: "none", Peer: "browser", MergeField: "tabs", Internal: false},
 	"tabs.open":               {Params: "TabsOpenParams", Result: "TabsOpenResult", Scope: "tabs:open", Effect: "write", Blocking: "none", Peer: "browser", MergeField: "", Internal: false},
+	"tabs.select":             {Params: "TabsActivateParams", Result: "TabsActivateResult", Scope: "tabs:select", Effect: "write", Blocking: "none", Peer: "browser", MergeField: "", Internal: true},
 	"windows.list":            {Params: "WindowsListParams", Result: "WindowsListResult", Scope: "windows:list", Effect: "read", Blocking: "none", Peer: "browser", MergeField: "windows", Internal: false},
 }
 

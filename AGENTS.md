@@ -44,9 +44,9 @@ internal/client/             internal/daemon/                      internal/pkg/
 
 The authority always lives on the extension side for ScriptCat's write and source-disclosure gates: the daemon
 approves no write and discloses no source on its own — it forwards the request and blocks until a human
-decides in the browser. Browser control (`sctl browsers`/`tabs`/`windows`) is the deliberate exception: it has
-no human gate by design, so any control-token holder can drive a paired `sctl Browser` instance immediately —
-see [`docs/threat-model.md`](./docs/threat-model.md). Full process model and package responsibilities are
+decides in the browser. Browser control (`sctl browsers`/`tabs`/`windows`) and page automation (`sctl page`) are
+the deliberate exception: they have no human gate by design, so any control-token holder can drive a paired
+`sctl Browser` instance and the pages in it immediately — see [`docs/threat-model.md`](./docs/threat-model.md). Full process model and package responsibilities are
 in [`docs/architecture.md`](./docs/architecture.md).
 
 ## Engineering Principles

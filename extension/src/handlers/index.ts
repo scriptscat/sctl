@@ -1,4 +1,4 @@
-import type { HandlerRegistry, RpcHandler } from "@/background/registry";
+import { HandlerError, type HandlerRegistry, type RpcHandler } from "@/background/registry";
 import type { DebuggerRelay } from "./debugger";
 import { requireTab, requireWindow } from "./lookup";
 
@@ -52,6 +52,29 @@ const handleTabsActivate: RpcHandler<"tabs.activate"> = async (params) => {
   return { tabId: params.tabId, windowId: tab.windowId };
 };
 
+// 页面命令未指定标签页时的默认目标。用户多半是在终端里驱动 sctl，此时没有任何浏览器窗口处于聚焦状态，
+// 所以取最后获得焦点的普通窗口，而不是当前聚焦的窗口。
+const handleTabsCurrent: RpcHandler<"tabs.current"> = async () => {
+  let win: chrome.windows.Window;
+  try {
+    win = await chrome.windows.getLastFocused({ populate: true, windowTypes: ["normal"] });
+  } catch {
+    throw new HandlerError("NOT_FOUND", "no normal browser window is open");
+  }
+  const active = win.tabs?.find((tab) => tab.active);
+  if (active === undefined) {
+    throw new HandlerError("NOT_FOUND", `window ${win.id} has no active tab`);
+  }
+  return { tabId: active.id!, windowId: win.id! };
+};
+
+// 只切换窗口内的激活标签页，不调用 windows.update：页面命令从不抢窗口焦点（spec 设计决策 4）。
+const handleTabsSelect: RpcHandler<"tabs.select"> = async (params) => {
+  const tab = await requireTab(params.tabId);
+  await chrome.tabs.update(params.tabId, { active: true });
+  return { tabId: params.tabId, windowId: tab.windowId };
+};
+
 const handleWindowsList: RpcHandler<"windows.list"> = async () => {
   const windows = await chrome.windows.getAll({ populate: true });
   return {
@@ -70,6 +93,8 @@ export function registerHandlers(registry: HandlerRegistry, relay: DebuggerRelay
   registry.register("tabs.open", handleTabsOpen);
   registry.register("tabs.close", handleTabsClose);
   registry.register("tabs.activate", handleTabsActivate);
+  registry.register("tabs.current", handleTabsCurrent);
+  registry.register("tabs.select", handleTabsSelect);
   registry.register("windows.list", handleWindowsList);
   registry.register("debugger.send", relay.send);
   registry.register("debugger.detach", relay.detach);

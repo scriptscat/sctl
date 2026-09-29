@@ -1,6 +1,6 @@
 // Package daemon 是 sctl serve 的组装层:一个 cago Component,把可配置监听地址的
-// 桥接 WS server(internal/daemon/bridge)、本机控制 API(internal/daemon/controlapi)
-// 与持久化存储(internal/daemon/store)接到同一个 listener 上。
+// 桥接 WS server(internal/daemon/bridge)、本机控制 API(internal/daemon/controlapi)、
+// 页面自动化组件(internal/daemon/page)与持久化存储(internal/daemon/store)接到同一个 listener 上。
 // 扩展 ↔ daemon 协议见 docs/protocol.md。
 package daemon
 
@@ -18,6 +18,7 @@ import (
 	"github.com/scriptscat/sctl/internal/client/control"
 	"github.com/scriptscat/sctl/internal/daemon/bridge"
 	"github.com/scriptscat/sctl/internal/daemon/controlapi"
+	"github.com/scriptscat/sctl/internal/daemon/page"
 	"github.com/scriptscat/sctl/internal/daemon/store"
 	"github.com/scriptscat/sctl/internal/pkg/paths"
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
@@ -81,8 +82,11 @@ func (b *daemonComponent) StartCancel(ctx context.Context, cancel context.Cancel
 	}
 
 	// 控制 API 与扩展 WS 面同 listener、独立路径:mux 在此组装,bridge 只认根路径。
+	// 页面自动化组件经 bridge 收发 CDP 中转,并作为 bridge 的浏览器监听者接收调试器通知与实例断开。
+	pages := page.NewManager(page.NewBridgeCDP(b.srv), logger.Ctx(ctx))
+	b.srv.SetBrowserListener(pages)
 	mux := http.NewServeMux()
-	controlapi.New(b.srv, token, logger.Ctx(ctx)).Register(mux)
+	controlapi.New(b.srv, pages, token, logger.Ctx(ctx)).Register(mux)
 
 	// cago 同步调用 StartCancel,server 类组件须起 goroutine 后立即返回,否则 Start()
 	// 的信号注册跑不到、SIGINT 会死锁(对齐 cago 的 mux.HTTP 写法)。

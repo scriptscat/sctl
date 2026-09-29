@@ -32,6 +32,7 @@ type fakeCaller struct {
 	sawCtx        atomic.Bool           // Call 是否因 ctx 取消而返回
 	browsersList  []control.BrowserInfo // Browsers 的返回值
 	browsersErr   error
+	pages         []control.PageRequest // 记录每次 Page 的请求
 }
 
 func (f *fakeCaller) Call(ctx context.Context, action, browser string, input json.RawMessage) (control.CallResult, error) {
@@ -52,6 +53,13 @@ func (f *fakeCaller) Call(ctx context.Context, action, browser string, input jso
 			return control.CallResult{}, ctx.Err()
 		}
 	}
+	return f.result, f.err
+}
+
+func (f *fakeCaller) Page(ctx context.Context, req control.PageRequest) (control.CallResult, error) {
+	f.mu.Lock()
+	f.pages = append(f.pages, req)
+	f.mu.Unlock()
 	return f.result, f.err
 }
 
@@ -104,7 +112,7 @@ func TestToolsListExposesAllTools(t *testing.T) {
 				public++
 			}
 		}
-		So(len(res.Tools), ShouldEqual, public+1)
+		So(len(res.Tools), ShouldEqual, public+1+len(pageTools))
 		So(toolNames(res), ShouldNotContain, "debugger_send")
 		So(toolNames(res), ShouldNotContain, "debugger_detach")
 		So(toolNames(res), ShouldContain, "scripts_list")
@@ -115,6 +123,8 @@ func TestToolsListExposesAllTools(t *testing.T) {
 		So(toolNames(res), ShouldContain, "tabs_close")
 		So(toolNames(res), ShouldContain, "tabs_activate")
 		So(toolNames(res), ShouldContain, "windows_list")
+		So(toolNames(res), ShouldContain, "page_eval")
+		So(toolNames(res), ShouldContain, "page_detach")
 	})
 }
 

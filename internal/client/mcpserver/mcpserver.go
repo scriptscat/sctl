@@ -29,10 +29,11 @@ const maxFullSourceResponseBytes = 64 * 1024
 // 超时的值,使每次通知都能刷新其倒计时。以 var 暴露仅为便于测试压缩等待。
 var progressInterval = 10 * time.Second
 
-// BridgeCaller 抽象「向 daemon 转发 bridge action 调用与查询浏览器列表」,便于测试注入桩。
+// BridgeCaller 抽象「向 daemon 转发 bridge action 调用、页面动作与查询浏览器列表」,便于测试注入桩。
 // browser 是浏览器方法的可选目标,其余方法传空串。
 type BridgeCaller interface {
 	Call(ctx context.Context, action, browser string, input json.RawMessage) (control.CallResult, error)
+	Page(ctx context.Context, req control.PageRequest) (control.CallResult, error)
 	Browsers(ctx context.Context) ([]control.BrowserInfo, error)
 }
 
@@ -45,7 +46,7 @@ type Deps struct {
 	Caller  BridgeCaller
 }
 
-// New 按依赖构建 MCP server,注册 protocol.json 里定义的全部非内部 bridge action 工具以及 browsers_list。
+// New 按依赖构建 MCP server,注册 protocol.json 里定义的全部非内部 bridge action 工具、page_* 页面工具以及 browsers_list。
 // 方法是否是浏览器方法、是否汇总多实例,都取自 protocol.json 的 peer 与 mergeField,不按方法名推断。
 func New(d Deps) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{Name: d.Name, Version: d.Version}, &mcp.ServerOptions{})
@@ -60,6 +61,9 @@ func New(d Deps) *mcp.Server {
 			td.inputSchema = schemaWithOptionalBrowser(td.inputSchema, browserParamDescription(action))
 		}
 		registerTool(srv, td, browser, d.Caller)
+	}
+	for _, td := range pageTools {
+		registerPageTool(srv, td, d.Caller)
 	}
 	// browsers_list 特殊处理:不是 bridge action,由控制 API 直接提供已配对实例列表。
 	registerBrowsersListTool(srv, d.Caller)

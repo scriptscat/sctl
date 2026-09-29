@@ -21,6 +21,7 @@ confirmation UI in the extension.
 - Lists scripts and reads metadata or source, including line windows and source search.
 - Requests installation, content-anchored editing, enable/disable, and deletion through browser approval.
 - Lists, opens, closes, and activates tabs and lists windows across one or more paired sctl Browser instances.
+- Evaluates JavaScript in a page of a paired sctl Browser tab, in the background without switching tabs.
 - Uses JSON-RPC 2.0 over a WebSocket with mutual authentication; the listener defaults to loopback.
 - Ships as one binary; no browser automation or Native Messaging host is required.
 
@@ -103,11 +104,20 @@ troubleshooting.
 | `sctl browsers [list]` / `sctl browsers forget <name\|id>` | List paired sctl Browser instances, or forget one. |
 | `sctl tabs list\|open\|close\|activate` | List, open, close, or activate tabs on a paired sctl Browser instance. |
 | `sctl windows list` | List windows on a paired sctl Browser instance. |
+| `sctl page eval <expression>` / `sctl page detach [--all]` | Evaluate JavaScript in a tab's page, or detach the debugger from a tab or from every tab. |
 
 Run `sctl --help` or `sctl <command> --help` for usage and flags. Write operations block
 until the user approves, rejects, or closes the confirmation flow in ScriptCat; browser control commands run
-immediately with no approval step (see [`docs/threat-model.md`](./docs/threat-model.md)). `tabs` and `windows`
-accept `--browser <name|id>` (or `SCTL_BROWSER`) to pick an instance when more than one is online.
+immediately with no approval step (see [`docs/threat-model.md`](./docs/threat-model.md)). `tabs`, `windows`, and
+`page` accept `--browser <name|id>` (or `SCTL_BROWSER`) to pick an instance when more than one is online.
+
+`page` commands act on `--tab <id>`, or by default on the active tab of the browser's last-focused window, fixed
+when the command starts. They run in the background: they never switch the tab you are looking at or focus a
+window, and `--activate` makes the tab active in its window first without focusing the window. The first page
+command on a tab attaches the debugger, which shows the debugging infobar until the tab has been idle for
+5 minutes or you run `sctl page detach`; while attached, the page behaves as if it were visible and focused.
+`--timeout` overrides the default 10s limit, and `-o json` prints the full result. A page command exits with 2
+when the debugger detaches while it runs (for example, the infobar was dismissed) and with 3 on other errors.
 
 ## License
 

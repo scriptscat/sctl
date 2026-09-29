@@ -126,11 +126,21 @@ func (c *Client) Call(ctx context.Context, action, browser string, input json.Ra
 	if input == nil {
 		input = json.RawMessage(`{}`)
 	}
-	body, err := json.Marshal(CallRequest{Action: action, Browser: browser, Input: input})
+	return c.post(ctx, PathCall, CallRequest{Action: action, Browser: browser, Input: input})
+}
+
+// Page 在浏览器标签页上执行一次页面动作并阻塞至完成。ctx 取消会切断连接,daemon 侧随之结束该动作。
+func (c *Client) Page(ctx context.Context, req PageRequest) (CallResult, error) {
+	return c.post(ctx, PathPage, req)
+}
+
+// post 发送一个返回 CallResult 的控制请求。
+func (c *Client) post(ctx context.Context, path string, payload any) (CallResult, error) {
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return CallResult{}, err
 	}
-	req, err := c.newRequest(ctx, http.MethodPost, PathCall, body)
+	req, err := c.newRequest(ctx, http.MethodPost, path, body)
 	if err != nil {
 		return CallResult{}, err
 	}

@@ -12,11 +12,13 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"go.uber.org/zap"
 
 	"github.com/scriptscat/sctl/internal/client/control"
 	"github.com/scriptscat/sctl/internal/daemon/bridge"
+	"github.com/scriptscat/sctl/internal/daemon/page"
 	"github.com/scriptscat/sctl/internal/pkg/audit"
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
 	"github.com/scriptscat/sctl/internal/pkg/protocol/generated"
@@ -38,19 +40,26 @@ type Bridge interface {
 	ForgetInstance(ref string) error
 }
 
+// Page 是控制 API 依赖的页面自动化能力面,由 *page.Manager 实现。
+type Page interface {
+	// Do 执行一次页面动作;调用方取消时返回 ctx 的错误,领域失败返回 *page.Error。
+	Do(ctx context.Context, req page.Request) (json.RawMessage, error)
+}
+
 // Handler 是控制 API 的处理器集合。
 type Handler struct {
 	bridge Bridge
+	page   Page
 	token  string
 	log    *zap.Logger
 }
 
 // New 构造控制 API。token 是 daemon 绑定端口后落盘的 0600 控制令牌;空令牌下除健康检查外全拒。
-func New(b Bridge, token string, log *zap.Logger) *Handler {
+func New(b Bridge, p Page, token string, log *zap.Logger) *Handler {
 	if log == nil {
 		log = zap.NewNop()
 	}
-	return &Handler{bridge: b, token: token, log: log}
+	return &Handler{bridge: b, page: p, token: token, log: log}
 }
 
 // Register 把控制 API 挂到 daemon listener 的 mux 上。
@@ -61,6 +70,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc(control.PathEnroll, h.guard(h.enroll))
 	mux.HandleFunc(control.PathBrowsers, h.guard(h.browsers))
 	mux.HandleFunc(control.PathBrowserForget, h.guard(h.forgetBrowser))
+	mux.HandleFunc(control.PathPage, h.guard(h.pageAction))
 }
 
 // guard 包装需要控制令牌的处理器:恒定时间校验 X-Sctl-Control-Token,不符即 401(无细节)。
@@ -184,6 +194,44 @@ func (h *Handler) call(w http.ResponseWriter, r *http.Request) {
 			writeControlError(w, be.Code, be.Message)
 			return
 		}
+		writeControlError(w, bridge.CodeInternal, "internal error")
+	}
+}
+
+// pageAction 执行一次页面动作。页面命令没有逐次人工审批(spec 设计决策 11),控制令牌即全部授权;
+// 请求方断开会取消 r.Context(),正在执行的动作随之结束。
+func (h *Handler) pageAction(w http.ResponseWriter, r *http.Request) {
+	var req control.PageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeControlError(w, bridge.CodeInvalidRequest, "malformed request body")
+		return
+	}
+	switch {
+	case req.TabID != nil && *req.TabID < 0:
+		writeControlError(w, bridge.CodeInvalidRequest, "tabId must not be negative")
+		return
+	case req.TimeoutMs < 0:
+		writeControlError(w, bridge.CodeInvalidRequest, "timeoutMs must not be negative")
+		return
+	}
+	result, err := h.page.Do(r.Context(), page.Request{
+		Action:   req.Action,
+		Browser:  req.Browser,
+		TabID:    req.TabID,
+		Activate: req.Activate,
+		Timeout:  time.Duration(req.TimeoutMs) * time.Millisecond,
+		Input:    req.Input,
+	})
+	var pe *page.Error
+	switch {
+	case err == nil:
+		writeJSON(w, control.CallResult{OK: true, Result: result})
+	case errors.Is(err, context.Canceled):
+		return
+	case errors.As(err, &pe):
+		writeControlError(w, pe.Code, pe.Message)
+	default:
+		h.log.Error("page action failed", zap.String("action", req.Action), zap.Error(err))
 		writeControlError(w, bridge.CodeInternal, "internal error")
 	}
 }

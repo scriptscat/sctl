@@ -1,0 +1,190 @@
+package cli
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	. "github.com/smartystreets/goconvey/convey"
+
+	"github.com/scriptscat/sctl/internal/client/control"
+)
+
+// stubPageDaemon 起一个假 daemon:/control/page 恒返回 result,并记录收到的请求数与最近一次请求。
+type pageStub struct {
+	calls int
+	last  control.PageRequest
+}
+
+func stubPageDaemon(t *testing.T, result control.CallResult) *pageStub {
+	t.Helper()
+	stub := &pageStub{}
+	mux := http.NewServeMux()
+	mux.HandleFunc(control.PathHealth, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc(control.PathPage, func(w http.ResponseWriter, r *http.Request) {
+		stub.calls++
+		stub.last = control.PageRequest{}
+		_ = json.NewDecoder(r.Body).Decode(&stub.last)
+		_ = json.NewEncoder(w).Encode(result)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	t.Setenv("SCTL_BRIDGE_ADDR", strings.TrimPrefix(srv.URL, "http://"))
+	dir := t.TempDir()
+	t.Setenv("SCTL_DATA_DIR", dir)
+	So(os.WriteFile(filepath.Join(dir, "control.token"), []byte("tok"), 0o600), ShouldBeNil)
+	return stub
+}
+
+func pageError(code, message string) control.CallResult {
+	return control.CallResult{OK: false, Error: &control.CallError{Code: code, Message: message}}
+}
+
+func TestPageEval(t *testing.T) {
+	Convey("sctl page eval", t, func() {
+		// t.Setenv 在同一测试的各个 Convey 分支之间保留,每个分支都从没有 SCTL_BROWSER 开始。
+		t.Setenv("SCTL_BROWSER", "")
+		ok := control.CallResult{OK: true, Result: json.RawMessage(`{"contentTrust":"untrusted-page-content","tabId":5,"value":{"title":"Example","n":[1,2]}}`)}
+
+		Convey("默认输出一行摘要:tabId 与紧凑的 JSON 值;请求只带表达式,标签页交给 daemon 选择", func() {
+			stub := stubPageDaemon(t, ok)
+			code, out := runCLI("page", "eval", "document.title")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "tab 5: {\"title\":\"Example\",\"n\":[1,2]}\n")
+			So(stub.last.Action, ShouldEqual, "eval")
+			So(string(stub.last.Input), ShouldEqual, `{"expression":"document.title"}`)
+			So(stub.last.TabID, ShouldBeNil)
+			So(stub.last.Activate, ShouldBeFalse)
+			So(stub.last.TimeoutMs, ShouldEqual, 0)
+			So(stub.last.Browser, ShouldEqual, "")
+		})
+
+		Convey("--tab、--activate、--timeout、--browser 原样转发", func() {
+			stub := stubPageDaemon(t, ok)
+			code, _ := runCLI("page", "eval", "1", "--tab", "9", "--activate", "--timeout", "30s", "--browser", "work")
+			So(code, ShouldEqual, exitOK)
+			So(stub.last.TabID, ShouldNotBeNil)
+			So(*stub.last.TabID, ShouldEqual, 9)
+			So(stub.last.Activate, ShouldBeTrue)
+			So(stub.last.TimeoutMs, ShouldEqual, 30000)
+			So(stub.last.Browser, ShouldEqual, "work")
+		})
+
+		Convey("未给 --browser 时取 SCTL_BROWSER", func() {
+			t.Setenv("SCTL_BROWSER", "home")
+			stub := stubPageDaemon(t, ok)
+			code, _ := runCLI("page", "eval", "1")
+			So(code, ShouldEqual, exitOK)
+			So(stub.last.Browser, ShouldEqual, "home")
+		})
+
+		Convey("-o json 输出完整的结构化结果", func() {
+			stubPageDaemon(t, ok)
+			code, out := runCLI("page", "eval", "1", "-o", "json")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldContainSubstring, `"contentTrust": "untrusted-page-content"`)
+			So(out, ShouldContainSubstring, `"tabId": 5`)
+		})
+
+		Convey("页面给出的值里的控制字符以转义形式打印", func() {
+			stubPageDaemon(t, control.CallResult{OK: true, Result: json.RawMessage("{\"contentTrust\":\"untrusted-page-content\",\"tabId\":5,\"value\":\"a\\u001b[2Jb\u202e\"}")})
+			code, out := runCLI("page", "eval", "x")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldNotContainSubstring, "\x1b")
+			So(out, ShouldNotContainSubstring, "\u202e")
+		})
+
+		Convey("第二个参数(元素目标)暂不支持:退出码 3,不发请求", func() {
+			stub := stubPageDaemon(t, ok)
+			code, _ := runCLI("page", "eval", "el => el.textContent", "e5")
+			So(code, ShouldEqual, exitError)
+			So(stub.calls, ShouldEqual, 0)
+		})
+
+		Convey("非法 --timeout 与负的 --tab:退出码 3,不发请求", func() {
+			stub := stubPageDaemon(t, ok)
+			code, _ := runCLI("page", "eval", "1", "--timeout", "-1s")
+			So(code, ShouldEqual, exitError)
+			code, _ = runCLI("page", "eval", "1", "--tab", "-2")
+			So(code, ShouldEqual, exitError)
+			So(stub.calls, ShouldEqual, 0)
+		})
+
+		Convey("DEBUGGER_DETACHED 退出码 2", func() {
+			stubPageDaemon(t, pageError("DEBUGGER_DETACHED", "the debugger detached from tab 5 (canceled_by_user) while the command was running"))
+			code, _, errOut, err := runCLIResult(strings.NewReader(""), "page", "eval", "1")
+			So(code, ShouldEqual, exitVoided)
+			So(errOut+err.Error(), ShouldContainSubstring, "canceled_by_user")
+		})
+
+		Convey("EVAL_ERROR、PAGE_NOT_AUTOMATABLE、NOT_FOUND 退出码 3,消息带原因", func() {
+			for code, message := range map[string]string{
+				"EVAL_ERROR":           "Error: boom",
+				"PAGE_NOT_AUTOMATABLE": "Cannot access a chrome:// URL",
+				"NOT_FOUND":            "no tab 9",
+			} {
+				stubPageDaemon(t, pageError(code, message))
+				exit, _, _, err := runCLIResult(strings.NewReader(""), "page", "eval", "1")
+				So(exit, ShouldEqual, exitError)
+				So(err.Error(), ShouldContainSubstring, message)
+			}
+		})
+
+		Convey("多个浏览器在线且未指定目标时提示 --browser", func() {
+			stubPageDaemon(t, pageError("BROWSER_AMBIGUOUS", "several browsers are online"))
+			exit, _, _, err := runCLIResult(strings.NewReader(""), "page", "eval", "1")
+			So(exit, ShouldEqual, exitError)
+			So(err.Error(), ShouldContainSubstring, "--browser")
+		})
+	})
+}
+
+func TestPageDetach(t *testing.T) {
+	Convey("sctl page detach", t, func() {
+		Convey("断开一个标签页:摘要写明 tabId", func() {
+			stub := stubPageDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"tabId":5,"tabIds":[5]}`)})
+			code, out := runCLI("page", "detach", "--tab", "5")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "tab 5 detached\n")
+			So(stub.last.Action, ShouldEqual, "detach")
+			So(*stub.last.TabID, ShouldEqual, 5)
+			So(string(stub.last.Input), ShouldEqual, `{}`)
+		})
+
+		Convey("目标没有被附加时也成功", func() {
+			stubPageDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"tabId":5,"tabIds":[]}`)})
+			code, out := runCLI("page", "detach")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "tab 5 was not attached\n")
+		})
+
+		Convey("--all 断开全部标签页", func() {
+			stub := stubPageDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"tabIds":[5,6]}`)})
+			code, out := runCLI("page", "detach", "--all")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "detached tabs 5, 6\n")
+			So(string(stub.last.Input), ShouldEqual, `{"all":true}`)
+		})
+
+		Convey("--all 时没有已附加的标签页", func() {
+			stubPageDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"tabIds":[]}`)})
+			code, out := runCLI("page", "detach", "--all")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "no tab was attached\n")
+		})
+
+		Convey("--all 与 --tab 不能同时给:退出码 3,不发请求", func() {
+			stub := stubPageDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"tabIds":[]}`)})
+			code, _ := runCLI("page", "detach", "--all", "--tab", "5")
+			So(code, ShouldEqual, exitError)
+			So(stub.calls, ShouldEqual, 0)
+		})
+	})
+}
