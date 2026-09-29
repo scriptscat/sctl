@@ -381,6 +381,53 @@
       "blocking": "none",
       "level": "L0",
       "peer": "browser"
+    },
+    "history.search": {
+      "params": "HistorySearchParams",
+      "result": "HistorySearchResult",
+      "scope": "history:search",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "mergeField": "items"
+    },
+    "history.visits": {
+      "params": "HistoryVisitsParams",
+      "result": "HistoryVisitsResult",
+      "scope": "history:visits",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "mergeField": "visits"
+    },
+    "history.remove": {
+      "params": "HistoryRemoveParams",
+      "result": "HistoryRemoveResult",
+      "scope": "history:remove",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L1",
+      "peer": "browser"
+    },
+    "history.clear": {
+      "params": "HistoryClearParams",
+      "result": "HistoryClearResult",
+      "scope": "history:clear",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L1",
+      "peer": "browser"
+    },
+    "browsingData.clear": {
+      "params": "BrowsingDataClearParams",
+      "result": "BrowsingDataClearResult",
+      "scope": "browsingData:clear",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L1",
+      "peer": "browser"
     }
   },
   "types": {
@@ -2042,6 +2089,241 @@
       },
       "required": [
         "tabIds"
+      ],
+      "additionalProperties": false
+    },
+    "HistorySearchParams": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "startTime": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "endTime": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "additionalProperties": false
+    },
+    "HistorySearchResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "lastVisitTime": {
+                "type": "integer"
+              },
+              "visitCount": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "url",
+              "title",
+              "lastVisitTime",
+              "visitCount"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "items",
+        "hasMore",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "HistoryVisitsParams": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "HistoryVisitsResult": {
+      "type": "object",
+      "properties": {
+        "visits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "visitTime": {
+                "type": "integer"
+              },
+              "transition": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "visitTime",
+              "transition"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "hasMore": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "visits",
+        "hasMore"
+      ],
+      "additionalProperties": false
+    },
+    "HistoryRemoveParams": {
+      "type": "object",
+      "properties": {
+        "urls": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "confirm": {
+          "const": true
+        }
+      },
+      "required": [
+        "urls"
+      ],
+      "additionalProperties": false
+    },
+    "HistoryRemoveResult": {
+      "type": "object",
+      "properties": {
+        "urls": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "urls"
+      ],
+      "additionalProperties": false
+    },
+    "HistoryClearParams": {
+      "type": "object",
+      "properties": {
+        "startTime": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "endTime": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "confirm": {
+          "const": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "HistoryClearResult": {
+      "type": "object",
+      "properties": {
+        "all": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "all"
+      ],
+      "additionalProperties": false
+    },
+    "BrowsingDataClearParams": {
+      "type": "object",
+      "properties": {
+        "types": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "enum": [
+              "cache",
+              "cacheStorage",
+              "cookies",
+              "downloads",
+              "fileSystems",
+              "formData",
+              "history",
+              "indexedDB",
+              "localStorage",
+              "serviceWorkers",
+              "webSQL"
+            ]
+          }
+        },
+        "since": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "origins": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "confirm": {
+          "const": true
+        }
+      },
+      "required": [
+        "types"
+      ],
+      "additionalProperties": false
+    },
+    "BrowsingDataClearResult": {
+      "type": "object",
+      "properties": {
+        "types": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "types"
       ],
       "additionalProperties": false
     }

@@ -120,6 +120,49 @@ export interface BookmarksSearchResult {
   hasMore: boolean;
   nodes: Array<{ addedAt?: number; childCount?: number; id: string; index: number; parentId?: string; path: Array<string>; title: string; type: "bookmark" | "folder"; url?: string; }>;
 }
+export interface BrowsingDataClearParams {
+  confirm?: true;
+  origins?: Array<string>;
+  since?: number;
+  types: Array<"cache" | "cacheStorage" | "cookies" | "downloads" | "fileSystems" | "formData" | "history" | "indexedDB" | "localStorage" | "serviceWorkers" | "webSQL">;
+}
+export interface BrowsingDataClearResult {
+  types: Array<string>;
+}
+export interface HistoryClearParams {
+  confirm?: true;
+  endTime?: number;
+  startTime?: number;
+}
+export interface HistoryClearResult {
+  all: boolean;
+}
+export interface HistoryRemoveParams {
+  confirm?: true;
+  urls: Array<string>;
+}
+export interface HistoryRemoveResult {
+  urls: Array<string>;
+}
+export interface HistorySearchParams {
+  endTime?: number;
+  limit?: number;
+  startTime?: number;
+  text?: string;
+}
+export interface HistorySearchResult {
+  contentTrust: "untrusted-page-content";
+  hasMore: boolean;
+  items: Array<{ lastVisitTime: number; title: string; url: string; visitCount: number; }>;
+}
+export interface HistoryVisitsParams {
+  limit?: number;
+  url: string;
+}
+export interface HistoryVisitsResult {
+  hasMore: boolean;
+  visits: Array<{ transition: string; visitTime: number; }>;
+}
 export interface ReadingListAddParams {
   title?: string;
   url: string;
@@ -278,6 +321,11 @@ export interface RpcMethodMap {
   "bookmarks.move": { params: BookmarksMoveParams; result: BookmarksMoveResult };
   "bookmarks.remove": { params: BookmarksRemoveParams; result: BookmarksRemoveResult };
   "bookmarks.search": { params: BookmarksSearchParams; result: BookmarksSearchResult };
+  "browsingData.clear": { params: BrowsingDataClearParams; result: BrowsingDataClearResult };
+  "history.clear": { params: HistoryClearParams; result: HistoryClearResult };
+  "history.remove": { params: HistoryRemoveParams; result: HistoryRemoveResult };
+  "history.search": { params: HistorySearchParams; result: HistorySearchResult };
+  "history.visits": { params: HistoryVisitsParams; result: HistoryVisitsResult };
   "readingList.add": { params: ReadingListAddParams; result: ReadingListAddResult };
   "readingList.list": { params: ReadingListListParams; result: ReadingListListResult };
   "readingList.markRead": { params: ReadingListMarkReadParams; result: ReadingListMarkReadResult };
@@ -360,6 +408,46 @@ export const RPC_METHODS = {
     params: "BookmarksSearchParams",
     result: "BookmarksSearchResult",
     scope: "bookmarks:search",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "browsingData.clear": {
+    params: "BrowsingDataClearParams",
+    result: "BrowsingDataClearResult",
+    scope: "browsingData:clear",
+    effect: "write",
+    blocking: "none",
+    level: "L1",
+  },
+  "history.clear": {
+    params: "HistoryClearParams",
+    result: "HistoryClearResult",
+    scope: "history:clear",
+    effect: "write",
+    blocking: "none",
+    level: "L1",
+  },
+  "history.remove": {
+    params: "HistoryRemoveParams",
+    result: "HistoryRemoveResult",
+    scope: "history:remove",
+    effect: "write",
+    blocking: "none",
+    level: "L1",
+  },
+  "history.search": {
+    params: "HistorySearchParams",
+    result: "HistorySearchResult",
+    scope: "history:search",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "history.visits": {
+    params: "HistoryVisitsParams",
+    result: "HistoryVisitsResult",
+    scope: "history:visits",
     effect: "read",
     blocking: "none",
     level: "L0",

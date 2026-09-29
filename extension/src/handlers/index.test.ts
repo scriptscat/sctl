@@ -98,7 +98,7 @@ describe("browser method handlers", () => {
     vi.unstubAllGlobals();
   });
 
-  it("declares capabilities for exactly the tab, window, reading list, bookmark and tab management methods", () => {
+  it("declares capabilities for exactly the tab, window, reading list, bookmark, tab management, history and browsing data methods", () => {
     expect(new Set(registry.methods())).toEqual(
       new Set([
         "tabs.list",
@@ -133,6 +133,11 @@ describe("browser method handlers", () => {
         "tabGroups.add",
         "tabGroups.edit",
         "tabGroups.ungroup",
+        "history.search",
+        "history.visits",
+        "history.remove",
+        "history.clear",
+        "browsingData.clear",
       ]),
     );
   });

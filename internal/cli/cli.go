@@ -95,6 +95,8 @@ func NewRootCmd() *cobra.Command {
 		newTabsCmd(),
 		newWindowsCmd(),
 		newGroupsCmd(),
+		newHistoryCmd(),
+		newBrowsingDataCmd(),
 		newReadingListCmd(),
 		newBookmarksCmd(),
 		newVersionCmd(),

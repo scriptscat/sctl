@@ -106,18 +106,20 @@ troubleshooting.
 | `sctl windows open\|close\|focus\|state` | Open, close, focus, or change the state of windows. |
 | `sctl groups list\|create\|add\|edit\|ungroup` | List, create, fill, edit (title, color, collapse), or dissolve tab groups. |
 | `sctl reading-list list\|add\|mark-read\|rm` | List, add, mark read or unread, or remove reading list entries on a paired sctl Browser instance. |
+| `sctl history search\|visits\|rm\|clear` | Search history, list a URL's visits, delete URLs from history, or clear history by time range. |
+| `sctl browsing-data clear` | Clear cache, cookies, storage and other browsing data by type, time, and origin. |
 | `sctl bookmarks list\|search\|add\|mkdir\|move\|edit\|rm` | List, search, add, move, edit, or delete bookmarks and bookmark folders on a paired sctl Browser instance. |
 
 Run `sctl --help` or `sctl <command> --help` for usage and flags. Write operations block
 until the user approves, rejects, or closes the confirmation flow in ScriptCat; browser control commands run
 immediately with no approval step (see [`docs/threat-model.md`](./docs/threat-model.md)). `tabs`, `windows`,
-`reading-list`, and `bookmarks` accept `--browser <name|id>` (or `SCTL_BROWSER`) to pick an instance when more than one is online.
-Destructive browser operations need explicit confirmation: `reading-list rm` runs only with `--yes` (MCP:
+`reading-list`, `bookmarks`, `history`, and `browsing-data` accept `--browser <name|id>` (or `SCTL_BROWSER`) to pick an instance when more than one is online.
+Destructive browser operations need explicit confirmation: `reading-list rm`, `history rm`, `history clear` and `browsing-data clear` run only with `--yes` (MCP:
 `confirm: true`); without it nothing runs and the command exits with code 3. `bookmarks rm <id>...` needs human
 approval instead: the browser opens an approval window and the command waits, exiting 0 once the bookmarks are
 deleted, 1 when the request is rejected or the window is closed, 2 when nobody decides within 5 minutes or you
 press Ctrl-C, and 3 when the bookmarks changed before approval. `reading-list list` returns at most
-100 entries unless `--limit` (up to 1000) says otherwise, and notes on stderr when more remain.
+100 entries unless `--limit` (up to 1000) says otherwise, and notes on stderr when more remain. `--since` and `--until` accept an RFC 3339 time or a duration ago such as `7d`, `12h`, or `30m`.
 
 ## License
 

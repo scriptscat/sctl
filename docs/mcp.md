@@ -232,8 +232,19 @@ whose last tab leaves. `color` is one of `grey`, `blue`, `red`, `yellow`, `green
 (anything else is `INVALID_REQUEST`), and an unknown tab or group is `NOT_FOUND` with nothing changed.
 `tabs_list` items also carry `groupId` (`-1` when ungrouped).
 
+`history` searches and deletes history, with `action` set to `search`, `visits`, `rm`, or `clear`. Times
+(`startTime`, `endTime`) are integer milliseconds since the epoch; `search` without them covers all history and returns
+newest first, capped by `limit` (default 100, at most 1000) with `hasMore`, and marked
+`contentTrust: "untrusted-page-content"` because titles and URLs come from web pages. `rm` and `clear` are destructive and
+run only with `confirm: true`; `clear` without times deletes all history.
+
+`browsing_data` has one `action`, `clear`, which removes the data of `types` (`cache`, `cacheStorage`, `cookies`,
+`downloads`, `fileSystems`, `formData`, `history`, `indexedDB`, `localStorage`, `serviceWorkers`, `webSQL`; passwords are
+not managed) and runs only with `confirm: true`. `since` (milliseconds) defaults to all time. `origins` restricts the
+clearing to those origins and is `INVALID_REQUEST` when combined with `downloads`, `formData`, or `history`.
+
 Browser operations carry a destruction level. Most run immediately. A few are destructive enough to need explicit
-confirmation — currently only the reading list's `rm`: it runs only when the call passes `confirm: true`, and
+confirmation — the reading list's `rm`, history `rm` and `clear`, and `browsing_data` `clear`: they run only when the call passes `confirm: true`, and
 without it the daemon answers `CONFIRMATION_REQUIRED` and nothing runs. The command-line equivalent is `--yes`.
 Deleting bookmarks needs human approval instead: the sctl Browser extension opens an approval window, and the call
 waits — sending progress notifications like the ScriptCat write tools — until the user approves (`CONFLICT` and

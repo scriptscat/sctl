@@ -410,3 +410,110 @@ func TestTabGroupsToolDeclaresAndForwardsEachAction(t *testing.T) {
 		})
 	})
 }
+
+func TestHistoryToolDeclaresAndForwardsEachAction(t *testing.T) {
+	Convey("history 用 action 枚举选择操作,参数由协议派生,并把每个 action 转发到对应的协议方法", t, func() {
+		p := loadProto(t)
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+		So(err, ShouldBeNil)
+		tool := toolByName(res, "history")
+		props, required := inputSchemaOf(tool)
+		So(required, ShouldResemble, []any{"action"})
+		action, ok := props["action"].(map[string]any)
+		So(ok, ShouldBeTrue)
+		So(action["enum"], ShouldResemble, []any{"search", "visits", "rm", "clear"})
+		So(props, ShouldContainKey, protocol.ConfirmParam)
+		So(tool.Description, ShouldContainSubstring, "untrusted")
+
+		for _, args := range []map[string]any{
+			{"action": "search", "text": "go", "startTime": 10, "endTime": 20, "limit": 5},
+			{"action": "visits", "url": "https://a.example/", "browser": "work"},
+			{"action": "rm", "urls": []string{"https://a.example/"}, "confirm": true},
+			{"action": "clear", "startTime": 10, "confirm": true},
+			{"action": "clear"},
+		} {
+			res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "history", Arguments: args})
+			So(err, ShouldBeNil)
+			So(res.IsError, ShouldBeFalse)
+		}
+		So(caller.actions, ShouldResemble, []string{"history.search", "history.visits", "history.remove", "history.clear", "history.clear"})
+		So(caller.browserParams, ShouldResemble, []string{"", "work", "", "", ""})
+		inputs := make([]string, 0, len(caller.inputs))
+		for _, input := range caller.inputs {
+			inputs = append(inputs, string(input))
+		}
+		So(inputs, ShouldResemble, []string{
+			`{"endTime":20,"limit":5,"startTime":10,"text":"go"}`,
+			`{"url":"https://a.example/"}`,
+			`{"confirm":true,"urls":["https://a.example/"]}`,
+			`{"confirm":true,"startTime":10}`,
+			// 未确认的 L1 调用照常转发:确认由 daemon 把关。
+			`{}`,
+		})
+
+		Convey("不属于所选 action 的参数与非法取值在转发前被拒绝", func() {
+			before := len(caller.actions)
+			for _, args := range []map[string]any{
+				{"action": "visits"},
+				{"action": "visits", "url": "https://a.example/", "startTime": 1},
+				{"action": "rm", "urls": []string{}, "confirm": true},
+				{"action": "rm", "urls": []string{"https://a.example/"}, "confirm": false},
+				{"action": "search", "limit": 1001},
+				{"action": "search", "startTime": -1},
+				{"action": "clear", "text": "x"},
+			} {
+				_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "history", Arguments: args})
+				if err == nil {
+					t.Errorf("history accepted invalid arguments %#v", args)
+				}
+			}
+			So(len(caller.actions), ShouldEqual, before)
+		})
+	})
+}
+
+func TestBrowsingDataToolRestrictsTypesAndForwardsClear(t *testing.T) {
+	Convey("browsing_data 的 clear 只接受清单内的类型,并转发 types、since、origins 与 confirm", t, func() {
+		p := loadProto(t)
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+		So(err, ShouldBeNil)
+		props, required := inputSchemaOf(toolByName(res, "browsing_data"))
+		So(required, ShouldResemble, []any{"action"})
+		action, ok := props["action"].(map[string]any)
+		So(ok, ShouldBeTrue)
+		So(action["enum"], ShouldResemble, []any{"clear"})
+		types, ok := props["types"].(map[string]any)
+		So(ok, ShouldBeTrue)
+		items, ok := types["items"].(map[string]any)
+		So(ok, ShouldBeTrue)
+		So(items["enum"], ShouldResemble, []any{"cache", "cacheStorage", "cookies", "downloads", "fileSystems", "formData", "history", "indexedDB", "localStorage", "serviceWorkers", "webSQL"})
+
+		result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "browsing_data", Arguments: map[string]any{
+			"action": "clear", "types": []string{"cookies"}, "since": 5, "origins": []string{"https://a.example"}, "confirm": true, "browser": "work",
+		}})
+		So(err, ShouldBeNil)
+		So(result.IsError, ShouldBeFalse)
+		So(caller.actions, ShouldResemble, []string{"browsingData.clear"})
+		So(caller.browserParams, ShouldResemble, []string{"work"})
+		So(string(caller.inputs[0]), ShouldEqual, `{"confirm":true,"origins":["https://a.example"],"since":5,"types":["cookies"]}`)
+
+		Convey("密码、未知类型、空类型清单与缺少 types 在转发前被拒绝", func() {
+			for _, args := range []map[string]any{
+				{"action": "clear", "types": []string{"passwords"}, "confirm": true},
+				{"action": "clear", "types": []string{}, "confirm": true},
+				{"action": "clear", "confirm": true},
+				{"action": "clear", "types": []string{"cache"}, "confirm": false},
+			} {
+				_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "browsing_data", Arguments: args})
+				if err == nil {
+					t.Errorf("browsing_data accepted invalid arguments %#v", args)
+				}
+			}
+			So(caller.actions, ShouldHaveLength, 1)
+		})
+	})
+}

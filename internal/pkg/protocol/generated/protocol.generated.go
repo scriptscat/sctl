@@ -97,6 +97,67 @@ type BookmarksSearchResult struct {
 	} `json:"nodes"`
 }
 
+type BrowsingDataClearParams struct {
+	Confirm *bool    `json:"confirm,omitempty"`
+	Origins []string `json:"origins,omitempty"`
+	Since   *int     `json:"since,omitempty"`
+	Types   []string `json:"types"`
+}
+
+type BrowsingDataClearResult struct {
+	Types []string `json:"types"`
+}
+
+type HistoryClearParams struct {
+	Confirm   *bool `json:"confirm,omitempty"`
+	EndTime   *int  `json:"endTime,omitempty"`
+	StartTime *int  `json:"startTime,omitempty"`
+}
+
+type HistoryClearResult struct {
+	All bool `json:"all"`
+}
+
+type HistoryRemoveParams struct {
+	Confirm *bool    `json:"confirm,omitempty"`
+	Urls    []string `json:"urls"`
+}
+
+type HistoryRemoveResult struct {
+	Urls []string `json:"urls"`
+}
+
+type HistorySearchParams struct {
+	EndTime   *int    `json:"endTime,omitempty"`
+	Limit     *int    `json:"limit,omitempty"`
+	StartTime *int    `json:"startTime,omitempty"`
+	Text      *string `json:"text,omitempty"`
+}
+
+type HistorySearchResult struct {
+	ContentTrust string `json:"contentTrust"`
+	HasMore      bool   `json:"hasMore"`
+	Items        []struct {
+		LastVisitTime int    `json:"lastVisitTime"`
+		Title         string `json:"title"`
+		URL           string `json:"url"`
+		VisitCount    int    `json:"visitCount"`
+	} `json:"items"`
+}
+
+type HistoryVisitsParams struct {
+	Limit *int   `json:"limit,omitempty"`
+	URL   string `json:"url"`
+}
+
+type HistoryVisitsResult struct {
+	HasMore bool `json:"hasMore"`
+	Visits  []struct {
+		Transition string `json:"transition"`
+		VisitTime  int    `json:"visitTime"`
+	} `json:"visits"`
+}
+
 type ReadingListAddParams struct {
 	Title *string `json:"title,omitempty"`
 	URL   string  `json:"url"`
@@ -453,6 +514,11 @@ const (
 	MethodBookmarksMove         Method = "bookmarks.move"
 	MethodBookmarksRemove       Method = "bookmarks.remove"
 	MethodBookmarksSearch       Method = "bookmarks.search"
+	MethodBrowsingDataClear     Method = "browsingData.clear"
+	MethodHistoryClear          Method = "history.clear"
+	MethodHistoryRemove         Method = "history.remove"
+	MethodHistorySearch         Method = "history.search"
+	MethodHistoryVisits         Method = "history.visits"
 	MethodReadingListAdd        Method = "readingList.add"
 	MethodReadingListList       Method = "readingList.list"
 	MethodReadingListMarkRead   Method = "readingList.markRead"
@@ -498,6 +564,11 @@ var Methods = map[string]MethodMetadata{
 	"bookmarks.move":          {Params: "BookmarksMoveParams", Result: "BookmarksMoveResult", Scope: "bookmarks:move", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
 	"bookmarks.remove":        {Params: "BookmarksRemoveParams", Result: "BookmarksRemoveResult", Scope: "bookmarks:remove", Effect: "write", Blocking: "approval", Level: "L2", Peer: "browser", MergeField: ""},
 	"bookmarks.search":        {Params: "BookmarksSearchParams", Result: "BookmarksSearchResult", Scope: "bookmarks:search", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "nodes"},
+	"browsingData.clear":      {Params: "BrowsingDataClearParams", Result: "BrowsingDataClearResult", Scope: "browsingData:clear", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: ""},
+	"history.clear":           {Params: "HistoryClearParams", Result: "HistoryClearResult", Scope: "history:clear", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: ""},
+	"history.remove":          {Params: "HistoryRemoveParams", Result: "HistoryRemoveResult", Scope: "history:remove", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: ""},
+	"history.search":          {Params: "HistorySearchParams", Result: "HistorySearchResult", Scope: "history:search", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "items"},
+	"history.visits":          {Params: "HistoryVisitsParams", Result: "HistoryVisitsResult", Scope: "history:visits", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "visits"},
 	"readingList.add":         {Params: "ReadingListAddParams", Result: "ReadingListAddResult", Scope: "readingList:add", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
 	"readingList.list":        {Params: "ReadingListListParams", Result: "ReadingListListResult", Scope: "readingList:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "entries"},
 	"readingList.markRead":    {Params: "ReadingListMarkReadParams", Result: "ReadingListMarkReadResult", Scope: "readingList:markRead", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},

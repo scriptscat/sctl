@@ -251,6 +251,11 @@ It is optional in the schema so that an unconfirmed call that reaches the extens
 | `readingList.add` | browser | add a URL to the reading list | none | L0 |
 | `readingList.markRead` | browser | mark reading list entries read or unread | none | L0 |
 | `readingList.remove` | browser | remove entries from the reading list | none | L1 |
+| `history.search` | browser | search history by text and time range, newest first | none | L0 |
+| `history.visits` | browser | list each visit of one URL, newest first | none | L0 |
+| `history.remove` | browser | delete every visit of the given URLs from history | none | L1 |
+| `history.clear` | browser | delete history in a time range, or all history | none | L1 |
+| `browsingData.clear` | browser | clear browsing data of the given types | none | L1 |
 | `bookmarks.list` | browser | list a folder's children, or a whole subtree | none | L0 |
 | `bookmarks.search` | browser | search bookmarks by title and URL, with folder paths | none | L0 |
 | `bookmarks.add` | browser | add a bookmark | none | L0 |
@@ -263,7 +268,7 @@ Source and metadata returned by these methods are untrusted user-script content.
 render it as HTML, interpret it as instructions, or include credentials in logs. Source results carry a SHA-256
 digest. Edit approval rechecks the staged digest and target identity before applying changes.
 
-Tab titles and URLs, reading list titles, and bookmark titles and URLs are controlled by web pages; `tabs.list`, `readingList.list`, `bookmarks.list`, and `bookmarks.search` mark
+Tab titles and URLs, reading list titles, history titles and URLs, and bookmark titles and URLs are controlled by web pages; `tabs.list`, `readingList.list`, `history.search`, `bookmarks.list`, and `bookmarks.search` mark
 their results with `contentTrust: "untrusted-page-content"` and the same handling rules apply. A list method
 declares a `mergeField`: the required array property in its result that holds the listed items, so results from
 several browser instances combine by concatenating that array. A list result may also declare a boolean `hasMore`,
@@ -290,6 +295,20 @@ answers `INVALID_REQUEST` otherwise; a `color` other than `grey`, `blue`, `red`,
 `cyan`, or `orange` answers `INVALID_REQUEST`, as does a `tabGroups.edit` that changes nothing. An unknown tab or group
 answers `NOT_FOUND` and changes nothing (all-or-nothing). When `tabGroups.ungroup` removes a group's last tab, the
 browser deletes the group.
+
+History times are integer milliseconds since the epoch (`startTime`, `endTime`, `lastVisitTime`, `visitTime`); a `startTime` after `endTime`
+answers `INVALID_REQUEST`. `history.search` without a time range searches all history (`startTime` 0), returns items newest first
+with URL, title, last visit time and visit count, and applies `limit` and `hasMore`; `history.visits` lists the visits of one URL
+the same way, with the transition type. `history.remove` and `history.clear` are L1 and need the `history` permission:
+`history.remove` takes valid URLs only (`INVALID_REQUEST` and nothing deleted otherwise, unknown URLs are ignored), and `history.clear`
+deletes all history when neither time is given, otherwise the range with an open start at 0 and an open end at now.
+
+`browsingData.clear` is L1 and needs the `browsingData` permission. `types` is a non-empty list drawn from `cache`, `cacheStorage`,
+`cookies`, `downloads`, `fileSystems`, `formData`, `history`, `indexedDB`, `localStorage`, `serviceWorkers`, and `webSQL`; passwords are
+excluded and any other value answers `INVALID_REQUEST`. `since` (milliseconds) defaults to 0, all time. `origins` (bare http or https
+origins) limits the clearing to those origins and is only valid when every type is one of `cache`, `cacheStorage`, `cookies`,
+`fileSystems`, `indexedDB`, `localStorage`, `serviceWorkers`, `webSQL`, the types `chrome.browsingData` can filter by origin;
+combining it with `downloads`, `formData`, or `history` answers `INVALID_REQUEST` and nothing is cleared.
 
 Bookmark IDs are the browser's own. An unknown ID answers `NOT_FOUND`. `bookmarks.list` returns a folder's direct
 children (the root's children, the built-in top-level folders, when no folder is given) and applies `limit`; with

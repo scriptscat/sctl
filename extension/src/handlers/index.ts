@@ -1,5 +1,7 @@
 import { type HandlerRegistry, type RpcHandler } from "@/background/registry";
 import { registerBookmarkHandlers } from "./bookmarks";
+import { registerBrowsingDataHandlers } from "./browsingData";
+import { registerHistoryHandlers } from "./history";
 import { registerReadingListHandlers } from "./readingList";
 import { requireTab, requireWindow } from "./targets";
 import { registerTabGroupHandlers } from "./tabGroups";
@@ -79,4 +81,6 @@ export function registerHandlers(registry: HandlerRegistry): void {
   registerBookmarkHandlers(registry);
   registerTabsManageHandlers(registry);
   registerTabGroupHandlers(registry);
+  registerHistoryHandlers(registry);
+  registerBrowsingDataHandlers(registry);
 }

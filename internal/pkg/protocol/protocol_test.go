@@ -67,6 +67,11 @@ func TestLoadExposesMethodPeerAndListMergeField(t *testing.T) {
 		"tabGroups.add":        {PeerBrowser, ""},
 		"tabGroups.edit":       {PeerBrowser, ""},
 		"tabGroups.ungroup":    {PeerBrowser, ""},
+		"history.search":       {PeerBrowser, "items"},
+		"history.visits":       {PeerBrowser, "visits"},
+		"history.remove":       {PeerBrowser, ""},
+		"history.clear":        {PeerBrowser, ""},
+		"browsingData.clear":   {PeerBrowser, ""},
 	} {
 		action, ok := p.Actions[name]
 		if !ok {
@@ -117,6 +122,11 @@ func TestLoadExposesEachMethodsDestructionLevel(t *testing.T) {
 		"tabGroups.add":          LevelDirect,
 		"tabGroups.edit":         LevelDirect,
 		"tabGroups.ungroup":      LevelDirect,
+		"history.search":         LevelDirect,
+		"history.visits":         LevelDirect,
+		"history.remove":         LevelConfirm,
+		"history.clear":          LevelConfirm,
+		"browsingData.clear":     LevelConfirm,
 	} {
 		action, ok := p.Actions[name]
 		if !ok {

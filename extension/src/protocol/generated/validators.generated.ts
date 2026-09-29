@@ -66,6 +66,46 @@ export function validateBookmarksSearchResult(value: unknown): value is Protocol
   return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "hasMore", "nodes"]) && value["contentTrust"] === "untrusted-page-content" && typeof value["hasMore"] === "boolean" && Array.isArray(value["nodes"]) && value["nodes"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["addedAt", "childCount", "id", "index", "parentId", "path", "title", "type", "url"]) && (item["addedAt"] === undefined || (typeof item["addedAt"] === "number" && Number.isInteger(item["addedAt"]))) && (item["childCount"] === undefined || (typeof item["childCount"] === "number" && Number.isInteger(item["childCount"]))) && typeof item["id"] === "string" && typeof item["index"] === "number" && Number.isInteger(item["index"]) && (item["parentId"] === undefined || (typeof item["parentId"] === "string")) && Array.isArray(item["path"]) && item["path"].every((item) => typeof item === "string") && typeof item["title"] === "string" && (item["type"] === "bookmark" || item["type"] === "folder") && (item["url"] === undefined || (typeof item["url"] === "string")))));
 }
 
+export function validateBrowsingDataClearParams(value: unknown): value is Protocol.BrowsingDataClearParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["confirm", "origins", "since", "types"]) && (value["confirm"] === undefined || (value["confirm"] === true)) && (value["origins"] === undefined || (Array.isArray(value["origins"]) && value["origins"].length >= 1 && value["origins"].every((item) => typeof item === "string"))) && (value["since"] === undefined || (typeof value["since"] === "number" && Number.isInteger(value["since"]) && value["since"] >= 0)) && Array.isArray(value["types"]) && value["types"].length >= 1 && value["types"].every((item) => (item === "cache" || item === "cacheStorage" || item === "cookies" || item === "downloads" || item === "fileSystems" || item === "formData" || item === "history" || item === "indexedDB" || item === "localStorage" || item === "serviceWorkers" || item === "webSQL")));
+}
+
+export function validateBrowsingDataClearResult(value: unknown): value is Protocol.BrowsingDataClearResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["types"]) && Array.isArray(value["types"]) && value["types"].every((item) => typeof item === "string"));
+}
+
+export function validateHistoryClearParams(value: unknown): value is Protocol.HistoryClearParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["confirm", "endTime", "startTime"]) && (value["confirm"] === undefined || (value["confirm"] === true)) && (value["endTime"] === undefined || (typeof value["endTime"] === "number" && Number.isInteger(value["endTime"]) && value["endTime"] >= 0)) && (value["startTime"] === undefined || (typeof value["startTime"] === "number" && Number.isInteger(value["startTime"]) && value["startTime"] >= 0)));
+}
+
+export function validateHistoryClearResult(value: unknown): value is Protocol.HistoryClearResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["all"]) && typeof value["all"] === "boolean");
+}
+
+export function validateHistoryRemoveParams(value: unknown): value is Protocol.HistoryRemoveParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["confirm", "urls"]) && (value["confirm"] === undefined || (value["confirm"] === true)) && Array.isArray(value["urls"]) && value["urls"].length >= 1 && value["urls"].every((item) => typeof item === "string"));
+}
+
+export function validateHistoryRemoveResult(value: unknown): value is Protocol.HistoryRemoveResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["urls"]) && Array.isArray(value["urls"]) && value["urls"].every((item) => typeof item === "string"));
+}
+
+export function validateHistorySearchParams(value: unknown): value is Protocol.HistorySearchParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["endTime", "limit", "startTime", "text"]) && (value["endTime"] === undefined || (typeof value["endTime"] === "number" && Number.isInteger(value["endTime"]) && value["endTime"] >= 0)) && (value["limit"] === undefined || (typeof value["limit"] === "number" && Number.isInteger(value["limit"]) && value["limit"] >= 1)) && (value["startTime"] === undefined || (typeof value["startTime"] === "number" && Number.isInteger(value["startTime"]) && value["startTime"] >= 0)) && (value["text"] === undefined || (typeof value["text"] === "string")));
+}
+
+export function validateHistorySearchResult(value: unknown): value is Protocol.HistorySearchResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "hasMore", "items"]) && value["contentTrust"] === "untrusted-page-content" && typeof value["hasMore"] === "boolean" && Array.isArray(value["items"]) && value["items"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["lastVisitTime", "title", "url", "visitCount"]) && typeof item["lastVisitTime"] === "number" && Number.isInteger(item["lastVisitTime"]) && typeof item["title"] === "string" && typeof item["url"] === "string" && typeof item["visitCount"] === "number" && Number.isInteger(item["visitCount"]))));
+}
+
+export function validateHistoryVisitsParams(value: unknown): value is Protocol.HistoryVisitsParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["limit", "url"]) && (value["limit"] === undefined || (typeof value["limit"] === "number" && Number.isInteger(value["limit"]) && value["limit"] >= 1)) && typeof value["url"] === "string");
+}
+
+export function validateHistoryVisitsResult(value: unknown): value is Protocol.HistoryVisitsResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["hasMore", "visits"]) && typeof value["hasMore"] === "boolean" && Array.isArray(value["visits"]) && value["visits"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["transition", "visitTime"]) && typeof item["transition"] === "string" && typeof item["visitTime"] === "number" && Number.isInteger(item["visitTime"]))));
+}
+
 export function validateReadingListAddParams(value: unknown): value is Protocol.ReadingListAddParams {
   return (isRecord(value) && hasOnlyKeys(value, ["title", "url"]) && (value["title"] === undefined || (typeof value["title"] === "string")) && typeof value["url"] === "string");
 }
@@ -242,6 +282,11 @@ export const RPC_PARAM_VALIDATORS = {
   "bookmarks.move": validateBookmarksMoveParams,
   "bookmarks.remove": validateBookmarksRemoveParams,
   "bookmarks.search": validateBookmarksSearchParams,
+  "browsingData.clear": validateBrowsingDataClearParams,
+  "history.clear": validateHistoryClearParams,
+  "history.remove": validateHistoryRemoveParams,
+  "history.search": validateHistorySearchParams,
+  "history.visits": validateHistoryVisitsParams,
   "readingList.add": validateReadingListAddParams,
   "readingList.list": validateReadingListListParams,
   "readingList.markRead": validateReadingListMarkReadParams,
@@ -277,6 +322,11 @@ export const RPC_RESULT_VALIDATORS = {
   "bookmarks.move": validateBookmarksMoveResult,
   "bookmarks.remove": validateBookmarksRemoveResult,
   "bookmarks.search": validateBookmarksSearchResult,
+  "browsingData.clear": validateBrowsingDataClearResult,
+  "history.clear": validateHistoryClearResult,
+  "history.remove": validateHistoryRemoveResult,
+  "history.search": validateHistorySearchResult,
+  "history.visits": validateHistoryVisitsResult,
   "readingList.add": validateReadingListAddResult,
   "readingList.list": validateReadingListListResult,
   "readingList.markRead": validateReadingListMarkReadResult,
