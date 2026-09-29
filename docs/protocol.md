@@ -288,8 +288,11 @@ are internal because they exist only to serve the daemon's page automation, whic
 `debugger.send` input is `{tabId, sessionId?, method, params?}`: `method` and `params` are the CDP command, sent to
 the tab's top-level debugger session, or to the child session `sessionId` — the `sessionId` of a CDP
 `Target.attachedToTarget` event, used for out-of-process iframes. Its result is `{result}`, the CDP command's
-result object unchanged. `debugger.detach` input is `{tabId?}`: with `tabId` it detaches that tab, without it
-every tab the instance has attached; its result `{tabIds}` lists the tabs it detached. CDP params and results are
+result object unchanged. `debugger.send` answers `PAGE_NOT_AUTOMATABLE` with Chrome's reason when Chrome refuses to
+attach, `NOT_FOUND` for an unknown tab, `INVALID_REQUEST` with CDP's message when the CDP command itself fails, and
+`DEBUGGER_DETACHED` when the debugger detaches while the command runs. `debugger.detach` input is `{tabId?}`: with
+`tabId` it detaches that tab, without it every tab the instance has attached; its result `{tabIds}` lists the tabs it
+detached. CDP params and results are
 open objects: the schema checks only that they are JSON objects, and the frame limit still applies.
 
 `tabs.current` input is `{}`; its result `{tabId, windowId}` is the active tab of the last-focused window of type
@@ -305,7 +308,10 @@ extension attach. The daemon then treats the tab as attached until it sends `deb
 without a page command on the tab, or on `page detach` — or until the extension reports `debugger.detached` for
 it, or the instance disconnects. Page commands on the same tab run one at a time in arrival order. A
 `debugger.detached` notification for a tab, or the instance disconnecting, fails the command running on that tab
-with `DEBUGGER_DETACHED`, and the next page command attaches again.
+with `DEBUGGER_DETACHED`, and the next page command attaches again. The extension keeps a fallback of its own: a tab
+with no `debugger.send` for 10 minutes is detached and reported as `debugger.detached` with reason `idle_timeout`, so
+the infobar does not stay up if the daemon stops driving it, and when its connection to the daemon closes it detaches
+every tab without notifying.
 
 ### 3.3 Extension notifications
 
@@ -316,7 +322,7 @@ there is no `input` wrapper or `clientId`:
 | Notification | Params | Sent when |
 |---|---|---|
 | `debugger.event` | `{tabId, sessionId?, method, params?}` | the debugger attached to `tabId` receives a CDP event; `sessionId` names the child session that produced it |
-| `debugger.detached` | `{tabId, reason}` | Chrome detaches the debugger from `tabId` (`chrome.debugger.onDetach`); `reason` is Chrome's detach reason, such as `target_closed` or `canceled_by_user` |
+| `debugger.detached` | `{tabId, reason}` | Chrome detaches the debugger from `tabId` (`chrome.debugger.onDetach`), where `reason` is Chrome's detach reason, such as `target_closed` or `canceled_by_user`; or the extension's 10-minute fallback detaches it, with reason `idle_timeout` |
 
 The daemon validates a notification against its schema like any other frame; a notification that carries an
 `id` or fails its schema is an invalid frame. Notifications with these names from ScriptCat are valid frames

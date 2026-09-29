@@ -191,7 +191,9 @@ type actionRun struct {
 	before []int
 }
 
-// beginAction 开始观察主文档导航与新窗口。调用方必须在动作结束时调用 end。
+// beginAction 开始观察主文档导航与新窗口。代替调用方向页面输入或执行脚本的动作(click、press、eval 等)
+// 都可能打开新标签页,opens 为 true;只观察页面(wait、screenshot)或替换整个文档(navigate)的为 false,
+// 期间页面自己打开的窗口不算动作打开的。调用方必须在动作结束时调用 end。
 func beginAction(ctx context.Context, t *Tab, opens bool) (*actionRun, error) {
 	if err := t.watchFrames(ctx); err != nil {
 		return nil, err
@@ -218,6 +220,13 @@ func beginAction(ctx context.Context, t *Tab, opens bool) (*actionRun, error) {
 	return run, nil
 }
 
+// beginDialogAction 开始观察但不查询主 frame:弹框卡住渲染进程时 Page.getFrameTree 不会回应,而处理完一个
+// 弹框后页面可能立刻打开下一个。不知道主 frame 时,只有顶层 frame 的跨文档导航计为导航。
+func beginDialogAction(t *Tab) *actionRun {
+	t.nav.begin("")
+	return &actionRun{t: t}
+}
+
 // end 结束观察;之后到达的事件不再记录。
 func (r *actionRun) end() { r.t.nav.end() }
 
@@ -238,6 +247,7 @@ func (r *actionRun) finish(ctx context.Context, waitNavigation bool) (ActionResu
 		}
 		res.NewTabID = newTab
 	}
+	// Page.getNavigationHistory 由浏览器进程回答,弹框卡住渲染进程时也能返回。
 	var history struct {
 		CurrentIndex int `json:"currentIndex"`
 		Entries      []struct {

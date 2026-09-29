@@ -243,7 +243,7 @@ func runType(ctx context.Context, t *Tab, input json.RawMessage) (any, error) {
 	if in.Text == "" {
 		return nil, invalidRequest("page type needs the text to type")
 	}
-	run, err := beginAction(ctx, t, false)
+	run, err := beginAction(ctx, t, true)
 	if err != nil {
 		return nil, err
 	}
@@ -283,7 +283,7 @@ func runPress(ctx context.Context, t *Tab, input json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	run, err := beginAction(ctx, t, false)
+	run, err := beginAction(ctx, t, true)
 	if err != nil {
 		return nil, err
 	}

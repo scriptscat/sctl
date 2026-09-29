@@ -129,7 +129,7 @@ when the command starts. They run in the background: they never switch the tab y
 window, and `--activate` makes the tab active in its window first without focusing the window. The first page
 command on a tab attaches the debugger, which shows the debugging infobar until the tab has been idle for
 5 minutes or you run `sctl page detach`; while attached, the page behaves as if it were visible and focused.
-`--timeout` overrides the default 10s limit (30s for navigation), and `-o json` prints the full result. A page command exits with 2
+`--timeout` overrides the default 10s limit (30s for navigation and screenshots), and `-o json` prints the full result. A page command exits with 2
 when the debugger detaches while it runs (for example, the infobar was dismissed) and with 3 on other errors.
 
 While a JS dialog is open in a tab, every page command except `sctl page dialog`, `detach` and `screenshot` fails with
@@ -156,7 +156,7 @@ and actually receives the pointer at its center; on timeout the `TIMEOUT` error 
 such as `obscured by div.modal-backdrop`. If the page is not rendering even with focus emulation, the command
 fails with `PAGE_HIDDEN`; retry with `--activate`. When a click starts a navigation of the page within 500ms, the
 command waits for DOMContentLoaded. The summary prints the tab ID, plus the URL after a navigation or the ID of a
-new tab the click opened (which is not switched to); `-o json` also reports the page's URL and title, which are
+new tab the action opened (which is not switched to); `-o json` also reports the page's URL and title, which are
 page content.
 
 `sctl page fill`, `select`, `upload`, and `scroll <target>` take a target like click does and scroll the element into view

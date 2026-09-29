@@ -37,16 +37,17 @@ is a deliberate trade for low operating friction; the control token (same user o
 attach Chrome's debugger to a tab through the sctl Browser extension's `debugger` permission, again with no
 per-operation approval and no per-site limit. A control-token holder can therefore:
 - read the content of any page Chrome lets the debugger attach to, in any paired instance;
-- run scripts in those pages (`page eval`) — and so act with the user's signed-in session: read what the page can
-  read, submit what the page can submit;
+- type into, click, and submit forms in those pages with trusted input events, and run scripts in them
+  (`page eval`) — and so act with the user's signed-in session: read what the page can read, submit what the page
+  can submit;
 - do this in background tabs the user is not looking at.
 
 Chrome's "sctl Browser started debugging this browser" infobar is the only visible sign that a page is attached,
 and launching Chrome with `--silent-debugger-extension-api` hides it. While a tab is attached, the daemon turns
 on focus emulation for it, so the page believes it is visible and focused: timers, animations, and media that a
 hidden page would pause keep running, and a page that checks visibility or focus cannot tell it is in the
-background. The emulation ends when the debugger detaches. Everything a page returns — `page eval` results, page
-URLs and titles — is untrusted page content (`contentTrust: untrusted-page-content`): it can carry prompt
+background. The emulation ends when the debugger detaches. Everything a page returns — snapshots, `page eval`
+results, JS dialog text, page URLs and titles — is untrusted page content (`contentTrust: untrusted-page-content`): it can carry prompt
 injection aimed at the agent reading it, and must be treated as data, never as instructions.
 
 ## 2. Attack surface and countermeasures

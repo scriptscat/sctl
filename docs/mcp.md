@@ -213,7 +213,7 @@ The page tools `page_snapshot`, `page_click`, `page_hover`, `page_fill`, `page_t
 `page_upload`, `page_scroll`, `page_navigate`, `page_wait`, `page_screenshot`, `page_eval`, `page_dialog`, and `page_detach` work the same way and
 also run without approval. Besides `browser`, each takes an optional `tabId`; without it, the tool acts on the active tab of the browser's
 last-focused window, fixed when the call starts, and every result reports the `tabId` it acted on. All but `page_snapshot` and `page_detach` also take `activate`, which makes the tab active in its window first without
-focusing the window, and all take `timeoutMs` (default 10000; 30000 for `page_navigate`). Page tools run in background tabs and never switch tabs or focus a window. The
+focusing the window, and all take `timeoutMs` (default 10000; 30000 for `page_navigate` and `page_screenshot`). Page tools run in background tabs and never switch tabs or focus a window. The
 first page tool call on a tab attaches the debugger and shows the infobar described in step 4 until the tab has
 been idle for 5 minutes or `page_detach` detaches it; while attached, the page behaves as if it were visible and
 focused. Page results other than `page_detach` are marked
@@ -230,7 +230,8 @@ cannot be attached shows `[unavailable]`.
 While a JS dialog (alert, confirm, prompt, beforeunload) is open in a tab, every page tool except `page_dialog`,
 `page_detach` and `page_screenshot` returns `DIALOG_OPEN`, whose message names the dialog type and its text
 (untrusted page content). Dialogs are never handled automatically: `page_dialog` takes `action` (`accept` or
-`dismiss`) and an optional `text` for a prompt, and returns `NOT_FOUND` when no dialog is open. A tool call that is running
+`dismiss`) and an optional `text` for a prompt, returns `tabId`, `dialogType`, and the page's `url`, `title`, and
+`navigated` after handling it, and returns `NOT_FOUND` when no dialog is open. A tool call that is running
 when a dialog opens, such as a click that triggers an `alert`, returns `DIALOG_OPEN` at once and leaves the dialog open; the
 action may already have taken effect. `page_screenshot` is still attempted while a dialog is open, but a page blocked by the dialog
 may not render, and then it returns `DIALOG_OPEN`.
@@ -238,7 +239,8 @@ may not render, and then it returns `DIALOG_OPEN`.
 `page_eval` takes an optional `ref` from the tab's latest snapshot. With it, `expression` must be a function that
 receives the element, such as `el => el.textContent`, and it runs in the element's own frame, so elements inside
 cross-origin iframes work. An expired ref returns `STALE_REF`; a non-function expression and an exception thrown by
-the page return `EVAL_ERROR`.
+the page return `EVAL_ERROR`. Besides `value`, it returns `tabId`, the page's `url` and `title` after the call,
+`navigated`, and `newTabId` when the expression opened a new tab.
 
 `page_click` and `page_hover` take exactly one of `ref` (from the tab's latest snapshot; it can point into a
 cross-origin iframe) or `selector` (a CSS selector that must match exactly one element in the main document; while
@@ -249,7 +251,7 @@ div.modal-backdrop`. `PAGE_HIDDEN` means the tab is not rendering even with focu
 `activate`. `page_click` sends trusted mouse events and takes optional `button` (`left`, `right`, `middle`),
 `count` (1-10), and `modifiers` (`Alt`, `Control`, `Meta`, `Shift`). When the click starts a navigation of the
 page within 500 ms, it waits for DOMContentLoaded. Both return `tabId`, the page's `url` and `title` after the
-action, and `navigated`; `page_click` adds `newTabId` when the click opened a new tab, which is not switched to.
+action, and `navigated`, plus `newTabId` when the action opened a new tab, which is not switched to.
 
 `page_fill`, `page_select`, and `page_upload` take a `ref` or `selector` like `page_click`, and `page_scroll` takes one
 optionally; they scroll the element into view first. `page_fill` (`text`, empty clears) waits until the element is
@@ -263,7 +265,7 @@ files need the `multiple` attribute. `page_scroll` scrolls a target into view, o
 `dx` and `dy` pixels with the mouse wheel at its center; a target together with `dx`/`dy`, or neither, returns
 `INVALID_REQUEST`. `page_type` (`text`) and `page_press` (`key`, Playwright syntax such as `Enter`, `Control+A`,
 `Shift+Tab`, `Meta+V`) act on the focused element with trusted keyboard events; an unknown key returns
-`INVALID_REQUEST`. All of them return `tabId`, the page's `url` and `title`, and `navigated`.
+`INVALID_REQUEST`. All of them return the same fields as `page_click`, `newTabId` included.
 
 `page_navigate` takes `action` (`goto`, `back`, `forward`, or `reload`), `url` (required for `goto`, not allowed for the
 others), and `wait` (`load` by default, `domcontentloaded`, or `networkidle`, meaning no network request in flight for
@@ -280,7 +282,8 @@ on timeout it returns `TIMEOUT` naming the condition, and an invalid selector re
 given as `ref` or `selector` like `page_click` (scrolled into view and waited for until attached and visible; an element
 inside a cross-origin iframe works); `full` together with a target returns `INVALID_REQUEST`. `format` is `png`
 (default) or `jpeg`, and `quality` (0-100) applies to jpeg only, otherwise `INVALID_REQUEST`. An image larger than one
-protocol frame (4 MiB) returns `PAYLOAD_TOO_LARGE`; use `jpeg`, a lower `quality`, or the viewport. The daemon waits at
+protocol frame (4 MiB) returns `PAYLOAD_TOO_LARGE`; use `jpeg`, a lower `quality`, or the viewport. Its default
+timeout is 30000 ms. The daemon waits at
 most 15 seconds for the browser to return the image; if it does not (a tab that is not rendering even with focus
 emulation, such as a minimized window or a frozen tab), the tool returns `PAGE_HIDDEN` rather than a blank image, and
 retrying with `activate` may help.

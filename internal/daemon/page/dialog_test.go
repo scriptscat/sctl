@@ -94,10 +94,14 @@ func TestDialogState(t *testing.T) {
 			_, err := dialog(m, 3, `{"action":"dismiss"}`)
 			So(err, ShouldBeNil)
 			cdp.mu.Lock()
-			last := cdp.sent[len(cdp.sent)-1]
+			var params string
+			for _, c := range cdp.sent {
+				if c.Method == "Page.handleJavaScriptDialog" {
+					params = string(c.Params)
+				}
+			}
 			cdp.mu.Unlock()
-			So(last.Method, ShouldEqual, "Page.handleJavaScriptDialog")
-			So(string(last.Params), ShouldEqual, `{"accept":false}`)
+			So(params, ShouldEqual, `{"accept":false}`)
 		})
 
 		Convey("处理完弹框后页面立刻打开的下一个弹框不被误清除", func() {

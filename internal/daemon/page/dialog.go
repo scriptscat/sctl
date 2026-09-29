@@ -105,11 +105,11 @@ type dialogInput struct {
 	Text   *string `json:"text"`
 }
 
+// dialogResult 是动作结果加上处理方式与弹框类型。
 type dialogResult struct {
-	ContentTrust string `json:"contentTrust"`
-	TabID        int    `json:"tabId"`
-	Action       string `json:"action"`
-	DialogType   string `json:"dialogType"`
+	ActionResult
+	Action     string `json:"action"`
+	DialogType string `json:"dialogType"`
 }
 
 func runDialog(ctx context.Context, t *Tab, input json.RawMessage) (any, error) {
@@ -131,9 +131,15 @@ func runDialog(ctx context.Context, t *Tab, input json.RawMessage) (any, error) 
 	if in.Text != nil {
 		params["promptText"] = *in.Text
 	}
+	run := beginDialogAction(t)
+	defer run.end()
 	if err := t.sendTo(ctx, d.sessionID, "Page.handleJavaScriptDialog", params, nil); err != nil {
 		return nil, err
 	}
 	t.dialog.closed(d.seq)
-	return dialogResult{ContentTrust: contentTrustPage, TabID: t.id, Action: in.Action, DialogType: d.kind}, nil
+	res, err := run.finish(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	return dialogResult{ActionResult: res, Action: in.Action, DialogType: d.kind}, nil
 }

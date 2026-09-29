@@ -28,6 +28,8 @@ type frameSession struct {
 	parent string
 	// ready 表示已在这个会话上开启自动附加与 Page 域。只在标签页队列里读写。
 	ready bool
+	// network 表示已在这个会话上开启 Network 域。只在标签页队列里读写。
+	network bool
 }
 
 func newFrameSessions() *frameSessions {
@@ -80,6 +82,40 @@ func (fs *frameSessions) session(frameID string) (sessionID string, ready, ok bo
 	return sessionID, fs.sessions[sessionID].ready, true
 }
 
+// sessionRef 是一个子会话与它的 frame。
+type sessionRef struct {
+	sessionID, frameID string
+}
+
+// withoutNetwork 返回还没开启 Network 域的子会话。
+func (fs *frameSessions) withoutNetwork() []sessionRef {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	var out []sessionRef
+	for id, s := range fs.sessions {
+		if !s.network {
+			out = append(out, sessionRef{sessionID: id, frameID: s.frameID})
+		}
+	}
+	return out
+}
+
+func (fs *frameSessions) markNetwork(sessionID string) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	if s, ok := fs.sessions[sessionID]; ok {
+		s.network = true
+	}
+}
+
+// alive 表示 sessionID 是仍然附加着的子会话。
+func (fs *frameSessions) alive(sessionID string) bool {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	_, ok := fs.sessions[sessionID]
+	return ok
+}
+
 func (fs *frameSessions) markReady(sessionID string) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
@@ -130,6 +166,7 @@ func onTargetAttached(t *Tab, sessionID string, params json.RawMessage) {
 		return
 	}
 	t.frames.attached(sessionID, ev.SessionID, ev.TargetInfo.TargetID)
+	t.net.frameAttached(ev.TargetInfo.TargetID, ev.SessionID)
 }
 
 // onTargetDetached 在 OOPIF 的子会话分离(iframe 被移除、换了进程或回到父文档的进程)时作废其中的引用。
@@ -141,6 +178,7 @@ func onTargetDetached(t *Tab, _ string, params json.RawMessage) {
 	}
 	if frameID, ok := t.frames.detached(ev.SessionID); ok {
 		t.refs.replaceFrame(frameID)
+		t.net.sessionsGone(t.frames.alive)
 	}
 }
 

@@ -33,10 +33,10 @@ type evalInput struct {
 	Ref string `json:"ref"`
 }
 
+// evalResult 是动作结果加上表达式的值。
 type evalResult struct {
-	ContentTrust string          `json:"contentTrust"`
-	TabID        int             `json:"tabId"`
-	Value        json.RawMessage `json:"value"`
+	ActionResult
+	Value json.RawMessage `json:"value"`
 }
 
 // remoteObject 是 CDP Runtime.RemoteObject 中 eval 用到的字段。
@@ -69,12 +69,34 @@ func runEval(ctx context.Context, t *Tab, input json.RawMessage) (any, error) {
 	if strings.TrimSpace(in.Expression) == "" {
 		return nil, invalidRequest("page eval needs an expression")
 	}
-	if in.Ref != "" {
-		return evalOnElement(ctx, t, in)
+	if in.Ref != "" && !refPattern.MatchString(in.Ref) {
+		return nil, invalidRequest(fmt.Sprintf("page eval takes a snapshot ref such as e5 as its target, not %q", in.Ref))
 	}
+	run, err := beginAction(ctx, t, true)
+	if err != nil {
+		return nil, err
+	}
+	defer run.end()
+	var value json.RawMessage
+	if in.Ref != "" {
+		value, err = evalOnElement(ctx, t, in)
+	} else {
+		value, err = evalExpression(ctx, t, in.Expression)
+	}
+	if err != nil {
+		return nil, err
+	}
+	res, err := run.finish(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	return evalResult{ActionResult: res, Value: value}, nil
+}
+
+func evalExpression(ctx context.Context, t *Tab, expression string) (json.RawMessage, error) {
 	var res evaluateResult
 	err := t.send(ctx, "Runtime.evaluate", map[string]any{
-		"expression":   in.Expression,
+		"expression":   expression,
 		"awaitPromise": true,
 		"objectGroup":  evalObjectGroup,
 	}, &res)
@@ -87,10 +109,7 @@ func runEval(ctx context.Context, t *Tab, input json.RawMessage) (any, error) {
 
 // evalOnElement 以引用指向的元素为参数调用函数表达式。它在元素所在的会话里执行:跨进程 iframe 里的元素
 // 只能在它自己的 frame 中取到。
-func evalOnElement(ctx context.Context, t *Tab, in evalInput) (any, error) {
-	if !refPattern.MatchString(in.Ref) {
-		return nil, invalidRequest(fmt.Sprintf("page eval takes a snapshot ref such as e5 as its target, not %q", in.Ref))
-	}
+func evalOnElement(ctx context.Context, t *Tab, in evalInput) (json.RawMessage, error) {
 	el, err := t.resolveRef(ctx, in.Ref)
 	if err != nil {
 		return nil, err
@@ -127,16 +146,12 @@ func evalOnElement(ctx context.Context, t *Tab, in evalInput) (any, error) {
 	return evalOutcome(ctx, t, el.sessionID, res)
 }
 
-// evalOutcome 把执行结果转换为动作结果;页面抛出的异常是 EVAL_ERROR。
-func evalOutcome(ctx context.Context, t *Tab, sessionID string, res evaluateResult) (any, error) {
+// evalOutcome 把执行结果转换为值;页面抛出的异常是 EVAL_ERROR。
+func evalOutcome(ctx context.Context, t *Tab, sessionID string, res evaluateResult) (json.RawMessage, error) {
 	if res.ExceptionDetails != nil {
 		return nil, &Error{Code: generated.ErrorCodeEvalError, Message: exceptionMessage(res.ExceptionDetails)}
 	}
-	value, err := evalValue(ctx, t, sessionID, res.Result)
-	if err != nil {
-		return nil, err
-	}
-	return evalResult{ContentTrust: contentTrustPage, TabID: t.ID(), Value: value}, nil
+	return evalValue(ctx, t, sessionID, res.Result)
 }
 
 // evalValue 把执行结果转换为 JSON:JSON 原生值原样返回,其余返回字符串形式。远程对象在 sessionID 会话里。

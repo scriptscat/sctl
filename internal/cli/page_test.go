@@ -66,6 +66,13 @@ func TestPageEval(t *testing.T) {
 			So(stub.last.Browser, ShouldEqual, "")
 		})
 
+		Convey("表达式导航或打开了新标签页时,摘要在值之前写出导航后的 URL 与新标签页 ID", func() {
+			stubPageDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"contentTrust":"untrusted-page-content","tabId":5,"url":"https://example.test/next","title":"Next","navigated":true,"newTabId":9,"value":1}`)})
+			code, out := runCLI("page", "eval", "go()")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "tab 5 navigated to https://example.test/next, opened tab 9: 1\n")
+		})
+
 		Convey("--tab、--activate、--timeout、--browser 原样转发", func() {
 			stub := stubPageDaemon(t, ok)
 			code, _ := runCLI("page", "eval", "1", "--tab", "9", "--activate", "--timeout", "30s", "--browser", "work")
@@ -657,6 +664,13 @@ func TestPageDialog(t *testing.T) {
 			So(code, ShouldEqual, exitOK)
 			So(out, ShouldEqual, "tab 5 dismissed confirm dialog\n")
 			So(string(stub.last.Input), ShouldEqual, `{"action":"dismiss"}`)
+		})
+
+		Convey("处理弹框后页面导航了时,摘要写出导航后的 URL", func() {
+			stubPageDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"tabId":5,"url":"https://example.test/away","navigated":true,"action":"accept","dialogType":"beforeunload"}`)})
+			code, out := runCLI("page", "dialog", "accept")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "tab 5 accepted beforeunload dialog, navigated to https://example.test/away\n")
 		})
 
 		Convey("-o json 输出完整结果", func() {

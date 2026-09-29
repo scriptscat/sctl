@@ -38,7 +38,7 @@ Browser extension, and serves fixture pages from `internal/daemon/page/testdata/
 test starts its own Chrome with a throwaway profile. They look for Chrome in this order:
 
 1. the executable named by `SCTL_TEST_CHROME`;
-2. the standard install locations of Google Chrome (and Chromium on macOS);
+2. the standard install locations of Google Chrome on macOS and Windows (and Chromium on macOS);
 3. `google-chrome`, `google-chrome-stable`, `chromium`, `chromium-browser`, or `chrome` on `PATH`.
 
 When none is found the tests are skipped, so `go test ./...` still passes on a machine without Chrome. When

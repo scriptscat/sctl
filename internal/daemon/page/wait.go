@@ -136,6 +136,9 @@ func loadCondition(state string) condition {
 		case res.State != "complete":
 			return false, reason, nil
 		case state == loadStateNetworkIdle:
+			if err := t.watchFrameNetwork(ctx); err != nil {
+				return false, reason, err
+			}
 			return t.net.quietFor(networkIdleQuiet), reason + " (requests are still in flight or finished less than 500ms ago)", nil
 		}
 		return true, reason, nil

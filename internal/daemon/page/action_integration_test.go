@@ -289,6 +289,17 @@ func TestClickAndHoverInChrome(t *testing.T) {
 			So(*res.NewTabID, ShouldNotEqual, tab)
 			waitFor(t, m, *res.NewTabID, `location.href === "`+base+`/actions-next.html?new"`)
 		})
+
+		Convey("按键打开新标签页时结果同样带新标签页的 tabId", func() {
+			_, err := eval(m, tab, `document.getElementById("blank").href = "/actions-next.html?pressed"; document.getElementById("blank").focus()`)
+			So(err, ShouldBeNil)
+			res, err := act(m, tab, "press", map[string]any{"key": "Enter"}, callTimeout)
+			So(err, ShouldBeNil)
+			So(res.TabID, ShouldEqual, tab)
+			So(res.NewTabID, ShouldNotBeNil)
+			So(*res.NewTabID, ShouldNotEqual, tab)
+			waitFor(t, m, *res.NewTabID, `location.href === "`+base+`/actions-next.html?pressed"`)
+		})
 	})
 }
 

@@ -61,12 +61,13 @@ func TestPageToolsForwardToThePageEndpoint(t *testing.T) {
 
 		Convey("page_dialog 把 action 与 text 作为动作输入,目标参数拆进请求字段", func() {
 			_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "page_dialog", Arguments: map[string]any{
-				"action": "accept", "text": "Ada", "tabId": 4,
+				"action": "accept", "text": "Ada", "tabId": 4, "activate": true,
 			}})
 			So(err, ShouldBeNil)
 			req := caller.pages[0]
 			So(req.Action, ShouldEqual, "dialog")
 			So(*req.TabID, ShouldEqual, 4)
+			So(req.Activate, ShouldBeTrue)
 			So(string(req.Input), ShouldEqualJSON, `{"action":"accept","text":"Ada"}`)
 		})
 

@@ -32,7 +32,7 @@ func newPageCmd() *cobra.Command {
 	flags := cmd.PersistentFlags()
 	flags.IntVar(&pageTab, "tab", 0, "target tab ID (default: the active tab of the browser's last-focused window, fixed when the command starts)")
 	flags.BoolVar(&pageActivate, "activate", false, "make the tab the active tab of its window first, without focusing the window")
-	flags.DurationVar(&pageTimeout, "timeout", 0, "time limit for the command, such as 30s (default 10s; 30s for goto, back, forward and reload)")
+	flags.DurationVar(&pageTimeout, "timeout", 0, "time limit for the command, such as 30s (default 10s; 30s for goto, back, forward, reload and screenshot)")
 	cmd.AddCommand(
 		newPageSnapshotCmd(), newPageClickCmd(), newPageHoverCmd(), newPageFillCmd(), newPageTypeCmd(), newPagePressCmd(),
 		newPageSelectCmd(), newPageUploadCmd(), newPageScrollCmd(), newPageEvalCmd(), newPageDetachCmd(), newPageDialogCmd(),
@@ -177,30 +177,38 @@ func newPageHoverCmd() *cobra.Command {
 	return cmd
 }
 
+// actionOutcome 是每个动作结果都带的字段(spec §动作的结果)。
+type actionOutcome struct {
+	TabID     int    `json:"tabId"`
+	URL       string `json:"url"`
+	Navigated bool   `json:"navigated"`
+	NewTabID  *int   `json:"newTabId"`
+}
+
+// details 列出摘要里在 tabId 之后写的内容:导航后的 URL 与新标签页的 ID。URL 由网页控制,经 terminalSafe 转义。
+func (o actionOutcome) details() []string {
+	var details []string
+	if o.Navigated {
+		details = append(details, "navigated to "+terminalSafe(o.URL))
+	}
+	if o.NewTabID != nil {
+		details = append(details, "opened tab "+strconv.Itoa(*o.NewTabID))
+	}
+	return details
+}
+
 // printActionResult 打印动作结果:-o json 时是完整结果,否则是一行摘要(tabId,外加导航后的 URL 或
-// 新标签页的 ID)。URL 由网页控制,经 terminalSafe 转义后才写到终端。
+// 新标签页的 ID)。
 func printActionResult(result json.RawMessage) error {
 	if outputFormat == outputJSON {
 		return printResultJSON(result)
 	}
-	var payload struct {
-		TabID     int    `json:"tabId"`
-		URL       string `json:"url"`
-		Navigated bool   `json:"navigated"`
-		NewTabID  *int   `json:"newTabId"`
-	}
+	var payload actionOutcome
 	if err := json.Unmarshal(result, &payload); err != nil {
 		return printResultJSON(result)
 	}
-	var details []string
-	if payload.Navigated {
-		details = append(details, "navigated to "+terminalSafe(payload.URL))
-	}
-	if payload.NewTabID != nil {
-		details = append(details, "opened tab "+strconv.Itoa(*payload.NewTabID))
-	}
 	line := fmt.Sprintf("tab %d", payload.TabID)
-	if len(details) > 0 {
+	if details := payload.details(); len(details) > 0 {
 		line += " " + strings.Join(details, ", ")
 	}
 	fmt.Fprintln(os.Stdout, line)
@@ -264,10 +272,11 @@ func newPageDetachCmd() *cobra.Command {
 	return cmd
 }
 
-// printEvalSummary 打印一行摘要:tabId 与紧凑的 JSON 值。值由网页控制,经 terminalSafe 转义后才写到终端。
+// printEvalSummary 打印一行摘要:tabId(外加导航后的 URL 或新标签页的 ID)与紧凑的 JSON 值。值由网页控制,
+// 经 terminalSafe 转义后才写到终端。
 func printEvalSummary(result json.RawMessage) error {
 	var payload struct {
-		TabID int             `json:"tabId"`
+		actionOutcome
 		Value json.RawMessage `json:"value"`
 	}
 	if err := json.Unmarshal(result, &payload); err != nil {
@@ -277,7 +286,11 @@ func printEvalSummary(result json.RawMessage) error {
 	if err := json.Compact(&value, payload.Value); err != nil {
 		return printResultJSON(result)
 	}
-	fmt.Fprintf(os.Stdout, "tab %d: %s\n", payload.TabID, terminalSafe(value.String()))
+	line := fmt.Sprintf("tab %d", payload.TabID)
+	if details := payload.details(); len(details) > 0 {
+		line += " " + strings.Join(details, ", ")
+	}
+	fmt.Fprintf(os.Stdout, "%s: %s\n", line, terminalSafe(value.String()))
 	return nil
 }
 
@@ -359,10 +372,11 @@ func newPageDialogCmd() *cobra.Command {
 	return cmd
 }
 
-// printDialogSummary 打印一行摘要:tabId、动作与弹框类型。弹框类型是 Chrome 的枚举,不含网页文字。
+// printDialogSummary 打印一行摘要:tabId、动作与弹框类型,外加导航后的 URL 或新标签页的 ID。弹框类型是
+// Chrome 的枚举,不含网页文字。
 func printDialogSummary(result json.RawMessage) error {
 	var payload struct {
-		TabID      int    `json:"tabId"`
+		actionOutcome
 		Action     string `json:"action"`
 		DialogType string `json:"dialogType"`
 	}
@@ -373,6 +387,10 @@ func printDialogSummary(result json.RawMessage) error {
 	if payload.Action == "dismiss" {
 		verb = "dismissed"
 	}
-	fmt.Fprintf(os.Stdout, "tab %d %s %s dialog\n", payload.TabID, verb, terminalSafe(payload.DialogType))
+	line := fmt.Sprintf("tab %d %s %s dialog", payload.TabID, verb, terminalSafe(payload.DialogType))
+	if details := payload.details(); len(details) > 0 {
+		line += ", " + strings.Join(details, ", ")
+	}
+	fmt.Fprintln(os.Stdout, line)
 	return nil
 }

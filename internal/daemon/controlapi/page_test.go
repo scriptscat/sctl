@@ -62,12 +62,38 @@ func (e *extClient) writeNotification(method string, params any) {
 	So(wsjson.Write(ctx, e.ws, bridge.Message{JSONRPC: "2.0", Method: method, Params: raw}), ShouldBeNil)
 }
 
-// answerEval 应答一次 page eval 在已附加标签页上发出的 CDP 命令:求值得到数字 3,然后释放对象组。
-func (e *extClient) answerEval(tabID int) {
+// answerEvalStart 应答 page eval 求值之前的准备:查询主 frame,并列出已有的标签页(tabs),据此认出求值打开的新标签页。
+func (e *extClient) answerEvalStart(tabID int, tabs string) {
+	req := e.debuggerSend(tabID, "Page.getFrameTree")
+	e.writeResult(req.ID, json.RawMessage(`{"result":{"frameTree":{"frame":{"id":"main"}}}}`))
+	e.answer("tabs.list", json.RawMessage(`{"contentTrust":"untrusted-page-content","tabs":`+tabs+`}`))
+}
+
+// answerEvalEnd 应答求值之后的命令:求值得到数字 3,释放对象组,再读取动作结束时的页面 URL 与标题。
+func (e *extClient) answerEvalEnd(tabID int) {
 	req := e.debuggerSend(tabID, "Runtime.evaluate")
 	e.writeResult(req.ID, json.RawMessage(`{"result":{"result":{"type":"number","value":3}}}`))
 	req = e.debuggerSend(tabID, "Runtime.releaseObjectGroup")
 	e.writeResult(req.ID, json.RawMessage(`{"result":{}}`))
+	req = e.debuggerSend(tabID, "Page.getNavigationHistory")
+	e.writeResult(req.ID, json.RawMessage(`{"result":{"currentIndex":0,"entries":[{"id":1,"url":"https://example.test/","title":"Example"}]}}`))
+}
+
+// answerEval 应答一次 page eval 在已附加标签页上发出的全部命令。
+func (e *extClient) answerEval(tabID int) {
+	e.answerEvalStart(tabID, tabList(tabID))
+	e.answerEvalEnd(tabID)
+}
+
+// tabList 是只含给定标签页的 tabs.list 结果。
+func tabList(ids ...int) string {
+	tabs := make([]map[string]any, len(ids))
+	for i, id := range ids {
+		tabs[i] = map[string]any{"tabId": id, "windowId": 1, "active": i == 0, "pinned": false, "title": "t", "url": "https://example.test/"}
+	}
+	raw, err := json.Marshal(tabs)
+	So(err, ShouldBeNil)
+	return string(raw)
 }
 
 // answerAttach 应答附加后的准备命令,顺序与附加钩子一致:焦点模拟,开启 iframe 自动附加(扁平会话),
@@ -105,7 +131,7 @@ func TestPageTargetSelection(t *testing.T) {
 			a.answerEval(5)
 			res := <-ch
 			So(res.Error, ShouldBeNil)
-			So(string(res.Result), ShouldEqual, `{"contentTrust":"untrusted-page-content","tabId":5,"value":3}`)
+			So(string(res.Result), ShouldEqual, `{"contentTrust":"untrusted-page-content","tabId":5,"url":"https://example.test/","title":"Example","navigated":false,"value":3}`)
 		})
 
 		Convey("浏览器没有可用的默认标签页:NOT_FOUND", func() {
@@ -158,6 +184,7 @@ func TestPageDebuggerLifecycle(t *testing.T) {
 		Convey("命令执行中收到该标签页的 debugger.detached:DEBUGGER_DETACHED", func() {
 			ch := h.goPage(control.PageRequest{Action: "eval", TabID: new(5), Input: evalInput})
 			a.answerAttach(5)
+			a.answerEvalStart(5, tabList(5))
 			a.debuggerSend(5, "Runtime.evaluate")
 			a.writeNotification("debugger.detached", map[string]any{"tabId": 5, "reason": "canceled_by_user"})
 			res := <-ch
@@ -169,6 +196,23 @@ func TestPageDebuggerLifecycle(t *testing.T) {
 			a.answerAttach(5)
 			a.answerEval(5)
 			So((<-ch).Error, ShouldBeNil)
+		})
+
+		Convey("动作打开的新标签页经扩展的 Page.windowOpen 事件与 tabs.list 认出,结果带它的 tabId", func() {
+			ch := h.goPage(control.PageRequest{Action: "eval", TabID: new(5), Input: evalInput})
+			a.answerAttach(5)
+			a.answerEvalStart(5, tabList(5, 6))
+			req := a.debuggerSend(5, "Runtime.evaluate")
+			a.writeNotification("debugger.event", map[string]any{"tabId": 5, "method": "Page.windowOpen", "params": map[string]any{"url": "https://example.test/new"}})
+			a.writeResult(req.ID, json.RawMessage(`{"result":{"result":{"type":"number","value":3}}}`))
+			req = a.debuggerSend(5, "Runtime.releaseObjectGroup")
+			a.writeResult(req.ID, json.RawMessage(`{"result":{}}`))
+			a.answer("tabs.list", json.RawMessage(`{"contentTrust":"untrusted-page-content","tabs":`+tabList(5, 6, 8)+`}`))
+			req = a.debuggerSend(5, "Page.getNavigationHistory")
+			a.writeResult(req.ID, json.RawMessage(`{"result":{"currentIndex":0,"entries":[{"id":1,"url":"https://example.test/","title":"Example"}]}}`))
+			res := <-ch
+			So(res.Error, ShouldBeNil)
+			So(string(res.Result), ShouldEqual, `{"contentTrust":"untrusted-page-content","tabId":5,"url":"https://example.test/","title":"Example","navigated":false,"newTabId":8,"value":3}`)
 		})
 
 		Convey("命令执行中浏览器断开:DEBUGGER_DETACHED", func() {

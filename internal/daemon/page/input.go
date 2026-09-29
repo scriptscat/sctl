@@ -137,7 +137,7 @@ func runFill(ctx context.Context, t *Tab, input json.RawMessage) (any, error) {
 	if in.Text == nil {
 		return nil, invalidRequest("page fill needs the text to fill in (an empty string clears the field)")
 	}
-	run, err := beginAction(ctx, t, false)
+	run, err := beginAction(ctx, t, true)
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +217,7 @@ func runSelect(ctx context.Context, t *Tab, input json.RawMessage) (any, error) 
 	if len(in.Values) == 0 {
 		return nil, invalidRequest("page select needs at least one value or option text")
 	}
-	run, err := beginAction(ctx, t, false)
+	run, err := beginAction(ctx, t, true)
 	if err != nil {
 		return nil, err
 	}
@@ -308,7 +308,7 @@ func runUpload(ctx context.Context, t *Tab, input json.RawMessage) (any, error) 
 	if err := checkUploadFiles(in.Files); err != nil {
 		return nil, err
 	}
-	run, err := beginAction(ctx, t, false)
+	run, err := beginAction(ctx, t, true)
 	if err != nil {
 		return nil, err
 	}
@@ -362,7 +362,7 @@ func runScroll(ctx context.Context, t *Tab, input json.RawMessage) (any, error) 
 			return nil, err
 		}
 	}
-	run, err := beginAction(ctx, t, false)
+	run, err := beginAction(ctx, t, true)
 	if err != nil {
 		return nil, err
 	}

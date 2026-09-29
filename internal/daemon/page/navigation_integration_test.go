@@ -126,6 +126,18 @@ func TestNavigateInChrome(t *testing.T) {
 			So(res.URL, ShouldEqual, base+"/nav-idle.html?again")
 		})
 
+		Convey("networkidle 把跨进程 iframe 里的请求也算进去,iframe 的文档请求不会被当成永远进行中", func() {
+			started := time.Now()
+			res, err := goTo("/nav-idle-oopif.html", "networkidle")
+			So(err, ShouldBeNil)
+			So(evalString(m, tab, `String(window.childFetchDone)`), ShouldEqual, "true")
+			So(time.Since(started), ShouldBeGreaterThan, 1600*time.Millisecond)
+			So(res.URL, ShouldEqual, base+"/nav-idle-oopif.html")
+
+			_, err = doJSON[actionResult](m, tab, "wait", map[string]any{"load": "networkidle"}, expectTimeout)
+			So(err, ShouldBeNil)
+		})
+
 		Convey("连接被拒返回 NAVIGATION_FAILED 并带 Chrome 的错误文本", func() {
 			dead := httptest.NewServer(http.NotFoundHandler())
 			deadURL := dead.URL

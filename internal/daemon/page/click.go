@@ -108,7 +108,7 @@ func runHover(ctx context.Context, t *Tab, input json.RawMessage) (any, error) {
 	if err := decodeActionInput("hover", input, &in, &in.TargetSpec); err != nil {
 		return nil, err
 	}
-	run, err := beginAction(ctx, t, false)
+	run, err := beginAction(ctx, t, true)
 	if err != nil {
 		return nil, err
 	}

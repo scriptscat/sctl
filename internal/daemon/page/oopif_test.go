@@ -221,7 +221,9 @@ func TestEvalWithRef(t *testing.T) {
 			So(err, ShouldBeNil)
 			var res map[string]any
 			So(json.Unmarshal(raw, &res), ShouldBeNil)
-			So(res, ShouldResemble, map[string]any{"contentTrust": "untrusted-page-content", "tabId": float64(3), "value": "ran in S1"})
+			So(res, ShouldResemble, map[string]any{
+				"contentTrust": "untrusted-page-content", "tabId": float64(3), "url": "", "title": "", "navigated": false, "value": "ran in S1",
+			})
 			So(pg.sentTo("S1"), ShouldContain, "Runtime.releaseObjectGroup")
 		})
 

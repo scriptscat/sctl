@@ -81,12 +81,28 @@ func TestEvalInChrome(t *testing.T) {
 	m, tab := startPage(t, "eval.html")
 
 	Convey("page eval 在真 Chrome 的 fixture 页面上", t, func() {
-		Convey("结果带实际操作的 tabId,并标记为不可信的页面内容", func() {
+		Convey("结果带实际操作的 tabId、动作结束时的 URL 与标题、是否导航,并标记为不可信的页面内容", func() {
+			pageURL := evalString(m, tab, "location.href")
 			raw, err := evalRaw(m, page.Request{TabID: &tab}, "document.title")
 			So(err, ShouldBeNil)
 			var res map[string]any
 			So(json.Unmarshal(raw, &res), ShouldBeNil)
-			So(res, ShouldResemble, map[string]any{"contentTrust": "untrusted-page-content", "tabId": float64(tab), "value": "eval fixture"})
+			So(res, ShouldResemble, map[string]any{
+				"contentTrust": "untrusted-page-content", "tabId": float64(tab), "value": "eval fixture",
+				"url": pageURL, "title": "eval fixture", "navigated": false,
+			})
+		})
+
+		Convey("表达式在文档内改变 URL 时结果报告导航与新 URL", func() {
+			raw, err := evalRaw(m, page.Request{TabID: &tab, Timeout: callTimeout}, `history.pushState(null, "", "?pushed"); 1`)
+			So(err, ShouldBeNil)
+			var res struct {
+				URL       string `json:"url"`
+				Navigated bool   `json:"navigated"`
+			}
+			So(json.Unmarshal(raw, &res), ShouldBeNil)
+			So(res.Navigated, ShouldBeTrue)
+			So(res.URL, ShouldEndWith, "/eval.html?pushed")
 		})
 
 		Convey("能按 JSON 序列化的结果原样返回", func() {

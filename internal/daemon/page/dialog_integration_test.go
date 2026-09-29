@@ -61,13 +61,35 @@ func TestDialogsInChrome(t *testing.T) {
 				So(err.Error(), ShouldContainSubstring, "no image")
 			}
 
-			_, err = handle(map[string]any{"action": "accept"})
+			raw, err := handle(map[string]any{"action": "accept"})
 			So(err, ShouldBeNil)
+			var res map[string]any
+			So(json.Unmarshal(raw, &res), ShouldBeNil)
+			So(res, ShouldResemble, map[string]any{
+				"contentTrust": "untrusted-page-content", "tabId": float64(tab), "action": "accept", "dialogType": "alert",
+				"url": base + "/dialog.html", "title": "dialog fixture", "navigated": false,
+			})
 			v, err := eval(m, tab, `window.alerted === true`)
 			So(err, ShouldBeNil)
 			So(string(v), ShouldEqual, "true")
 			_, err = handle(map[string]any{"action": "accept"})
 			So(codeOf(err), ShouldEqual, generated.ErrorCodeNotFound)
+		})
+
+		Convey("处理一个弹框后页面立刻打开下一个:处理命令照常返回,下一个弹框同样可以处理", func() {
+			So(codeOf(clickButton("twice")), ShouldEqual, generated.ErrorCodeDialogOpen)
+			started := time.Now()
+			_, err := handle(map[string]any{"action": "accept"})
+			So(err, ShouldBeNil)
+			So(time.Since(started), ShouldBeLessThan, promptly)
+			_, err = eval(m, tab, `1`)
+			So(codeOf(err), ShouldEqual, generated.ErrorCodeDialogOpen)
+			So(err.Error(), ShouldContainSubstring, "second")
+			_, err = handle(map[string]any{"action": "accept"})
+			So(err, ShouldBeNil)
+			v, err := eval(m, tab, `window.twice === true`)
+			So(err, ShouldBeNil)
+			So(string(v), ShouldEqual, "true")
 		})
 
 		Convey("confirm:accept 使页面得到 true,dismiss 得到 false", func() {
