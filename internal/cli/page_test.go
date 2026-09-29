@@ -155,6 +155,17 @@ func TestPageEval(t *testing.T) {
 			}
 		})
 
+		Convey("错误消息里页面控制的控制字符以转义形式打印", func() {
+			for _, code := range []string{"EVAL_ERROR", "DEBUGGER_DETACHED"} {
+				stubPageDaemon(t, pageError(code, "Error: a\x1b]0;pwn\x07b\u202e"))
+				_, _, _, err := runCLIResult(strings.NewReader(""), "page", "eval", "1")
+				So(err.Error(), ShouldNotContainSubstring, "\x1b")
+				So(err.Error(), ShouldNotContainSubstring, "\x07")
+				So(err.Error(), ShouldNotContainSubstring, "\u202e")
+				So(err.Error(), ShouldContainSubstring, `Error: a\x1b]0;pwn\ab`)
+			}
+		})
+
 		Convey("多个浏览器在线且未指定目标时提示 --browser", func() {
 			stubPageDaemon(t, pageError("BROWSER_AMBIGUOUS", "several browsers are online"))
 			exit, _, _, err := runCLIResult(strings.NewReader(""), "page", "eval", "1")
@@ -487,6 +498,8 @@ func TestPageInputActions(t *testing.T) {
 				{"page", "scroll", "e5", "e6"},
 				{"page", "scroll", "e5", "--dy", "10"},
 				{"page", "scroll", "--selector", "#a", "e5"},
+				{"page", "scroll", "--dx", "NaN"},
+				{"page", "scroll", "--dy", "-Inf"},
 			} {
 				code, _ := runCLI(args...)
 				So(code, ShouldEqual, exitError)

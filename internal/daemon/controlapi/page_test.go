@@ -3,6 +3,7 @@ package controlapi
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"testing"
 	"time"
@@ -246,7 +247,8 @@ func TestPageRequestValidation(t *testing.T) {
 			So(resp.StatusCode, ShouldEqual, http.StatusUnauthorized)
 		})
 
-		Convey("未知动作、负的标签页 ID、负的超时:INVALID_REQUEST", func() {
+		Convey("未知动作、负的标签页 ID、负的超时、换算成时长会溢出的超时:INVALID_REQUEST", func() {
+			So(errCode(<-h.goPage(control.PageRequest{Action: "eval", TimeoutMs: math.MaxInt64/int(time.Millisecond) + 1, Input: evalInput})), ShouldEqual, generated.ErrorCodeInvalidRequest)
 			So(errCode(<-h.goPage(control.PageRequest{Action: "teleport"})), ShouldEqual, generated.ErrorCodeInvalidRequest)
 			So(errCode(<-h.goPage(control.PageRequest{Action: "eval", TabID: new(-1), Input: evalInput})), ShouldEqual, generated.ErrorCodeInvalidRequest)
 			So(errCode(<-h.goPage(control.PageRequest{Action: "eval", TimeoutMs: -1, Input: evalInput})), ShouldEqual, generated.ErrorCodeInvalidRequest)

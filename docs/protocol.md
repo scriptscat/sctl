@@ -311,7 +311,10 @@ it, or the instance disconnects. Page commands on the same tab run one at a time
 with `DEBUGGER_DETACHED`, and the next page command attaches again. The extension keeps a fallback of its own: a tab
 with no `debugger.send` for 10 minutes is detached and reported as `debugger.detached` with reason `idle_timeout`, so
 the infobar does not stay up if the daemon stops driving it, and when its connection to the daemon closes it detaches
-every tab without notifying.
+every tab without notifying. `debugger.detach` for a tab whose attach is still in flight waits for that attach and
+then detaches it. The extension records its attached tabs in `chrome.storage.session`, because Chrome keeps a
+debugger attached when the MV3 service worker restarts: after a restart it keeps driving the recorded tabs that are
+still attached, and reports each one that no longer is as `debugger.detached` with reason `target_closed`.
 
 ### 3.3 Extension notifications
 
@@ -322,7 +325,7 @@ there is no `input` wrapper or `clientId`:
 | Notification | Params | Sent when |
 |---|---|---|
 | `debugger.event` | `{tabId, sessionId?, method, params?}` | the debugger attached to `tabId` receives a CDP event; `sessionId` names the child session that produced it |
-| `debugger.detached` | `{tabId, reason}` | Chrome detaches the debugger from `tabId` (`chrome.debugger.onDetach`), where `reason` is Chrome's detach reason, such as `target_closed` or `canceled_by_user`; or the extension's 10-minute fallback detaches it, with reason `idle_timeout` |
+| `debugger.detached` | `{tabId, reason}` | Chrome detaches the debugger from `tabId` (`chrome.debugger.onDetach`), where `reason` is Chrome's detach reason, such as `target_closed` or `canceled_by_user`; or the extension's 10-minute fallback detaches it, with reason `idle_timeout`; or, after a service-worker restart, a tab it had attached is no longer attached, with reason `target_closed` |
 
 The daemon validates a notification against its schema like any other frame; a notification that carries an
 `id` or fails its schema is an invalid frame. Notifications with these names from ScriptCat are valid frames

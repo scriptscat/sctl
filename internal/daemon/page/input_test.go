@@ -1,6 +1,8 @@
 package page
 
 import (
+	"context"
+	"encoding/json"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -107,6 +109,47 @@ func TestInputActionValidation(t *testing.T) {
 		}
 		for _, method := range cdp.methods(7) {
 			So(slices.Contains([]string{"Input.dispatchKeyEvent", "Input.insertText", "Input.dispatchMouseEvent", "DOM.setFileInputFiles"}, method), ShouldBeFalse)
+		}
+	})
+}
+
+// leavingPage 是一个 #target 元素通过自动等待之后、在动作操作它时所在文档已被替换的假页面
+// (例如聚焦触发了导航):对它调用的 fill/select 脚本被 Chrome 以执行上下文不存在拒绝。
+type leavingPage struct {
+	renderingPage
+	kind string
+}
+
+func (p *leavingPage) send(ctx context.Context, cmd Command) (json.RawMessage, error) {
+	if cmd.Method == "Runtime.callFunctionOn" {
+		var params struct {
+			FunctionDeclaration string `json:"functionDeclaration"`
+		}
+		if err := json.Unmarshal(cmd.Params, &params); err != nil {
+			return nil, err
+		}
+		switch params.FunctionDeclaration {
+		case describeFunction:
+			return json.RawMessage(`{"result":{"type":"object","value":{"kind":"` + p.kind + `","type":"","tag":"x","multiple":false}}}`), nil
+		case selectContentFunction, selectOptionsFunction:
+			return nil, &Error{Code: generated.ErrorCodeInvalidRequest, Message: "Cannot find context with specified id"}
+		}
+	}
+	return p.renderingPage.send(ctx, cmd)
+}
+
+func TestInputActionTargetLeavesMidAction(t *testing.T) {
+	Convey("元素通过自动等待后、在动作操作它时离开文档,返回领域错误而不是内部错误", t, func() {
+		for action, c := range map[string]struct{ kind, input string }{
+			"fill":   {"text", `{"selector":"#target","text":"x"}`},
+			"select": {"select", `{"selector":"#target","values":["a"]}`},
+		} {
+			cdp := newFakeCDP()
+			cdp.setSend((&leavingPage{renderingPage: renderingPage{rendering: true}, kind: c.kind}).send)
+			m := newTestManager(cdp, &fakeClock{})
+			_, err := doAction(m, action, c.input, time.Minute)
+			So(errorCode(err), ShouldEqual, generated.ErrorCodeNotFound)
+			So(err.Error(), ShouldContainSubstring, "#target")
 		}
 	})
 }

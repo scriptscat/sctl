@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite
 import { HandlerRegistry } from "@/background/registry";
 import { validateDebuggerDetachResult, validateDebuggerSendResult } from "@/protocol/generated/validators.generated";
 import type { NotificationMethod, NotificationParams } from "@/protocol/generated/protocol.generated";
-import { DebuggerRelay } from "./debugger";
+import { DebuggerRelay, type AttachedTabsStorage } from "./debugger";
 import { registerHandlers } from "./index";
 
 type Notice = { [N in NotificationMethod]: { method: N; params: NotificationParams<N> } }[NotificationMethod];
@@ -13,6 +13,20 @@ interface DebuggerMock {
   attach: Mock<AsyncFn>;
   detach: Mock<AsyncFn>;
   sendCommand: Mock<AsyncFn>;
+  getTargets: Mock<AsyncFn>;
+}
+
+// 模拟 chrome.storage.session:service worker 重启后仍在,浏览器重启后清空。
+function memoryStore(): AttachedTabsStorage & { tabIds: () => unknown } {
+  const items: Record<string, unknown> = {};
+  return {
+    get: (keys) => Promise.resolve(Object.fromEntries(keys.filter((k) => k in items).map((k) => [k, items[k]]))),
+    set: (next) => {
+      Object.assign(items, structuredClone(next));
+      return Promise.resolve();
+    },
+    tabIds: () => items.debuggerTabs,
+  };
 }
 
 describe("debugger relay", () => {
@@ -21,6 +35,7 @@ describe("debugger relay", () => {
   let notices: Notice[];
   let relay: DebuggerRelay;
   let registry: HandlerRegistry;
+  let store: ReturnType<typeof memoryStore>;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -28,13 +43,15 @@ describe("debugger relay", () => {
       attach: vi.fn<AsyncFn>().mockResolvedValue(undefined),
       detach: vi.fn<AsyncFn>().mockResolvedValue(undefined),
       sendCommand: vi.fn<AsyncFn>().mockResolvedValue({ ok: 1 }),
+      getTargets: vi.fn<AsyncFn>().mockResolvedValue([]),
     };
     tabsGet = vi.fn().mockResolvedValue({ id: 5 });
     vi.stubGlobal("chrome", { debugger: dbg, tabs: { get: tabsGet } });
     notices = [];
+    store = memoryStore();
     relay = new DebuggerRelay((method, params) => {
       notices.push({ method, params } as Notice);
-    });
+    }, store);
     registry = new HandlerRegistry();
     registerHandlers(registry, relay);
   });
@@ -212,11 +229,91 @@ describe("debugger relay", () => {
       expect(dbg.attach).toHaveBeenCalledTimes(3);
     });
 
+    it("releases a tab whose attach was still in flight when the detach arrived, once the attach finishes", async () => {
+      let finishAttach!: () => void;
+      dbg.attach.mockReturnValueOnce(
+        new Promise<void>((resolve) => {
+          finishAttach = resolve;
+        }),
+      );
+      const sending = registry.dispatch("debugger.send", { tabId: 7, method: "Page.enable" });
+      await vi.waitFor(() => expect(dbg.attach).toHaveBeenCalledWith({ tabId: 7 }, "1.3"));
+
+      const detaching = registry.dispatch("debugger.detach", { tabId: 7 });
+      finishAttach();
+
+      expect(await detaching).toEqual({ ok: true, result: { tabIds: [7] } });
+      expect(dbg.detach).toHaveBeenCalledWith({ tabId: 7 });
+      await sending;
+    });
+
     it("detaches all tabs when the connection closes", async () => {
       await relay.detachAll();
 
       expect(dbg.detach).toHaveBeenCalledTimes(2);
       expect(notices).toEqual([]);
+    });
+  });
+
+  describe("service worker restart", () => {
+    // 新的 relay 与同一个 store 模拟 service worker 被回收后重新启动:内存状态没了,Chrome 里的附加还在。
+    function restart(): DebuggerRelay {
+      const next = new DebuggerRelay((method, params) => {
+        notices.push({ method, params } as Notice);
+      }, store);
+      registry = new HandlerRegistry();
+      registerHandlers(registry, next);
+      return next;
+    }
+
+    it("keeps driving and reporting a tab it attached before the restart, without attaching again", async () => {
+      await registry.dispatch("debugger.send", { tabId: 5, method: "Page.enable" });
+      dbg.getTargets.mockResolvedValue([{ type: "page", id: "T5", tabId: 5, attached: true, title: "", url: "" }]);
+      dbg.attach.mockRejectedValue(new Error("Another debugger is already attached to the tab with id: 5."));
+
+      const next = restart();
+      next.onEvent({ tabId: 5 }, "Page.loadEventFired", { timestamp: 2 });
+
+      expect(await registry.dispatch("debugger.send", { tabId: 5, method: "Runtime.evaluate" })).toMatchObject({
+        ok: true,
+      });
+      expect(dbg.attach).toHaveBeenCalledTimes(1);
+      expect(notices).toEqual([
+        { method: "debugger.event", params: { tabId: 5, method: "Page.loadEventFired", params: { timestamp: 2 } } },
+      ]);
+      expect(await registry.dispatch("debugger.detach", { tabId: 5 })).toEqual({ ok: true, result: { tabIds: [5] } });
+      expect(dbg.detach).toHaveBeenCalledWith({ tabId: 5 });
+    });
+
+    it("tells the daemon about a tab it had attached that is no longer attached after the restart", async () => {
+      await registry.dispatch("debugger.send", { tabId: 5, method: "Page.enable" });
+      dbg.getTargets.mockResolvedValue([{ type: "page", id: "T5", tabId: 5, attached: false, title: "", url: "" }]);
+
+      restart();
+
+      expect(await registry.dispatch("debugger.detach", {})).toEqual({ ok: true, result: { tabIds: [] } });
+      expect(notices).toEqual([{ method: "debugger.detached", params: { tabId: 5, reason: "target_closed" } }]);
+      expect(store.tabIds()).toEqual([]);
+    });
+
+    it("starts without the earlier tabs when they cannot be restored, and still attaches on demand", async () => {
+      await registry.dispatch("debugger.send", { tabId: 5, method: "Page.enable" });
+      dbg.getTargets.mockRejectedValue(new Error("getTargets failed"));
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+      restart();
+
+      expect(await registry.dispatch("debugger.send", { tabId: 6, method: "Page.enable" })).toMatchObject({ ok: true });
+      expect(dbg.attach).toHaveBeenLastCalledWith({ tabId: 6 }, "1.3");
+    });
+
+    it("forgets a tab in the store once it is detached", async () => {
+      await registry.dispatch("debugger.send", { tabId: 5, method: "Page.enable" });
+      expect(store.tabIds()).toEqual([5]);
+
+      await registry.dispatch("debugger.detach", { tabId: 5 });
+
+      expect(store.tabIds()).toEqual([]);
     });
   });
 

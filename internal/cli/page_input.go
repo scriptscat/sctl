@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 
@@ -188,6 +189,9 @@ func newPageScrollCmd() *cobra.Command {
 				return &ExitError{Code: exitError, Message: "page scroll takes one element ref"}
 			case len(args) == 1 && selector != "":
 				return &ExitError{Code: exitError, Message: "page scroll takes a ref or --selector, not both"}
+			case math.IsNaN(dx) || math.IsInf(dx, 0) || math.IsNaN(dy) || math.IsInf(dy, 0):
+				// strconv 接受 NaN 与 Inf,它们没有 JSON 表示,也不是可以滚动的像素数。
+				return &ExitError{Code: exitError, Message: "--dx and --dy must be finite numbers of pixels"}
 			case hasTarget && (dx != 0 || dy != 0):
 				return &ExitError{Code: exitError, Message: "page scroll takes a target to scroll into view or --dx/--dy to scroll the viewport, not both"}
 			case !hasTarget && dx == 0 && dy == 0:

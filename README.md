@@ -187,11 +187,12 @@ in the main document, not inside iframes; an invalid selector fails with `INVALI
 
 `sctl page screenshot` captures the visible viewport by default, the whole page with `--full`, or the border box of an
 element given as a ref or `--selector` (scrolled into view first; refs inside cross-origin iframes work). The image is
-written to `-f`, or to `screenshot-<tabId>-<timestamp>.<ext>` in the current directory, and the path is printed; binary
-data never goes to stdout, and `-o json` prints the result metadata and the path without the image. `--format` is `png`
-(default) or `jpeg`; `--quality 0-100` applies to jpeg only. An image larger than one protocol frame (4 MiB) fails with
-`PAYLOAD_TOO_LARGE`: use `--format jpeg` or capture only the viewport. If the tab produces no image within 15 seconds
-(the capture bound), the command fails with `PAGE_HIDDEN` instead of saving a blank image; retry with `--activate`.
+written to `-f`, or to `screenshot-<tabId>-<timestamp>.<ext>` in the current directory (with a `-2`, `-3`, … suffix
+rather than overwriting an earlier file), and the path is printed; binary data never goes to stdout, and `-o json`
+prints the result metadata and the path without the image. `--format` is `png` (default) or `jpeg`; `--quality 0-100`
+applies to jpeg only. An image larger than one protocol frame (4 MiB) fails with `PAYLOAD_TOO_LARGE`: use
+`--format jpeg` or capture only the viewport. If the tab produces no image within 15 seconds (the capture bound), the
+command fails with `PAGE_HIDDEN` instead of saving a blank image; retry with `--activate`.
 
 ## License
 

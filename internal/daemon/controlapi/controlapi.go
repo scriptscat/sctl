@@ -11,6 +11,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"time"
 
@@ -198,6 +199,9 @@ func (h *Handler) call(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// maxPageTimeoutMs 是 time.Duration 能表示的最大毫秒数。
+const maxPageTimeoutMs = math.MaxInt64 / int(time.Millisecond)
+
 // pageAction 执行一次页面动作。页面命令没有逐次人工审批(spec 设计决策 11),控制令牌即全部授权;
 // 请求方断开会取消 r.Context(),正在执行的动作随之结束。
 func (h *Handler) pageAction(w http.ResponseWriter, r *http.Request) {
@@ -212,6 +216,10 @@ func (h *Handler) pageAction(w http.ResponseWriter, r *http.Request) {
 		return
 	case req.TimeoutMs < 0:
 		writeControlError(w, bridge.CodeInvalidRequest, "timeoutMs must not be negative")
+		return
+	case req.TimeoutMs > maxPageTimeoutMs:
+		// 换算成 time.Duration 会溢出成负数,动作随之悄悄退回默认超时。
+		writeControlError(w, bridge.CodeInvalidRequest, "timeoutMs is too large")
 		return
 	}
 	result, err := h.page.Do(r.Context(), page.Request{

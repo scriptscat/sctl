@@ -195,9 +195,6 @@ type actionRun struct {
 // 都可能打开新标签页,opens 为 true;只观察页面(wait、screenshot)或替换整个文档(navigate)的为 false,
 // 期间页面自己打开的窗口不算动作打开的。调用方必须在动作结束时调用 end。
 func beginAction(ctx context.Context, t *Tab, opens bool) (*actionRun, error) {
-	if err := t.watchFrames(ctx); err != nil {
-		return nil, err
-	}
 	var tree struct {
 		FrameTree struct {
 			Frame struct {

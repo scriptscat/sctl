@@ -10,7 +10,7 @@ import { HandlerRegistry } from "./registry";
 // 通知在连接不可用时被 offscreen 丢弃，失败只记录；relay 先于 background 创建，通知总在之后异步发出。
 const relay = new DebuggerRelay((method, params) => {
   background.notify(method, params).catch((error: unknown) => console.error(`failed to send ${method}`, error));
-});
+}, chrome.storage.session);
 const registry = new HandlerRegistry();
 registerHandlers(registry, relay);
 

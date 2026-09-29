@@ -59,15 +59,10 @@ func (d *dialogState) current() *dialogInfo {
 
 // dialogOpenError 报告标签页上有未处理的弹框。类型是 Chrome 给出的枚举,文字来自网页,标明不可信并截断。
 func dialogOpenError(tabID int, d dialogInfo) *Error {
-	message := []rune(d.message)
-	suffix := ""
-	if len(message) > maxDialogMessageRunes {
-		message, suffix = message[:maxDialogMessageRunes], "..."
-	}
 	return &Error{
 		Code: generated.ErrorCodeDialogOpen,
 		Message: fmt.Sprintf("tab %d has an open %s dialog (untrusted page text: %q): handle it with page dialog accept or dismiss before other page commands; "+
-			"an action that was running when it opened may already have taken effect", tabID, d.kind, string(message)+suffix),
+			"an action that was running when it opened may already have taken effect", tabID, d.kind, truncateRunes(d.message, maxDialogMessageRunes, "...")),
 	}
 }
 

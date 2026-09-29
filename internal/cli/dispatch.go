@@ -95,7 +95,8 @@ func dispatchWith(cmd *cobra.Command, browser string, blocking bool, canceled st
 	return mapBridgeError(res.Error)
 }
 
-// mapBridgeError 把桥接错误码映射为带退出码的 ExitError。
+// mapBridgeError 把桥接错误码映射为带退出码的 ExitError。消息原样打印到终端,而页面命令的错误会带上网页
+// 控制的文字(页面抛出的异常、遮挡元素的 id 与 class),所以其中的控制字符转义后再交出。
 func mapBridgeError(e *control.CallError) error {
 	if e == nil {
 		return &ExitError{Code: exitError, Message: "call failed"}
@@ -107,9 +108,9 @@ func mapBridgeError(e *control.CallError) error {
 		return &ExitError{Code: exitVoided, Message: "operation voided or timed out"}
 	case "DEBUGGER_DETACHED":
 		// 与作废同类:命令被外部事件打断(用户关掉调试提示条、标签页关闭、浏览器断开),重试可能成功。
-		return &ExitError{Code: exitVoided, Message: e.Error()}
+		return &ExitError{Code: exitVoided, Message: terminalSafe(e.Error())}
 	default:
-		return &ExitError{Code: exitError, Message: e.Error()}
+		return &ExitError{Code: exitError, Message: terminalSafe(e.Error())}
 	}
 }
 

@@ -217,7 +217,7 @@ func TestSnapshotInChrome(t *testing.T) {
 		Convey("调试器断开后引用返回 STALE_REF", func() {
 			snap, err := snapshotOf(m, tab, "")
 			So(err, ShouldBeNil)
-			_, err = m.Do(context.Background(), page.Request{Action: "detach", TabID: &tab})
+			_, err = m.Do(context.Background(), page.Request{Action: "detach", TabID: &tab, Timeout: callTimeout})
 			So(err, ShouldBeNil)
 			_, err = snapshotOf(m, tab, refFor(snap, `- button "Menu"`))
 			So(codeOf(err), ShouldEqual, generated.ErrorCodeStaleRef)

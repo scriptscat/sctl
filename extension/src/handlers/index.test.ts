@@ -93,7 +93,10 @@ describe("browser method handlers", () => {
     chromeMock = createChromeMock();
     vi.stubGlobal("chrome", chromeMock);
     registry = new HandlerRegistry();
-    registerHandlers(registry, new DebuggerRelay(() => undefined));
+    registerHandlers(
+      registry,
+      new DebuggerRelay(() => undefined, { get: () => Promise.resolve({}), set: () => Promise.resolve() }),
+    );
   });
 
   afterEach(() => {

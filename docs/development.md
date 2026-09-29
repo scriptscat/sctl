@@ -35,7 +35,9 @@ for the confirmed cause before changing production code.
 Page automation (`internal/daemon/page`) has integration tests that drive a real headless Chrome through
 `pagetest.Chrome`, which talks to Chrome's remote debugging port directly instead of going through the sctl
 Browser extension, and serves fixture pages from `internal/daemon/page/testdata/` over a local HTTP server. Each
-test starts its own Chrome with a throwaway profile. They look for Chrome in this order:
+test starts its own Chrome with a throwaway profile. On Unix the test process also holds the write end of a
+`--remote-debugging-pipe` pipe, so Chrome exits whenever the test process ends, even when it is killed by a signal
+or by the `go test` timeout. They look for Chrome in this order:
 
 1. the executable named by `SCTL_TEST_CHROME`;
 2. the standard install locations of Google Chrome on macOS and Windows (and Chromium on macOS);

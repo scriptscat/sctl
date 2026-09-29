@@ -83,7 +83,7 @@ func TestEvalInChrome(t *testing.T) {
 	Convey("page eval 在真 Chrome 的 fixture 页面上", t, func() {
 		Convey("结果带实际操作的 tabId、动作结束时的 URL 与标题、是否导航,并标记为不可信的页面内容", func() {
 			pageURL := evalString(m, tab, "location.href")
-			raw, err := evalRaw(m, page.Request{TabID: &tab}, "document.title")
+			raw, err := evalRaw(m, page.Request{TabID: &tab, Timeout: callTimeout}, "document.title")
 			So(err, ShouldBeNil)
 			var res map[string]any
 			So(json.Unmarshal(raw, &res), ShouldBeNil)

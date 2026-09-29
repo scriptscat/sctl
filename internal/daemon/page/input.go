@@ -154,7 +154,7 @@ func runFill(ctx context.Context, t *Tab, input json.RawMessage) (any, error) {
 		return callOn(ctx, t, el.sessionID, objectID, selectContentFunction, &ok, *in.Text == "")
 	})
 	if err != nil {
-		return nil, err
+		return nil, targetLeft(err, t, in.TargetSpec, "fill")
 	}
 	if *in.Text != "" {
 		if err := t.sendTo(ctx, el.sessionID, "Input.insertText", map[string]string{"text": *in.Text}, nil); err != nil {
@@ -166,9 +166,21 @@ func runFill(ctx context.Context, t *Tab, input json.RawMessage) (any, error) {
 		return callOn(ctx, t, el.sessionID, objectID, dispatchChangeFunction, &ok)
 	})
 	if err != nil {
-		return nil, err
+		return nil, targetLeft(err, t, in.TargetSpec, "fill")
 	}
 	return run.finish(ctx, false)
+}
+
+// targetLeft 把动作操作元素途中(自动等待已经结束)元素离开文档的 errDetached 换成领域错误。与等待期间不同,
+// 这时动作可能已部分生效,选择器不能重新查询再做一遍,只能报告目标没了。
+func targetLeft(err error, t *Tab, spec TargetSpec, action string) error {
+	if !errors.Is(err, errDetached) {
+		return err
+	}
+	if spec.Ref != "" {
+		return staleRef(spec.Ref, t.id)
+	}
+	return &Error{Code: generated.ErrorCodeNotFound, Message: fmt.Sprintf("the element matching selector %q left the document while page %s was running", spec.Selector, action)}
 }
 
 func refuseFill(info elementInfo) string {
@@ -247,7 +259,7 @@ func runSelect(ctx context.Context, t *Tab, input json.RawMessage) (any, error) 
 		return callOn(ctx, t, el.sessionID, objectID, selectOptionsFunction, &res, in.Values)
 	})
 	if err != nil {
-		return nil, err
+		return nil, targetLeft(err, t, in.TargetSpec, "select")
 	}
 	if len(res.Missing) > 0 {
 		quoted := make([]string, len(res.Missing))

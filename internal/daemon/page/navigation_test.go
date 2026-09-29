@@ -102,3 +102,22 @@ func TestNavigateDefaultTimeouts(t *testing.T) {
 		So(remaining(p, "Page.navigate"), ShouldBeBetween, 4*time.Second, 5*time.Second+time.Millisecond)
 	})
 }
+
+func TestWaitConditionBrokenByThePage(t *testing.T) {
+	Convey("页面改坏了求值环境、等待条件的脚本抛异常时,返回带页面异常的 INTERNAL_ERROR 而不是笼统的内部错误", t, func() {
+		p := &navFake{deadlines: map[string]time.Time{}}
+		cdp := newFakeCDP()
+		cdp.setSend(func(ctx context.Context, cmd Command) (json.RawMessage, error) {
+			if cmd.Method == "Runtime.evaluate" {
+				return json.RawMessage(`{"result":{"type":"object"},"exceptionDetails":{"text":"Uncaught","exception":{"type":"object","description":"TypeError: s.replace is not a function"}}}`), nil
+			}
+			return p.send(ctx, cmd)
+		})
+		m := newTestManager(cdp, &fakeClock{})
+		for _, input := range []string{`{"text":"ready"}`, `{"load":"load"}`} {
+			_, err := doAction(m, "wait", input, time.Second)
+			So(errorCode(err), ShouldEqual, generated.ErrorCodeInternalError)
+			So(err.Error(), ShouldContainSubstring, "TypeError: s.replace is not a function")
+		}
+	})
+}

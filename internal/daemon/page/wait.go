@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/scriptscat/sctl/internal/pkg/protocol/generated"
 )
 
 // waitInput 是 page wait 的输入,恰好给一个条件。Gone 是文本,选择器写在 SelectorGone:
@@ -65,7 +67,8 @@ func (t *Tab) evalPage(ctx context.Context, expression string, result any) error
 		return err
 	}
 	if res.ExceptionDetails != nil {
-		return fmt.Errorf("evaluate the wait condition in the page: %s", exceptionMessage(res.ExceptionDetails))
+		// 条件脚本只读页面,抛异常说明页面改坏了求值环境(与 callOn 的处理一致);异常原文交给调用方。
+		return &Error{Code: generated.ErrorCodeInternalError, Message: "evaluating the wait condition failed in the page: " + exceptionMessage(res.ExceptionDetails)}
 	}
 	return json.Unmarshal(res.Result.Value, result)
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	. "github.com/smartystreets/goconvey/convey"
 
@@ -17,6 +18,8 @@ import (
 // 就像焦点模拟也救不回来的被冻结或最小化的标签页。
 type renderingPage struct {
 	rendering bool
+	// obscuredBy 非空时点击点被这个描述的元素挡住。
+	obscuredBy string
 }
 
 func (p *renderingPage) send(_ context.Context, cmd Command) (json.RawMessage, error) {
@@ -45,6 +48,13 @@ func (p *renderingPage) send(_ context.Context, cmd Command) (json.RawMessage, e
 		if strings.Contains(params.FunctionDeclaration, "requestAnimationFrame") {
 			if !p.rendering {
 				return json.RawMessage(`{"result":{"type":"object","value":{"state":"noFrame"}}}`), nil
+			}
+			if p.obscuredBy != "" {
+				by, err := json.Marshal(p.obscuredBy)
+				if err != nil {
+					return nil, err
+				}
+				return json.RawMessage(`{"result":{"type":"object","value":{"state":"obscured","by":` + string(by) + `}}}`), nil
 			}
 			return json.RawMessage(`{"result":{"type":"object","value":{"state":"ok","fx":0.5,"fy":0.5}}}`), nil
 		}
@@ -111,5 +121,16 @@ func TestActionOnPageThatDoesNotRender(t *testing.T) {
 			So(string(raw), ShouldEqualJSON, `{"contentTrust":"untrusted-page-content","tabId":7,"url":"https://example.test/","title":"Example","navigated":false}`)
 			So(slices.Contains(cdp.methods(7), "Input.dispatchMouseEvent"), ShouldBeTrue)
 		})
+	})
+}
+
+func TestObscuredClickTimeout(t *testing.T) {
+	Convey("点击点一直被挡住时,TIMEOUT 写明遮挡元素;页面给的超长描述按字符截断,不切开多字节字符", t, func() {
+		m, cdp := newActionManager(&renderingPage{rendering: true, obscuredBy: "div#a" + strings.Repeat("遮", 200)})
+		_, err := doAction(m, "click", `{"selector":"#target"}`, 300*time.Millisecond)
+		So(errorCode(err), ShouldEqual, generated.ErrorCodeTimeout)
+		So(err.Error(), ShouldContainSubstring, "obscured by div#a遮")
+		So(utf8.ValidString(err.Error()), ShouldBeTrue)
+		So(slices.Contains(cdp.methods(7), "Input.dispatchMouseEvent"), ShouldBeFalse)
 	})
 }

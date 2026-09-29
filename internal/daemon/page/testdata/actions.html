@@ -11,7 +11,9 @@
       .modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.3); }
       @keyframes slide { from { transform: translateX(0); } to { transform: translateX(240px); } }
       .sliding { animation: slide 0.6s linear 1 forwards; }
-      .forever { animation: slide 0.4s linear infinite alternate; }
+      /* 不来回、周期不是帧间隔的整数倍:来回的动画在折返点两侧对称,负载下丢一帧时隔帧的两次测量位置相同,
+         会被误判为稳定。 */
+      .forever { animation: slide 0.37s linear infinite; }
       #frame { margin: 40px 0 0 60px; width: 300px; height: 120px; border: 5px solid #888; }
       .spacer { height: 3000px; }
     </style>

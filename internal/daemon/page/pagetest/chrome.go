@@ -53,6 +53,8 @@ type Listener interface {
 
 // Chrome 是连到一个 headless Chrome 的 page.CDP。
 type Chrome struct {
+	// pid 是 Chrome 主进程的 PID,测试据此确认它随测试进程退出。
+	pid    int
 	ws     *websocket.Conn
 	nextID atomic.Int64
 	// attachMu 串行化附加,避免同一标签页上并发的第一条命令附加两次。
@@ -116,12 +118,20 @@ func Start(t testing.TB) *Chrome {
 		args = append(args, "--no-sandbox")
 	}
 	cmd := exec.Command(bin, args...)
-	if err := cmd.Start(); err != nil {
+	started, release, err := newLifeline(cmd)
+	if err != nil {
+		t.Fatalf("create the Chrome lifeline: %v", err)
+	}
+	err = cmd.Start()
+	started()
+	if err != nil {
+		release()
 		t.Fatalf("start Chrome %s: %v", bin, err)
 	}
 	exited := make(chan struct{})
 	go func() {
 		_ = cmd.Wait()
+		release()
 		close(exited)
 	}()
 
@@ -145,6 +155,7 @@ func Start(t testing.TB) *Chrome {
 	}
 	ws.SetReadLimit(maxMessageBytes)
 	c := &Chrome{
+		pid:      cmd.Process.Pid,
 		ws:       ws,
 		pending:  map[int64]*pendingCommand{},
 		targets:  map[int]string{},

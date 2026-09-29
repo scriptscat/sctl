@@ -47,8 +47,6 @@ type Tab struct {
 	nav        *navWatch
 	net        *netWatch
 	dialog     *dialogState
-	// watchingFrames 表示这次附加已开启 Page 域,文档替换事件会送到 refs。只在标签页队列里读写。
-	watchingFrames bool
 	// watchingNetwork 表示这次附加已开启 Network 域。只在标签页队列里读写。
 	watchingNetwork bool
 }
@@ -233,8 +231,9 @@ func enableFocusEmulation(ctx context.Context, t *Tab) error {
 	return t.send(ctx, "Emulation.setFocusEmulationEnabled", map[string]bool{"enabled": true}, nil)
 }
 
-// enablePage 在附加时开启 Page 域:JS 弹框事件必须从附加起就能收到,否则弹框打开时没有打开状态可拒绝命令。
-func enablePage(ctx context.Context, t *Tab) error { return t.watchFrames(ctx) }
+// enablePage 在附加时开启 Page 域:JS 弹框事件必须从附加起就能收到,否则弹框打开时没有打开状态可拒绝命令;
+// 文档替换事件(Page.frameNavigated / frameDetached)也由它送到引用表,快照与动作的导航观察都依赖这一点。
+func enablePage(ctx context.Context, t *Tab) error { return t.send(ctx, "Page.enable", nil, nil) }
 
 // Do 执行一次页面动作,返回 JSON 结果。调用方取消时返回 ctx 的错误,其余失败都是 *Error。
 func (m *Manager) Do(ctx context.Context, req Request) (json.RawMessage, error) {
@@ -436,13 +435,19 @@ func (m *Manager) attach(ctx context.Context, s *slot, instanceID string, tabID 
 		}
 	}
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	s.attaching = nil
-	// 钩子运行期间收到的分离通知已取消 ctx;此时附加已经失效,不能记为已附加。
-	if ctx.Err() != nil {
-		return nil, context.Cause(ctx)
+	// 钩子运行期间命令已结束(分离通知、超时或调用方取消):不能记为已附加。扩展可能仍附加着,
+	// daemon 不记录它就不会为它计时断开,所以与钩子失败一样断开。
+	ended := ctx.Err() != nil
+	if !ended {
+		s.tab = t
 	}
-	s.tab = t
+	m.mu.Unlock()
+	if ended {
+		cause := context.Cause(ctx)
+		m.abandonAttach(instanceID, tabID, cause)
+		return nil, cause
+	}
 	return t, nil
 }
 

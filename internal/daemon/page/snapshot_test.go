@@ -135,7 +135,7 @@ func TestSnapshotRefLifetime(t *testing.T) {
 		}, "\n"))
 		So(resolve(m, 3, "e1"), ShouldBeNil)
 
-		Convey("快照开启 Page 域以接收文档替换事件,同一次附加只开启一次", func() {
+		Convey("附加时开启 Page 域以接收文档替换事件,同一次附加里的快照不再重复开启", func() {
 			_, err := takeSnapshot(m, 3)
 			So(err, ShouldBeNil)
 			count := 0

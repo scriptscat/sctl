@@ -156,7 +156,7 @@ ScriptCat 中批准、拒绝或关闭确认流程；浏览器控制命令按设�
 文本与选择器只在主文档里匹配,不进入 iframe;选择器非法返回 `INVALID_REQUEST`。
 
 `sctl page screenshot` 默认截可见视口,`--full` 截整页,给引用或 `--selector` 时截该元素的边界框(先滚入视口;跨域 iframe 里的引用同样可用)。
-图片写入 `-f` 指定的文件,未指定时写到当前目录的 `screenshot-<tabId>-<时间戳>.<扩展名>`,并输出路径;二进制数据从不写到 stdout,`-o json` 输出结果元数据和路径,不含图片。
+图片写入 `-f` 指定的文件,未指定时写到当前目录的 `screenshot-<tabId>-<时间戳>.<扩展名>`(同名文件已存在时加上 `-2`、`-3` 等序号,不覆盖),并输出路径;二进制数据从不写到 stdout,`-o json` 输出结果元数据和路径,不含图片。
 `--format` 为 `png`(默认)或 `jpeg`,`--quality 0-100` 只对 jpeg 有效。图片超过单帧上限(4 MiB)时返回 `PAYLOAD_TOO_LARGE`:改用 `--format jpeg` 或只截视口。
 标签页 15 秒内(截图的等待上限)得不到图像时返回 `PAGE_HIDDEN`,不会保存空白图;可加 `--activate` 重试。
 

@@ -311,6 +311,19 @@ func TestManagerAttachSetup(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod})
 		})
+
+		Convey("命令在附加钩子全部成功的同时结束时断开调试器,不留下 daemon 不再计时断开的附加", func() {
+			ctx, cancel := context.WithCancel(context.Background())
+			cdp.setSend(func(_ context.Context, cmd Command) (json.RawMessage, error) {
+				if cmd.Method == "Page.enable" {
+					cancel()
+				}
+				return json.RawMessage(`{}`), nil
+			})
+			_, err := m.Do(ctx, Request{Action: "probe", TabID: tabRef(3)})
+			So(errors.Is(err, context.Canceled), ShouldBeTrue)
+			So(cdp.detachCalls(), ShouldResemble, [][]int{{3}})
+		})
 	})
 }
 

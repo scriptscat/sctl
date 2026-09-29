@@ -23,14 +23,14 @@ type element struct {
 	backendNodeID int
 }
 
-// refSeq 为整个 daemon 进程分配引用编号。编号跨标签页、跨快照递增而不复用:旧快照或其他标签页的引用
-// 永远不会碰巧解析到这个标签页当前表里的另一个元素。
+// refSeq 为整个 daemon 进程分配引用编号。编号跨标签页、跨快照递增而不复用:同一个 daemon 进程里,旧快照或
+// 其他标签页的引用永远不会碰巧解析到这个标签页当前表里的另一个元素。编号不跨进程保存,daemon 重启后从 e1
+// 重新开始:重启前拿到的引用在重启后的第一份快照之前返回 STALE_REF,之后可能与新编号重合。
 type refSeq struct{ n atomic.Uint64 }
 
 func (s *refSeq) next() string { return "e" + strconv.FormatUint(s.n.Add(1), 10) }
 
-// refTable 是一个标签页在一次附加期间的引用表。调试器分离后 Tab 连同引用表一起作废,daemon 重启后
-// 内存里没有任何引用,两者都让旧引用返回 STALE_REF。事件在 bridge 读循环里更新它,动作在标签页队列里
+// refTable 是一个标签页在一次附加期间的引用表。调试器分离后 Tab 连同引用表一起作废,旧引用返回 STALE_REF。事件在 bridge 读循环里更新它,动作在标签页队列里
 // 读它,所以用自己的锁。
 type refTable struct {
 	mu   sync.Mutex
@@ -152,7 +152,7 @@ func staleRef(ref string, tabID int) *Error {
 const isConnectedFunction = `function () { return this.isConnected; }`
 
 // resolveRef 把快照引用解析为页面元素。引用不在这个标签页当前的引用表里(被新快照取代、文档已被替换、
-// 调试器断开过、daemon 重启过、来自其他标签页),或元素已被页面移出文档时返回 STALE_REF。
+// 调试器断开过、来自其他标签页),或元素已被页面移出文档时返回 STALE_REF。
 func (t *Tab) resolveRef(ctx context.Context, ref string) (element, error) {
 	el, ok := t.refs.lookup(ref)
 	if !ok {

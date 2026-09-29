@@ -208,11 +208,7 @@ func probeOnce(ctx context.Context, t *Tab, el element, c checks) (actionPoint, 
 	case "outside":
 		return actionPoint{}, "the element is outside the viewport", nil
 	case "obscured":
-		by := pos.By
-		if len(by) > maxObscurerLength {
-			by = by[:maxObscurerLength] + "…"
-		}
-		return actionPoint{}, "the element does not receive pointer events at its click point: obscured by " + by, nil
+		return actionPoint{}, "the element does not receive pointer events at its click point: obscured by " + truncateRunes(pos.By, maxObscurerLength, "…"), nil
 	case "detached":
 		return actionPoint{}, "", errDetached
 	default:

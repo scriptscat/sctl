@@ -3,7 +3,9 @@ package cli
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"time"
@@ -27,8 +29,9 @@ func newPageScreenshotCmd() *cobra.Command {
 		Short: "Save a screenshot of the viewport, the full page or one element to a file",
 		Long: "Capture the visible viewport (default), the whole page (--full), or the border box of one element (a ref\n" +
 			"from a snapshot, or --selector). An element is scrolled into view and waited for until it is attached and visible.\n" +
-			"The image is written to -f, or to screenshot-<tabId>-<timestamp>.<ext> in the current directory, and the path is\n" +
-			"printed: binary data never goes to stdout. With -o json the result metadata and the path are printed, without the image.\n" +
+			"The image is written to -f, or to screenshot-<tabId>-<timestamp>.<ext> in the current directory (with a -2, -3, ...\n" +
+			"suffix rather than overwriting an earlier file), and the path is printed: binary data never goes to stdout.\n" +
+			"With -o json the result metadata and the path are printed, without the image.\n" +
 			"A screenshot over one protocol frame (4 MiB) returns PAYLOAD_TOO_LARGE: use --format jpeg or capture only the viewport.\n" +
 			"If the tab produces no image within 15 seconds the command fails with PAGE_HIDDEN instead of saving a blank image;\n" +
 			"retry with --activate.\n" + targetHelp,
@@ -93,14 +96,13 @@ func saveScreenshot(result json.RawMessage, file string) error {
 	if err != nil {
 		return fmt.Errorf("decode the screenshot image: %w", err)
 	}
+	var path string
 	if file == "" {
-		file = fmt.Sprintf("screenshot-%d-%s.%s", tabID, time.Now().Format("20060102-150405"), screenshotExtensions[mimeType])
+		path, err = writeNewScreenshot(fmt.Sprintf("screenshot-%d-%s", tabID, time.Now().Format("20060102-150405")), screenshotExtensions[mimeType], image)
+	} else if path, err = filepath.Abs(file); err == nil {
+		err = os.WriteFile(path, image, 0o644)
 	}
-	path, err := filepath.Abs(file)
 	if err != nil {
-		return &ExitError{Code: exitError, Message: err.Error()}
-	}
-	if err := os.WriteFile(path, image, 0o644); err != nil {
 		return &ExitError{Code: exitError, Message: fmt.Sprintf("write the screenshot: %v", err)}
 	}
 	if outputFormat != outputJSON {
@@ -110,4 +112,31 @@ func saveScreenshot(result json.RawMessage, file string) error {
 	delete(fields, "data")
 	fields["path"] = mustInput(path)
 	return printResultJSON(mustInput(fields))
+}
+
+// writeNewScreenshot 把默认命名的截图写进一个新建的文件并返回它的绝对路径。时间戳只精确到秒,同一秒内的
+// 多次截图不能互相覆盖,所以名字已被占用时依次加上 -2、-3 等序号。
+func writeNewScreenshot(base, ext string, image []byte) (string, error) {
+	for n := 1; ; n++ {
+		name := base + "." + ext
+		if n > 1 {
+			name = fmt.Sprintf("%s-%d.%s", base, n, ext)
+		}
+		path, err := filepath.Abs(name)
+		if err != nil {
+			return "", err
+		}
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		_, writeErr := f.Write(image)
+		if err := errors.Join(writeErr, f.Close()); err != nil {
+			return "", err
+		}
+		return path, nil
+	}
 }

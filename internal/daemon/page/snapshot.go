@@ -126,10 +126,6 @@ func runSnapshot(ctx context.Context, t *Tab, input json.RawMessage) (any, error
 	if err := decodeInput(input, &in); err != nil {
 		return nil, err
 	}
-	// 先开启文档替换事件再读树:之后发生的导航都会作废这次快照的引用。
-	if err := t.watchFrames(ctx); err != nil {
-		return nil, err
-	}
 	var root *element
 	if in.Root != "" {
 		el, err := t.snapshotRoot(ctx, in.Root)
@@ -159,18 +155,6 @@ func runSnapshot(ctx context.Context, t *Tab, input json.RawMessage) (any, error
 	t.refs.commit(b.build)
 	committed = true
 	return snapshotResult{ContentTrust: contentTrustPage, TabID: t.ID(), Snapshot: text}, nil
-}
-
-// watchFrames 在这次附加里第一次快照前开启 Page 域,让 Page.frameNavigated / frameDetached 送到引用表。
-func (t *Tab) watchFrames(ctx context.Context) error {
-	if t.watchingFrames {
-		return nil
-	}
-	if err := t.send(ctx, "Page.enable", nil, nil); err != nil {
-		return err
-	}
-	t.watchingFrames = true
-	return nil
 }
 
 // snapshotRoot 把 --root 解析为元素:引用按引用表解析,其余按 CSS 选择器在主文档里严格匹配。

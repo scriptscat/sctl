@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	. "github.com/smartystreets/goconvey/convey"
 
@@ -50,6 +51,30 @@ func TestPageScreenshot(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(got, ShouldResemble, image)
 			So(strings.Contains(out, "PNG"), ShouldBeFalse)
+		})
+
+		Convey("没有 -f 时不覆盖同一秒内已有的同名截图,改用带序号的文件名", func() {
+			stubPageDaemon(t, result("image/png"))
+			now := time.Now()
+			var existing []string
+			for _, at := range []time.Time{now, now.Add(time.Second)} {
+				name := filepath.Join(dir, "screenshot-5-"+at.Format("20060102-150405")+".png")
+				So(os.WriteFile(name, []byte("earlier"), 0o600), ShouldBeNil)
+				existing = append(existing, name)
+			}
+			code, out := runCLI("page", "screenshot")
+			So(code, ShouldEqual, exitOK)
+			path := strings.TrimSpace(out)
+			So(existing, ShouldNotContain, path)
+			So(regexp.MustCompile(`^screenshot-5-\d{8}-\d{6}-2\.png$`).MatchString(filepath.Base(path)), ShouldBeTrue)
+			got, err := os.ReadFile(path)
+			So(err, ShouldBeNil)
+			So(got, ShouldResemble, image)
+			for _, name := range existing {
+				kept, err := os.ReadFile(name)
+				So(err, ShouldBeNil)
+				So(string(kept), ShouldEqual, "earlier")
+			}
 		})
 
 		Convey("请求转发引用、选择器、--full、格式与质量", func() {

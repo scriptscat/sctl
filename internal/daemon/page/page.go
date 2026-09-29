@@ -25,6 +25,15 @@ func invalidRequest(message string) *Error {
 	return &Error{Code: generated.ErrorCodeInvalidRequest, Message: message}
 }
 
+// truncateRunes 把网页控制、可以任意长的文字截到至多 n 个字符,截断时加上 suffix。按字符截,不切开多字节字符。
+func truncateRunes(s string, n int, suffix string) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + suffix
+}
+
 // Command 是发往一个标签页的一条 CDP 命令;SessionID 非空时发往该标签页下的子会话(跨进程 iframe)。
 type Command struct {
 	TabID     int
