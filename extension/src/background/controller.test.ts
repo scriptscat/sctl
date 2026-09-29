@@ -25,6 +25,7 @@ class MemoryStorage implements StorageLike {
 
 function setup(storage = new MemoryStorage()) {
   const commands: OffscreenCommand[] = [];
+  const disconnects = { count: 0 };
   let reply: unknown = undefined;
   const registry = new HandlerRegistry();
   registry.register("windows.list", () => Promise.resolve({ windows: [] }));
@@ -35,6 +36,10 @@ function setup(storage = new MemoryStorage()) {
       return Promise.resolve(reply);
     },
     registry,
+    onConnectionClosed: () => {
+      disconnects.count++;
+      return Promise.resolve();
+    },
     browser: Promise.resolve({
       product: { brand: "Microsoft Edge", slug: "edge", product: "Edge" },
       version: "129.0.2792.65",
@@ -45,6 +50,7 @@ function setup(storage = new MemoryStorage()) {
     background,
     storage,
     commands,
+    disconnects,
     setReply: (next: unknown) => {
       reply = next;
     },
@@ -212,5 +218,30 @@ describe("popup requests", () => {
     await background.handle({ target: "background", type: "retryNow" });
 
     expect(commands).toEqual([{ target: "offscreen", type: "retryNow" }]);
+  });
+});
+
+describe("connection lifecycle and notifications", () => {
+  it("runs the connection-closed hook when the offscreen document reports a lost connection", async () => {
+    const { background, disconnects } = setup();
+
+    await background.handle({ target: "background", type: "connectionClosed" });
+
+    expect(disconnects.count).toBe(1);
+  });
+
+  it("forwards a notification to the offscreen document", async () => {
+    const { background, commands } = setup();
+
+    await background.notify("debugger.detached", { tabId: 5, reason: "canceled_by_user" });
+
+    expect(commands).toEqual([
+      {
+        target: "offscreen",
+        type: "notify",
+        method: "debugger.detached",
+        params: { tabId: 5, reason: "canceled_by_user" },
+      },
+    ]);
   });
 });

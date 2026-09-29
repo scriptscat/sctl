@@ -1,4 +1,9 @@
-import type { ERROR_CODES, RpcMethod } from "@/protocol/generated/protocol.generated";
+import type {
+  ERROR_CODES,
+  NotificationMethod,
+  NotificationParams,
+  RpcMethod,
+} from "@/protocol/generated/protocol.generated";
 import type { ConnectionState } from "./state";
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -38,7 +43,9 @@ export type OffscreenEvent =
   | { target: "background"; type: "offscreenReady" }
   | { target: "background"; type: "paired"; key: string; name: string }
   | { target: "background"; type: "renamed"; name: string }
-  | { target: "background"; type: "rpc"; method: RpcMethod; input: unknown };
+  | { target: "background"; type: "rpc"; method: RpcMethod; input: unknown }
+  // 已连接的会话结束（断开、忘记、换地址），依赖这条连接的调试器附加要随之释放。
+  | { target: "background"; type: "connectionClosed" };
 
 export type BackgroundMessage = PopupRequest | OffscreenEvent;
 
@@ -48,7 +55,10 @@ export type OffscreenCommand =
   | { target: "offscreen"; type: "rename"; name: string }
   | { target: "offscreen"; type: "retryNow" }
   | { target: "offscreen"; type: "forget" }
-  | { target: "offscreen"; type: "setAddress"; address: string };
+  | { target: "offscreen"; type: "setAddress"; address: string }
+  | {
+      [N in NotificationMethod]: { target: "offscreen"; type: "notify"; method: N; params: NotificationParams<N> };
+    }[NotificationMethod];
 
 export interface StateBroadcast {
   target: "popup";

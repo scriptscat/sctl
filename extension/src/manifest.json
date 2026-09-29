@@ -3,8 +3,8 @@
   "name": "__MSG_extName__",
   "description": "__MSG_extDescription__",
   "default_locale": "en",
-  "minimum_chrome_version": "116",
-  "permissions": ["tabs", "storage", "offscreen"],
+  "minimum_chrome_version": "125",
+  "permissions": ["tabs", "storage", "offscreen", "debugger"],
   "background": {
     "service_worker": "background.js",
     "type": "module"

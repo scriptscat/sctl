@@ -1,5 +1,12 @@
-import { CRYPTO, LIMITS, SCHEMA_VERSION, type RpcMethod } from "@/protocol/generated/protocol.generated";
-import { RPC_PARAM_VALIDATORS } from "@/protocol/generated/validators.generated";
+import {
+  CRYPTO,
+  LIMITS,
+  SCHEMA_VERSION,
+  type NotificationMethod,
+  type NotificationParams,
+  type RpcMethod,
+} from "@/protocol/generated/protocol.generated";
+import { NOTIFICATION_PARAM_VALIDATORS, RPC_PARAM_VALIDATORS } from "@/protocol/generated/validators.generated";
 import { websocketUrl } from "@/shared/address";
 import type { ConnectionConfig, RenameResult, RpcOutcome } from "@/shared/messages";
 import type { ConnectionState, StatusDetail } from "@/shared/state";
@@ -53,6 +60,8 @@ export interface ConnectionDeps {
   persistKey(key: string, name: string): Promise<void>;
   persistName(name: string): Promise<void>;
   dispatch(method: RpcMethod, input: unknown): Promise<RpcOutcome>;
+  // 已连接的会话结束时调用（断开、忘记、换地址都算），握手未完成的尝试不触发。
+  onDisconnected(): void;
 }
 
 type Auth = { mode: "session"; key: string } | { mode: "pairing"; code: string };
@@ -191,6 +200,9 @@ export class Connection {
     this.attempt = null;
     this.clearAuthTimer(attempt);
     attempt.socket.close(CLOSE_NORMAL);
+    if (attempt.phase === "connected") {
+      this.deps.onDisconnected();
+    }
   }
 
   private abandonRename(error: "not-connected" | "name-taken"): void {
@@ -322,6 +334,9 @@ export class Connection {
     }
     this.attempt = null;
     this.clearAuthTimer(attempt);
+    if (attempt.phase === "connected") {
+      this.deps.onDisconnected();
+    }
     if (attempt.auth.mode === "pairing" && attempt.phase !== "connected") {
       this.pairingClosed(attempt);
       return;
@@ -362,10 +377,43 @@ export class Connection {
     this.setState({ status: "reconnecting", attempt: this.failures, retryAt: this.deps.timers.now() + delay });
   }
 
-  private send(attempt: Attempt, message: Omit<JsonRpcMessage, "jsonrpc">): void {
-    if (attempt === this.attempt) {
-      attempt.socket.send(JSON.stringify({ jsonrpc: "2.0", ...message }));
+  // 向 daemon 发送业务通知；未连接时静默丢弃。参数来自 CDP 事件，先按 schema 校验：
+  // daemon 收到 schema 外的帧会断开连接，一个坏事件不能拖垮整条连接。
+  notify<N extends NotificationMethod>(method: N, params: NotificationParams<N>): void {
+    const attempt = this.attempt;
+    if (attempt?.phase !== "connected") {
+      return;
     }
+    if (!NOTIFICATION_PARAM_VALIDATORS[method](params)) {
+      console.warn(`dropping ${method}: parameters do not match the schema`);
+      return;
+    }
+    this.send(attempt, { method, params: params as unknown as Record<string, unknown> });
+  }
+
+  // 所有帧都从这里发出，所以在这里统一限制大小：daemon 收到超过 maxFrameBytes 的帧会断开连接。
+  private send(attempt: Attempt, message: Omit<JsonRpcMessage, "jsonrpc">): void {
+    if (attempt !== this.attempt) {
+      return;
+    }
+    let frame = JSON.stringify({ jsonrpc: "2.0", ...message });
+    // 每个 UTF-16 码元编码成最多 3 个字节，短于 maxFrameBytes/3 的帧必然不超限，只有大帧才付编码的开销。
+    if (frame.length > LIMITS.maxFrameBytes / 3 && new TextEncoder().encode(frame).length > LIMITS.maxFrameBytes) {
+      if (message.id === undefined || message.result === undefined) {
+        console.warn(`dropping an oversized ${message.method ?? "response"} frame`);
+        return;
+      }
+      frame = JSON.stringify({
+        jsonrpc: "2.0",
+        id: message.id,
+        error: {
+          code: RPC_APPLICATION_ERROR,
+          message: `result exceeds the ${LIMITS.maxFrameBytes} byte frame limit`,
+          data: { code: "PAYLOAD_TOO_LARGE" },
+        },
+      });
+    }
+    attempt.socket.send(frame);
   }
 
   // 握手期间出现不符合会话顺序的消息即视为协议错误，关闭连接。

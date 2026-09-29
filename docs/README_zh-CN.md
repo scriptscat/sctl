@@ -64,6 +64,10 @@ sctl status
 打开其弹窗并输入 `sctl connect` 打印的一次性配对码;一个码只能配对一个扩展,若已被 ScriptCat 用掉,就再运行一次
 `connect`。完整步骤(含浏览器的"开发者模式"开关)见[`mcp.md`](./mcp.md#4-enroll-scriptcat-and-sctl-browser)(英文)。
 
+sctl Browser 要求 **Chrome 125 或更高版本**(或同版本的 Chromium 内核浏览器),并使用 `debugger` 权限。它通过
+Chrome DevTools Protocol 驱动页面时,Chrome 会在浏览器顶部显示"sctl Browser 已开始调试此浏览器"的提示条,扩展无法
+隐藏;以 `--silent-debugger-extension-api` 启动 Chrome 可不显示。
+
 随后将 AI 客户端配置为启动：
 
 ```text

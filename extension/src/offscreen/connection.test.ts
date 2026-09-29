@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LIMITS } from "@/protocol/generated/protocol.generated";
+import { LIMITS, type NotificationParams } from "@/protocol/generated/protocol.generated";
 import {
   INSTANCE_ID,
   PAIRING_CODE,
@@ -520,5 +520,118 @@ describe("business requests", () => {
     socket.receive({ jsonrpc: "2.0", id: "p1", method: "$session.ping", params: {} });
 
     expect(await response).toEqual({ jsonrpc: "2.0", id: "p1", result: {} });
+  });
+});
+
+describe("notifications to the daemon", () => {
+  async function connected() {
+    const h = harness();
+    await acceptSession(h.socket());
+    await until(() => h.state().status === "connected");
+    return h;
+  }
+
+  it("sends a valid notification as a JSON-RPC frame without an id, with the notification itself as params", async () => {
+    const h = await connected();
+    const frame = h.socket().nextSent();
+
+    h.connection.notify("debugger.detached", { tabId: 5, reason: "canceled_by_user" });
+
+    expect(await frame).toEqual({
+      jsonrpc: "2.0",
+      method: "debugger.detached",
+      params: { tabId: 5, reason: "canceled_by_user" },
+    });
+  });
+
+  it("drops notifications silently while not connected", () => {
+    const h = harness();
+
+    h.connection.notify("debugger.detached", { tabId: 5, reason: "x" });
+
+    expect(h.sockets.flatMap((s) => s.sent)).toEqual([]);
+  });
+
+  it("drops a schema-invalid notification instead of sending a frame the daemon would disconnect over", async () => {
+    const h = await connected();
+    const before = h.socket().sent.length;
+
+    h.connection.notify("debugger.detached", { tabId: "5" } as unknown as NotificationParams<"debugger.detached">);
+
+    expect(h.socket().sent).toHaveLength(before);
+  });
+
+  it("drops an oversized notification instead of breaking the connection", async () => {
+    const h = await connected();
+    const before = h.socket().sent.length;
+
+    h.connection.notify("debugger.event", {
+      tabId: 5,
+      method: "X",
+      params: { blob: "a".repeat(LIMITS.maxFrameBytes) },
+    });
+
+    expect(h.socket().sent).toHaveLength(before);
+    expect(h.socket().closedWith).toBeNull();
+  });
+});
+
+describe("oversized results", () => {
+  it("answers PAYLOAD_TOO_LARGE instead of sending a frame above maxFrameBytes", async () => {
+    const h = harness();
+    await acceptSession(h.socket());
+    await until(() => h.state().status === "connected");
+    h.setOutcome({ ok: true, result: { blob: "a".repeat(LIMITS.maxFrameBytes) } });
+    const socket = h.socket();
+    const response = socket.nextSent();
+
+    socket.receive({ jsonrpc: "2.0", id: "big", method: "tabs.list", params: { input: {} } });
+
+    expect(await response).toMatchObject({
+      id: "big",
+      error: { code: -32000, data: { code: "PAYLOAD_TOO_LARGE" } },
+    });
+  });
+
+  it("counts bytes rather than characters", async () => {
+    const h = harness();
+    await acceptSession(h.socket());
+    await until(() => h.state().status === "connected");
+    h.setOutcome({ ok: true, result: { blob: "汉".repeat(Math.ceil(LIMITS.maxFrameBytes / 3)) } });
+    const socket = h.socket();
+    const response = socket.nextSent();
+
+    socket.receive({ jsonrpc: "2.0", id: "big", method: "tabs.list", params: { input: {} } });
+
+    expect(await response).toMatchObject({ error: { data: { code: "PAYLOAD_TOO_LARGE" } } });
+  });
+});
+
+describe("connection loss", () => {
+  it("reports a lost session so debugger attachments can be released", async () => {
+    const h = harness();
+    await acceptSession(h.socket());
+    await until(() => h.state().status === "connected");
+
+    h.socket().drop(1006);
+
+    expect(h.disconnects.count).toBe(1);
+  });
+
+  it("reports it when the connection is closed on purpose", async () => {
+    const h = harness();
+    await acceptSession(h.socket());
+    await until(() => h.state().status === "connected");
+
+    h.connection.forget();
+
+    expect(h.disconnects.count).toBe(1);
+  });
+
+  it("does not report a handshake that never reached connected", () => {
+    const h = harness();
+    h.socket().drop(1006);
+
+    expect(h.disconnects.count).toBe(0);
   });
 });

@@ -213,6 +213,7 @@ export function harness(start: Partial<ConnectionConfig> = {}) {
   const states: ConnectionState[] = [];
   const persisted: { keys: Array<{ key: string; name: string }>; names: string[] } = { keys: [], names: [] };
   const dispatched: Array<{ method: string; input: unknown }> = [];
+  const disconnects = { count: 0 };
   let outcome: RpcOutcome = { ok: true, result: { contentTrust: "untrusted-page-content", tabs: [] } };
   // 测试可以让持久化挂起，模拟 service worker 写存储期间用户又发出了别的命令。
   let persistence: Promise<void> = Promise.resolve();
@@ -239,6 +240,9 @@ export function harness(start: Partial<ConnectionConfig> = {}) {
       persisted.names.push(name);
       return persistFailure ? Promise.reject(persistFailure) : persistence;
     },
+    onDisconnected: () => {
+      disconnects.count++;
+    },
     dispatch: (method, input) => {
       dispatched.push({ method, input });
       return Promise.resolve(outcome);
@@ -252,6 +256,7 @@ export function harness(start: Partial<ConnectionConfig> = {}) {
     states,
     persisted,
     dispatched,
+    disconnects,
     socket: (): FakeSocket => {
       const last = sockets.at(-1);
       if (!last) {

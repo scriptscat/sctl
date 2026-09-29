@@ -7,9 +7,10 @@ import {
   validateTabsOpenResult,
   validateWindowsListResult,
 } from "@/protocol/generated/validators.generated";
+import { DebuggerRelay } from "./debugger";
 import { registerHandlers } from "./index";
 
-// chrome.tabs / chrome.windows 都是 Promise 化的（manifest 要求 Chrome 116+），伪造对象直接返回/拒绝 Promise。
+// chrome.tabs / chrome.windows 都是 Promise 化的（manifest 要求 Chrome 125+），伪造对象直接返回/拒绝 Promise。
 // 具体函数类型直接抄自 chrome.tabs/chrome.windows 的 Promise 重载，而不是 typeof，避免 vi.fn 泛型解析到回调重载。
 type TabsQueryFn = (queryInfo: chrome.tabs.QueryInfo) => Promise<chrome.tabs.Tab[]>;
 type TabsGetFn = (tabId: number) => Promise<chrome.tabs.Tab>;
@@ -91,16 +92,24 @@ describe("browser method handlers", () => {
     chromeMock = createChromeMock();
     vi.stubGlobal("chrome", chromeMock);
     registry = new HandlerRegistry();
-    registerHandlers(registry);
+    registerHandlers(registry, new DebuggerRelay(() => undefined));
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it("declares capabilities for exactly the five browser methods", () => {
+  it("declares capabilities for exactly the five tab/window methods and the two debugger methods", () => {
     expect(new Set(registry.methods())).toEqual(
-      new Set(["tabs.list", "tabs.open", "tabs.close", "tabs.activate", "windows.list"]),
+      new Set([
+        "tabs.list",
+        "tabs.open",
+        "tabs.close",
+        "tabs.activate",
+        "windows.list",
+        "debugger.send",
+        "debugger.detach",
+      ]),
     );
   });
 

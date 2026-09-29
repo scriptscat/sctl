@@ -1,21 +1,6 @@
-import { HandlerError, type HandlerRegistry, type RpcHandler } from "@/background/registry";
-
-// chrome.tabs.get/chrome.windows.get 对不存在的 ID 只会 reject，这里把它翻译成协议的 NOT_FOUND 领域错误。
-async function requireTab(tabId: number): Promise<chrome.tabs.Tab> {
-  try {
-    return await chrome.tabs.get(tabId);
-  } catch {
-    throw new HandlerError("NOT_FOUND", `no tab ${tabId}`);
-  }
-}
-
-async function requireWindow(windowId: number): Promise<chrome.windows.Window> {
-  try {
-    return await chrome.windows.get(windowId);
-  } catch {
-    throw new HandlerError("NOT_FOUND", `no window ${windowId}`);
-  }
-}
+import type { HandlerRegistry, RpcHandler } from "@/background/registry";
+import type { DebuggerRelay } from "./debugger";
+import { requireTab, requireWindow } from "./lookup";
 
 const handleTabsList: RpcHandler<"tabs.list"> = async (params) => {
   if (params.windowId !== undefined) {
@@ -80,10 +65,12 @@ const handleWindowsList: RpcHandler<"windows.list"> = async () => {
 };
 
 // 标签页与窗口方法的处理函数在这里注册；注册了哪些方法，扩展就向 daemon 声明哪些能力。
-export function registerHandlers(registry: HandlerRegistry): void {
+export function registerHandlers(registry: HandlerRegistry, relay: DebuggerRelay): void {
   registry.register("tabs.list", handleTabsList);
   registry.register("tabs.open", handleTabsOpen);
   registry.register("tabs.close", handleTabsClose);
   registry.register("tabs.activate", handleTabsActivate);
   registry.register("windows.list", handleWindowsList);
+  registry.register("debugger.send", relay.send);
+  registry.register("debugger.detach", relay.detach);
 }

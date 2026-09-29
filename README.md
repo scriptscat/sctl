@@ -70,6 +70,11 @@ popup and enter a one-time code from `sctl connect`; a code pairs only one exten
 ScriptCat already used it. Full steps, including the browser's "developer mode" toggle, are in
 [`docs/mcp.md`](./docs/mcp.md#4-enroll-scriptcat-and-sctl-browser).
 
+sctl Browser requires **Chrome 125 or newer** (or a Chromium browser of that version) and the `debugger`
+permission. While it drives a page through the Chrome DevTools Protocol, Chrome shows a "sctl Browser started
+debugging this browser" infobar that the extension cannot hide; start Chrome with
+`--silent-debugger-extension-api` to suppress it.
+
 Then configure the AI client to launch:
 
 ```text

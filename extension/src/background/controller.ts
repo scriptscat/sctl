@@ -9,6 +9,7 @@ import type {
   SetAddressResult,
 } from "@/shared/messages";
 import { normalizePairingCode } from "@/shared/pairing-code";
+import type { NotificationMethod, NotificationParams } from "@/protocol/generated/protocol.generated";
 import type { HandlerRegistry } from "./registry";
 
 // chrome.storage.local 的最小子集：实例身份、名称、会话密钥与 daemon 地址都存在扩展本地存储里。
@@ -23,6 +24,7 @@ export interface BackgroundDeps {
   // 确保 offscreen 文档存在后把命令交给它，返回它的应答。
   offscreen(command: OffscreenCommand): Promise<unknown>;
   registry: HandlerRegistry;
+  onConnectionClosed(): Promise<void>;
   // 浏览器的完整版本号只能异步取得（navigator.userAgentData.getHighEntropyValues）。
   browser: Promise<BrowserInfo>;
   extensionVersion: string;
@@ -59,6 +61,8 @@ export class Background {
         return this.deps.storage.set({ name: message.name });
       case "rpc":
         return this.deps.registry.dispatch(message.method, message.input);
+      case "connectionClosed":
+        return this.deps.onConnectionClosed();
       case "getState":
         return this.deps.offscreen({ target: "offscreen", type: "getState" });
       case "pair":
@@ -72,6 +76,11 @@ export class Background {
       case "setAddress":
         return this.setAddress(message.address);
     }
+  }
+
+  // 扩展主动发给 daemon 的通知走 offscreen 里的 WebSocket；未连接时由 offscreen 丢弃。
+  async notify<N extends NotificationMethod>(method: N, params: NotificationParams<N>): Promise<void> {
+    await this.deps.offscreen({ target: "offscreen", type: "notify", method, params } as OffscreenCommand);
   }
 
   // 实例 ID 首次使用时生成并持久化；同一 service worker 生命周期内的并发调用共享同一次生成。
