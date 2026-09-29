@@ -192,7 +192,7 @@
   - 通用的 CDP 中转方法。
   - 调试器断开方法。
   - CDP 事件通知和调试器断开通知。
-- **daemon 接收通知：** daemon 开始接受浏览器实例发来的这两种通知，其他对端发来的未知方法仍然忽略。
+- **daemon 接收通知：** daemon 开始接受浏览器实例发来的这两种通知。ScriptCat 发来的这两种通知一律丢弃，不影响它的连接。不在 `protocol.json` 里的非 `$` 方法，仍按现有规则判为非法帧并断开连接（`internal/pkg/protocolschema/validate.go` 的 `ValidateWireFrame`）。
 - **`schemaVersion` 不变。** 给 ScriptCat 的生成文件逐字节不变。
 - **中转方法不对 MCP 直接暴露。** 它们只由 daemon 内的自动化组件调用，CLI 也不提供发送原始 CDP 的命令；原始 CDP 留给第 5 期。
 - **新增错误码：** 都以 `browser` 为归属，退出码按上文。
