@@ -168,6 +168,14 @@ func (e *extClient) writeResult(id string, result any) {
 	So(wsjson.Write(ctx, e.ws, bridge.Message{JSONRPC: "2.0", ID: id, Result: raw}), ShouldBeNil)
 }
 
+// writeError 以应用错误(-32000,领域码放在 data.code)应答请求 id。
+func (e *extClient) writeError(id, code, message string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	frame := map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32000, "message": message, "data": map[string]any{"code": code}}}
+	So(wsjson.Write(ctx, e.ws, frame), ShouldBeNil)
+}
+
 // doSessionHandshake 以给定长期密钥完成会话握手,并消费 hello。
 func (h *testHarness) doSessionHandshake(key []byte) *extClient {
 	e := dial(h.url)
@@ -201,7 +209,7 @@ func (h *testHarness) doSessionHandshake(key []byte) *extClient {
 // browserMethods 是浏览器实例在能力声明里给出的方法。
 var browserMethods = []string{
 	"tabs.list", "tabs.open", "tabs.close", "tabs.activate", "windows.list",
-	"readingList.list", "readingList.add", "readingList.markRead", "readingList.remove",
+	"readingList.list", "readingList.add", "readingList.markRead", "readingList.remove", "bookmarks.remove",
 }
 
 // pairedBrowser 在登记表里放一个已配对实例并返回其密钥;不连接。

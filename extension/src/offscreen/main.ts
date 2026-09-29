@@ -1,4 +1,4 @@
-import type { ConnectionConfig, OffscreenCommand, OffscreenEvent, RpcOutcome, StateBroadcast } from "@/shared/messages";
+import type { ConnectionConfig, OffscreenCommand, OffscreenEvent, RpcReply, StateBroadcast } from "@/shared/messages";
 import { broadcast, listen, request } from "@/shared/messaging";
 import { Connection } from "./connection";
 
@@ -21,7 +21,10 @@ const connection = new Connection({
   onState: (state) => broadcast(chrome.runtime, { target: "popup", type: "state", state } satisfies StateBroadcast),
   persistKey: (key, name) => toBackground({ target: "background", type: "paired", key, name }),
   persistName: (name) => toBackground({ target: "background", type: "renamed", name }),
-  dispatch: (method, input) => toBackground<RpcOutcome>({ target: "background", type: "rpc", method, input }),
+  dispatch: (method, input, context) =>
+    toBackground<RpcReply>({ target: "background", type: "rpc", method, input, context }),
+  cancel: (requestId) => toBackground({ target: "background", type: "rpcCancel", requestId }),
+  disconnected: (connection) => toBackground({ target: "background", type: "disconnected", connection }),
 });
 
 // offscreen 文档不能访问扩展存储，配置由 service worker 读出后交给它。
@@ -47,5 +50,7 @@ listen<OffscreenCommand>(chrome.runtime, "offscreen", async (command) => {
       return connection.forget();
     case "setAddress":
       return connection.setAddress(command.address);
+    case "settle":
+      return connection.settle(command.requestId, command.outcome);
   }
 });

@@ -103,6 +103,14 @@ export interface BookmarksMoveParams {
 export interface BookmarksMoveResult {
   ids: Array<string>;
 }
+export interface BookmarksRemoveParams {
+  ids: Array<string>;
+}
+export interface BookmarksRemoveResult {
+  bookmarks: number;
+  folders: number;
+  ids: Array<string>;
+}
 export interface BookmarksSearchParams {
   limit?: number;
   query: string;
@@ -182,6 +190,7 @@ export interface RpcMethodMap {
   "bookmarks.list": { params: BookmarksListParams; result: BookmarksListResult };
   "bookmarks.mkdir": { params: BookmarksMkdirParams; result: BookmarksMkdirResult };
   "bookmarks.move": { params: BookmarksMoveParams; result: BookmarksMoveResult };
+  "bookmarks.remove": { params: BookmarksRemoveParams; result: BookmarksRemoveResult };
   "bookmarks.search": { params: BookmarksSearchParams; result: BookmarksSearchResult };
   "readingList.add": { params: ReadingListAddParams; result: ReadingListAddResult };
   "readingList.list": { params: ReadingListListParams; result: ReadingListListResult };
@@ -236,6 +245,14 @@ export const RPC_METHODS = {
     effect: "write",
     blocking: "none",
     level: "L0",
+  },
+  "bookmarks.remove": {
+    params: "BookmarksRemoveParams",
+    result: "BookmarksRemoveResult",
+    scope: "bookmarks:remove",
+    effect: "write",
+    blocking: "approval",
+    level: "L2",
   },
   "bookmarks.search": {
     params: "BookmarksSearchParams",

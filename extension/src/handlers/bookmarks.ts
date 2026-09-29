@@ -1,5 +1,6 @@
-import { HandlerError, type HandlerRegistry, type RpcHandler } from "@/background/registry";
+import { type ApprovalHandler, HandlerError, type HandlerRegistry, type RpcHandler } from "@/background/registry";
 import type { BookmarksListResult } from "@/protocol/generated/protocol.generated";
+import type { BookmarkRemovalDetail, BookmarkRemovalEntry, BookmarkRemovalItem } from "@/shared/approvals";
 import { listLimit, takePage } from "./list";
 
 type Node = chrome.bookmarks.BookmarkTreeNode;
@@ -130,11 +131,8 @@ const handleList: RpcHandler<"bookmarks.list"> = async (params) => {
   return { contentTrust: trust, hasMore: page.hasMore, nodes };
 };
 
-const handleSearch: RpcHandler<"bookmarks.search"> = async (params) => {
-  const limit = listLimit(params.limit);
-  const found = await chrome.bookmarks.search(params.query);
-  const page = takePage(found, limit);
-  // 结果里的节点不带祖先信息；取一次整棵树，沿 parentId 逐级取出文件夹标题。
+// 整棵书签树按 ID 索引；每个节点都带着 children，可以直接展开子树。
+async function indexTree(): Promise<Map<string, Node>> {
   const [tree] = await chrome.bookmarks.getTree();
   const byId = new Map<string, Node>();
   const index = (node: Node) => {
@@ -142,17 +140,25 @@ const handleSearch: RpcHandler<"bookmarks.search"> = async (params) => {
     node.children?.forEach(index);
   };
   index(tree);
-  const pathOf = (node: Node): string[] => {
-    const path: string[] = [];
-    for (
-      let parent = byId.get(node.parentId ?? "");
-      parent?.parentId !== undefined;
-      parent = byId.get(parent.parentId)
-    ) {
-      path.unshift(parent.title);
-    }
-    return path;
-  };
+  return byId;
+}
+
+// 节点外层文件夹的标题，由外到内，不含根。
+function folderPath(byId: Map<string, Node>, node: Node): string[] {
+  const path: string[] = [];
+  for (let parent = byId.get(node.parentId ?? ""); parent?.parentId !== undefined; parent = byId.get(parent.parentId)) {
+    path.unshift(parent.title);
+  }
+  return path;
+}
+
+const handleSearch: RpcHandler<"bookmarks.search"> = async (params) => {
+  const limit = listLimit(params.limit);
+  const found = await chrome.bookmarks.search(params.query);
+  const page = takePage(found, limit);
+  // 结果里的节点不带祖先信息；取一次整棵树，沿 parentId 逐级取出文件夹标题。
+  const byId = await indexTree();
+  const pathOf = (node: Node) => folderPath(byId, node);
   return {
     contentTrust: "untrusted-page-content",
     hasMore: page.hasMore,
@@ -239,6 +245,117 @@ const handleEdit: RpcHandler<"bookmarks.edit"> = async (params) => {
   return { id: node.id };
 };
 
+// 一次删除请求最多 500 个 ID（spec「删除书签」）。协议的 ids 与 bookmarks.move 共用同一个参数定义，上限只能在这里兑现。
+export const MAX_REMOVE_IDS = 500;
+
+function removalEntry(node: Node): BookmarkRemovalEntry {
+  const entry: BookmarkRemovalEntry = {
+    id: node.id,
+    type: isFolder(node) ? "folder" : "bookmark",
+    title: node.title,
+    // 能被删除的节点都不是根，一定有父节点。
+    parentId: node.parentId!,
+  };
+  if (node.url !== undefined) entry.url = node.url;
+  return entry;
+}
+
+function removalItem(byId: Map<string, Node>, node: Node): BookmarkRemovalItem {
+  const path = folderPath(byId, node);
+  if (!isFolder(node)) {
+    return { id: node.id, type: "bookmark", title: node.title, url: node.url!, parentId: node.parentId!, path };
+  }
+  const contents = descendants(node).map(removalEntry);
+  return {
+    id: node.id,
+    type: "folder",
+    title: node.title,
+    parentId: node.parentId!,
+    path,
+    bookmarks: contents.filter((entry) => entry.type === "bookmark").length,
+    folders: contents.filter((entry) => entry.type === "folder").length,
+    contents,
+  };
+}
+
+// 比较窗口展示的内容与书签的当前状态用的规范形式：不看子项顺序，只看有哪些节点、各在哪个文件夹、标题与 URL。
+function canonical(entries: BookmarkRemovalEntry[]): string {
+  return JSON.stringify(
+    entries
+      .map((entry) => [entry.id, entry.type, entry.parentId, entry.title, entry.url ?? null])
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+  );
+}
+
+function snapshotOf(item: BookmarkRemovalItem): BookmarkRemovalEntry[] {
+  const { id, title, parentId } = item;
+  return item.type === "folder"
+    ? [{ id, type: "folder", title, parentId }, ...item.contents]
+    : [{ id, type: "bookmark", title, url: item.url, parentId }];
+}
+
+const removeBookmarks: ApprovalHandler<"bookmarks.remove"> = {
+  async prepare(params) {
+    if (params.ids.length > MAX_REMOVE_IDS) {
+      throw new HandlerError(
+        "INVALID_REQUEST",
+        `at most ${MAX_REMOVE_IDS} ids can be removed at once, got ${params.ids.length}`,
+      );
+    }
+    const nodes = await requireAllBookmarks(params.ids);
+    await requireUnprotected(nodes);
+    const byId = await indexTree();
+    const listed = new Set(nodes.map((node) => node.id));
+    // 位于另一个被删文件夹之内的 ID 随那个文件夹一起删除，只算一次。
+    const inListedFolder = (node: Node) => {
+      for (let parent = byId.get(node.parentId ?? ""); parent !== undefined; parent = byId.get(parent.parentId ?? "")) {
+        if (listed.has(parent.id)) return true;
+      }
+      return false;
+    };
+    // get 返回的节点不带 children，展开子树要用整棵树里的同一个节点。
+    const items = nodes.filter((node) => !inListedFolder(node)).map((node) => removalItem(byId, byId.get(node.id)!));
+    const folders = items.filter((item) => item.type === "folder");
+    return {
+      summary: {
+        items: items.length,
+        bookmarks: items.length - folders.length,
+        folders: folders.length,
+        containedBookmarks: folders.reduce((sum, item) => sum + item.bookmarks, 0),
+        containedFolders: folders.reduce((sum, item) => sum + item.folders, 0),
+      },
+      items,
+    } satisfies BookmarkRemovalDetail;
+  },
+
+  // 批准后先按窗口展示的内容逐项复核，任何一项被删除、移走、改动或文件夹里多了内容，就一个都不删。
+  async execute(detail) {
+    const byId = await indexTree();
+    for (const item of detail.items) {
+      const current = byId.get(item.id);
+      const now = current === undefined ? [] : [removalEntry(current), ...descendants(current).map(removalEntry)];
+      if (canonical(now) !== canonical(snapshotOf(item))) {
+        throw new HandlerError(
+          "CONFLICT",
+          `bookmark ${item.id} changed after the approval window showed it; nothing was removed`,
+        );
+      }
+    }
+    for (const item of detail.items) {
+      if (item.type === "folder") {
+        await chrome.bookmarks.removeTree(item.id);
+      } else {
+        await chrome.bookmarks.remove(item.id);
+      }
+    }
+    return {
+      ids: detail.items.map((item) => item.id),
+      bookmarks: detail.summary.bookmarks + detail.summary.containedBookmarks,
+      folders: detail.summary.folders + detail.summary.containedFolders,
+    };
+  },
+};
+
 export function registerBookmarkHandlers(registry: HandlerRegistry): void {
   registry.register("bookmarks.list", handleList);
   registry.register("bookmarks.search", handleSearch);
@@ -246,4 +363,5 @@ export function registerBookmarkHandlers(registry: HandlerRegistry): void {
   registry.register("bookmarks.mkdir", handleMkdir);
   registry.register("bookmarks.move", handleMove);
   registry.register("bookmarks.edit", handleEdit);
+  registry.registerApproval("bookmarks.remove", removeBookmarks);
 }

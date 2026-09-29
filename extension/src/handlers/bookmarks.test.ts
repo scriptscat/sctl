@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HandlerRegistry } from "@/background/registry";
 import type { BookmarksListResult } from "@/protocol/generated/protocol.generated";
-import { validateBookmarksListResult, validateBookmarksSearchResult } from "@/protocol/generated/validators.generated";
+import {
+  validateBookmarksListResult,
+  validateBookmarksRemoveResult,
+  validateBookmarksSearchResult,
+} from "@/protocol/generated/validators.generated";
 import { registerHandlers } from "./index";
 
 interface FakeNode {
@@ -82,6 +86,8 @@ describe("bookmark handlers", () => {
     create: vi.fn(),
     move: vi.fn(),
     update: vi.fn(),
+    remove: vi.fn(),
+    removeTree: vi.fn(),
   };
 
   beforeEach(() => {
@@ -119,6 +125,8 @@ describe("bookmark handlers", () => {
     });
     bookmarks.move.mockImplementation((id: string) => Promise.resolve(bare(nodes.get(id)!)));
     bookmarks.update.mockImplementation((id: string) => Promise.resolve(bare(nodes.get(id)!)));
+    bookmarks.remove.mockResolvedValue(undefined);
+    bookmarks.removeTree.mockResolvedValue(undefined);
     Object.values(bookmarks).forEach((fn) => fn.mockClear());
     vi.stubGlobal("chrome", { bookmarks });
     registry = new HandlerRegistry();
@@ -439,6 +447,139 @@ describe("bookmark handlers", () => {
         code: "NOT_FOUND",
       });
       expect(bookmarks.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("bookmarks.remove", () => {
+    // 从树上摘下节点，模拟用户在审批期间删除或移走它。
+    function detach(id: string): FakeNode {
+      const node = nodes.get(id)!;
+      const parent = nodes.get(node.parentId!)!;
+      parent.children = parent.children!.filter((child) => child.id !== id);
+      return node;
+    }
+
+    function attach(node: FakeNode, parentId: string): void {
+      const parent = nodes.get(parentId)!;
+      node.parentId = parentId;
+      parent.children = [...(parent.children ?? []), node];
+      flatten(node, nodes);
+    }
+
+    async function prepared(ids: string[]) {
+      const outcome = await registry.prepare("bookmarks.remove", { ids });
+      if (!outcome.ok) {
+        throw new Error(`prepare failed: ${outcome.code} ${outcome.message}`);
+      }
+      return outcome.request;
+    }
+
+    it("summarises what will be deleted before approval, counting an id inside another listed folder once", async () => {
+      const outcome = await registry.prepare("bookmarks.remove", { ids: ["14", "10", "13", "11", "14"] });
+
+      expect(outcome).toEqual({
+        ok: true,
+        request: {
+          kind: "bookmarks.remove",
+          detail: {
+            summary: { items: 2, bookmarks: 1, folders: 1, containedBookmarks: 2, containedFolders: 1 },
+            items: [
+              {
+                id: "14",
+                type: "bookmark",
+                title: "<b>News</b>",
+                url: "https://news.example/",
+                parentId: "1",
+                path: ["Bookmarks bar"],
+              },
+              {
+                id: "10",
+                type: "folder",
+                title: "Dev",
+                parentId: "1",
+                path: ["Bookmarks bar"],
+                bookmarks: 2,
+                folders: 1,
+                contents: [
+                  { id: "11", type: "bookmark", title: "MDN", url: "https://developer.mozilla.org/", parentId: "10" },
+                  { id: "12", type: "folder", title: "Go", parentId: "10" },
+                  { id: "13", type: "bookmark", title: "Go Blog", url: "https://go.dev/blog/", parentId: "12" },
+                ],
+              },
+            ],
+          },
+        },
+      });
+      expect(bookmarks.remove).not.toHaveBeenCalled();
+      expect(bookmarks.removeTree).not.toHaveBeenCalled();
+    });
+
+    it("rejects an unknown id with NOT_FOUND before asking for approval", async () => {
+      expect(await registry.prepare("bookmarks.remove", { ids: ["14", "999"] })).toMatchObject({
+        ok: false,
+        code: "NOT_FOUND",
+      });
+    });
+
+    it("rejects the root and built-in top-level folders with INVALID_REQUEST before asking for approval", async () => {
+      for (const id of ["0", "1", "2", "3"]) {
+        expect(await registry.prepare("bookmarks.remove", { ids: ["14", id] })).toMatchObject({
+          ok: false,
+          code: "INVALID_REQUEST",
+        });
+      }
+    });
+
+    it("accepts 500 ids in one request and rejects 501 with INVALID_REQUEST without reading bookmarks", async () => {
+      expect(await registry.prepare("bookmarks.remove", { ids: Array<string>(500).fill("14") })).toMatchObject({
+        ok: true,
+      });
+      bookmarks.get.mockClear();
+
+      expect(await registry.prepare("bookmarks.remove", { ids: Array<string>(501).fill("14") })).toMatchObject({
+        ok: false,
+        code: "INVALID_REQUEST",
+        message: expect.stringContaining("500") as unknown,
+      });
+      expect(bookmarks.get).not.toHaveBeenCalled();
+    });
+
+    it("deletes exactly the shown bookmarks and folders once approved and reports how many were deleted", async () => {
+      const request = await prepared(["14", "10"]);
+
+      const outcome = await registry.execute(request);
+
+      expect(outcome).toEqual({ ok: true, result: { ids: ["14", "10"], bookmarks: 3, folders: 2 } });
+      if (outcome.ok) expect(validateBookmarksRemoveResult(outcome.result)).toBe(true);
+      expect(bookmarks.remove.mock.calls).toEqual([["14"]]);
+      expect(bookmarks.removeTree.mock.calls).toEqual([["10"]]);
+    });
+
+    const changes: Array<[string, () => void]> = [
+      ["a listed bookmark was deleted", () => detach("14")],
+      ["a listed bookmark was moved to another folder", () => attach(detach("14"), "2")],
+      ["a bookmark inside a listed folder was deleted", () => detach("11")],
+      ["a bookmark was moved out of a listed folder", () => attach(detach("13"), "2")],
+      [
+        "a bookmark was added inside a listed folder",
+        () => attach({ id: "50", title: "New", url: "https://n.example/" }, "12"),
+      ],
+      ["a bookmark inside a listed folder was retitled", () => (nodes.get("11")!.title = "Changed")],
+    ];
+    for (const [change, apply] of changes) {
+      it(`answers CONFLICT and deletes nothing when ${change} before approval`, async () => {
+        const request = await prepared(["14", "10"]);
+        apply();
+
+        expect(await registry.execute(request)).toMatchObject({ ok: false, code: "CONFLICT" });
+        expect(bookmarks.remove).not.toHaveBeenCalled();
+        expect(bookmarks.removeTree).not.toHaveBeenCalled();
+      });
+    }
+
+    it("is never run directly: dispatching it without approval is refused", async () => {
+      await expect(registry.dispatch("bookmarks.remove", { ids: ["14"] })).rejects.toThrow();
+      expect(bookmarks.remove).not.toHaveBeenCalled();
     });
   });
 });

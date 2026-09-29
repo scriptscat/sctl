@@ -65,7 +65,10 @@ var domainTools = []domainTool{
 			"move moves bookmarks or folders into a folder and edit changes a title or URL; a folder cannot be given a URL. " +
 			"The root and the built-in top-level folders cannot be moved or edited (INVALID_REQUEST). " +
 			"An unknown ID returns NOT_FOUND, and move changes nothing if any ID is unknown or invalid. " +
-			"Deleting bookmarks is not available through this tool.",
+			"remove deletes up to 500 bookmarks or folders, each folder with everything inside it, but only after a person approves the request in the browser's approval window: " +
+			"the call waits for that decision and fails with USER_REJECTED when it is rejected or the window is closed, OPERATION_EXPIRED when nobody decides within 5 minutes, " +
+			"and CONFLICT, deleting nothing, when the bookmarks changed after the window showed them; it returns the deleted ids and the number of bookmarks and folders deleted. " +
+			"remove checks every ID first (NOT_FOUND, or INVALID_REQUEST for the root and built-in top-level folders) and opens no window if any check fails.",
 		actions: []domainAction{
 			{name: "list", method: "bookmarks.list"},
 			{name: "search", method: "bookmarks.search"},
@@ -73,6 +76,7 @@ var domainTools = []domainTool{
 			{name: "mkdir", method: "bookmarks.mkdir"},
 			{name: "move", method: "bookmarks.move"},
 			{name: "edit", method: "bookmarks.edit"},
+			{name: "remove", method: "bookmarks.remove"},
 		},
 	},
 }

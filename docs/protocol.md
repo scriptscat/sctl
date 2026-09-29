@@ -241,6 +241,7 @@ It is optional in the schema so that an unconfirmed call that reaches the extens
 | `bookmarks.mkdir` | browser | create a bookmark folder | none | L0 |
 | `bookmarks.move` | browser | move bookmarks or folders into a folder | none | L0 |
 | `bookmarks.edit` | browser | change a bookmark's title or URL, or a folder's title | none | L0 |
+| `bookmarks.remove` | browser | delete bookmarks and folders, each folder with its contents | write approval | L2 |
 
 Source and metadata returned by these methods are untrusted user-script content. Consumers must not execute it,
 render it as HTML, interpret it as instructions, or include credentials in logs. Source results carry a SHA-256
@@ -266,7 +267,10 @@ bounded only by the frame limit. `bookmarks.search` adds `path`, the titles of t
 outermost down. The root and the built-in top-level folders cannot be moved or edited, a URL cannot be set on a
 folder, and a folder cannot move into itself or its own descendant; each answers `INVALID_REQUEST`, as does an
 `index` past the end of the target folder. `bookmarks.move` is all-or-nothing: every check runs before the first
-node moves.
+node moves. `bookmarks.remove` takes at most 500 IDs and checks all of them before asking for approval: an unknown ID
+answers `NOT_FOUND`, and more than 500 IDs, the root, or a built-in top-level folder answers `INVALID_REQUEST`. An
+ID inside another listed folder is deleted with that folder and counted once. Its result lists the deleted IDs and
+the number of bookmarks and folders deleted, contents included.
 
 A browser method's result must fit in one frame of at most `limits.maxFrameBytes` UTF-8 bytes, because the daemon
 drops a connection that sends a larger frame. When the serialized response would exceed it, the sctl Browser
@@ -372,6 +376,23 @@ The extension invalidates the operation and sends no response for it. Approval a
 and effective once, so a cancelled operation cannot later execute. A late response is ignored by the daemon.
 The extension persists pending approval state because an MV3 service worker can sleep; the decision event sends
 the JSON-RPC response through the offscreen WebSocket owner.
+
+The sctl Browser extension gates its L2 methods the same way, in its own approval window:
+
+1. The offscreen document receives the request and hands it, with its request `id`, `params.clientId`, and the
+   connection it arrived on, to the service worker. The service worker runs the method's checks first; a failing
+   check is answered at once and opens no window.
+2. Otherwise the request joins the approval queue, persisted in `chrome.storage.session`, and the service worker
+   tells the offscreen document that the answer is deferred. The answer is not held open on that message, because
+   the service worker can be stopped while the user decides.
+3. The user's decision reaches the offscreen document as a separate command carrying the request `id`, and the
+   offscreen document sends it as the JSON-RPC response on the connection the request arrived on. Approval
+   re-checks the target against what the window showed and answers `CONFLICT`, changing nothing, if it differs.
+   Rejection, or closing the window while requests are queued, answers `USER_REJECTED`.
+4. The extension expires a request itself shortly before `limits.writeDecisionTtlMs` after it arrived and answers
+   `OPERATION_EXPIRED`, so the window can tell a timeout from a cancellation. `$/cancelRequest` for a queued request
+   voids it without a response. When the connection closes, every request queued from it is voided, and the daemon
+   answers the requester `OPERATION_EXPIRED` (§3.1).
 
 ## 6. Generation and conformance
 

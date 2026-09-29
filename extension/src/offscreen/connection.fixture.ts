@@ -1,7 +1,7 @@
 // 连接测试的替身：可手动推进的计时器、可由测试驱动的假 WebSocket，以及按 docs/protocol.md §2
 // 独立实现 daemon 一侧握手的假 daemon（MAC 直接用 WebCrypto 计算，不复用被测实现）。
 import { CRYPTO, SCHEMA_VERSION } from "@/protocol/generated/protocol.generated";
-import type { ConnectionConfig, RpcOutcome } from "@/shared/messages";
+import type { ConnectionConfig, RpcContext, RpcReply } from "@/shared/messages";
 import type { ConnectionState } from "@/shared/state";
 import { Connection, type SocketEvents, type SocketLike, type Timers } from "./connection";
 import { derivePairingKeys } from "./crypto";
@@ -213,7 +213,13 @@ export function harness(start: Partial<ConnectionConfig> = {}) {
   const states: ConnectionState[] = [];
   const persisted: { keys: Array<{ key: string; name: string }>; names: string[] } = { keys: [], names: [] };
   const dispatched: Array<{ method: string; input: unknown }> = [];
-  let outcome: RpcOutcome = { ok: true, result: { contentTrust: "untrusted-page-content", tabs: [] } };
+  const contexts: RpcContext[] = [];
+  const cancelled: string[] = [];
+  const disconnects: string[] = [];
+  let outcome: RpcReply | Promise<RpcReply> = {
+    ok: true,
+    result: { contentTrust: "untrusted-page-content", tabs: [] },
+  };
   // 测试可以让持久化挂起，模拟 service worker 写存储期间用户又发出了别的命令。
   let persistence: Promise<void> = Promise.resolve();
   // 测试可以让持久化失败，模拟 service worker 写存储出错。
@@ -239,9 +245,18 @@ export function harness(start: Partial<ConnectionConfig> = {}) {
       persisted.names.push(name);
       return persistFailure ? Promise.reject(persistFailure) : persistence;
     },
-    dispatch: (method, input) => {
+    dispatch: (method, input, context) => {
       dispatched.push({ method, input });
+      contexts.push(context);
       return Promise.resolve(outcome);
+    },
+    cancel: (requestId) => {
+      cancelled.push(requestId);
+      return Promise.resolve();
+    },
+    disconnected: (connection) => {
+      disconnects.push(connection);
+      return Promise.resolve();
     },
   });
   connection.start(config(start));
@@ -252,6 +267,9 @@ export function harness(start: Partial<ConnectionConfig> = {}) {
     states,
     persisted,
     dispatched,
+    contexts,
+    cancelled,
+    disconnects,
     socket: (): FakeSocket => {
       const last = sockets.at(-1);
       if (!last) {
@@ -260,7 +278,8 @@ export function harness(start: Partial<ConnectionConfig> = {}) {
       return last;
     },
     state: (): ConnectionState => connection.getState(),
-    setOutcome: (next: RpcOutcome) => {
+    // 传入挂起的 Promise 可以让 background 的应答迟到，模拟审批请求还在预校验时 daemon 就取消了它。
+    setOutcome: (next: RpcReply | Promise<RpcReply>) => {
       outcome = next;
     },
     refuseSockets: (error: Error | null) => {

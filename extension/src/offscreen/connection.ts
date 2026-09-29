@@ -1,7 +1,7 @@
 import { CRYPTO, LIMITS, SCHEMA_VERSION, type RpcMethod } from "@/protocol/generated/protocol.generated";
 import { RPC_PARAM_VALIDATORS } from "@/protocol/generated/validators.generated";
 import { websocketUrl } from "@/shared/address";
-import type { ConnectionConfig, RenameResult, RpcOutcome } from "@/shared/messages";
+import type { ConnectionConfig, RenameResult, RpcContext, RpcOutcome, RpcReply } from "@/shared/messages";
 import type { ConnectionState, StatusDetail } from "@/shared/state";
 import {
   type Bytes,
@@ -53,7 +53,21 @@ export interface ConnectionDeps {
   // 持久化只能由 service worker 完成；配对与改名都在 daemon 接受能力声明、登记生效之后才落盘。
   persistKey(key: string, name: string): Promise<void>;
   persistName(name: string): Promise<void>;
-  dispatch(method: RpcMethod, input: unknown): Promise<RpcOutcome>;
+  // L2 请求的应答是 deferred：结论之后经 settle 送回。
+  dispatch(method: RpcMethod, input: unknown, context: RpcContext): Promise<RpcReply>;
+  // daemon 取消了一个等待审批的请求。
+  cancel(requestId: string): Promise<void>;
+  // 一条已建立的连接结束了，它上面等待审批的请求随之作废。
+  disconnected(connection: string): Promise<void>;
+}
+
+// 一条已转交 background、还没有应答的业务请求。
+interface InFlight {
+  method: string;
+  // background 答了 deferred，应答要等 settle。
+  deferred: boolean;
+  // daemon 已经取消了它：之后不再应答（docs/protocol.md §5）。
+  cancelled: boolean;
 }
 
 type Auth = { mode: "session"; key: string } | { mode: "pairing"; code: string };
@@ -75,6 +89,9 @@ interface Attempt {
   // 扩展主动关闭时记下的结论，close 事件据此决定下一状态；为 null 时按关闭码判断。
   verdict: "rejected" | "conflict" | null;
   authTimer: number | null;
+  // 这条连接的标识，随业务请求交给 background；连接结束时据此作废它的请求。
+  connectionId: string;
+  requests: Map<string, InFlight>;
   // WebCrypto 是异步的：帧按到达顺序串行处理，close 排在已到达的帧之后。
   queue: Promise<void>;
   inFlight: number;
@@ -191,7 +208,34 @@ export class Connection {
     }
     this.attempt = null;
     this.clearAuthTimer(attempt);
+    this.ended(attempt);
     attempt.socket.close(CLOSE_NORMAL);
+  }
+
+  // 已建立的连接一结束，daemon 就作废了它上面的全部请求（docs/protocol.md §2.3）；让 background 同步作废待审批的请求。
+  private ended(attempt: Attempt): void {
+    if (attempt.phase !== "connected") {
+      return;
+    }
+    attempt.requests.clear();
+    this.reportEnded(attempt);
+  }
+
+  private reportEnded(attempt: Attempt): void {
+    this.deps
+      .disconnected(attempt.connectionId)
+      .catch((error: unknown) => console.error("failed to report the lost connection", error));
+  }
+
+  // background 送回审批的结论。连接已经换了、请求已被取消或本来就不在等待审批时，都不再应答。
+  settle(requestId: string, outcome: RpcOutcome): void {
+    const attempt = this.attempt;
+    const request = attempt?.requests.get(requestId);
+    if (!attempt || !request?.deferred) {
+      return;
+    }
+    attempt.requests.delete(requestId);
+    this.answer(attempt, requestId, request.method, outcome);
   }
 
   private abandonRename(error: "not-connected" | "name-taken"): void {
@@ -247,6 +291,8 @@ export class Connection {
       pairedKey: null,
       verdict: null,
       authTimer: null,
+      connectionId: crypto.randomUUID(),
+      requests: new Map(),
       queue: Promise.resolve(),
       inFlight: 0,
     };
@@ -323,6 +369,7 @@ export class Connection {
     }
     this.attempt = null;
     this.clearAuthTimer(attempt);
+    this.ended(attempt);
     if (attempt.auth.mode === "pairing" && attempt.phase !== "connected") {
       this.pairingClosed(attempt);
       return;
@@ -524,9 +571,15 @@ export class Connection {
 
   private serve(attempt: Attempt, message: JsonRpcMessage): void {
     const { id, method } = message;
-    if (!method || method === "$session.shutdown" || method === "$/cancelRequest") {
-      // 响应不会出现（连接建立后扩展不发请求）；shutdown 之后 daemon 会关闭连接；
-      // 浏览器方法都是即时完成的，没有可作废的挂起操作。
+    if (!method || method === "$session.shutdown") {
+      // 响应不会出现（连接建立后扩展不发请求）；shutdown 之后 daemon 会关闭连接。
+      return;
+    }
+    if (method === "$/cancelRequest") {
+      const target = message.params?.id;
+      if (typeof target === "string") {
+        this.cancelRequest(attempt, target);
+      }
       return;
     }
     if (!id) {
@@ -546,20 +599,67 @@ export class Connection {
       this.fail(attempt, id, "INVALID_REQUEST", `invalid input for ${method}`);
       return;
     }
+    const clientId = message.params?.clientId;
+    const context: RpcContext = {
+      requestId: id,
+      clientId: typeof clientId === "string" ? clientId : null,
+      connection: attempt.connectionId,
+      receivedAt: this.deps.timers.now(),
+    };
+    const request: InFlight = { method, deferred: false, cancelled: false };
+    attempt.requests.set(id, request);
     // 业务请求不进入帧队列：一个慢调用不能挡住心跳应答。
-    void this.deps.dispatch(declared, input).then(
-      (outcome) => {
-        if (outcome.ok) {
-          this.reply(attempt, id, method, outcome.result as Record<string, unknown>);
-        } else {
-          this.fail(attempt, id, outcome.code, outcome.message);
+    void this.deps.dispatch(declared, input, context).then(
+      (reply) => {
+        if (attempt.requests.get(id) !== request) {
+          // 连接在 background 预校验期间就结束了，这个请求在那之后才进入审批队列：再报告一次，让它随连接作废。
+          if ("deferred" in reply) {
+            this.reportEnded(attempt);
+          }
+          return;
+        }
+        if ("deferred" in reply) {
+          request.deferred = true;
+          // 取消在 background 还在预校验时就到了：它现在才进入待审批队列，立即作废。
+          if (request.cancelled) {
+            this.cancelRequest(attempt, id);
+          }
+          return;
+        }
+        attempt.requests.delete(id);
+        if (!request.cancelled) {
+          this.answer(attempt, id, method, reply);
         }
       },
       (error: unknown) => {
         console.error(`handler for ${method} failed`, error);
-        this.fail(attempt, id, "INTERNAL_ERROR", "internal error");
+        attempt.requests.delete(id);
+        if (!request.cancelled) {
+          this.fail(attempt, id, "INTERNAL_ERROR", "internal error");
+        }
       },
     );
+  }
+
+  private cancelRequest(attempt: Attempt, id: string): void {
+    const request = attempt.requests.get(id);
+    if (!request) {
+      return;
+    }
+    request.cancelled = true;
+    if (!request.deferred) {
+      return;
+    }
+    attempt.requests.delete(id);
+    this.deps.cancel(id).catch((error: unknown) => console.error(`failed to cancel request ${id}`, error));
+  }
+
+  private answer(attempt: Attempt, id: string, method: string, outcome: RpcOutcome): void {
+    if (outcome.ok) {
+      this.reply(attempt, id, method, outcome.result as Record<string, unknown>);
+    } else {
+      this.fail(attempt, id, outcome.code, outcome.message);
+    }
   }
 
   // daemon 按 LIMITS.maxFrameBytes 限制读取，超限的帧会让它断开整条连接、作废全部在途请求；

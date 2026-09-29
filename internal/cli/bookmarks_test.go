@@ -1,6 +1,12 @@
 package cli
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -231,5 +237,109 @@ func TestBookmarksEdit(t *testing.T) {
 			code, _ := runCLI("bookmarks", "edit", "10", "--url", "https://x.example/")
 			So(code, ShouldEqual, exitError)
 		})
+	})
+}
+
+// stubDaemonApproval 起一个假 daemon:/control/browsers 返回给定实例列表,/control/call 恒返回给定结果并记录请求。
+func stubDaemonApproval(t *testing.T, list []control.BrowserInfo, result control.CallResult) *control.CallRequest {
+	t.Helper()
+	captured := &control.CallRequest{}
+	mux := http.NewServeMux()
+	mux.HandleFunc(control.PathHealth, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc(control.PathBrowsers, func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(control.BrowsersResult{Browsers: list})
+	})
+	mux.HandleFunc(control.PathCall, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(captured)
+		_ = json.NewEncoder(w).Encode(result)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	t.Setenv("SCTL_BRIDGE_ADDR", strings.TrimPrefix(srv.URL, "http://"))
+	t.Setenv("SCTL_BROWSER", "")
+	dir := t.TempDir()
+	t.Setenv("SCTL_DATA_DIR", dir)
+	So(os.WriteFile(filepath.Join(dir, "control.token"), []byte("tok"), 0o600), ShouldBeNil)
+	return captured
+}
+
+// TestBookmarksRemove 覆盖 sctl bookmarks rm <ID>...:L2,阻塞等待浏览器里的审批。
+func TestBookmarksRemove(t *testing.T) {
+	Convey("sctl bookmarks rm 在浏览器里批准后删除书签", t, func() {
+		online := []control.BrowserInfo{
+			{ID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Name: "chrome-a", Online: true},
+			{ID: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Name: "edge-b", Online: false},
+		}
+		removed := control.CallResult{OK: true, Result: []byte(`{"ids":["14","10"],"bookmarks":3,"folders":2}`)}
+
+		Convey("下发全部 ID,不带 confirm;等待提示写到 stderr 并点名唯一在线的浏览器;成功时输出删除的书签数与文件夹数", func() {
+			req := stubDaemonApproval(t, online, removed)
+			code, out, errOut := runCLICapture("bookmarks", "rm", "14", "10")
+			So(code, ShouldEqual, exitOK)
+			So(req.Action, ShouldEqual, "bookmarks.remove")
+			So(req.Browser, ShouldEqual, "")
+			So(string(req.Input), ShouldEqual, `{"ids":["14","10"]}`)
+			So(errOut, ShouldContainSubstring, "waiting for approval in browser chrome-a")
+			So(errOut, ShouldContainSubstring, "Ctrl-C")
+			So(out, ShouldNotContainSubstring, "waiting")
+			for _, want := range []string{"BOOKMARKS", "FOLDERS", "3", "2"} {
+				So(out, ShouldContainSubstring, want)
+			}
+		})
+
+		Convey("给了 --browser 时提示点名这个目标并照常下发", func() {
+			req := stubDaemonApproval(t, online, removed)
+			code, _, errOut := runCLICapture("bookmarks", "rm", "14", "--browser", "work")
+			So(code, ShouldEqual, exitOK)
+			So(req.Browser, ShouldEqual, "work")
+			So(errOut, ShouldContainSubstring, "waiting for approval in browser work")
+		})
+
+		Convey("-o json 原样输出结果", func() {
+			stubDaemonApproval(t, online, removed)
+			code, out, _ := runCLICapture("bookmarks", "rm", "14", "-o", "json")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldContainSubstring, `"bookmarks": 3`)
+		})
+
+		Convey("拒绝退出码 1,超时或作废退出码 2,内容已变化(CONFLICT)与 NOT_FOUND 退出码 3", func() {
+			for code, want := range map[string]int{
+				"USER_REJECTED":     exitRejected,
+				"OPERATION_EXPIRED": exitVoided,
+				"CONFLICT":          exitError,
+				"NOT_FOUND":         exitError,
+				"INVALID_REQUEST":   exitError,
+			} {
+				stubDaemonApproval(t, online, control.CallResult{OK: false, Error: &control.CallError{Code: code, Message: code}})
+				got, _ := runCLI("bookmarks", "rm", "14")
+				So(got, ShouldEqual, want)
+			}
+		})
+
+		Convey("缺 ID 时不发起调用", func() {
+			rec := stubDaemonRecording(t, removed)
+			code, _ := runCLI("bookmarks", "rm")
+			So(code, ShouldNotEqual, exitOK)
+			So(rec.snapshot(), ShouldBeEmpty)
+		})
+	})
+}
+
+func TestCancelingABookmarkRemoval(t *testing.T) {
+	Convey("Ctrl-C 取消等待审批的书签删除:退出码 2,并说明操作已作废", t, func() {
+		arrived := stubDaemonHolding(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		go func() {
+			<-arrived
+			cancel()
+		}()
+		code, _, _, err := runCLIContext(ctx, strings.NewReader(""), "bookmarks", "rm", "14", "--browser", "work")
+		So(code, ShouldEqual, exitVoided)
+		So(err, ShouldNotBeNil)
+		So(err.Error(), ShouldContainSubstring, "voided")
 	})
 }

@@ -563,3 +563,164 @@ describe("business requests", () => {
     expect(await response).toEqual({ jsonrpc: "2.0", id: "p1", result: {} });
   });
 });
+
+describe("approval requests", () => {
+  const removal = (id: string) => ({
+    jsonrpc: "2.0" as const,
+    id,
+    method: "bookmarks.remove",
+    params: { clientId: "mcp:claude", input: { ids: ["14"] } },
+  });
+
+  async function connected() {
+    const h = harness({ methods: ["tabs.list", "bookmarks.remove"] });
+    await acceptSession(h.socket());
+    await until(() => h.state().status === "connected");
+    h.setOutcome({ deferred: true });
+    return h;
+  }
+
+  it("passes the request id, the self-reported client label, the connection and the arrival time to the background", async () => {
+    const h = await connected();
+    const socket = h.socket();
+    socket.receive(removal("r1"));
+    socket.receive({ jsonrpc: "2.0", id: "r2", method: "bookmarks.remove", params: { input: { ids: ["14"] } } });
+    await until(() => h.contexts.length === 2);
+
+    expect(h.contexts).toEqual([
+      {
+        requestId: "r1",
+        clientId: "mcp:claude",
+        connection: expect.any(String) as unknown,
+        receivedAt: h.timers.now(),
+      },
+      { requestId: "r2", clientId: null, connection: h.contexts[0].connection, receivedAt: h.timers.now() },
+    ]);
+  });
+
+  it("holds the answer to a request awaiting approval until the background settles it, and answers it once", async () => {
+    const h = await connected();
+    const socket = h.socket();
+    socket.receive(removal("r1"));
+    await until(() => h.contexts.length === 1);
+    await drainMicrotasks();
+    const before = socket.sent.length;
+
+    const answer = socket.nextSent();
+    h.connection.settle("r1", { ok: false, code: "USER_REJECTED", message: "rejected in the approval window" });
+    expect(await answer).toEqual({
+      jsonrpc: "2.0",
+      id: "r1",
+      error: { code: -32000, message: "rejected in the approval window", data: { code: "USER_REJECTED" } },
+    });
+    expect(socket.sent).toHaveLength(before + 1);
+
+    h.connection.settle("r1", { ok: true, result: { ids: ["14"], bookmarks: 1, folders: 0 } });
+    h.connection.settle("unknown", { ok: true, result: { ids: ["14"], bookmarks: 1, folders: 0 } });
+    expect(socket.sent).toHaveLength(before + 1);
+  });
+
+  it("forwards the daemon's cancellation of a request awaiting approval and never answers it afterwards", async () => {
+    const h = await connected();
+    const socket = h.socket();
+    socket.receive(removal("r1"));
+    await until(() => h.contexts.length === 1);
+    await drainMicrotasks();
+    const before = socket.sent.length;
+
+    socket.receive({ jsonrpc: "2.0", method: "$/cancelRequest", params: { id: "r1" } });
+    await until(() => h.cancelled.length === 1);
+    h.connection.settle("r1", { ok: true, result: { ids: ["14"], bookmarks: 1, folders: 0 } });
+
+    expect(h.cancelled).toEqual(["r1"]);
+    expect(socket.sent).toHaveLength(before);
+  });
+
+  it("forwards a cancellation that arrives while the background is still preparing the request", async () => {
+    const h = await connected();
+    let answer: (reply: { deferred: true }) => void = () => {};
+    h.setOutcome(new Promise((resolve) => (answer = resolve)));
+    const socket = h.socket();
+    socket.receive(removal("r1"));
+    await until(() => h.contexts.length === 1);
+
+    socket.receive({ jsonrpc: "2.0", method: "$/cancelRequest", params: { id: "r1" } });
+    await drainMicrotasks();
+    expect(h.cancelled).toEqual([]);
+
+    answer({ deferred: true });
+    await until(() => h.cancelled.length === 1);
+    expect(h.cancelled).toEqual(["r1"]);
+  });
+
+  it("drops the answer to a request cancelled before the background answered it", async () => {
+    const h = await connected();
+    let answer: (reply: { ok: false; code: "NOT_FOUND"; message: string }) => void = () => {};
+    h.setOutcome(new Promise((resolve) => (answer = resolve)));
+    const socket = h.socket();
+    socket.receive(removal("r1"));
+    await until(() => h.contexts.length === 1);
+    socket.receive({ jsonrpc: "2.0", method: "$/cancelRequest", params: { id: "r1" } });
+    await drainMicrotasks();
+    const before = socket.sent.length;
+
+    answer({ ok: false, code: "NOT_FOUND", message: "no bookmark 14" });
+    await drainMicrotasks();
+
+    expect(socket.sent).toHaveLength(before);
+    expect(h.cancelled).toEqual([]);
+  });
+
+  it("reports a dropped connection to the background and does not answer its requests on the next connection", async () => {
+    const h = await connected();
+    const first = h.socket();
+    first.receive(removal("r1"));
+    await until(() => h.contexts.length === 1);
+    await drainMicrotasks();
+
+    first.drop(1006);
+    await until(() => h.disconnects.length === 1);
+    expect(h.disconnects).toEqual([h.contexts[0].connection]);
+
+    h.timers.advance(1000);
+    await acceptSession(h.socket());
+    await until(() => h.state().status === "connected");
+    const second = h.socket();
+    const before = second.sent.length;
+    h.connection.settle("r1", { ok: true, result: { ids: ["14"], bookmarks: 1, folders: 0 } });
+    expect(second.sent).toHaveLength(before);
+
+    second.receive(removal("r2"));
+    await until(() => h.contexts.length === 2);
+    expect(h.contexts[1].connection).not.toBe(h.contexts[0].connection);
+  });
+
+  it("reports the connection as lost when the user resets it", async () => {
+    const h = await connected();
+    h.socket().receive(removal("r1"));
+    await until(() => h.contexts.length === 1);
+
+    h.connection.forget();
+
+    expect(h.disconnects).toEqual([h.contexts[0].connection]);
+  });
+});
+
+describe("approval requests racing a dropped connection", () => {
+  it("reports the lost connection again when a request enters the approval queue after its connection dropped", async () => {
+    const h = harness({ methods: ["tabs.list", "bookmarks.remove"] });
+    await acceptSession(h.socket());
+    await until(() => h.state().status === "connected");
+    let answer: (reply: { deferred: true }) => void = () => {};
+    h.setOutcome(new Promise((resolve) => (answer = resolve)));
+    h.socket().receive({ jsonrpc: "2.0", id: "r1", method: "bookmarks.remove", params: { input: { ids: ["14"] } } });
+    await until(() => h.contexts.length === 1);
+
+    h.socket().drop(1006);
+    await until(() => h.disconnects.length === 1);
+    answer({ deferred: true });
+    await until(() => h.disconnects.length === 2);
+
+    expect(h.disconnects).toEqual([h.contexts[0].connection, h.contexts[0].connection]);
+  });
+});

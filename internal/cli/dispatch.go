@@ -20,19 +20,49 @@ import (
 // exitVoided。桥接业务错误按 code 映射:USER_REJECTED→exitRejected,OPERATION_EXPIRED→exitVoided,
 // 其余→exitError。
 func dispatch(cmd *cobra.Command, action string, input json.RawMessage, onOK func(result json.RawMessage) error) error {
-	return dispatchAction(cmd, action, "", input, false, canceledVoided, onOK)
+	return dispatchAction(cmd, action, "", input, nil, canceledVoided, onOK)
 }
 
 // dispatchBlocking 与 dispatch 相同,但用于写动词:调用前告知用户正在等待浏览器裁决。
 func dispatchBlocking(cmd *cobra.Command, action string, input json.RawMessage, onOK func(result json.RawMessage) error) error {
-	return dispatchAction(cmd, action, "", input, true, canceledVoided, onOK)
+	return dispatchAction(cmd, action, "", input, func(context.Context, *control.Client) string { return "the browser" }, canceledVoided, onOK)
 }
 
 // dispatchBrowser 与 dispatch 相同,但携带一个显式的目标浏览器(名称或实例-ID 前缀;空串交给
-// daemon 按在线实例解析,见 docs/protocol.md §3.1)。用于 tabs.*/windows.* 等浏览器方法命令;
-// 这些方法不做逐次人工审批(spec 设计决策 3),所以从不走 blocking 提示。
+// daemon 按在线实例解析,见 docs/protocol.md §3.1)。用于 L0/L1 浏览器方法命令:它们收到即执行,
+// 不做逐次人工审批,所以从不走 blocking 提示。
 func dispatchBrowser(cmd *cobra.Command, action, browser string, input json.RawMessage, onOK func(result json.RawMessage) error) error {
-	return dispatchAction(cmd, action, browser, input, false, canceledUnconfirmed, onOK)
+	return dispatchAction(cmd, action, browser, input, nil, canceledUnconfirmed, onOK)
+}
+
+// dispatchBrowserApproval 用于 L2 浏览器方法:调用阻塞到目标浏览器实例的审批窗口里得出结论,提示点名这个实例。
+// 取消会作废仍在等待审批的请求(docs/protocol.md §5)。
+func dispatchBrowserApproval(cmd *cobra.Command, action, browser string, input json.RawMessage, onOK func(result json.RawMessage) error) error {
+	return dispatchAction(cmd, action, browser, input, func(ctx context.Context, c *control.Client) string {
+		return approvingBrowser(ctx, c, browser)
+	}, canceledVoided, onOK)
+}
+
+// approvingBrowser 给出等待提示里的审批地点。没给 --browser 时唯一在线的实例就是 daemon 会选中的那个;
+// 查不到或不唯一时只说「the browser」,真正的目标错误由随后的调用报告。
+func approvingBrowser(ctx context.Context, c *control.Client, browser string) string {
+	if browser != "" {
+		return "browser " + terminalSafe(browser)
+	}
+	browsers, err := c.Browsers(ctx)
+	if err != nil {
+		return "the browser"
+	}
+	var online []string
+	for _, b := range browsers {
+		if b.Online {
+			online = append(online, b.Name)
+		}
+	}
+	if len(online) != 1 {
+		return "the browser"
+	}
+	return "browser " + terminalSafe(online[0])
 }
 
 const (
@@ -41,7 +71,8 @@ const (
 	canceledUnconfirmed = "canceled before the result arrived; the browser may already have carried out the operation"
 )
 
-func dispatchAction(cmd *cobra.Command, action, browser string, input json.RawMessage, blocking bool, canceled string, onOK func(result json.RawMessage) error) error {
+// approvalPlace 为 nil 表示调用不等待人工决定;否则它给出提示里「在哪里批准」的说法。
+func dispatchAction(cmd *cobra.Command, action, browser string, input json.RawMessage, approvalPlace func(context.Context, *control.Client) string, canceled string, onOK func(result json.RawMessage) error) error {
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt)
 	defer stop()
 
@@ -51,8 +82,8 @@ func dispatchAction(cmd *cobra.Command, action, browser string, input json.RawMe
 	}
 	// 连上之后才提示,否则 daemon 不可用时会先报一句误导的「等待确认」。
 	// 走 stderr:stdout 只承载结果 / -o/--output 输出(见包注释)。
-	if blocking {
-		fmt.Fprintln(os.Stderr, "waiting for approval in the browser… (Ctrl-C cancels and voids this operation)")
+	if approvalPlace != nil {
+		fmt.Fprintf(os.Stderr, "waiting for approval in %s… (Ctrl-C cancels and voids this operation)\n", approvalPlace(ctx, client))
 	}
 	res, err := client.Call(ctx, action, browser, input)
 	if err != nil {

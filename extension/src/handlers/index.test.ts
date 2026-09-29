@@ -116,6 +116,7 @@ describe("browser method handlers", () => {
         "bookmarks.mkdir",
         "bookmarks.move",
         "bookmarks.edit",
+        "bookmarks.remove",
       ]),
     );
   });

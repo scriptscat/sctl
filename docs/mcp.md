@@ -210,15 +210,20 @@ arguments that the chosen action does not take are rejected before anything is s
 `browser` argument: with several instances online and no target, `list` combines every online instance while the
 other actions return an error listing them. A browser without the reading list API answers `UNSUPPORTED`.
 
-`bookmarks` manages bookmarks the same way, with `action` set to `list`, `search`, `add`, `mkdir`, `move`, or
-`edit`. `list` takes an optional `folder` and `recursive`; `search` takes `query`; results carry
+`bookmarks` manages bookmarks the same way, with `action` set to `list`, `search`, `add`, `mkdir`, `move`, `edit`,
+or `remove`. `list` takes an optional `folder` and `recursive`; `search` takes `query`; results carry
 `contentTrust: "untrusted-page-content"` because bookmark titles and URLs come from web pages. The root and the
-browser's built-in top-level folders cannot be moved or edited, and a folder cannot be given a URL
-(`INVALID_REQUEST`); `move` changes nothing if any ID is unknown (`NOT_FOUND`) or invalid. There is no delete action.
+browser's built-in top-level folders cannot be moved, edited, or removed, and a folder cannot be given a URL
+(`INVALID_REQUEST`); `move` changes nothing if any ID is unknown (`NOT_FOUND`) or invalid. `remove` deletes up to
+500 bookmarks or folders, each folder with its contents, only after a person approves the request in the browser.
 
 Browser operations carry a destruction level. Most run immediately. A few are destructive enough to need explicit
 confirmation — currently only the reading list's `rm`: it runs only when the call passes `confirm: true`, and
 without it the daemon answers `CONFIRMATION_REQUIRED` and nothing runs. The command-line equivalent is `--yes`.
+Deleting bookmarks needs human approval instead: the sctl Browser extension opens an approval window, and the call
+waits — sending progress notifications like the ScriptCat write tools — until the user approves (`CONFLICT` and
+nothing deleted if the bookmarks changed meanwhile), rejects or closes the window (`USER_REJECTED`), or nobody
+decides within 5 minutes (`OPERATION_EXPIRED`). Cancelling the call voids the request.
 
 ## Troubleshooting
 

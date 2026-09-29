@@ -50,6 +50,14 @@ export function validateBookmarksMoveResult(value: unknown): value is Protocol.B
   return (isRecord(value) && hasOnlyKeys(value, ["ids"]) && Array.isArray(value["ids"]) && value["ids"].every((item) => typeof item === "string"));
 }
 
+export function validateBookmarksRemoveParams(value: unknown): value is Protocol.BookmarksRemoveParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["ids"]) && Array.isArray(value["ids"]) && value["ids"].length >= 1 && value["ids"].every((item) => typeof item === "string"));
+}
+
+export function validateBookmarksRemoveResult(value: unknown): value is Protocol.BookmarksRemoveResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["bookmarks", "folders", "ids"]) && typeof value["bookmarks"] === "number" && Number.isInteger(value["bookmarks"]) && value["bookmarks"] >= 0 && typeof value["folders"] === "number" && Number.isInteger(value["folders"]) && value["folders"] >= 0 && Array.isArray(value["ids"]) && value["ids"].every((item) => typeof item === "string"));
+}
+
 export function validateBookmarksSearchParams(value: unknown): value is Protocol.BookmarksSearchParams {
   return (isRecord(value) && hasOnlyKeys(value, ["limit", "query"]) && (value["limit"] === undefined || (typeof value["limit"] === "number" && Number.isInteger(value["limit"]) && value["limit"] >= 1)) && typeof value["query"] === "string");
 }
@@ -136,6 +144,7 @@ export const RPC_PARAM_VALIDATORS = {
   "bookmarks.list": validateBookmarksListParams,
   "bookmarks.mkdir": validateBookmarksMkdirParams,
   "bookmarks.move": validateBookmarksMoveParams,
+  "bookmarks.remove": validateBookmarksRemoveParams,
   "bookmarks.search": validateBookmarksSearchParams,
   "readingList.add": validateReadingListAddParams,
   "readingList.list": validateReadingListListParams,
@@ -154,6 +163,7 @@ export const RPC_RESULT_VALIDATORS = {
   "bookmarks.list": validateBookmarksListResult,
   "bookmarks.mkdir": validateBookmarksMkdirResult,
   "bookmarks.move": validateBookmarksMoveResult,
+  "bookmarks.remove": validateBookmarksRemoveResult,
   "bookmarks.search": validateBookmarksSearchResult,
   "readingList.add": validateReadingListAddResult,
   "readingList.list": validateReadingListListResult,

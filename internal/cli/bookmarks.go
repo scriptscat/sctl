@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newBookmarksCmd 构造 `sctl bookmarks`:list/search/add/mkdir/move/edit 六个子命令,各对应一个 bookmarks.*
+// newBookmarksCmd 构造 `sctl bookmarks`:list/search/add/mkdir/move/edit/rm 七个子命令,各对应一个 bookmarks.*
 // 浏览器方法(docs/specs 第 2 期「书签」)。
 func newBookmarksCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -19,7 +19,7 @@ func newBookmarksCmd() *cobra.Command {
 	}
 	addBrowserFlag(cmd)
 	cmd.AddCommand(newBookmarksListCmd(), newBookmarksSearchCmd(), newBookmarksAddCmd(), newBookmarksMkdirCmd(),
-		newBookmarksMoveCmd(), newBookmarksEditCmd())
+		newBookmarksMoveCmd(), newBookmarksEditCmd(), newBookmarksRemoveCmd())
 	return cmd
 }
 
@@ -195,6 +195,39 @@ func newBookmarksEditCmd() *cobra.Command {
 	cmd.Flags().StringVar(&url, "url", "", "new URL (bookmarks only; a folder has no URL)")
 	cmd.MarkFlagsOneRequired("title", "url")
 	return cmd
+}
+
+// newBookmarksRemoveCmd 构造 `sctl bookmarks rm`:L2,扩展打开审批窗口,命令阻塞到用户在浏览器里批准或拒绝。
+func newBookmarksRemoveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "rm <id>...",
+		Short: "Delete bookmarks and folders (with everything inside) after approval in the browser",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			input := map[string]any{"ids": args}
+			return dispatchBrowserApproval(cmd, "bookmarks.remove", browserTarget, mustInput(input), func(result json.RawMessage) error {
+				if outputFormat == outputJSON {
+					return printResultJSON(result)
+				}
+				return printRemovedCounts(result)
+			})
+		},
+	}
+}
+
+// printRemovedCounts 打印 bookmarks.remove 删除的书签数与文件夹数(含被删文件夹里的内容)。
+func printRemovedCounts(result json.RawMessage) error {
+	var payload struct {
+		Bookmarks int `json:"bookmarks"`
+		Folders   int `json:"folders"`
+	}
+	if err := json.Unmarshal(result, &payload); err != nil {
+		return printResultJSON(result)
+	}
+	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "BOOKMARKS\tFOLDERS")
+	fmt.Fprintf(tw, "%d\t%d\n", payload.Bookmarks, payload.Folders)
+	return tw.Flush()
 }
 
 // bookmarkRow 承载 bookmarks.list/search 表格所需字段。Browser 只在多实例汇总时非空(docs/protocol.md §3.1);

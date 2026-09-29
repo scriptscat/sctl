@@ -66,6 +66,16 @@ type BookmarksMoveResult struct {
 	Ids []string `json:"ids"`
 }
 
+type BookmarksRemoveParams struct {
+	Ids []string `json:"ids"`
+}
+
+type BookmarksRemoveResult struct {
+	Bookmarks int      `json:"bookmarks"`
+	Folders   int      `json:"folders"`
+	Ids       []string `json:"ids"`
+}
+
 type BookmarksSearchParams struct {
 	Limit *int   `json:"limit,omitempty"`
 	Query string `json:"query"`
@@ -323,6 +333,7 @@ const (
 	MethodBookmarksList         Method = "bookmarks.list"
 	MethodBookmarksMkdir        Method = "bookmarks.mkdir"
 	MethodBookmarksMove         Method = "bookmarks.move"
+	MethodBookmarksRemove       Method = "bookmarks.remove"
 	MethodBookmarksSearch       Method = "bookmarks.search"
 	MethodReadingListAdd        Method = "readingList.add"
 	MethodReadingListList       Method = "readingList.list"
@@ -351,6 +362,7 @@ var Methods = map[string]MethodMetadata{
 	"bookmarks.list":          {Params: "BookmarksListParams", Result: "BookmarksListResult", Scope: "bookmarks:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "nodes"},
 	"bookmarks.mkdir":         {Params: "BookmarksMkdirParams", Result: "BookmarksMkdirResult", Scope: "bookmarks:mkdir", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
 	"bookmarks.move":          {Params: "BookmarksMoveParams", Result: "BookmarksMoveResult", Scope: "bookmarks:move", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"bookmarks.remove":        {Params: "BookmarksRemoveParams", Result: "BookmarksRemoveResult", Scope: "bookmarks:remove", Effect: "write", Blocking: "approval", Level: "L2", Peer: "browser", MergeField: ""},
 	"bookmarks.search":        {Params: "BookmarksSearchParams", Result: "BookmarksSearchResult", Scope: "bookmarks:search", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "nodes"},
 	"readingList.add":         {Params: "ReadingListAddParams", Result: "ReadingListAddResult", Scope: "readingList:add", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
 	"readingList.list":        {Params: "ReadingListListParams", Result: "ReadingListListResult", Scope: "readingList:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "entries"},

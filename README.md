@@ -22,7 +22,8 @@ confirmation UI in the extension.
 - Requests installation, content-anchored editing, enable/disable, and deletion through browser approval.
 - Lists, opens, closes, and activates tabs and lists windows across one or more paired sctl Browser instances.
 - Lists, adds, marks read or unread, and removes reading list entries on a paired sctl Browser instance.
-- Lists, searches, adds, moves, and edits bookmarks and bookmark folders on a paired sctl Browser instance.
+- Lists, searches, adds, moves, and edits bookmarks and bookmark folders on a paired sctl Browser instance, and
+  deletes them after approval in that browser.
 - Uses JSON-RPC 2.0 over a WebSocket with mutual authentication; the listener defaults to loopback.
 - Ships as one binary; no browser automation or Native Messaging host is required.
 
@@ -101,14 +102,17 @@ troubleshooting.
 | `sctl tabs list\|open\|close\|activate` | List, open, close, or activate tabs on a paired sctl Browser instance. |
 | `sctl windows list` | List windows on a paired sctl Browser instance. |
 | `sctl reading-list list\|add\|mark-read\|rm` | List, add, mark read or unread, or remove reading list entries on a paired sctl Browser instance. |
-| `sctl bookmarks list\|search\|add\|mkdir\|move\|edit` | List, search, add, move, or edit bookmarks and bookmark folders on a paired sctl Browser instance. |
+| `sctl bookmarks list\|search\|add\|mkdir\|move\|edit\|rm` | List, search, add, move, edit, or delete bookmarks and bookmark folders on a paired sctl Browser instance. |
 
 Run `sctl --help` or `sctl <command> --help` for usage and flags. Write operations block
 until the user approves, rejects, or closes the confirmation flow in ScriptCat; browser control commands run
 immediately with no approval step (see [`docs/threat-model.md`](./docs/threat-model.md)). `tabs`, `windows`,
 `reading-list`, and `bookmarks` accept `--browser <name|id>` (or `SCTL_BROWSER`) to pick an instance when more than one is online.
 Destructive browser operations need explicit confirmation: `reading-list rm` runs only with `--yes` (MCP:
-`confirm: true`); without it nothing runs and the command exits with code 3. `reading-list list` returns at most
+`confirm: true`); without it nothing runs and the command exits with code 3. `bookmarks rm <id>...` needs human
+approval instead: the browser opens an approval window and the command waits, exiting 0 once the bookmarks are
+deleted, 1 when the request is rejected or the window is closed, 2 when nobody decides within 5 minutes or you
+press Ctrl-C, and 3 when the bookmarks changed before approval. `reading-list list` returns at most
 100 entries unless `--limit` (up to 1000) says otherwise, and notes on stderr when more remain.
 
 ## License

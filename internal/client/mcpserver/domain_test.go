@@ -3,7 +3,6 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
-	"maps"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -142,19 +141,6 @@ func TestReadingListToolRejectsArgumentsItsActionDoesNotAcceptBeforeForwarding(t
 	})
 }
 
-// withBlocking 返回把 method 的 blocking 改成 blocking 的协议副本:第 2 期还没有落地会等待人工审批的
-// 领域方法,借它驱动领域工具的 progress 行为。
-func withBlocking(t *testing.T, method, blocking string) *protocol.Protocol {
-	t.Helper()
-	p := loadProto(t)
-	copied := *p
-	copied.Actions = maps.Clone(p.Actions)
-	action := copied.Actions[method]
-	action.Blocking = blocking
-	copied.Actions[method] = action
-	return &copied
-}
-
 func TestProgressFollowsTheMethodsBlockingMode(t *testing.T) {
 	Convey("progress 只在方法 blocking 不是 none 时发送:与工具是否属于浏览器无关", t, func() {
 		old := progressInterval
@@ -180,8 +166,7 @@ func TestProgressFollowsTheMethodsBlockingMode(t *testing.T) {
 				}
 			},
 		}
-		p := withBlocking(t, "readingList.remove", "approval")
-		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, opts)
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: loadProto(t), Caller: caller}, opts)
 
 		call := func(name string, args map[string]any, token string) <-chan *mcp.CallToolResult {
 			resCh := make(chan *mcp.CallToolResult, 1)
@@ -199,7 +184,7 @@ func TestProgressFollowsTheMethodsBlockingMode(t *testing.T) {
 		// 先让 blocking 为 none 的 ScriptCat 调用阻塞在桥接侧,再以等待审批的领域 action 作时钟:
 		// 它滴答三次,说明前者阻塞期间已过去至少两个间隔。
 		unblocked := call("scripts_list", map[string]any{}, "tok-none")
-		gated := call("reading_list", map[string]any{"action": "rm", "urls": []string{"https://a.example/"}, "confirm": true}, "tok-gated")
+		gated := call("bookmarks", map[string]any{"action": "remove", "ids": []string{"14"}}, "tok-gated")
 		for range 3 {
 			select {
 			case <-gatedProgress:
@@ -215,7 +200,7 @@ func TestProgressFollowsTheMethodsBlockingMode(t *testing.T) {
 }
 
 func TestBookmarksToolDeclaresItsActionsAndProtocolDerivedParameters(t *testing.T) {
-	Convey("bookmarks 用 action 枚举选择操作,不含删除;其余参数声明与 protocol.json 各方法的参数类型一致", t, func() {
+	Convey("bookmarks 用 action 枚举选择操作;参数声明与 protocol.json 各方法的参数类型一致", t, func() {
 		p := loadProto(t)
 		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: &fakeCaller{}}, nil)
 		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
@@ -226,7 +211,7 @@ func TestBookmarksToolDeclaresItsActionsAndProtocolDerivedParameters(t *testing.
 		So(required, ShouldResemble, []any{"action"})
 		action, ok := props["action"].(map[string]any)
 		So(ok, ShouldBeTrue)
-		So(action["enum"], ShouldResemble, []any{"list", "search", "add", "mkdir", "move", "edit"})
+		So(action["enum"], ShouldResemble, []any{"list", "search", "add", "mkdir", "move", "edit", "remove"})
 		So(props, ShouldContainKey, "browser")
 		So(props, ShouldNotContainKey, protocol.ConfirmParam)
 		So(tool.Description, ShouldContainSubstring, "untrusted")
@@ -238,7 +223,7 @@ func TestBookmarksToolDeclaresItsActionsAndProtocolDerivedParameters(t *testing.
 		}
 		So(json.Unmarshal(protocol.DefinitionJSON, &definition), ShouldBeNil)
 		declared := 0
-		for _, method := range []string{"bookmarks.list", "bookmarks.search", "bookmarks.add", "bookmarks.mkdir", "bookmarks.move", "bookmarks.edit"} {
+		for _, method := range []string{"bookmarks.list", "bookmarks.search", "bookmarks.add", "bookmarks.mkdir", "bookmarks.move", "bookmarks.edit", "bookmarks.remove"} {
 			for name, schema := range definition.Types[p.Actions[method].Params].Properties {
 				So(props[name], ShouldResemble, schema)
 				declared++
@@ -261,14 +246,15 @@ func TestBookmarksToolForwardsEachActionToItsProtocolMethod(t *testing.T) {
 			{"action": "mkdir", "title": "Reading", "browser": "work"},
 			{"action": "move", "ids": []string{"14", "20"}, "folder": "10", "index": 1},
 			{"action": "edit", "id": "14", "url": "https://b.example/"},
+			{"action": "remove", "ids": []string{"14", "10"}, "browser": "work"},
 		} {
 			res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "bookmarks", Arguments: args})
 			So(err, ShouldBeNil)
 			So(res.IsError, ShouldBeFalse)
 		}
 
-		So(caller.actions, ShouldResemble, []string{"bookmarks.list", "bookmarks.search", "bookmarks.add", "bookmarks.mkdir", "bookmarks.move", "bookmarks.edit"})
-		So(caller.browserParams, ShouldResemble, []string{"", "work", "", "work", "", ""})
+		So(caller.actions, ShouldResemble, []string{"bookmarks.list", "bookmarks.search", "bookmarks.add", "bookmarks.mkdir", "bookmarks.move", "bookmarks.edit", "bookmarks.remove"})
+		So(caller.browserParams, ShouldResemble, []string{"", "work", "", "work", "", "", "work"})
 		inputs := make([]string, 0, len(caller.inputs))
 		for _, input := range caller.inputs {
 			inputs = append(inputs, string(input))
@@ -280,12 +266,13 @@ func TestBookmarksToolForwardsEachActionToItsProtocolMethod(t *testing.T) {
 			`{"title":"Reading"}`,
 			`{"folder":"10","ids":["14","20"],"index":1}`,
 			`{"id":"14","url":"https://b.example/"}`,
+			`{"ids":["14","10"]}`,
 		})
 	})
 }
 
 func TestBookmarksToolRejectsArgumentsItsActionDoesNotAcceptBeforeForwarding(t *testing.T) {
-	Convey("bookmarks 拒绝删除动作、别的 action 的参数与越界值,且不转发", t, func() {
+	Convey("bookmarks 拒绝未知 action、别的 action 的参数与越界值,且不转发", t, func() {
 		p := loadProto(t)
 		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
 		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
@@ -299,6 +286,8 @@ func TestBookmarksToolRejectsArgumentsItsActionDoesNotAcceptBeforeForwarding(t *
 			{"action": "move", "ids": []string{}, "folder": "10"},
 			{"action": "move", "ids": []string{"14"}},
 			{"action": "edit", "id": "14", "confirm": true},
+			{"action": "remove", "ids": []string{}},
+			{"action": "remove", "ids": []string{"14"}, "confirm": true},
 		} {
 			_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "bookmarks", Arguments: args})
 			if err == nil {
