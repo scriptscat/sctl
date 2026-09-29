@@ -117,13 +117,13 @@ describe.each([
 });
 
 describe("brand decorative token", () => {
-  // 品牌天蓝只用于不承载文字的装饰元素，不受 4.5:1 约束，但数值必须钉在 spec 上
-  // （docs/specs「视觉规范」表：品牌装饰色浅色 #1296DB / 深色 #3AA9E6）。
+  // 品牌紫罗兰只用于不承载文字的装饰元素，不受 4.5:1 约束，但数值必须钉在 spec 上，并与工具栏图标同色
+  // （docs/specs「视觉规范」表：品牌装饰色浅色、深色均为 #A361FB）。
   it("keeps the spec value in light mode", () => {
-    expect(get(light, "brand")).toBe("#1296db");
+    expect(get(light, "brand")).toBe("#a361fb");
   });
 
   it("keeps the spec value in dark mode", () => {
-    expect(get(dark, "brand")).toBe("#3aa9e6");
+    expect(get(dark, "brand")).toBe("#a361fb");
   });
 });
