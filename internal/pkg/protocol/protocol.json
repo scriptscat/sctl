@@ -566,6 +566,43 @@
       "blocking": "none",
       "level": "L1",
       "peer": "browser"
+    },
+    "extensions.list": {
+      "params": "ExtensionsListParams",
+      "result": "ExtensionsListResult",
+      "scope": "extensions:list",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "mergeField": "items"
+    },
+    "extensions.enable": {
+      "params": "ExtensionsEnableParams",
+      "result": "ExtensionsSetEnabledResult",
+      "scope": "extensions:enable",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "extensions.disable": {
+      "params": "ExtensionsDisableParams",
+      "result": "ExtensionsSetEnabledResult",
+      "scope": "extensions:disable",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L1",
+      "peer": "browser"
+    },
+    "extensions.uninstall": {
+      "params": "ExtensionsUninstallParams",
+      "result": "ExtensionsUninstallResult",
+      "scope": "extensions:uninstall",
+      "effect": "write",
+      "blocking": "approval",
+      "level": "L2",
+      "peer": "browser"
     }
   },
   "types": {
@@ -3181,6 +3218,141 @@
       },
       "required": [
         "deleted"
+      ],
+      "additionalProperties": false
+    },
+    "ExtensionsListParams": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "ExtensionsListResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "type": {
+                "type": "string"
+              },
+              "installType": {
+                "type": "string"
+              },
+              "mayDisable": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "version",
+              "enabled",
+              "type",
+              "installType",
+              "mayDisable"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "items",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "ExtensionsEnableParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "ExtensionsDisableParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confirm": {
+          "const": true
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "ExtensionsSetEnabledResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "enabled"
+      ],
+      "additionalProperties": false
+    },
+    "ExtensionsUninstallParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "ExtensionsUninstallResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "contentTrust"
       ],
       "additionalProperties": false
     }

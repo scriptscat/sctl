@@ -111,6 +111,8 @@ function world() {
         executed.push(request);
         return execution(request);
       },
+      // 与 handlers/extensions.ts 的登记一致：只有卸载扩展由审批窗口借用户手势执行。
+      executesInWindow: (kind) => kind === "extensions.uninstall",
       broadcast: (view) => views.push(view),
     };
     return new Approvals(deps);
@@ -140,6 +142,28 @@ function world() {
     },
   };
 }
+
+const uninstall = (id: string): ApprovalRequest => ({
+  kind: "extensions.uninstall",
+  detail: {
+    id,
+    name: `Ext ${id}`,
+    version: "1.0.0",
+    description: "",
+    installType: "normal",
+    enabled: true,
+  },
+});
+
+const UNINSTALLED = (id: string): RpcOutcome => ({
+  ok: true,
+  result: { contentTrust: "untrusted-page-content", id, name: `Ext ${id}` },
+});
+const CHROME_CANCELLED: RpcOutcome = {
+  ok: false,
+  code: "USER_REJECTED",
+  message: "the uninstall was cancelled in the browser's confirmation dialog",
+};
 
 async function withPending(...ids: string[]) {
   const w = world();
@@ -488,5 +512,199 @@ describe("recovering from interruptions", () => {
     w.windows.create = create;
     await approvals.focus();
     expect(w.windows.created).toHaveLength(1);
+  });
+});
+
+// 卸载扩展要用户手势（T1 真机探针）：service worker 只登记批准，由审批窗口在「卸载」的点击里调用 Chrome，
+// 再把 Chrome 确认框的结论回报给 service worker。
+describe("requests carried out by the approval window", () => {
+  async function withUninstall(...others: string[]) {
+    const w = world();
+    const approvals = w.start();
+    await approvals.enqueue(w.context("u1"), uninstall("ext-a"));
+    for (const id of others) {
+      await approvals.enqueue(w.context(id), removal(id));
+    }
+    return { w, approvals };
+  }
+
+  it("hands an approved uninstall to the window instead of running it, and answers the outcome the window reports", async () => {
+    const { w, approvals } = await withUninstall();
+
+    expect(await approvals.decide("u1", "approve")).toEqual({ executeInWindow: true });
+
+    expect(w.executed).toEqual([]);
+    expect(await statuses(approvals)).toEqual([["u1", "executing"]]);
+    expect(w.badge.text).toBe("");
+    expect(w.settled).toEqual([]);
+
+    await approvals.finish("u1", UNINSTALLED("ext-a"));
+
+    expect(w.settled).toEqual([{ requestId: "u1", outcome: UNINSTALLED("ext-a") }]);
+    expect((await approvals.view()).items[0]).toMatchObject({ status: "done", outcome: UNINSTALLED("ext-a") });
+  });
+
+  it("answers USER_REJECTED when the user cancels in Chrome's dialog, and NOT_FOUND when the extension was already gone", async () => {
+    const { w, approvals } = await withUninstall();
+    await approvals.enqueue(w.context("u2"), uninstall("ext-b"));
+
+    await approvals.decide("u1", "approve");
+    await approvals.finish("u1", CHROME_CANCELLED);
+    await approvals.decide("u2", "approve");
+    await approvals.finish("u2", { ok: false, code: "NOT_FOUND", message: "no extension ext-b" });
+
+    expect(w.settled.map((s) => [s.requestId, s.outcome.ok ? "ok" : s.outcome.code])).toEqual([
+      ["u1", "USER_REJECTED"],
+      ["u2", "NOT_FOUND"],
+    ]);
+    expect(await statuses(approvals)).toEqual([
+      ["u1", "failed"],
+      ["u2", "failed"],
+    ]);
+  });
+
+  it("tells a second click that the request is already being carried out", async () => {
+    const { approvals } = await withUninstall();
+
+    await approvals.decide("u1", "approve");
+
+    expect(await approvals.decide("u1", "approve")).toEqual({ executeInWindow: false });
+  });
+
+  it("does not hand over a request that was cancelled, expired or rejected before the click", async () => {
+    const { w, approvals } = await withUninstall();
+    await approvals.enqueue(w.context("u2"), uninstall("ext-b"));
+    await approvals.cancel("u1");
+    await approvals.decide("u2", "reject");
+
+    expect(await approvals.decide("u1", "approve")).toEqual({ executeInWindow: false });
+    expect(await approvals.decide("u2", "approve")).toEqual({ executeInWindow: false });
+  });
+
+  it("still runs bookmark removals in the service worker", async () => {
+    const { w, approvals } = await withPending("r1");
+
+    expect(await approvals.decide("r1", "approve")).toEqual({ executeInWindow: false });
+    expect(w.executed).toHaveLength(1);
+  });
+
+  it("ignores reports for requests that are not waiting on the window", async () => {
+    const { w, approvals } = await withUninstall("r2");
+
+    await approvals.finish("u1", UNINSTALLED("ext-a"));
+    let finish: (outcome: RpcOutcome) => void = () => {};
+    w.executeWith(() => new Promise((resolve) => (finish = resolve)));
+    const deciding = approvals.decide("r2", "approve");
+    await until(() => w.executed.length === 1);
+    await approvals.finish("r2", { ok: false, code: "INTERNAL_ERROR", message: "forged" });
+    finish({ ok: true, result: { ids: ["14"], bookmarks: 1, folders: 0 } });
+    await deciding;
+
+    expect(w.settled.map((s) => [s.requestId, s.outcome.ok ? "ok" : s.outcome.code])).toEqual([["r2", "ok"]]);
+    expect(await statuses(approvals)).toEqual([
+      ["u1", "pending"],
+      ["r2", "done"],
+    ]);
+  });
+
+  describe("while Chrome's confirmation dialog is open", () => {
+    it("voids the request for a requester that cancels without answering it, and still shows how the dialog ended", async () => {
+      const { w, approvals } = await withUninstall();
+      await approvals.decide("u1", "approve");
+
+      await approvals.cancel("u1");
+      expect(await statuses(approvals)).toEqual([["u1", "executing"]]);
+
+      await approvals.finish("u1", UNINSTALLED("ext-a"));
+      expect(w.settled).toEqual([]);
+      expect(await statuses(approvals)).toEqual([["u1", "done"]]);
+    });
+
+    it("keeps counting down: at the deadline the requester gets OPERATION_EXPIRED while the window awaits Chrome", async () => {
+      const { w, approvals } = await withUninstall();
+      await approvals.decide("u1", "approve");
+
+      w.timers.advance(LIMITS.writeDecisionTtlMs - EXPIRY_MARGIN_MS);
+      await approvals.view();
+      expect(w.settled.map((s) => [s.requestId, s.outcome.ok ? "ok" : s.outcome.code])).toEqual([
+        ["u1", "OPERATION_EXPIRED"],
+      ]);
+      expect(await statuses(approvals)).toEqual([["u1", "executing"]]);
+
+      await approvals.finish("u1", CHROME_CANCELLED);
+      expect(w.settled).toHaveLength(1);
+      expect((await approvals.view()).items[0]).toMatchObject({ status: "failed", outcome: CHROME_CANCELLED });
+    });
+
+    it("voids the request of a dropped connection without answering, and still shows how the dialog ended", async () => {
+      const { w, approvals } = await withUninstall();
+      await approvals.decide("u1", "approve");
+
+      await approvals.disconnected("conn-1");
+      expect(await statuses(approvals)).toEqual([["u1", "executing"]]);
+      await approvals.finish("u1", UNINSTALLED("ext-a"));
+
+      expect(w.settled).toEqual([]);
+      expect(await statuses(approvals)).toEqual([["u1", "done"]]);
+    });
+
+    it("survives a service worker restart: the request stays in progress and the window's later outcome is answered", async () => {
+      const { w, approvals } = await withUninstall();
+      await approvals.decide("u1", "approve");
+
+      const restarted = w.start(new ManualTimers());
+      await restarted.restore();
+      expect(await statuses(restarted)).toEqual([["u1", "executing"]]);
+      expect(w.settled).toEqual([]);
+
+      await restarted.finish("u1", UNINSTALLED("ext-a"));
+      expect(w.settled).toEqual([{ requestId: "u1", outcome: UNINSTALLED("ext-a") }]);
+      expect(await statuses(restarted)).toEqual([["u1", "done"]]);
+    });
+
+    it("keeps the deadline across a service worker restart", async () => {
+      const { w, approvals } = await withUninstall();
+      await approvals.decide("u1", "approve");
+
+      const restarted = w.start(new ManualTimers());
+      await restarted.restore();
+      w.timers.advance(LIMITS.writeDecisionTtlMs);
+      await restarted.view();
+
+      expect(w.settled.map((s) => [s.requestId, s.outcome.ok ? "ok" : s.outcome.code])).toEqual([
+        ["u1", "OPERATION_EXPIRED"],
+      ]);
+      expect(await statuses(restarted)).toEqual([["u1", "executing"]]);
+    });
+
+    it("rejects the other queued requests when the window is closed, and voids the uninstall whose outcome the closed window can no longer report", async () => {
+      const { w, approvals } = await withUninstall("r2", "r3");
+      await approvals.decide("u1", "approve");
+
+      await approvals.windowRemoved(100);
+
+      expect(w.settled.map((s) => [s.requestId, s.outcome.ok ? "ok" : s.outcome.code])).toEqual([
+        ["u1", "OPERATION_EXPIRED"],
+        ["r2", "USER_REJECTED"],
+        ["r3", "USER_REJECTED"],
+      ]);
+      expect(w.executed).toEqual([]);
+      expect((await approvals.view()).items).toEqual([]);
+      expect(w.badge.text).toBe("");
+    });
+
+    it("voids the uninstall when its window turns out to be gone as a new request arrives", async () => {
+      const { w, approvals } = await withUninstall();
+      await approvals.decide("u1", "approve");
+      w.windows.open.clear();
+
+      await approvals.enqueue(w.context("r2"), removal("r2"));
+
+      expect(w.settled.map((s) => [s.requestId, s.outcome.ok ? "ok" : s.outcome.code])).toEqual([
+        ["u1", "OPERATION_EXPIRED"],
+      ]);
+      expect(await statuses(approvals)).toEqual([["r2", "pending"]]);
+      expect(w.windows.created).toHaveLength(2);
+    });
   });
 });

@@ -98,7 +98,7 @@ describe("browser method handlers", () => {
     vi.unstubAllGlobals();
   });
 
-  it("declares capabilities for exactly the tab, window, reading list, bookmark, tab management, history, browsing data, recently closed, downloads and cookies methods", () => {
+  it("declares capabilities for exactly the tab, window, reading list, bookmark, tab management, history, browsing data, recently closed, downloads, cookies and extensions methods", () => {
     expect(new Set(registry.methods())).toEqual(
       new Set([
         "tabs.list",
@@ -153,6 +153,10 @@ describe("browser method handlers", () => {
         "cookies.set",
         "cookies.remove",
         "cookies.clear",
+        "extensions.list",
+        "extensions.enable",
+        "extensions.disable",
+        "extensions.uninstall",
       ]),
     );
   });

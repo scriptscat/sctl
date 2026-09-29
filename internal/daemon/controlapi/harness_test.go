@@ -210,6 +210,7 @@ func (h *testHarness) doSessionHandshake(key []byte) *extClient {
 var browserMethods = []string{
 	"tabs.list", "tabs.open", "tabs.close", "tabs.activate", "windows.list",
 	"readingList.list", "readingList.add", "readingList.markRead", "readingList.remove", "bookmarks.remove",
+	"extensions.disable", "extensions.uninstall",
 }
 
 // pairedBrowser 在登记表里放一个已配对实例并返回其密钥;不连接。

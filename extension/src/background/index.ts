@@ -43,6 +43,7 @@ const approvals = new Approvals({
     await toOffscreen({ target: "offscreen", type: "settle", requestId, outcome });
   },
   execute: (approval) => registry.execute(approval),
+  executesInWindow: (kind) => registry.executesInWindow(kind),
   broadcast: (view) =>
     broadcast(chrome.runtime, { target: "approval", type: "approvals", view } satisfies ApprovalBroadcast),
 });

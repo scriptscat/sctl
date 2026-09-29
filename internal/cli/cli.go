@@ -100,6 +100,7 @@ func NewRootCmd() *cobra.Command {
 		newRecentCmd(),
 		newDownloadsCmd(),
 		newCookiesCmd(),
+		newExtensionsCmd(),
 		newReadingListCmd(),
 		newBookmarksCmd(),
 		newVersionCmd(),

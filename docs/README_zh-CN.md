@@ -104,14 +104,17 @@ sctl status
 | `sctl downloads list\|start\|pause\|resume\|cancel\|erase\|delete-file\|show` | 在已配对的 sctl Browser 实例上列出、开始、暂停、继续、取消下载，删除下载记录，或从磁盘删除已下载的文件。 |
 | `sctl cookies list\|get\|set\|rm\|clear` | 在已配对的 sctl Browser 实例上列出（含分区 Cookie）、读取、设置或删除 Cookie；Cookie 值原样返回，不打码。 |
 | `sctl bookmarks list\|search\|add\|mkdir\|move\|edit\|rm` | 在已配对的 sctl Browser 实例上列出、搜索、添加、移动、编辑或删除书签和书签文件夹。 |
+| `sctl extensions list\|enable\|disable\|uninstall` | 在已配对的 sctl Browser 实例上列出、启用、禁用或卸载扩展和应用；禁用 ScriptCat 会断开它与 daemon 的连接。 |
 
 运行 `sctl --help` 或 `sctl <command> --help` 查看用法和参数。写操作会阻塞，直到用户在
 ScriptCat 中批准、拒绝或关闭确认流程；浏览器控制命令按设计没有审批步骤、立即执行(参见
-[`threat-model.md`](./threat-model.md))。当多个实例同时在线时，`tabs`、`windows`、`reading-list`、`bookmarks`、`history`、`browsing-data`、`recent`、`downloads` 与 `cookies` 可用
+[`threat-model.md`](./threat-model.md))。当多个实例同时在线时，`tabs`、`windows`、`reading-list`、`bookmarks`、`history`、`browsing-data`、`recent`、`downloads`、`cookies` 与 `extensions` 可用
 `--browser <name|id>`（或环境变量 `SCTL_BROWSER`）指定目标实例。破坏性的浏览器操作需要显式确认：
-`reading-list rm`、`history rm`、`history clear`、`browsing-data clear`，`downloads cancel`、`erase`、`delete-file`，以及 `cookies rm`、`clear` 必须加 `--yes`（MCP 传 `confirm: true`），否则什么都不执行，退出码为 3。
+`reading-list rm`、`history rm`、`history clear`、`browsing-data clear`，`downloads cancel`、`erase`、`delete-file`，`cookies rm`、`clear`，以及 `extensions disable` 必须加 `--yes`（MCP 传 `confirm: true`），否则什么都不执行，退出码为 3。
 `bookmarks rm <id>...` 则需要人工审批：浏览器打开审批窗口，命令一直等待；书签删除后退出码为 0，被拒绝或关闭窗口为 1，
 5 分钟内无人处理或按 Ctrl-C 为 2，批准前书签已发生变化为 3。
+`extensions uninstall <id>` 同样需要在审批窗口里批准，点「卸载」后 Chrome 还会弹出自己的确认框：扩展卸载后退出码为 0，
+被拒绝、关闭窗口或在 Chrome 确认框里取消为 1，5 分钟内无人处理或按 Ctrl-C 为 2，ID 不存在、目标是 sctl Browser 自己或企业策略安装的扩展为 3。
 `reading-list list` 默认最多返回 100 条，可用 `--limit` 提到 1000 条；还有更多条目时在 stderr 提示。`--since`、`--until` 接受 RFC 3339 时间，或 `7d`、`12h`、`30m` 这样的「多久以前」。
 
 ## 许可证

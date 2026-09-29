@@ -5,8 +5,10 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  CircleSlash,
   Globe,
   Inbox,
+  Info,
   Loader2,
   Timer,
   TimerOff,
@@ -196,7 +198,7 @@ export function ApprovalApp({
           pending={pending}
           safeRef={safeRef}
           onDecide={(decision) => {
-            api.decide(current.id, decision).catch((error: unknown) => console.error("failed to decide", error));
+            decideAndRun(api, current, decision).catch((error: unknown) => console.error("failed to decide", error));
           }}
           onDismiss={() => {
             api.dismiss(current.id).catch((error: unknown) => console.error("failed to dismiss", error));
@@ -213,6 +215,18 @@ export function ApprovalApp({
       )}
     </div>
   );
+}
+
+// 批准需要用户手势的请求时，service worker 只把它记为执行中，由这次点击接着在窗口里执行，再回报结论。执行不绑定在
+// 组件上：用户翻到别的请求时它照常进行。
+async function decideAndRun(api: ApprovalApi, item: ApprovalItem, decision: "approve" | "reject"): Promise<void> {
+  const { executeInWindow } = await api.decide(item.id, decision);
+  if (!executeInWindow) return;
+  const inWindow = kindView(item).inWindow;
+  if (!inWindow) {
+    throw new Error(`${item.kind} was handed to the window, which cannot carry it out`);
+  }
+  await api.finish(item.id, await inWindow.execute(item.detail));
 }
 
 function Empty({
@@ -269,7 +283,9 @@ function Request<K extends ApprovalKind>({
   const titleId = useId();
   const waiting = item.status === "pending";
   const executing = item.status === "executing";
-  useSecondTicks(waiting);
+  // 窗口执行的请求在等用户在别处（Chrome 的确认框）操作，daemon 的期限不会暂停，倒计时也照常走到 0 为止。
+  const counting = waiting || (executing && kind.inWindow !== undefined);
+  useSecondTicks(counting);
   const remaining = Math.max(0, Math.ceil((item.expiresAt - now()) / 1000));
   const Content = kind.Content;
 
@@ -277,7 +293,7 @@ function Request<K extends ApprovalKind>({
     <main aria-labelledby={titleId} className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 flex-col gap-1 px-4 pt-2">
         <h1 id={titleId} className="text-lg leading-snug font-semibold">
-          {kind.title(s, item.status)}
+          {kind.title(s, item)}
         </h1>
         <p className="flex flex-wrap items-center gap-x-1 text-xs text-muted-foreground">
           <span>{s.approval.from}</span>
@@ -294,7 +310,7 @@ function Request<K extends ApprovalKind>({
         </p>
         <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
           <span>{s.approval.received(clockTime(item.receivedAt))}</span>
-          {waiting && (
+          {(waiting || (counting && remaining > 0)) && (
             <>
               <span aria-hidden>·</span>
               <span
@@ -335,6 +351,12 @@ function Request<K extends ApprovalKind>({
                 )}
               </Button>
             </div>
+            {waiting && kind.approveHint && (
+              <p className="inline-flex items-center justify-center gap-1 text-center text-[11px]">
+                <Info className="size-3 shrink-0 text-[var(--brand)]" aria-hidden />
+                {kind.approveHint(s)}
+              </p>
+            )}
             <p className="text-center text-[11px] text-muted-foreground" role={executing ? "status" : undefined}>
               {executing ? kind.executing(s).hint : s.approval.closeHint(pending)}
             </p>
@@ -360,9 +382,24 @@ function Outcome<K extends ApprovalKind>({
   lang: Lang;
   kind: ApprovalKindView<K>;
 }) {
+  const executingNotice = kind.executing(s).notice;
   switch (item.status) {
     case "pending":
     case "executing":
+      if (item.status === "executing" && executingNotice) {
+        return (
+          <div
+            role="status"
+            className="flex gap-2.5 rounded-lg border border-[color-mix(in_oklch,var(--brand),transparent_60%)] bg-[color-mix(in_oklch,var(--brand),transparent_93%)] px-3 py-2.5 text-xs"
+          >
+            <Loader2 className="mt-0.5 size-3.5 shrink-0 animate-spin text-[var(--brand)]" aria-hidden />
+            <div className="flex flex-col gap-0.5">
+              <span className="font-medium">{executingNotice.title}</span>
+              <span className="leading-relaxed text-muted-foreground">{sentences(lang, executingNotice.body)}</span>
+            </div>
+          </div>
+        );
+      }
       return (
         <Note tone="warn" icon={TriangleAlert} title={kind.irreversible(s)}>
           {s.approval.antiLure}
@@ -401,7 +438,11 @@ function Outcome<K extends ApprovalKind>({
     case "failed": {
       const notice = kind.failed(s, item, errorOf(item));
       return (
-        <Note tone="bad" icon={AlertCircle} title={notice.title}>
+        <Note
+          tone={notice.tone ?? "bad"}
+          icon={notice.tone === "warn" ? CircleSlash : AlertCircle}
+          title={notice.title}
+        >
           {sentences(lang, notice.body)}
         </Note>
       );

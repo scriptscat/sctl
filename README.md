@@ -112,16 +112,20 @@ troubleshooting.
 | `sctl downloads list\|start\|pause\|resume\|cancel\|erase\|delete-file\|show` | List, start, pause, resume, cancel, erase, or delete the file of downloads on a paired sctl Browser instance. |
 | `sctl cookies list\|get\|set\|rm\|clear` | List (partitioned cookies included), read, set, or delete cookies on a paired sctl Browser instance; values are returned unmasked. |
 | `sctl bookmarks list\|search\|add\|mkdir\|move\|edit\|rm` | List, search, add, move, edit, or delete bookmarks and bookmark folders on a paired sctl Browser instance. |
+| `sctl extensions list\|enable\|disable\|uninstall` | List, enable, disable, or uninstall extensions and apps on a paired sctl Browser instance; disabling ScriptCat disconnects it from the daemon. |
 
 Run `sctl --help` or `sctl <command> --help` for usage and flags. Write operations block
 until the user approves, rejects, or closes the confirmation flow in ScriptCat; browser control commands run
 immediately with no approval step (see [`docs/threat-model.md`](./docs/threat-model.md)). `tabs`, `windows`,
-`reading-list`, `bookmarks`, `history`, `browsing-data`, `recent`, `downloads`, and `cookies` accept `--browser <name|id>` (or `SCTL_BROWSER`) to pick an instance when more than one is online.
-Destructive browser operations need explicit confirmation: `reading-list rm`, `history rm`, `history clear`, `browsing-data clear`, `downloads cancel`, `erase` and `delete-file`, and `cookies rm` and `clear` run only with `--yes` (MCP:
+`reading-list`, `bookmarks`, `history`, `browsing-data`, `recent`, `downloads`, `cookies`, and `extensions` accept `--browser <name|id>` (or `SCTL_BROWSER`) to pick an instance when more than one is online.
+Destructive browser operations need explicit confirmation: `reading-list rm`, `history rm`, `history clear`, `browsing-data clear`, `downloads cancel`, `erase` and `delete-file`, `cookies rm` and `clear`, and `extensions disable` run only with `--yes` (MCP:
 `confirm: true`); without it nothing runs and the command exits with code 3. `bookmarks rm <id>...` needs human
 approval instead: the browser opens an approval window and the command waits, exiting 0 once the bookmarks are
 deleted, 1 when the request is rejected or the window is closed, 2 when nobody decides within 5 minutes or you
-press Ctrl-C, and 3 when the bookmarks changed before approval. `reading-list list` returns at most
+press Ctrl-C, and 3 when the bookmarks changed before approval. `extensions uninstall <id>` is approved the same way,
+and clicking Uninstall in the window then opens Chrome's own confirmation dialog: the command exits 0 once the
+extension is uninstalled, 1 when the request is rejected, the window is closed, or the uninstall is cancelled in Chrome's dialog, 2 when nobody decides within
+5 minutes or you press Ctrl-C, and 3 for an unknown ID, sctl Browser itself, or an extension installed by policy. `reading-list list` returns at most
 100 entries unless `--limit` (up to 1000) says otherwise, and notes on stderr when more remain. `--since` and `--until` accept an RFC 3339 time or a duration ago such as `7d`, `12h`, or `30m`.
 
 ## License

@@ -24,6 +24,9 @@ export type MethodLevel = "L0" | "L1" | "L2";
 export interface ApprovalHandler<K extends ApprovalKind> {
   prepare(params: RpcParams<K>): Promise<ApprovalDetails[K]>;
   execute(detail: ApprovalDetails[K]): Promise<RpcResult<K>>;
+  // execute 需要用户手势（chrome.management.uninstall，见 T1 真机探针）：service worker 里没有手势，只能由审批窗口
+  // 在执行按钮的点击处理里调用（runApproved）。service worker 只把批准记为执行中，结论由窗口回报。
+  inWindow?: true;
 }
 
 export type PrepareOutcome = { ok: true; request: ApprovalRequest } | { ok: false; code: ErrorCode; message: string };
@@ -70,12 +73,20 @@ export class HandlerRegistry {
   async prepare(method: ApprovalKind, params: unknown): Promise<PrepareOutcome> {
     const handler = this.approval(method);
     const outcome = await settle(method, () => handler.prepare(params as RpcParams<ApprovalKind>));
-    return outcome.ok ? { ok: true, request: { kind: method, detail: outcome.result } } : outcome;
+    // detail 就是 method 的处理函数给出的，二者对应；method 是联合类型时 tsc 看不出这一点。
+    return outcome.ok ? { ok: true, request: { kind: method, detail: outcome.result } as ApprovalRequest } : outcome;
+  }
+
+  executesInWindow(kind: ApprovalKind): boolean {
+    return this.approval(kind).inWindow === true;
   }
 
   execute(request: ApprovalRequest): Promise<RpcOutcome> {
     const handler = this.approval(request.kind);
-    return settle(request.kind, () => handler.execute(request.detail));
+    if (handler.inWindow) {
+      throw new Error(`${request.kind} needs a user gesture and must be carried out by the approval window`);
+    }
+    return runApproved(request.kind, handler, request.detail);
   }
 
   private approval(method: ApprovalKind): ApprovalHandler<ApprovalKind> {
@@ -102,6 +113,15 @@ export class HandlerRegistry {
     }
     return settle(method, () => handler(params));
   }
+}
+
+// 执行一个已批准的 L2 请求并把结果换成 RpcOutcome；service worker 与审批窗口（inWindow 的请求）共用它。
+export function runApproved<K extends ApprovalKind>(
+  kind: K,
+  handler: ApprovalHandler<K>,
+  detail: ApprovalDetails[K],
+): Promise<RpcOutcome> {
+  return settle(kind, () => handler.execute(detail));
 }
 
 // 处理函数的结果换成 RpcOutcome：HandlerError 原样交出领域错误码，其他异常不外泄内部细节。

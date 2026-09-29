@@ -235,6 +235,30 @@ export interface DownloadsStartParams {
 export interface DownloadsStartResult {
   id: number;
 }
+export interface ExtensionsDisableParams {
+  confirm?: true;
+  id: string;
+}
+export interface ExtensionsEnableParams {
+  id: string;
+}
+export type ExtensionsListParams = Record<string, never>;
+export interface ExtensionsListResult {
+  contentTrust: "untrusted-page-content";
+  items: Array<{ enabled: boolean; id: string; installType: string; mayDisable: boolean; name: string; type: string; version: string; }>;
+}
+export interface ExtensionsSetEnabledResult {
+  enabled: boolean;
+  id: string;
+}
+export interface ExtensionsUninstallParams {
+  id: string;
+}
+export interface ExtensionsUninstallResult {
+  contentTrust: "untrusted-page-content";
+  id: string;
+  name: string;
+}
 export interface HistoryClearParams {
   confirm?: true;
   endTime?: number;
@@ -455,6 +479,10 @@ export interface RpcMethodMap {
   "downloads.resume": { params: DownloadsResumeParams; result: DownloadsResumeResult };
   "downloads.show": { params: DownloadsShowParams; result: DownloadsShowResult };
   "downloads.start": { params: DownloadsStartParams; result: DownloadsStartResult };
+  "extensions.disable": { params: ExtensionsDisableParams; result: ExtensionsSetEnabledResult };
+  "extensions.enable": { params: ExtensionsEnableParams; result: ExtensionsSetEnabledResult };
+  "extensions.list": { params: ExtensionsListParams; result: ExtensionsListResult };
+  "extensions.uninstall": { params: ExtensionsUninstallParams; result: ExtensionsUninstallResult };
   "history.clear": { params: HistoryClearParams; result: HistoryClearResult };
   "history.remove": { params: HistoryRemoveParams; result: HistoryRemoveResult };
   "history.search": { params: HistorySearchParams; result: HistorySearchResult };
@@ -658,6 +686,38 @@ export const RPC_METHODS = {
     effect: "write",
     blocking: "none",
     level: "L0",
+  },
+  "extensions.disable": {
+    params: "ExtensionsDisableParams",
+    result: "ExtensionsSetEnabledResult",
+    scope: "extensions:disable",
+    effect: "write",
+    blocking: "none",
+    level: "L1",
+  },
+  "extensions.enable": {
+    params: "ExtensionsEnableParams",
+    result: "ExtensionsSetEnabledResult",
+    scope: "extensions:enable",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "extensions.list": {
+    params: "ExtensionsListParams",
+    result: "ExtensionsListResult",
+    scope: "extensions:list",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "extensions.uninstall": {
+    params: "ExtensionsUninstallParams",
+    result: "ExtensionsUninstallResult",
+    scope: "extensions:uninstall",
+    effect: "write",
+    blocking: "approval",
+    level: "L2",
   },
   "history.clear": {
     params: "HistoryClearParams",

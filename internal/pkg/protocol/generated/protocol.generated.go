@@ -282,6 +282,46 @@ type DownloadsStartResult struct {
 	Id int `json:"id"`
 }
 
+type ExtensionsDisableParams struct {
+	Confirm *bool  `json:"confirm,omitempty"`
+	Id      string `json:"id"`
+}
+
+type ExtensionsEnableParams struct {
+	Id string `json:"id"`
+}
+
+type ExtensionsListParams struct {
+}
+
+type ExtensionsListResult struct {
+	ContentTrust string `json:"contentTrust"`
+	Items        []struct {
+		Enabled     bool   `json:"enabled"`
+		Id          string `json:"id"`
+		InstallType string `json:"installType"`
+		MayDisable  bool   `json:"mayDisable"`
+		Name        string `json:"name"`
+		Type        string `json:"type"`
+		Version     string `json:"version"`
+	} `json:"items"`
+}
+
+type ExtensionsSetEnabledResult struct {
+	Enabled bool   `json:"enabled"`
+	Id      string `json:"id"`
+}
+
+type ExtensionsUninstallParams struct {
+	Id string `json:"id"`
+}
+
+type ExtensionsUninstallResult struct {
+	ContentTrust string `json:"contentTrust"`
+	Id           string `json:"id"`
+	Name         string `json:"name"`
+}
+
 type HistoryClearParams struct {
 	Confirm   *bool `json:"confirm,omitempty"`
 	EndTime   *int  `json:"endTime,omitempty"`
@@ -727,6 +767,10 @@ const (
 	MethodDownloadsResume       Method = "downloads.resume"
 	MethodDownloadsShow         Method = "downloads.show"
 	MethodDownloadsStart        Method = "downloads.start"
+	MethodExtensionsDisable     Method = "extensions.disable"
+	MethodExtensionsEnable      Method = "extensions.enable"
+	MethodExtensionsList        Method = "extensions.list"
+	MethodExtensionsUninstall   Method = "extensions.uninstall"
 	MethodHistoryClear          Method = "history.clear"
 	MethodHistoryRemove         Method = "history.remove"
 	MethodHistorySearch         Method = "history.search"
@@ -792,6 +836,10 @@ var Methods = map[string]MethodMetadata{
 	"downloads.resume":        {Params: "DownloadsResumeParams", Result: "DownloadsResumeResult", Scope: "downloads:resume", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
 	"downloads.show":          {Params: "DownloadsShowParams", Result: "DownloadsShowResult", Scope: "downloads:show", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
 	"downloads.start":         {Params: "DownloadsStartParams", Result: "DownloadsStartResult", Scope: "downloads:start", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"extensions.disable":      {Params: "ExtensionsDisableParams", Result: "ExtensionsSetEnabledResult", Scope: "extensions:disable", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: ""},
+	"extensions.enable":       {Params: "ExtensionsEnableParams", Result: "ExtensionsSetEnabledResult", Scope: "extensions:enable", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"extensions.list":         {Params: "ExtensionsListParams", Result: "ExtensionsListResult", Scope: "extensions:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "items"},
+	"extensions.uninstall":    {Params: "ExtensionsUninstallParams", Result: "ExtensionsUninstallResult", Scope: "extensions:uninstall", Effect: "write", Blocking: "approval", Level: "L2", Peer: "browser", MergeField: ""},
 	"history.clear":           {Params: "HistoryClearParams", Result: "HistoryClearResult", Scope: "history:clear", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: ""},
 	"history.remove":          {Params: "HistoryRemoveParams", Result: "HistoryRemoveResult", Scope: "history:remove", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: ""},
 	"history.search":          {Params: "HistorySearchParams", Result: "HistorySearchResult", Scope: "history:search", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "items"},

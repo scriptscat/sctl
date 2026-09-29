@@ -43,6 +43,19 @@ function setup(storage = new MemoryStorage()) {
         : Promise.resolve(detail),
     execute: () => Promise.resolve({ ids: ["14"], bookmarks: 1, folders: 0 }),
   });
+  registry.registerApproval("extensions.uninstall", {
+    prepare: (params) =>
+      Promise.resolve({
+        id: params.id,
+        name: "Tab Tidy",
+        version: "0.9.3",
+        description: "",
+        installType: "normal",
+        enabled: true,
+      }),
+    execute: () => Promise.reject(new Error("requires a user gesture")),
+    inWindow: true,
+  });
   const offscreen = (command: OffscreenCommand) => {
     commands.push(command);
     return Promise.resolve(reply);
@@ -70,6 +83,7 @@ function setup(storage = new MemoryStorage()) {
       await offscreen({ target: "offscreen", type: "settle", requestId, outcome });
     },
     execute: (request) => registry.execute(request),
+    executesInWindow: (kind) => registry.executesInWindow(kind),
     broadcast: () => undefined,
   });
   const background = new Background({
@@ -130,7 +144,7 @@ describe("instance identity and configuration", () => {
     await expect(background.handle({ target: "background", type: "offscreenReady" })).resolves.toMatchObject({
       key: "ab".repeat(32),
       address: "127.0.0.1:8643",
-      methods: ["windows.list", "bookmarks.remove"],
+      methods: ["windows.list", "bookmarks.remove", "extensions.uninstall"],
       product: "Edge",
       productVersion: "129.0.2792.65",
       extensionVersion: "0.1.0",
@@ -227,6 +241,30 @@ describe("requests that need approval", () => {
         outcome: { ok: true, result: { ids: ["14"], bookmarks: 1, folders: 0 } },
       },
     ]);
+  });
+
+  it("leaves an approved uninstall to the approval window and sends the outcome it reports to the offscreen document", async () => {
+    const { background, commands } = setup();
+    await background.handle({
+      target: "background",
+      type: "rpc",
+      method: "extensions.uninstall",
+      input: { id: "abc" },
+      context: context("u1"),
+    });
+
+    await expect(
+      background.handle({ target: "background", type: "approvalDecide", id: "u1", decision: "approve" }),
+    ).resolves.toEqual({ executeInWindow: true });
+    expect(commands).toEqual([]);
+
+    const outcome = {
+      ok: true,
+      result: { contentTrust: "untrusted-page-content", id: "abc", name: "Tab Tidy" },
+    } as const;
+    await background.handle({ target: "background", type: "approvalFinish", id: "u1", outcome });
+
+    expect(commands).toEqual([{ target: "offscreen", type: "settle", requestId: "u1", outcome }]);
   });
 
   it("answers a failed pre-check at once without queueing it", async () => {

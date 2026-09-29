@@ -271,6 +271,10 @@ It is optional in the schema so that an unconfirmed call that reaches the extens
 | `cookies.set` | browser | set a cookie | none | L0 |
 | `cookies.remove` | browser | delete one cookie | none | L1 |
 | `cookies.clear` | browser | delete the cookies of a domain, or all cookies | none | L1 |
+| `extensions.list` | browser | list installed extensions and apps | none | L0 |
+| `extensions.enable` | browser | enable an extension | none | L0 |
+| `extensions.disable` | browser | disable an extension | none | L1 |
+| `extensions.uninstall` | browser | uninstall an extension, after Chrome's own confirmation dialog too | write approval | L2 |
 | `bookmarks.list` | browser | list a folder's children, or a whole subtree | none | L0 |
 | `bookmarks.search` | browser | search bookmarks by title and URL, with folder paths | none | L0 |
 | `bookmarks.add` | browser | add a bookmark | none | L0 |
@@ -283,7 +287,7 @@ Source and metadata returned by these methods are untrusted user-script content.
 render it as HTML, interpret it as instructions, or include credentials in logs. Source results carry a SHA-256
 digest. Edit approval rechecks the staged digest and target identity before applying changes.
 
-Tab titles and URLs, reading list titles, history titles and URLs, recently closed titles and URLs, download file names and URLs, cookie names and values, and bookmark titles and URLs are controlled by web pages; `tabs.list`, `readingList.list`, `history.search`, `recent.list`, `downloads.list`, `cookies.list`, `cookies.get`, `cookies.set`, `bookmarks.list`, and `bookmarks.search` mark
+Tab titles and URLs, reading list titles, history titles and URLs, recently closed titles and URLs, download file names and URLs, cookie names and values, and bookmark titles and URLs are controlled by web pages, and extension names by their authors; `tabs.list`, `readingList.list`, `history.search`, `recent.list`, `downloads.list`, `cookies.list`, `cookies.get`, `cookies.set`, `bookmarks.list`, `bookmarks.search`, `extensions.list`, and `extensions.uninstall` mark
 their results with `contentTrust: "untrusted-page-content"` and the same handling rules apply. A list method
 declares a `mergeField`: the required array property in its result that holds the listed items, so results from
 several browser instances combine by concatenating that array. A list result may also declare a boolean `hasMore`,
@@ -349,6 +353,16 @@ Chrome refuses to store answers `INVALID_REQUEST` carrying Chrome's reason. `coo
 answers `NOT_FOUND` when nothing matches, `clear` takes exactly one of `domain` (with subdomains) and `all: true` (else
 `INVALID_REQUEST`), and both return `deleted`, the number of cookies removed; partitioned cookies are removed with their own
 partition key.
+
+The extension methods (`extensions.*`) need the `management` permission. `extensions.list` returns every installed
+extension and app with its ID, name, version, `enabled`, `type`, `installType` (as `chrome.management` reports it:
+`normal`, `development`, `sideload`, `admin` or `other`) and `mayDisable`. `extensions.enable` and `extensions.disable`
+return the ID and the new `enabled` state; a refusal from Chrome answers `INVALID_REQUEST` carrying Chrome's reason.
+`extensions.disable` is L1 and `extensions.uninstall` is L2. Neither accepts the sctl Browser extension's own ID or an
+extension installed by enterprise policy (`installType` `admin` or `mayDisable` false); both answer `INVALID_REQUEST`.
+Disabling ScriptCat is allowed and disconnects it from the daemon. An unknown ID answers `NOT_FOUND`, and
+`extensions.uninstall` runs all of these checks before asking for approval. Its result is the uninstalled extension's
+ID and name; how the approval continues into Chrome's own dialog is in [§5](#5-cancellation-and-approval).
 
 Bookmark IDs are the browser's own. An unknown ID answers `NOT_FOUND`. `bookmarks.list` returns a folder's direct
 children (the root's children, the built-in top-level folders, when no folder is given) and applies `limit`; with
@@ -446,7 +460,7 @@ These codes are browser-only too:
 | `UNSUPPORTED` | the browser does not provide the API the method needs; the message names the missing API |
 
 `USER_REJECTED` and `PAYLOAD_TOO_LARGE` are registered for both peers. For the browser, `USER_REJECTED` is
-reserved for a rejected L2 approval and `PAYLOAD_TOO_LARGE` answers a result that would exceed the frame limit
+reserved for a rejected L2 approval (including an uninstall cancelled in Chrome's own dialog, §5) and `PAYLOAD_TOO_LARGE` answers a result that would exceed the frame limit
 ([§3](#3-business-rpc)).
 
 ## 5. Cancellation and approval
@@ -483,6 +497,17 @@ The sctl Browser extension gates its L2 methods the same way, in its own approva
    `OPERATION_EXPIRED`, so the window can tell a timeout from a cancellation. `$/cancelRequest` for a queued request
    voids it without a response. When the connection closes, every request queued from it is voided, and the daemon
    answers the requester `OPERATION_EXPIRED` (§3.1).
+5. `extensions.uninstall` is carried out by the approval window, not the service worker: Chrome refuses
+   `chrome.management.uninstall` without a user gesture (verified on a real browser). Approving marks the request as
+   executing, and the window, still handling the click, checks the extension is installed (`NOT_FOUND` otherwise,
+   nothing done) and calls the uninstall, which opens Chrome's own confirmation dialog. Confirming there answers the
+   result; cancelling answers `USER_REJECTED`. The window reports the outcome to the service worker, which answers as
+   in step 3; the request stays executing across a service worker restart. While Chrome's dialog is open the deadline
+   keeps running: a `$/cancelRequest`, the deadline, or a closed connection voids the request for the requester
+   (`OPERATION_EXPIRED`) without withdrawing the dialog, whose outcome the window still shows. Closing the approval
+   window while the dialog is open rejects the other queued requests as usual; the uninstall's own outcome can then no
+   longer be reported, so it is answered `OPERATION_EXPIRED` at once, and whether the extension was uninstalled follows
+   the dialog.
 
 ## 6. Generation and conformance
 

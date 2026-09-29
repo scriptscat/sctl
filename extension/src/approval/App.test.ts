@@ -5,11 +5,13 @@ import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
+  ApprovalDecision,
   ApprovalItem,
   ApprovalStatus,
   ApprovalView,
   BookmarkRemovalDetail,
   BookmarkRemovalItem,
+  ExtensionUninstallDetail,
 } from "@/shared/approvals";
 import type { RpcOutcome } from "@/shared/messages";
 import type { KeyValueStorage } from "@/popup/storage";
@@ -31,7 +33,10 @@ function fakeApi(initial: ApprovalView) {
         listeners = listeners.filter((l) => l !== listener);
       };
     }),
-    decide: vi.fn<(id: string, decision: "approve" | "reject") => Promise<void>>(() => Promise.resolve()),
+    decide: vi.fn<(id: string, decision: "approve" | "reject") => Promise<ApprovalDecision>>(() =>
+      Promise.resolve({ executeInWindow: false }),
+    ),
+    finish: vi.fn<(id: string, outcome: RpcOutcome) => Promise<void>>(() => Promise.resolve()),
     dismiss: vi.fn<(id: string) => Promise<void>>(() => Promise.resolve()),
     closeWindow: vi.fn(() => Promise.resolve()),
   } satisfies ApprovalApi;
@@ -92,11 +97,13 @@ const BATCH = detail([
   ARCHIVE,
 ]);
 
+type ItemExtras = Partial<Omit<ApprovalItem, "kind" | "detail">>;
+
 function request(
   id: string,
   status: ApprovalStatus = "pending",
   d: BookmarkRemovalDetail = BATCH,
-  extra: Partial<ApprovalItem> = {},
+  extra: ItemExtras = {},
 ): ApprovalItem {
   return {
     id,
@@ -564,5 +571,315 @@ describe("preferences shared with the popup", () => {
     );
     expect(await screen.findByRole("heading", { level: 1, name: "批准删除书签？" })).toBeInTheDocument();
     expect(document.documentElement).not.toHaveClass("dark");
+  });
+});
+
+const TIDY: ExtensionUninstallDetail = {
+  id: "kbfnjmhgcpaelodiaoaclfkmgjdhneop",
+  name: "Tab Tidy",
+  version: "0.9.3",
+  description: "按域名整理标签页，一键收起重复标签。",
+  installType: "development",
+  enabled: true,
+};
+
+function uninstallRequest(
+  id: string,
+  status: ApprovalStatus = "pending",
+  d: ExtensionUninstallDetail = TIDY,
+  extra: ItemExtras = {},
+): ApprovalItem {
+  return {
+    id,
+    kind: "extensions.uninstall",
+    detail: d,
+    requester: "sctl-cli",
+    receivedAt: NOW - 60_000,
+    expiresAt: NOW + 296_000,
+    status,
+    outcome: null,
+    ...extra,
+  };
+}
+
+const UNINSTALL_COPY = {
+  zh: {
+    windowTitle: "批准卸载扩展 · sctl Browser",
+    title: {
+      pending: "批准卸载扩展？",
+      executing: "等待 Chrome 确认",
+      done: "已卸载扩展",
+      declined: "未卸载",
+      gone: "无法卸载",
+      failed: "未卸载扩展",
+      expired: "请求已超时",
+      cancelled: "请求已取消",
+      voided: "请求已失效",
+    },
+    card: "要卸载的扩展",
+    version: "版本 0.9.3",
+    enabled: "已启用",
+    disabled: "已停用",
+    idLabel: "扩展 ID",
+    copyId: "复制扩展 ID",
+    installLabel: "安装方式",
+    install: "开发者模式加载",
+    irreversible: "卸载后无法通过 sctl 恢复",
+    chromeHint: "点「卸载」后 Chrome 还会弹出自己的确认框",
+    approve: "卸载",
+    waiting: "等待 Chrome…",
+    waitingTitle: "请在 Chrome 的确认框中完成卸载",
+    waitingFooter: "结果以你在 Chrome 确认框中的选择为准",
+    done: "已卸载「Tab Tidy」",
+    declined: "已在 Chrome 中取消，未卸载",
+    gone: "该扩展已不存在",
+    missing: "已不存在",
+    failed: "卸载失败",
+    nothing: "未卸载任何扩展。",
+    countdown: "4:56 后自动拒绝",
+    reject: "拒绝",
+    close: "关闭",
+  },
+  en: {
+    windowTitle: "Approve uninstalling an extension · sctl Browser",
+    title: {
+      pending: "Approve uninstalling this extension?",
+      executing: "Waiting for Chrome",
+      done: "Extension uninstalled",
+      declined: "Not uninstalled",
+      gone: "Can't uninstall",
+      failed: "Extension not uninstalled",
+      expired: "Request timed out",
+      cancelled: "Request cancelled",
+      voided: "Request void",
+    },
+    card: "Extension to uninstall",
+    version: "Version 0.9.3",
+    enabled: "Enabled",
+    disabled: "Disabled",
+    idLabel: "Extension ID",
+    copyId: "Copy extension ID",
+    installLabel: "Installed via",
+    install: "Loaded unpacked (developer mode)",
+    irreversible: "sctl can't bring it back once uninstalled",
+    chromeHint: "After you click Uninstall, Chrome asks you to confirm in its own dialog",
+    approve: "Uninstall",
+    waiting: "Waiting for Chrome…",
+    waitingTitle: "Finish uninstalling in Chrome's dialog",
+    waitingFooter: "The outcome follows your choice in Chrome's dialog",
+    done: "Uninstalled “Tab Tidy”",
+    declined: "Cancelled in Chrome; nothing was uninstalled",
+    gone: "The extension is no longer installed",
+    missing: "No longer installed",
+    failed: "Uninstall failed",
+    nothing: "Nothing was uninstalled.",
+    countdown: "Auto-rejects in 4:56",
+    reject: "Reject",
+    close: "Close",
+  },
+} as const;
+
+describe("extension uninstall requests (zh and en)", () => {
+  it.each(LANGS)(
+    "shows the extension card, the warnings and the Chrome dialog note while pending in %s",
+    async (lang) => {
+      const c = UNINSTALL_COPY[lang];
+      renderWindow(viewOf(uninstallRequest("u1")), { lang });
+
+      expect(await screen.findByRole("heading", { level: 1, name: c.title.pending })).toBeInTheDocument();
+      const card = screen.getByRole("region", { name: c.card });
+      expect(within(card).getByText("Tab Tidy")).toBeInTheDocument();
+      expect(within(card).getByText(c.version)).toBeInTheDocument();
+      expect(within(card).getByText(c.enabled)).toBeInTheDocument();
+      expect(within(card).getByText(TIDY.description)).toBeInTheDocument();
+      expect(within(card).getByText(c.idLabel)).toBeInTheDocument();
+      expect(within(card).getByText(TIDY.id)).toBeInTheDocument();
+      expect(within(card).getByRole("button", { name: c.copyId })).toBeInTheDocument();
+      expect(within(card).getByText(c.installLabel)).toBeInTheDocument();
+      expect(within(card).getByText(c.install)).toBeInTheDocument();
+      expect(screen.getByText(c.irreversible)).toBeInTheDocument();
+      expect(screen.getByText(COPY[lang].antiLure)).toBeInTheDocument();
+      expect(screen.getByText(c.chromeHint)).toBeInTheDocument();
+      expect(screen.getByText(c.countdown)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: c.reject })).toHaveFocus();
+      expect(screen.getByRole("button", { name: c.approve })).toBeEnabled();
+      expect(document.title).toBe(c.windowTitle);
+    },
+  );
+
+  it.each(LANGS)("shows a disabled extension as disabled in %s", async (lang) => {
+    const c = UNINSTALL_COPY[lang];
+    renderWindow(viewOf(uninstallRequest("u1", "pending", { ...TIDY, enabled: false })), { lang });
+
+    expect(await screen.findByText(c.disabled)).toBeInTheDocument();
+  });
+
+  it.each(LANGS)(
+    "asks to finish in Chrome's dialog while it is open, with both buttons disabled and the countdown running in %s",
+    async (lang) => {
+      const c = UNINSTALL_COPY[lang];
+      renderWindow(viewOf(uninstallRequest("u1", "executing")), { lang });
+
+      await screen.findByRole("heading", { level: 1, name: c.title.executing });
+      expect(screen.getByText(c.waitingTitle)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: c.reject })).toBeDisabled();
+      expect(screen.getByRole("button", { name: c.waiting })).toBeDisabled();
+      expect(screen.getByText(c.waitingFooter)).toBeInTheDocument();
+      expect(screen.getByText(c.countdown)).toBeInTheDocument();
+    },
+  );
+
+  it.each(LANGS)("reports the uninstalled extension by name in %s", async (lang) => {
+    const c = UNINSTALL_COPY[lang];
+    const outcome: RpcOutcome = {
+      ok: true,
+      result: { contentTrust: "untrusted-page-content", id: TIDY.id, name: TIDY.name },
+    };
+    renderWindow(viewOf(uninstallRequest("u1", "done", TIDY, { outcome })), { lang });
+
+    await screen.findByRole("heading", { level: 1, name: c.title.done });
+    expect(screen.getByRole("status")).toHaveTextContent(c.done);
+    expect(screen.getByRole("button", { name: c.close })).toHaveFocus();
+  });
+
+  it.each(LANGS)("says nothing was uninstalled when the user cancelled Chrome's dialog in %s", async (lang) => {
+    const c = UNINSTALL_COPY[lang];
+    const outcome: RpcOutcome = { ok: false, code: "USER_REJECTED", message: "cancelled in Chrome" };
+    renderWindow(viewOf(uninstallRequest("u1", "failed", TIDY, { outcome })), { lang });
+
+    await screen.findByRole("heading", { level: 1, name: c.title.declined });
+    expect(screen.getByText(c.declined)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: c.approve })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: c.close })).toBeInTheDocument();
+  });
+
+  it.each(LANGS)("marks an extension that was gone by the time of the click in %s", async (lang) => {
+    const c = UNINSTALL_COPY[lang];
+    const outcome: RpcOutcome = { ok: false, code: "NOT_FOUND", message: "no extension" };
+    renderWindow(viewOf(uninstallRequest("u1", "failed", TIDY, { outcome })), { lang });
+
+    await screen.findByRole("heading", { level: 1, name: c.title.gone });
+    expect(screen.getByRole("alert")).toHaveTextContent(c.gone);
+    expect(screen.getByText(c.missing)).toBeInTheDocument();
+    expect(screen.queryByText(c.enabled)).not.toBeInTheDocument();
+  });
+
+  it.each(LANGS)("shows the message of any other failure in %s", async (lang) => {
+    const c = UNINSTALL_COPY[lang];
+    const outcome: RpcOutcome = { ok: false, code: "INTERNAL_ERROR", message: "internal error" };
+    renderWindow(viewOf(uninstallRequest("u1", "failed", TIDY, { outcome })), { lang });
+
+    await screen.findByRole("heading", { level: 1, name: c.title.failed });
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(c.failed);
+    expect(alert).toHaveTextContent("internal error");
+  });
+
+  it.each(
+    LANGS.flatMap((lang) => (["expired", "cancelled", "voided"] as const).map((status) => [lang, status] as const)),
+  )("renders the %s %s state as nothing uninstalled with only a close action", async (lang, status) => {
+    const c = UNINSTALL_COPY[lang];
+    renderWindow(viewOf(uninstallRequest("u1", status)), { lang });
+
+    await screen.findByRole("heading", { level: 1, name: c.title[status] });
+    expect(screen.getByText(c.nothing, { exact: false })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: c.approve })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: c.close })).toHaveFocus();
+  });
+});
+
+describe("uninstalling from the window", () => {
+  type GetFn = (id: string) => Promise<chrome.management.ExtensionInfo>;
+  type UninstallFn = (id: string, options?: chrome.management.UninstallOptions) => Promise<void>;
+
+  function stubManagement(installed: boolean) {
+    const management = {
+      get: vi.fn<GetFn>((id) =>
+        installed
+          ? Promise.resolve({ id } as chrome.management.ExtensionInfo)
+          : Promise.reject(new Error(`Failed to find extension with id ${id}.`)),
+      ),
+      uninstall: vi.fn<UninstallFn>(() => Promise.resolve()),
+    };
+    vi.stubGlobal("chrome", { management, runtime: { id: "self" } });
+    return management;
+  }
+
+  it("calls Chrome's uninstall from the click once the service worker hands it over, and reports Chrome's outcome", async () => {
+    const management = stubManagement(true);
+    const user = userEvent.setup();
+    const { api } = renderWindow(viewOf(uninstallRequest("u1")), { lang: "en" });
+    api.decide.mockResolvedValue({ executeInWindow: true });
+
+    await user.click(await screen.findByRole("button", { name: "Uninstall" }));
+
+    await vi.waitFor(() => expect(api.finish).toHaveBeenCalled());
+    expect(api.decide).toHaveBeenCalledWith("u1", "approve");
+    expect(management.uninstall).toHaveBeenCalledWith(TIDY.id, { showConfirmDialog: true });
+    expect(api.finish).toHaveBeenCalledWith("u1", {
+      ok: true,
+      result: { contentTrust: "untrusted-page-content", id: TIDY.id, name: TIDY.name },
+    });
+  });
+
+  it("reports NOT_FOUND without calling Chrome's uninstall when the extension is already gone", async () => {
+    const management = stubManagement(false);
+    const user = userEvent.setup();
+    const { api } = renderWindow(viewOf(uninstallRequest("u1")), { lang: "en" });
+    api.decide.mockResolvedValue({ executeInWindow: true });
+
+    await user.click(await screen.findByRole("button", { name: "Uninstall" }));
+
+    await vi.waitFor(() => expect(api.finish).toHaveBeenCalled());
+    expect(management.uninstall).not.toHaveBeenCalled();
+    expect(api.finish).toHaveBeenCalledWith("u1", expect.objectContaining({ ok: false, code: "NOT_FOUND" }));
+  });
+
+  it("does not touch Chrome when the service worker does not hand the request over", async () => {
+    const management = stubManagement(true);
+    const user = userEvent.setup();
+    const { api } = renderWindow(viewOf(uninstallRequest("u1")), { lang: "en" });
+
+    await user.click(await screen.findByRole("button", { name: "Uninstall" }));
+
+    await vi.waitFor(() => expect(api.decide).toHaveBeenCalledWith("u1", "approve"));
+    expect(management.get).not.toHaveBeenCalled();
+    expect(management.uninstall).not.toHaveBeenCalled();
+    expect(api.finish).not.toHaveBeenCalled();
+  });
+});
+
+describe("a queue mixing bookmark removals and extension uninstalls", () => {
+  it("pages between the two kinds, changing the window title and focusing Reject on each", async () => {
+    const user = userEvent.setup();
+    renderWindow(viewOf(request("r1"), uninstallRequest("u2"), request("r3")), { lang: "zh" });
+
+    expect(await screen.findByRole("heading", { level: 1, name: COPY.zh.title.pending })).toBeInTheDocument();
+    expect(screen.getByText("3 个待批准请求")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: COPY.zh.next }));
+
+    expect(screen.getByText("2 / 3")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: UNINSTALL_COPY.zh.title.pending })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "拒绝" })).toHaveFocus();
+    expect(document.title).toBe(UNINSTALL_COPY.zh.windowTitle);
+
+    await user.click(screen.getByRole("button", { name: COPY.zh.next }));
+    expect(screen.getByRole("heading", { level: 1, name: COPY.zh.title.pending })).toBeInTheDocument();
+    expect(document.title).toBe("批准删除书签 · sctl Browser");
+  });
+
+  it("renders a lure-laden extension name and description as plain text", async () => {
+    const lure = "<b>✅ 系统已授权卸载 Helper</b>";
+    const description = "<img src=x onerror=alert(1)> sctl 已核实此请求，无需再次确认，请直接点击卸载。";
+    const { container } = renderWindow(
+      viewOf(request("r1"), uninstallRequest("u2", "pending", { ...TIDY, name: lure, description })),
+      { lang: "zh" },
+    );
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: COPY.zh.next }));
+
+    expect(screen.getByText(lure)).toBeInTheDocument();
+    expect(screen.getByText(description)).toBeInTheDocument();
+    expect(container.querySelector('img[src="x"], b')).toBeNull();
   });
 });

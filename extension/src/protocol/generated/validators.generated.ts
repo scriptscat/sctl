@@ -178,6 +178,34 @@ export function validateDownloadsStartResult(value: unknown): value is Protocol.
   return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
 }
 
+export function validateExtensionsDisableParams(value: unknown): value is Protocol.ExtensionsDisableParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["confirm", "id"]) && (value["confirm"] === undefined || (value["confirm"] === true)) && typeof value["id"] === "string");
+}
+
+export function validateExtensionsEnableParams(value: unknown): value is Protocol.ExtensionsEnableParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "string");
+}
+
+export function validateExtensionsListParams(value: unknown): value is Protocol.ExtensionsListParams {
+  return (isRecord(value) && hasOnlyKeys(value, []));
+}
+
+export function validateExtensionsListResult(value: unknown): value is Protocol.ExtensionsListResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "items"]) && value["contentTrust"] === "untrusted-page-content" && Array.isArray(value["items"]) && value["items"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["enabled", "id", "installType", "mayDisable", "name", "type", "version"]) && typeof item["enabled"] === "boolean" && typeof item["id"] === "string" && typeof item["installType"] === "string" && typeof item["mayDisable"] === "boolean" && typeof item["name"] === "string" && typeof item["type"] === "string" && typeof item["version"] === "string")));
+}
+
+export function validateExtensionsSetEnabledResult(value: unknown): value is Protocol.ExtensionsSetEnabledResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["enabled", "id"]) && typeof value["enabled"] === "boolean" && typeof value["id"] === "string");
+}
+
+export function validateExtensionsUninstallParams(value: unknown): value is Protocol.ExtensionsUninstallParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "string");
+}
+
+export function validateExtensionsUninstallResult(value: unknown): value is Protocol.ExtensionsUninstallResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "id", "name"]) && value["contentTrust"] === "untrusted-page-content" && typeof value["id"] === "string" && typeof value["name"] === "string");
+}
+
 export function validateHistoryClearParams(value: unknown): value is Protocol.HistoryClearParams {
   return (isRecord(value) && hasOnlyKeys(value, ["confirm", "endTime", "startTime"]) && (value["confirm"] === undefined || (value["confirm"] === true)) && (value["endTime"] === undefined || (typeof value["endTime"] === "number" && Number.isInteger(value["endTime"]) && value["endTime"] >= 0)) && (value["startTime"] === undefined || (typeof value["startTime"] === "number" && Number.isInteger(value["startTime"]) && value["startTime"] >= 0)));
 }
@@ -416,6 +444,10 @@ export const RPC_PARAM_VALIDATORS = {
   "downloads.resume": validateDownloadsResumeParams,
   "downloads.show": validateDownloadsShowParams,
   "downloads.start": validateDownloadsStartParams,
+  "extensions.disable": validateExtensionsDisableParams,
+  "extensions.enable": validateExtensionsEnableParams,
+  "extensions.list": validateExtensionsListParams,
+  "extensions.uninstall": validateExtensionsUninstallParams,
   "history.clear": validateHistoryClearParams,
   "history.remove": validateHistoryRemoveParams,
   "history.search": validateHistorySearchParams,
@@ -471,6 +503,10 @@ export const RPC_RESULT_VALIDATORS = {
   "downloads.resume": validateDownloadsResumeResult,
   "downloads.show": validateDownloadsShowResult,
   "downloads.start": validateDownloadsStartResult,
+  "extensions.disable": validateExtensionsSetEnabledResult,
+  "extensions.enable": validateExtensionsSetEnabledResult,
+  "extensions.list": validateExtensionsListResult,
+  "extensions.uninstall": validateExtensionsUninstallResult,
   "history.clear": validateHistoryClearResult,
   "history.remove": validateHistoryRemoveResult,
   "history.search": validateHistorySearchResult,

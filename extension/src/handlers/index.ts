@@ -3,6 +3,7 @@ import { registerBookmarkHandlers } from "./bookmarks";
 import { registerBrowsingDataHandlers } from "./browsingData";
 import { registerCookiesHandlers } from "./cookies";
 import { registerDownloadsHandlers } from "./downloads";
+import { registerExtensionsHandlers } from "./extensions";
 import { registerHistoryHandlers } from "./history";
 import { registerReadingListHandlers } from "./readingList";
 import { registerRecentlyClosedHandlers } from "./recentlyClosed";
@@ -89,4 +90,5 @@ export function registerHandlers(registry: HandlerRegistry): void {
   registerRecentlyClosedHandlers(registry);
   registerDownloadsHandlers(registry);
   registerCookiesHandlers(registry);
+  registerExtensionsHandlers(registry);
 }

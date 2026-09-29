@@ -79,6 +79,7 @@ export interface Strings {
   viewApprovals: string;
   approval: ApprovalStrings;
   bookmarkRemoval: BookmarkRemovalStrings;
+  extensionUninstall: ExtensionUninstallStrings;
 }
 
 // 审批窗口里与请求类型无关的部分：外框、请求方、倒计时、队列、拒绝与关闭。
@@ -131,6 +132,38 @@ export interface BookmarkRemovalStrings {
   doneDetail: (bookmarks: number, folders: number) => string;
   conflictTitle: string;
   conflictBody: string;
+  failedTitle: string;
+}
+
+// 卸载扩展请求专用的文案。declined 是在 Chrome 确认框里取消，gone 是点「卸载」时扩展已经不在。
+export interface ExtensionUninstallStrings {
+  windowTitle: string;
+  title: Record<ApprovalStatus | "declined" | "gone", string>;
+  cardLabel: string;
+  version: (version: string) => string;
+  stateLabel: string;
+  enabled: string;
+  disabled: string;
+  missing: string;
+  idLabel: string;
+  copyId: string;
+  installLabel: string;
+  // 键是 chrome.management 的 installType；没有列出的取值原样显示。
+  installType: Record<string, string>;
+  irreversible: string;
+  chromeHint: string;
+  approve: string;
+  waiting: string;
+  waitingTitle: string;
+  waitingBody: string;
+  waitingFooter: string;
+  nothingUninstalled: string;
+  done: (name: string) => string;
+  doneDetail: string;
+  declinedTitle: string;
+  declinedBody: string;
+  goneTitle: string;
+  goneBody: string;
   failedTitle: string;
 }
 
@@ -265,6 +298,51 @@ export const dictionary: Record<Lang, Strings> = {
       conflictTitle: "书签在此期间有变动，未删除任何内容",
       conflictBody: "删除是全有或全无的，整个请求已作废。",
       failedTitle: "删除失败",
+    },
+    extensionUninstall: {
+      windowTitle: "批准卸载扩展 · sctl Browser",
+      title: {
+        pending: "批准卸载扩展？",
+        executing: "等待 Chrome 确认",
+        done: "已卸载扩展",
+        failed: "未卸载扩展",
+        declined: "未卸载",
+        gone: "无法卸载",
+        expired: "请求已超时",
+        cancelled: "请求已取消",
+        voided: "请求已失效",
+      },
+      cardLabel: "要卸载的扩展",
+      version: (version: string) => `版本 ${version}`,
+      stateLabel: "状态",
+      enabled: "已启用",
+      disabled: "已停用",
+      missing: "已不存在",
+      idLabel: "扩展 ID",
+      copyId: "复制扩展 ID",
+      installLabel: "安装方式",
+      installType: {
+        normal: "Chrome 应用商店",
+        development: "开发者模式加载",
+        sideload: "由其他程序安装",
+        admin: "企业策略",
+        other: "其他",
+      },
+      irreversible: "卸载后无法通过 sctl 恢复",
+      chromeHint: "点「卸载」后 Chrome 还会弹出自己的确认框",
+      approve: "卸载",
+      waiting: "等待 Chrome…",
+      waitingTitle: "请在 Chrome 的确认框中完成卸载",
+      waitingBody: "在那里点「移除」才会真正卸载；点「取消」则保持原样。",
+      waitingFooter: "结果以你在 Chrome 确认框中的选择为准",
+      nothingUninstalled: "未卸载任何扩展。",
+      done: (name: string) => `已卸载「${name}」`,
+      doneDetail: "Chrome 已移除这个扩展。",
+      declinedTitle: "已在 Chrome 中取消，未卸载",
+      declinedBody: "扩展保持原样。",
+      goneTitle: "该扩展已不存在",
+      goneBody: "请求发出后它已被移除（例如在扩展管理页手动卸载），没有执行任何操作。",
+      failedTitle: "卸载失败",
     },
   },
   en: {
@@ -402,6 +480,51 @@ export const dictionary: Record<Lang, Strings> = {
       conflictTitle: "Bookmarks changed in the meantime; nothing was deleted",
       conflictBody: "Deletion is all-or-nothing, so the whole request was dropped.",
       failedTitle: "Deletion failed",
+    },
+    extensionUninstall: {
+      windowTitle: "Approve uninstalling an extension · sctl Browser",
+      title: {
+        pending: "Approve uninstalling this extension?",
+        executing: "Waiting for Chrome",
+        done: "Extension uninstalled",
+        failed: "Extension not uninstalled",
+        declined: "Not uninstalled",
+        gone: "Can't uninstall",
+        expired: "Request timed out",
+        cancelled: "Request cancelled",
+        voided: "Request void",
+      },
+      cardLabel: "Extension to uninstall",
+      version: (version: string) => `Version ${version}`,
+      stateLabel: "State",
+      enabled: "Enabled",
+      disabled: "Disabled",
+      missing: "No longer installed",
+      idLabel: "Extension ID",
+      copyId: "Copy extension ID",
+      installLabel: "Installed via",
+      installType: {
+        normal: "Chrome Web Store",
+        development: "Loaded unpacked (developer mode)",
+        sideload: "Installed by another program",
+        admin: "Enterprise policy",
+        other: "Other",
+      },
+      irreversible: "sctl can't bring it back once uninstalled",
+      chromeHint: "After you click Uninstall, Chrome asks you to confirm in its own dialog",
+      approve: "Uninstall",
+      waiting: "Waiting for Chrome…",
+      waitingTitle: "Finish uninstalling in Chrome's dialog",
+      waitingBody: "Chrome uninstalls it only if you click Remove there; Cancel leaves it as it is.",
+      waitingFooter: "The outcome follows your choice in Chrome's dialog",
+      nothingUninstalled: "Nothing was uninstalled.",
+      done: (name: string) => `Uninstalled “${name}”`,
+      doneDetail: "Chrome removed the extension.",
+      declinedTitle: "Cancelled in Chrome; nothing was uninstalled",
+      declinedBody: "The extension is unchanged.",
+      goneTitle: "The extension is no longer installed",
+      goneBody: "It was removed after the request was made (for example on the extensions page); nothing was done.",
+      failedTitle: "Uninstall failed",
     },
   },
 } as const;

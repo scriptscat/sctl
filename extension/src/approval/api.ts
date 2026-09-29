@@ -1,4 +1,5 @@
-import type { ApprovalMessage, ApprovalView } from "@/shared/approvals";
+import type { ApprovalDecision, ApprovalMessage, ApprovalView } from "@/shared/approvals";
+import type { RpcOutcome } from "@/shared/messages";
 import { type RuntimeLike, request } from "@/shared/messaging";
 import { watchApprovals } from "@/shared/popup-api";
 
@@ -6,8 +7,9 @@ import { watchApprovals } from "@/shared/popup-api";
 export interface ApprovalApi {
   view(): Promise<ApprovalView>;
   subscribe(listener: (view: ApprovalView) => void): () => void;
-  // 批准时要等执行结束才兑现；窗口不等它，执行进度随广播到达。
-  decide(id: string, decision: "approve" | "reject"): Promise<void>;
+  // 由 service worker 执行的请求要等执行结束才兑现，执行进度随广播到达；交给窗口执行的请求立即兑现（ApprovalDecision）。
+  decide(id: string, decision: "approve" | "reject"): Promise<ApprovalDecision>;
+  finish(id: string, outcome: RpcOutcome): Promise<void>;
   dismiss(id: string): Promise<void>;
   closeWindow(): Promise<void>;
 }
@@ -18,6 +20,7 @@ export function createApprovalApi(runtime: RuntimeLike = chrome.runtime): Approv
     view: () => send({ target: "background", type: "approvalView" }),
     subscribe: (listener) => watchApprovals(runtime, listener),
     decide: (id, decision) => send({ target: "background", type: "approvalDecide", id, decision }),
+    finish: (id, outcome) => send({ target: "background", type: "approvalFinish", id, outcome }),
     dismiss: (id) => send({ target: "background", type: "approvalDismiss", id }),
     closeWindow: () => send({ target: "background", type: "approvalCloseWindow" }),
   };

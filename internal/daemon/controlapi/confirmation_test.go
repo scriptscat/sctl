@@ -75,3 +75,33 @@ func TestL2CallIsForwardedWithoutConfirmationAndWaitsForTheBrowsersDecision(t *t
 		})
 	})
 }
+
+func TestExtensionsDisableNeedsConfirmationWhileUninstallWaitsForApproval(t *testing.T) {
+	Convey("禁用扩展是 L1:缺确认时 daemon 返回 CONFIRMATION_REQUIRED 且不转发", t, func() {
+		h := startTestServer(t)
+		a := h.connectBrowser(instanceA, "chrome-0123")
+
+		res := h.callControl(control.CallRequest{Action: "extensions.disable", Input: json.RawMessage(`{"id":"abc"}`)})
+		So(res.OK, ShouldBeFalse)
+		So(errCode(res), ShouldEqual, generated.ErrorCodeConfirmationRequired)
+		a.idle()
+	})
+
+	Convey("卸载扩展是 L2:不要求 confirm,调用阻塞到扩展给出结论;Chrome 确认框里取消得到 USER_REJECTED", t, func() {
+		h := startTestServer(t)
+		a := h.connectBrowser(instanceA, "chrome-0123")
+
+		ch := h.goCall(control.CallRequest{Action: "extensions.uninstall", Input: json.RawMessage(`{"id":"abc"}`)})
+		req := a.read()
+		So(req.Method, ShouldEqual, "extensions.uninstall")
+		select {
+		case res := <-ch:
+			t.Fatalf("the call returned %+v before the browser decided", res)
+		case <-time.After(100 * time.Millisecond):
+		}
+		a.writeError(req.ID, generated.ErrorCodeUserRejected, "the uninstall was cancelled in the browser's confirmation dialog")
+		res := <-ch
+		So(res.OK, ShouldBeFalse)
+		So(errCode(res), ShouldEqual, generated.ErrorCodeUserRejected)
+	})
+}

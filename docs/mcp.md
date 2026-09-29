@@ -268,10 +268,22 @@ the cookie does not exist. `set` writes a cookie for `url` (`name`, `value`, opt
 refuses to store answers `INVALID_REQUEST` with Chrome's reason. `rm` (`url`, `name`; `NOT_FOUND` when absent) and `clear` (`domain`
 with its subdomains, or `all: true`; exactly one of them) run only with `confirm: true` and return the number of cookies deleted.
 
+`extensions` manages installed extensions and apps, with `action` set to `list`, `enable`, `disable` or `uninstall`. `list`
+returns each extension's `id`, name, version, `enabled`, `type`, `installType` and `mayDisable`; names come from extension
+authors and are marked `contentTrust: "untrusted-page-content"`. `enable` and `disable` take an `id` and return the new
+`enabled` state; `disable` runs only with `confirm: true`, and disabling ScriptCat disconnects it from the daemon.
+`uninstall` removes one extension (`id`) after two human confirmations: approval in the sctl Browser approval window,
+then Chrome's own uninstall dialog, which opens when the user clicks Uninstall in the window. The call waits for both,
+sending progress notifications, and returns the uninstalled extension's `id` and name; a cancel in Chrome's dialog is
+`USER_REJECTED`, like a rejection. When the call is cancelled, times out, or the approval window is closed while Chrome's
+dialog is open, the call gets `OPERATION_EXPIRED` and whether the extension was uninstalled follows that dialog.
+`disable` and `uninstall` refuse the sctl Browser extension itself and extensions installed by enterprise policy
+(`INVALID_REQUEST`); an unknown ID is `NOT_FOUND`, and `uninstall` opens no window when a check fails.
+
 Browser operations carry a destruction level. Most run immediately. A few are destructive enough to need explicit
-confirmation — the reading list's `rm`, history `rm` and `clear`, `browsing_data` `clear`, downloads `cancel`, `erase` and `delete-file`, and cookies `rm` and `clear`: they run only when the call passes `confirm: true`, and
+confirmation — the reading list's `rm`, history `rm` and `clear`, `browsing_data` `clear`, downloads `cancel`, `erase` and `delete-file`, cookies `rm` and `clear`, and extensions `disable`: they run only when the call passes `confirm: true`, and
 without it the daemon answers `CONFIRMATION_REQUIRED` and nothing runs. The command-line equivalent is `--yes`.
-Deleting bookmarks needs human approval instead: the sctl Browser extension opens an approval window, and the call
+Deleting bookmarks and uninstalling an extension need human approval instead: the sctl Browser extension opens an approval window, and the call
 waits — sending progress notifications like the ScriptCat write tools — until the user approves (`CONFLICT` and
 nothing deleted if the bookmarks changed meanwhile), rejects or closes the window (`USER_REJECTED`), or nobody
 decides within 5 minutes (`OPERATION_EXPIRED`). Cancelling the call voids the request.

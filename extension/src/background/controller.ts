@@ -72,6 +72,8 @@ export class Background {
         return this.deps.approvals.view();
       case "approvalDecide":
         return this.deps.approvals.decide(message.id, message.decision);
+      case "approvalFinish":
+        return this.deps.approvals.finish(message.id, message.outcome);
       case "approvalDismiss":
         return this.deps.approvals.dismiss(message.id);
       case "approvalCloseWindow":

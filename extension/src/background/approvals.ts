@@ -1,5 +1,12 @@
 import { LIMITS } from "@/protocol/generated/protocol.generated";
-import { APPROVAL_WINDOW, type ApprovalItem, type ApprovalRequest, type ApprovalView } from "@/shared/approvals";
+import {
+  APPROVAL_WINDOW,
+  type ApprovalDecision,
+  type ApprovalItem,
+  type ApprovalKind,
+  type ApprovalRequest,
+  type ApprovalView,
+} from "@/shared/approvals";
 import type { RpcContext, RpcOutcome } from "@/shared/messages";
 
 // 扩展侧的期限比 daemon 的 writeDecisionTtlMs 早这么多：daemon 的计时从发出请求算起，早于扩展收到它，
@@ -55,6 +62,8 @@ export interface ApprovalDeps {
   // 把结论交给 offscreen，由它作为原请求的 JSON-RPC 应答发给 daemon。
   settle(requestId: string, outcome: RpcOutcome): Promise<void>;
   execute(request: ApprovalRequest): Promise<RpcOutcome>;
+  // 这类请求由审批窗口借用户的点击执行（HandlerRegistry.executesInWindow），service worker 不执行它。
+  executesInWindow(kind: ApprovalKind): boolean;
   broadcast(view: ApprovalView): void;
 }
 
@@ -130,7 +139,9 @@ export class Approvals {
     });
   }
 
-  decide(id: string, decision: "approve" | "reject"): Promise<void> {
+  // 批准后 executing 先落盘：由 service worker 执行的请求在这里执行完才兑现；由窗口执行的请求立即兑现，
+  // executeInWindow 告诉发出批准的窗口轮到它执行。只有仍在等待决定的请求会被执行，重复的点击什么也不做。
+  decide(id: string, decision: "approve" | "reject"): Promise<ApprovalDecision> {
     let approved: ApprovalRecord | null = null;
     const deciding = this.serialized(async (state) => {
       const record = state.records.find((r) => r.id === id);
@@ -147,25 +158,45 @@ export class Approvals {
     });
     // 执行不占用队列：执行期间取消、超时、断开和关窗都照常处理（卸载扩展要等 Chrome 自己的确认框）。
     return deciding.then(async () => {
-      if (approved) {
-        await this.run(approved);
+      if (!approved) {
+        return { executeInWindow: false };
+      }
+      if (this.deps.executesInWindow(approved.kind)) {
+        return { executeInWindow: true };
+      }
+      const outcome = await this.deps.execute(requestOf(approved));
+      await this.conclude(approved.id, outcome);
+      return { executeInWindow: false };
+    });
+  }
+
+  // 审批窗口回报它执行的请求的结论。只接受交给窗口执行、仍在执行中的请求：窗口不能替 service worker 执行的请求
+  // 下结论，也不能改写已经结束的请求。
+  finish(id: string, outcome: RpcOutcome): Promise<void> {
+    return this.serialized(async (state) => {
+      const record = state.records.find((r) => r.id === id);
+      if (record?.status === "executing" && this.deps.executesInWindow(record.kind)) {
+        await this.settleExecution(record, outcome);
       }
     });
   }
 
-  private async run(approved: ApprovalRecord): Promise<void> {
-    const outcome = await this.deps.execute({ kind: approved.kind, detail: approved.detail });
-    await this.serialized(async (state) => {
-      const record = state.records.find((r) => r.id === approved.id);
-      if (!record) {
-        return;
-      }
-      record.status = outcome.ok ? "done" : "failed";
-      record.outcome = outcome;
-      if (!record.detached) {
-        await this.answer(record, outcome);
+  private conclude(id: string, outcome: RpcOutcome): Promise<void> {
+    return this.serialized(async (state) => {
+      const record = state.records.find((r) => r.id === id);
+      if (record) {
+        await this.settleExecution(record, outcome);
       }
     });
+  }
+
+  // 请求方已不再等待（取消、超时、断开）时只更新展示：调用方已经得到作废的结果。
+  private async settleExecution(record: ApprovalRecord, outcome: RpcOutcome): Promise<void> {
+    record.status = outcome.ok ? "done" : "failed";
+    record.outcome = outcome;
+    if (!record.detached) {
+      await this.answer(record, outcome);
+    }
   }
 
   dismiss(id: string): Promise<void> {
@@ -199,13 +230,32 @@ export class Approvals {
     return this.serialized(async (state) => this.viewOf(state));
   }
 
-  // 关窗即拒绝全部等待中的请求；已结束的请求只是展示，随窗口一起清掉；正在执行的请求不受影响，结论照常应答。
+  // 关窗即拒绝全部等待中的请求；已结束的请求只是展示，随窗口一起清掉；service worker 里正在执行的请求不受影响，
+  // 结论照常应答。
   private async windowGone(state: ApprovalState): Promise<void> {
+    await this.windowExecutionsLost(state);
     state.windowId = null;
     const pending = state.records.filter((r) => r.status === "pending");
     state.records = state.records.filter((r) => r.status === "executing");
     for (const record of pending) {
       await this.answer(record, rejection("the approval window was closed"));
+    }
+  }
+
+  // 窗口没了，它正在等的结论（卸载扩展时 Chrome 确认框的选择）也就无从得知：Chrome 的确认框不受影响，是否卸载
+  // 以用户在其中的选择为准；调用方与确认框期间取消、超时一样得到作废的结果，不再等到期限。
+  private async windowExecutionsLost(state: ApprovalState): Promise<void> {
+    const lost = state.records.filter((r) => r.status === "executing" && this.deps.executesInWindow(r.kind));
+    state.records = state.records.filter((r) => !lost.includes(r));
+    for (const record of lost) {
+      if (!record.detached) {
+        await this.answer(record, {
+          ok: false,
+          code: "OPERATION_EXPIRED",
+          message:
+            "the approval window closed while the browser's own confirmation dialog was open; the outcome follows that dialog",
+        });
+      }
     }
   }
 
@@ -216,6 +266,7 @@ export class Approvals {
         return;
       } catch {
         // 记下的窗口已经不在（例如关窗事件在 service worker 回收前没能处理），重新打开一个。
+        await this.windowExecutionsLost(state);
         state.windowId = null;
       }
     }
@@ -265,7 +316,8 @@ export class Approvals {
     const items = await this.deps.storage.get([STORAGE_KEY]);
     const state = (items[STORAGE_KEY] as ApprovalState | undefined) ?? { windowId: null, records: [] };
     // 执行跑在 service worker 里，存储里还是 executing 说明上一个 service worker 在执行途中被回收了：结果不得而知。
-    for (const record of state.records.filter((r) => r.status === "executing")) {
+    // 由窗口执行的请求不受影响：执行它的是窗口，结论仍会由窗口回报。
+    for (const record of state.records.filter((r) => r.status === "executing" && !this.deps.executesInWindow(r.kind))) {
       record.status = "failed";
       record.outcome = {
         ok: false,
@@ -344,7 +396,7 @@ export class Approvals {
   private async viewOf(state: ApprovalState): Promise<ApprovalView> {
     return {
       browserName: await this.deps.browserName(),
-      items: state.records.map(({ connection: _connection, detached: _detached, ...item }) => item as ApprovalItem),
+      items: state.records.map(({ connection: _connection, detached: _detached, ...item }) => item),
     };
   }
 }
@@ -355,6 +407,11 @@ function abandon(record: ApprovalRecord, status: "cancelled" | "voided"): void {
     record.status = status;
   }
   record.detached = true;
+}
+
+// 记录里的 kind 与 detail 来自同一个 ApprovalRequest，总是对应的；分别取出后 tsc 不再知道这一点。
+function requestOf(record: ApprovalRecord): ApprovalRequest {
+  return { kind: record.kind, detail: record.detail } as ApprovalRequest;
 }
 
 function rejection(message: string): RpcOutcome {

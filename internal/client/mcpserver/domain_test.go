@@ -655,3 +655,89 @@ func TestCookiesToolForwardsEachActionToItsProtocolMethod(t *testing.T) {
 		So(caller.actions, ShouldBeEmpty)
 	})
 }
+
+func TestExtensionsToolForwardsEachActionToItsProtocolMethod(t *testing.T) {
+	Convey("extensions 工具按 action 转发到 extensions.* 方法,browser 作为目标,confirm 留在方法输入里", t, func() {
+		p := loadProto(t)
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+		So(err, ShouldBeNil)
+		props, required := inputSchemaOf(toolByName(res, "extensions"))
+		So(required, ShouldResemble, []any{"action"})
+		action, ok := props["action"].(map[string]any)
+		So(ok, ShouldBeTrue)
+		So(action["enum"], ShouldResemble, []any{"list", "enable", "disable", "uninstall"})
+		So(props, ShouldContainKey, protocol.ConfirmParam)
+
+		for _, args := range []map[string]any{
+			{"action": "list"},
+			{"action": "enable", "id": "abc", "browser": "work"},
+			{"action": "disable", "id": "abc", "confirm": true},
+			{"action": "uninstall", "id": "abc"},
+		} {
+			result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "extensions", Arguments: args})
+			So(err, ShouldBeNil)
+			So(result.IsError, ShouldBeFalse)
+		}
+		So(caller.actions, ShouldResemble, []string{"extensions.list", "extensions.enable", "extensions.disable", "extensions.uninstall"})
+		So(string(caller.inputs[2]), ShouldEqual, `{"confirm":true,"id":"abc"}`)
+		So(string(caller.inputs[3]), ShouldEqual, `{"id":"abc"}`)
+		So(caller.browserParams[1], ShouldEqual, "work")
+	})
+
+	Convey("extensions 的 enable/uninstall 缺 id、uninstall 带 confirm 时在转发前被拒绝", t, func() {
+		p := loadProto(t)
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+		for _, args := range []map[string]any{
+			{"action": "enable"},
+			{"action": "uninstall"},
+			{"action": "uninstall", "id": "abc", "confirm": true},
+		} {
+			_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "extensions", Arguments: args})
+			So(err, ShouldNotBeNil)
+		}
+		So(caller.actions, ShouldBeEmpty)
+	})
+}
+
+func TestExtensionsUninstallReportsProgressWhileWaitingForApproval(t *testing.T) {
+	Convey("extensions uninstall 等待浏览器里的审批与 Chrome 确认框期间持续发送 progress", t, func() {
+		old := progressInterval
+		progressInterval = 10 * time.Millisecond
+		defer func() { progressInterval = old }()
+
+		progress := make(chan struct{}, 64)
+		block := make(chan struct{})
+		release := sync.OnceFunc(func() { close(block) })
+		defer release()
+		caller := &fakeCaller{block: block, entered: make(chan struct{}, 1), result: control.CallResult{OK: true, Result: json.RawMessage(`{"contentTrust":"untrusted-page-content","id":"abc","name":"Tab Tidy"}`)}}
+		opts := &mcp.ClientOptions{
+			ProgressNotificationHandler: func(context.Context, *mcp.ProgressNotificationClientRequest) {
+				select {
+				case progress <- struct{}{}:
+				default:
+				}
+			},
+		}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: loadProto(t), Caller: caller}, opts)
+
+		resCh := make(chan *mcp.CallToolResult, 1)
+		go func() {
+			res, _ := session.CallTool(context.Background(), &mcp.CallToolParams{
+				Name: "extensions", Arguments: map[string]any{"action": "uninstall", "id": "abc"}, Meta: mcp.Meta{"progressToken": "tok"},
+			})
+			resCh <- res
+		}()
+		for range 2 {
+			select {
+			case <-progress:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the uninstall waiting for approval reported no progress")
+			}
+		}
+		release()
+		So((<-resCh).IsError, ShouldBeFalse)
+	})
+}
