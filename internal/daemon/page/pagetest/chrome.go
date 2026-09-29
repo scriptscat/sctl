@@ -39,6 +39,8 @@ const EnvChrome = "SCTL_TEST_CHROME"
 
 const (
 	startTimeout = 30 * time.Second
+	// deadlineMargin 是在 go test 的超时期限之前多久杀掉 Chrome。
+	deadlineMargin = 5 * time.Second
 	// maxMessageBytes 放宽 coder/websocket 默认 32 KiB 的读上限:CDP 结果(快照、截图)远超这个大小。
 	maxMessageBytes = 64 << 20
 )
@@ -151,7 +153,17 @@ func Start(t testing.TB) *Chrome {
 		nextTab:  1,
 	}
 	go c.readLoop()
+	// go test 超时时直接 panic 退出,不运行 Cleanup:在期限前先杀掉 Chrome,不留下孤儿进程。
+	var watchdog *time.Timer
+	if d, ok := t.(interface{ Deadline() (time.Time, bool) }); ok {
+		if deadline, ok := d.Deadline(); ok {
+			watchdog = time.AfterFunc(time.Until(deadline)-deadlineMargin, func() { _ = cmd.Process.Kill() })
+		}
+	}
 	t.Cleanup(func() {
+		if watchdog != nil {
+			watchdog.Stop()
+		}
 		closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer closeCancel()
 		// 让 Chrome 自己退出并收拾子进程;Windows 上被强杀的子进程会锁住配置目录。
@@ -281,6 +293,44 @@ func (c *Chrome) CurrentTab(ctx context.Context, instanceID string) (int, error)
 		return 0, &page.Error{Code: generated.ErrorCodeNotFound, Message: "no tab is open"}
 	}
 	return c.current, nil
+}
+
+// Tabs 实现 page.CDP:浏览器里全部页面目标,页面自己打开的(如 target=_blank)第一次出现时分配标签页 ID。
+func (c *Chrome) Tabs(ctx context.Context, instanceID string) ([]int, error) {
+	raw, err := c.call(ctx, "", "Target.getTargets", nil)
+	if err != nil {
+		return nil, err
+	}
+	var res struct {
+		TargetInfos []struct {
+			TargetID string `json:"targetId"`
+			Type     string `json:"type"`
+		} `json:"targetInfos"`
+	}
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return nil, fmt.Errorf("decode Target.getTargets: %w", err)
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	byTarget := make(map[string]int, len(c.targets))
+	for tabID, targetID := range c.targets {
+		byTarget[targetID] = tabID
+	}
+	var tabs []int
+	for _, info := range res.TargetInfos {
+		if info.Type != "page" {
+			continue
+		}
+		tabID, ok := byTarget[info.TargetID]
+		if !ok {
+			tabID = c.nextTab
+			c.nextTab++
+			c.targets[tabID] = info.TargetID
+		}
+		tabs = append(tabs, tabID)
+	}
+	slices.Sort(tabs)
+	return tabs, nil
 }
 
 // SelectTab 实现 page.CDP。

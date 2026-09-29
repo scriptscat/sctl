@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -41,6 +42,7 @@ type Tab struct {
 	id         int
 	refs       *refTable
 	frames     *frameSessions
+	nav        *navWatch
 	// watchingFrames 表示这次附加已开启 Page 域,文档替换事件会送到 refs。只在标签页队列里读写。
 	watchingFrames bool
 }
@@ -161,8 +163,13 @@ func NewManager(cdp CDP, log *zap.Logger) *Manager {
 	m.addEventHandler("Page.frameDetached", onFrameDetached)
 	m.addEventHandler("Target.attachedToTarget", onTargetAttached)
 	m.addEventHandler("Target.detachedFromTarget", onTargetDetached)
+	for method, h := range navigationEvents {
+		m.addEventHandler(method, h)
+	}
 	m.register("eval", runEval)
 	m.register("snapshot", runSnapshot)
+	m.register("click", runClick)
+	m.register("hover", runHover)
 	m.registerBrowser("detach", m.detach)
 	return m
 }
@@ -260,12 +267,21 @@ func (m *Manager) targetTab(ctx context.Context, instanceID string, explicit *in
 }
 
 // causeOf 在 ctx 已结束时用结束原因替换 err:超时、调试器分离都以 cause 携带领域错误,
-// 调用方取消则是 context.Canceled。
+// 调用方取消则是 context.Canceled。动作自己给出的 TIMEOUT 写明了最后未满足的条件,比笼统的超时更具体,保留它。
 func causeOf(ctx context.Context, err error) error {
-	if cause := context.Cause(ctx); cause != nil {
-		return cause
+	cause := context.Cause(ctx)
+	if cause == nil {
+		return err
 	}
-	return err
+	if isTimeout(cause) && isTimeout(err) {
+		return err
+	}
+	return cause
+}
+
+func isTimeout(err error) bool {
+	var pe *Error
+	return errors.As(err, &pe) && pe.Code == generated.ErrorCodeTimeout
 }
 
 // onTab 在 key 的串行队列里执行 fn,并在结束后为已附加的标签页重新开始空闲计时。
@@ -368,7 +384,7 @@ func (m *Manager) attach(ctx context.Context, s *slot, instanceID string, tabID 
 	if t != nil {
 		return t, nil
 	}
-	t = &Tab{m: m, instanceID: instanceID, id: tabID, refs: newRefTable(), frames: newFrameSessions()}
+	t = &Tab{m: m, instanceID: instanceID, id: tabID, refs: newRefTable(), frames: newFrameSessions(), nav: newNavWatch()}
 	m.mu.Lock()
 	s.attaching = t
 	m.mu.Unlock()

@@ -1,0 +1,14 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>actions frame</title>
+    <style>
+      body { margin: 0; }
+      button { margin: 30px 0 0 90px; }
+    </style>
+  </head>
+  <body>
+    <button type="button" id="inner" onclick="window.top.innerClicks = (window.top.innerClicks || 0) + 1">Inner button</button>
+  </body>
+</html>

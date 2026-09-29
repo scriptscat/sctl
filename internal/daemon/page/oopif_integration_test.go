@@ -21,7 +21,7 @@ func evalOn(m *page.Manager, tab int, expression, ref string) (json.RawMessage, 
 	if err != nil {
 		return nil, err
 	}
-	raw, err := m.Do(context.Background(), page.Request{Action: "eval", TabID: &tab, Input: input})
+	raw, err := m.Do(context.Background(), page.Request{Action: "eval", TabID: &tab, Timeout: callTimeout, Input: input})
 	if err != nil {
 		return nil, err
 	}

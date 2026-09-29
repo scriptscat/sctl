@@ -33,7 +33,7 @@ func newPageCmd() *cobra.Command {
 	flags.IntVar(&pageTab, "tab", 0, "target tab ID (default: the active tab of the browser's last-focused window, fixed when the command starts)")
 	flags.BoolVar(&pageActivate, "activate", false, "make the tab the active tab of its window first, without focusing the window")
 	flags.DurationVar(&pageTimeout, "timeout", 0, "time limit for the command, such as 30s (default 10s)")
-	cmd.AddCommand(newPageSnapshotCmd(), newPageEvalCmd(), newPageDetachCmd())
+	cmd.AddCommand(newPageSnapshotCmd(), newPageClickCmd(), newPageHoverCmd(), newPageEvalCmd(), newPageDetachCmd())
 	return cmd
 }
 
@@ -87,6 +87,120 @@ func newPageSnapshotCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&root, "root", "", "snapshot only the subtree rooted at a ref (e5) or at the one element a CSS selector matches in the main document")
 	return cmd
+}
+
+// targetArgs 校验动作的目标:位置参数给引用,或 --selector 给选择器,恰好一个(spec §动作)。
+func targetArgs(action string, selector *string) cobra.PositionalArgs {
+	return func(_ *cobra.Command, args []string) error {
+		switch {
+		case len(args) > 1:
+			return &ExitError{Code: exitError, Message: fmt.Sprintf("page %s takes one element ref", action)}
+		case len(args) == 1 && *selector != "":
+			return &ExitError{Code: exitError, Message: fmt.Sprintf("page %s takes a ref or --selector, not both", action)}
+		case len(args) == 0 && *selector == "":
+			return &ExitError{Code: exitError, Message: fmt.Sprintf("page %s needs a target: a ref from a snapshot (e5) or --selector", action)}
+		}
+		return nil
+	}
+}
+
+// targetInput 返回动作输入里的目标字段。
+func targetInput(args []string, selector string) map[string]any {
+	if len(args) == 1 {
+		return map[string]any{"ref": args[0]}
+	}
+	return map[string]any{"selector": selector}
+}
+
+// targetHelp 是引用与选择器目标的共用说明。
+const targetHelp = "The target is a ref from a snapshot (e5), which can point into a cross-origin iframe, or --selector with\n" +
+	"a CSS selector that must match exactly one element in the main document: while none matches the command\n" +
+	"waits, and several matches fail at once with TARGET_AMBIGUOUS.\n"
+
+// actionWaitHelp 是 click 与 hover 的自动等待说明。
+const actionWaitHelp = "Before acting it scrolls the element into view and waits until it is attached, visible, stable (not moving)\n" +
+	"%sand actually receives the pointer at its center; on timeout the error names the last unmet condition,\n" +
+	"such as the element obscuring it.\n"
+
+func newPageClickCmd() *cobra.Command {
+	var (
+		selector  string
+		button    string
+		count     int
+		modifiers []string
+	)
+	cmd := &cobra.Command{
+		Use:   "click [<ref>] [--selector <css>]",
+		Short: "Click an element with trusted mouse events",
+		Long: "Click the center of the visible part of an element with trusted mouse events.\n" + targetHelp +
+			fmt.Sprintf(actionWaitHelp, "and enabled, ") +
+			"If the click starts a navigation of the page within 500ms, the command waits for DOMContentLoaded.\n" +
+			"The summary prints the tab ID, plus the URL after a navigation or the ID of a tab the click opened.",
+		Args: targetArgs("click", &selector),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			input := targetInput(args, selector)
+			if cmd.Flags().Changed("button") {
+				input["button"] = button
+			}
+			if cmd.Flags().Changed("count") {
+				input["count"] = count
+			}
+			if cmd.Flags().Changed("modifiers") {
+				input["modifiers"] = modifiers
+			}
+			return dispatchPage(cmd, "click", mustInput(input), printActionResult)
+		},
+	}
+	cmd.Flags().StringVar(&selector, "selector", "", "CSS selector matching exactly one element in the main document, instead of a ref")
+	cmd.Flags().StringVar(&button, "button", "left", "mouse button: left, right or middle")
+	cmd.Flags().IntVar(&count, "count", 1, "number of clicks, such as 2 for a double click")
+	cmd.Flags().StringSliceVar(&modifiers, "modifiers", nil, "modifier keys held during the click: Alt, Control, Meta, Shift (comma-separated)")
+	return cmd
+}
+
+func newPageHoverCmd() *cobra.Command {
+	var selector string
+	cmd := &cobra.Command{
+		Use:   "hover [<ref>] [--selector <css>]",
+		Short: "Move the mouse over an element",
+		Long:  "Move the mouse to the center of the visible part of an element.\n" + targetHelp + fmt.Sprintf(actionWaitHelp, ""),
+		Args:  targetArgs("hover", &selector),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return dispatchPage(cmd, "hover", mustInput(targetInput(args, selector)), printActionResult)
+		},
+	}
+	cmd.Flags().StringVar(&selector, "selector", "", "CSS selector matching exactly one element in the main document, instead of a ref")
+	return cmd
+}
+
+// printActionResult 打印动作结果:-o json 时是完整结果,否则是一行摘要(tabId,外加导航后的 URL 或
+// 新标签页的 ID)。URL 由网页控制,经 terminalSafe 转义后才写到终端。
+func printActionResult(result json.RawMessage) error {
+	if outputFormat == outputJSON {
+		return printResultJSON(result)
+	}
+	var payload struct {
+		TabID     int    `json:"tabId"`
+		URL       string `json:"url"`
+		Navigated bool   `json:"navigated"`
+		NewTabID  *int   `json:"newTabId"`
+	}
+	if err := json.Unmarshal(result, &payload); err != nil {
+		return printResultJSON(result)
+	}
+	var details []string
+	if payload.Navigated {
+		details = append(details, "navigated to "+terminalSafe(payload.URL))
+	}
+	if payload.NewTabID != nil {
+		details = append(details, "opened tab "+strconv.Itoa(*payload.NewTabID))
+	}
+	line := fmt.Sprintf("tab %d", payload.TabID)
+	if len(details) > 0 {
+		line += " " + strings.Join(details, ", ")
+	}
+	fmt.Fprintln(os.Stdout, line)
+	return nil
 }
 
 func newPageEvalCmd() *cobra.Command {

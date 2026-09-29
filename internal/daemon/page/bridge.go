@@ -42,6 +42,18 @@ func (b bridgeCDP) CurrentTab(ctx context.Context, instanceID string) (int, erro
 	return res.TabId, nil
 }
 
+func (b bridgeCDP) Tabs(ctx context.Context, instanceID string) ([]int, error) {
+	var res generated.TabsListResult
+	if err := b.call(ctx, instanceID, generated.MethodTabsList, generated.TabsListParams{}, &res); err != nil {
+		return nil, err
+	}
+	ids := make([]int, len(res.Tabs))
+	for i, tab := range res.Tabs {
+		ids[i] = tab.TabId
+	}
+	return ids, nil
+}
+
 func (b bridgeCDP) SelectTab(ctx context.Context, instanceID string, tabID int) error {
 	return b.call(ctx, instanceID, generated.MethodTabsSelect, generated.TabsActivateParams{TabId: tabID}, nil)
 }

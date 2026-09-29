@@ -109,6 +109,68 @@ func TestPageToolsForwardToThePageEndpoint(t *testing.T) {
 			So(caller.pages, ShouldBeEmpty)
 		})
 
+		Convey("page_click 把目标与鼠标参数作为动作输入转发,目标参数拆进请求字段", func() {
+			_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "page_click", Arguments: map[string]any{
+				"selector": "#go", "button": "middle", "count": 2, "modifiers": []string{"Alt", "Meta"}, "tabId": 9, "activate": true, "timeoutMs": 4000,
+			}})
+			So(err, ShouldBeNil)
+			req := caller.pages[0]
+			So(req.Action, ShouldEqual, "click")
+			So(*req.TabID, ShouldEqual, 9)
+			So(req.Activate, ShouldBeTrue)
+			So(req.TimeoutMs, ShouldEqual, 4000)
+			So(string(req.Input), ShouldEqualJSON, `{"selector":"#go","button":"middle","count":2,"modifiers":["Alt","Meta"]}`)
+		})
+
+		Convey("page_hover 只带引用时请求不带目标", func() {
+			_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "page_hover", Arguments: map[string]any{"ref": "e5"}})
+			So(err, ShouldBeNil)
+			req := caller.pages[0]
+			So(req.Action, ShouldEqual, "hover")
+			So(req.TabID, ShouldBeNil)
+			So(string(req.Input), ShouldEqualJSON, `{"ref":"e5"}`)
+		})
+
+		Convey("page_click 与 page_hover 的参数不符合 schema 时不转发", func() {
+			for name, args := range map[string][]map[string]any{
+				"page_click": {
+					{"ref": "e5", "button": "back"},
+					{"ref": "e5", "count": 0},
+					{"ref": "e5", "modifiers": []string{"Hyper"}},
+					{"ref": ""},
+				},
+				"page_hover": {
+					{"ref": "e5", "button": "left"},
+					{"selector": ""},
+				},
+			} {
+				for _, a := range args {
+					_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: a})
+					So(err, ShouldNotBeNil)
+				}
+			}
+			So(caller.pages, ShouldBeEmpty)
+		})
+
+		Convey("page_click 与 page_hover 的静态描述写明目标二选一、自动等待与结果", func() {
+			tools, err := session.ListTools(context.Background(), nil)
+			So(err, ShouldBeNil)
+			seen := 0
+			for _, tool := range tools.Tools {
+				if tool.Name != "page_click" && tool.Name != "page_hover" {
+					continue
+				}
+				seen++
+				So(tool.Description, ShouldContainSubstring, "exactly one of ref or selector")
+				So(tool.Description, ShouldContainSubstring, "TARGET_AMBIGUOUS")
+				So(tool.Description, ShouldContainSubstring, "PAGE_HIDDEN")
+				schema, err := json.Marshal(tool.InputSchema)
+				So(err, ShouldBeNil)
+				So(string(schema), ShouldContainSubstring, `"activate"`)
+			}
+			So(seen, ShouldEqual, 2)
+		})
+
 		Convey("页面错误作为工具错误结果返回,带错误码与消息", func() {
 			caller.result = control.CallResult{OK: false, Error: &control.CallError{Code: "EVAL_ERROR", Message: "Error: boom"}}
 			res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "page_eval", Arguments: map[string]any{"expression": "boom()"}})

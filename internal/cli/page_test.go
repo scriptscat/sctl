@@ -269,3 +269,91 @@ func TestPageSnapshot(t *testing.T) {
 		})
 	})
 }
+
+func TestPageClickAndHover(t *testing.T) {
+	Convey("sctl page click / hover", t, func() {
+		t.Setenv("SCTL_BROWSER", "")
+		plain := control.CallResult{OK: true, Result: json.RawMessage(`{"contentTrust":"untrusted-page-content","tabId":5,"url":"https://example.com/","title":"Example","navigated":false}`)}
+
+		Convey("click 以位置参数给引用;默认输出一行摘要,只有 tabId", func() {
+			stub := stubPageDaemon(t, plain)
+			code, out := runCLI("page", "click", "e5")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "tab 5\n")
+			So(stub.last.Action, ShouldEqual, "click")
+			So(string(stub.last.Input), ShouldEqualJSON, `{"ref":"e5"}`)
+		})
+
+		Convey("click --selector 与 --button、--count、--modifiers 转发为动作输入", func() {
+			stub := stubPageDaemon(t, plain)
+			code, _ := runCLI("page", "click", "--selector", "#main > button", "--button", "right", "--count", "2", "--modifiers", "Control,Shift", "--tab", "5", "--activate", "--timeout", "20s")
+			So(code, ShouldEqual, exitOK)
+			So(string(stub.last.Input), ShouldEqualJSON, `{"selector":"#main > button","button":"right","count":2,"modifiers":["Control","Shift"]}`)
+			So(*stub.last.TabID, ShouldEqual, 5)
+			So(stub.last.Activate, ShouldBeTrue)
+			So(stub.last.TimeoutMs, ShouldEqual, 20000)
+		})
+
+		Convey("点击导航后摘要写出导航后的 URL;打开新标签页时写出它的 ID;URL 里的控制字符被转义", func() {
+			stubPageDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"contentTrust":"untrusted-page-content","tabId":5,"url":"https://example.com/next","title":"Next","navigated":true}`)})
+			code, out := runCLI("page", "click", "e5")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "tab 5 navigated to https://example.com/next\n")
+
+			stubPageDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"contentTrust":"untrusted-page-content","tabId":5,"url":"https://example.com/","title":"Example","navigated":false,"newTabId":12}`)})
+			code, out = runCLI("page", "click", "e5")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "tab 5 opened tab 12\n")
+
+			stubPageDaemon(t, control.CallResult{OK: true, Result: json.RawMessage("{\"contentTrust\":\"untrusted-page-content\",\"tabId\":5,\"url\":\"https://e.test/\\u001b[2J\",\"title\":\"\",\"navigated\":true}")})
+			code, out = runCLI("page", "click", "e5")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldNotContainSubstring, "\x1b")
+		})
+
+		Convey("-o json 输出完整的结构化结果", func() {
+			stubPageDaemon(t, plain)
+			code, out := runCLI("page", "hover", "e5", "-o", "json")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldContainSubstring, `"title": "Example"`)
+			So(out, ShouldContainSubstring, `"navigated": false`)
+		})
+
+		Convey("hover 只转发目标", func() {
+			stub := stubPageDaemon(t, plain)
+			code, out := runCLI("page", "hover", "--selector", ".menu")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "tab 5\n")
+			So(stub.last.Action, ShouldEqual, "hover")
+			So(string(stub.last.Input), ShouldEqualJSON, `{"selector":".menu"}`)
+		})
+
+		Convey("引用与 --selector 必须恰好给一个:退出码 3,不发请求", func() {
+			stub := stubPageDaemon(t, plain)
+			for _, args := range [][]string{
+				{"page", "click"},
+				{"page", "click", "e5", "--selector", "#a"},
+				{"page", "click", "e5", "e6"},
+				{"page", "hover"},
+				{"page", "hover", "e5", "--selector", "#a"},
+			} {
+				code, _ := runCLI(args...)
+				So(code, ShouldEqual, exitError)
+			}
+			So(stub.calls, ShouldEqual, 0)
+		})
+
+		Convey("TIMEOUT、TARGET_AMBIGUOUS、PAGE_HIDDEN 退出码 3,消息带原因", func() {
+			for code, message := range map[string]string{
+				"TIMEOUT":          "page click did not finish within 10s: the element does not receive pointer events at its click point: obscured by div.modal-backdrop",
+				"TARGET_AMBIGUOUS": `selector ".item" matches 2 elements; it must match exactly one`,
+				"PAGE_HIDDEN":      "tab 5 is not rendering; retry with --activate",
+			} {
+				stubPageDaemon(t, pageError(code, message))
+				exit, _, _, err := runCLIResult(strings.NewReader(""), "page", "click", "e5")
+				So(exit, ShouldEqual, exitError)
+				So(err.Error(), ShouldContainSubstring, message)
+			}
+		})
+	})
+}

@@ -15,6 +15,10 @@ import (
 	"github.com/scriptscat/sctl/internal/pkg/protocol/generated"
 )
 
+// callTimeout 是集成测试里每条页面命令与每次轮询的期限。真 Chrome 在全量并行负载下明显变慢,
+// 默认的 10 秒会让本该成功的命令超时;期望超时的用例自己给更短的期限。
+const callTimeout = 30 * time.Second
+
 // startPage 启动 headless Chrome(没有时跳过),打开 fixture 页面,返回连着它的 Manager 与标签页 ID。
 func startPage(t *testing.T, fixture string) (*page.Manager, int) {
 	t.Helper()
@@ -30,7 +34,7 @@ func startPage(t *testing.T, fixture string) (*page.Manager, int) {
 // waitLoaded 等 fixture 页面加载完成;新标签页刚创建时文档可能还是 about:blank。
 func waitLoaded(t *testing.T, m *page.Manager, tab int) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(callTimeout)
 	for time.Now().Before(deadline) {
 		v, err := eval(m, tab, `document.readyState === "complete" && location.protocol === "http:"`)
 		if err == nil && string(v) == "true" {
@@ -42,7 +46,7 @@ func waitLoaded(t *testing.T, m *page.Manager, tab int) {
 }
 
 func eval(m *page.Manager, tab int, expression string) (json.RawMessage, error) {
-	raw, err := evalRaw(m, page.Request{TabID: &tab}, expression)
+	raw, err := evalRaw(m, page.Request{TabID: &tab, Timeout: callTimeout}, expression)
 	if err != nil {
 		return nil, err
 	}

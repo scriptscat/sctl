@@ -40,7 +40,7 @@ func snapshotRaw(m *page.Manager, tab int, root string) (json.RawMessage, error)
 	if err != nil {
 		return nil, err
 	}
-	return m.Do(context.Background(), page.Request{Action: "snapshot", TabID: &tab, Input: raw})
+	return m.Do(context.Background(), page.Request{Action: "snapshot", TabID: &tab, Timeout: callTimeout, Input: raw})
 }
 
 // refFor 取快照中第一行包含 line 的节点的引用。
@@ -58,7 +58,7 @@ func refFor(snapshot, line string) string {
 // waitFor 轮询表达式直到它为 true。
 func waitFor(t *testing.T, m *page.Manager, tab int, expression string) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(callTimeout)
 	for time.Now().Before(deadline) {
 		v, err := eval(m, tab, expression)
 		if err == nil && string(v) == "true" {

@@ -55,6 +55,12 @@ func (f *fakeCDP) CurrentTab(ctx context.Context, instanceID string) (int, error
 	return f.current, f.currentErr
 }
 
+func (f *fakeCDP) Tabs(ctx context.Context, instanceID string) ([]int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return []int{f.current}, nil
+}
+
 func (f *fakeCDP) SelectTab(ctx context.Context, instanceID string, tabID int) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

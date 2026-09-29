@@ -39,6 +39,8 @@ type CDP interface {
 	ResolveBrowser(target string) (string, error)
 	// CurrentTab 返回实例里最后获得焦点的普通窗口中的激活标签页,没有时返回 NOT_FOUND。
 	CurrentTab(ctx context.Context, instanceID string) (int, error)
+	// Tabs 返回实例里全部标签页的 ID;动作据此找出它打开的新标签页。
+	Tabs(ctx context.Context, instanceID string) ([]int, error)
 	// SelectTab 让标签页成为所在窗口的激活标签页,但不聚焦窗口;标签页不存在时返回 NOT_FOUND。
 	SelectTab(ctx context.Context, instanceID string, tabID int) error
 	// Send 执行一条 CDP 命令,标签页尚未附加时先附加;附加被拒返回 PAGE_NOT_AUTOMATABLE,

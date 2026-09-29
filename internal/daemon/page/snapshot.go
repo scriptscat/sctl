@@ -179,43 +179,18 @@ func (t *Tab) snapshotRoot(ctx context.Context, root string) (element, error) {
 	if refPattern.MatchString(root) {
 		return t.resolveRef(ctx, root)
 	}
-	var doc struct {
-		Root struct {
-			NodeID int `json:"nodeId"`
-		} `json:"root"`
-	}
-	if err := t.send(ctx, "DOM.getDocument", map[string]int{"depth": 0}, &doc); err != nil {
-		return element{}, err
-	}
-	var matched struct {
-		NodeIDs []int `json:"nodeIds"`
-	}
-	err := t.send(ctx, "DOM.querySelectorAll", map[string]any{"nodeId": doc.Root.NodeID, "selector": root}, &matched)
+	match, err := t.querySelector(ctx, root)
 	if err != nil {
-		if isCDPError(err) {
-			return element{}, invalidRequest(fmt.Sprintf("invalid selector %q: %v", root, err))
-		}
 		return element{}, err
 	}
-	switch len(matched.NodeIDs) {
+	switch match.count {
 	case 0:
-		return element{}, &Error{Code: generated.ErrorCodeNotFound, Message: fmt.Sprintf("no element matches selector %q", root)}
+		return element{}, &Error{Code: generated.ErrorCodeNotFound, Message: noMatch(root)}
 	case 1:
+		return match.el, nil
 	default:
-		return element{}, &Error{
-			Code:    generated.ErrorCodeTargetAmbiguous,
-			Message: fmt.Sprintf("selector %q matches %d elements; it must match exactly one", root, len(matched.NodeIDs)),
-		}
+		return element{}, ambiguousSelector(root, match.count)
 	}
-	var described struct {
-		Node struct {
-			BackendNodeID int `json:"backendNodeId"`
-		} `json:"node"`
-	}
-	if err := t.send(ctx, "DOM.describeNode", map[string]int{"nodeId": matched.NodeIDs[0]}, &described); err != nil {
-		return element{}, err
-	}
-	return element{backendNodeID: described.Node.BackendNodeID}, nil
 }
 
 // items 读取无障碍树并转换为快照行;root 非 nil 时只转换以它为根的子树。
