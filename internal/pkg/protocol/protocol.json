@@ -135,6 +135,105 @@
       "peer": "browser",
       "mergeField": "windows"
     },
+    "tabs.move": {
+      "params": "TabsMoveParams",
+      "result": "TabsMoveResult",
+      "scope": "tabs:move",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "tabs.pin": {
+      "params": "TabsIdsParams",
+      "result": "TabsIdsResult",
+      "scope": "tabs:pin",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "tabs.unpin": {
+      "params": "TabsIdsParams",
+      "result": "TabsIdsResult",
+      "scope": "tabs:unpin",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "tabs.mute": {
+      "params": "TabsIdsParams",
+      "result": "TabsIdsResult",
+      "scope": "tabs:mute",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "tabs.unmute": {
+      "params": "TabsIdsParams",
+      "result": "TabsIdsResult",
+      "scope": "tabs:unmute",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "tabs.reload": {
+      "params": "TabsReloadParams",
+      "result": "TabsIdsResult",
+      "scope": "tabs:reload",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "tabs.duplicate": {
+      "params": "TabsDuplicateParams",
+      "result": "TabsOpenResult",
+      "scope": "tabs:duplicate",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "windows.open": {
+      "params": "WindowsOpenParams",
+      "result": "WindowsOpenResult",
+      "scope": "windows:open",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "windows.close": {
+      "params": "WindowsCloseParams",
+      "result": "WindowsCloseResult",
+      "scope": "windows:close",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "windows.focus": {
+      "params": "WindowsFocusParams",
+      "result": "WindowsFocusResult",
+      "scope": "windows:focus",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "windows.state": {
+      "params": "WindowsStateParams",
+      "result": "WindowsStateResult",
+      "scope": "windows:state",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
     "readingList.list": {
       "params": "ReadingListListParams",
       "result": "ReadingListListResult",
@@ -811,6 +910,246 @@
       },
       "required": [
         "tabId"
+      ],
+      "additionalProperties": false
+    },
+    "TabsMoveParams": {
+      "type": "object",
+      "properties": {
+        "tabIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "windowId": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "index": {
+          "type": "integer",
+          "minimum": -1
+        }
+      },
+      "required": [
+        "tabIds"
+      ],
+      "additionalProperties": false
+    },
+    "TabsMoveResult": {
+      "type": "object",
+      "properties": {
+        "tabIds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "required": [
+        "tabIds"
+      ],
+      "additionalProperties": false
+    },
+    "TabsIdsParams": {
+      "type": "object",
+      "properties": {
+        "tabIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "required": [
+        "tabIds"
+      ],
+      "additionalProperties": false
+    },
+    "TabsIdsResult": {
+      "type": "object",
+      "properties": {
+        "tabIds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "required": [
+        "tabIds"
+      ],
+      "additionalProperties": false
+    },
+    "TabsReloadParams": {
+      "type": "object",
+      "properties": {
+        "tabIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "bypassCache": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "tabIds"
+      ],
+      "additionalProperties": false
+    },
+    "TabsDuplicateParams": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "tabId"
+      ],
+      "additionalProperties": false
+    },
+    "WindowsOpenParams": {
+      "type": "object",
+      "properties": {
+        "urls": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "minimized",
+            "maximized",
+            "fullscreen"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "WindowsOpenResult": {
+      "type": "object",
+      "properties": {
+        "windowId": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "windowId"
+      ],
+      "additionalProperties": false
+    },
+    "WindowsCloseParams": {
+      "type": "object",
+      "properties": {
+        "windowIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "required": [
+        "windowIds"
+      ],
+      "additionalProperties": false
+    },
+    "WindowsCloseResult": {
+      "type": "object",
+      "properties": {
+        "windowIds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "required": [
+        "windowIds"
+      ],
+      "additionalProperties": false
+    },
+    "WindowsFocusParams": {
+      "type": "object",
+      "properties": {
+        "windowId": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "windowId"
+      ],
+      "additionalProperties": false
+    },
+    "WindowsFocusResult": {
+      "type": "object",
+      "properties": {
+        "windowId": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "windowId"
+      ],
+      "additionalProperties": false
+    },
+    "WindowsStateParams": {
+      "type": "object",
+      "properties": {
+        "windowId": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "minimized",
+            "maximized",
+            "fullscreen"
+          ]
+        }
+      },
+      "required": [
+        "windowId",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "WindowsStateResult": {
+      "type": "object",
+      "properties": {
+        "windowId": {
+          "type": "integer"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "minimized",
+            "maximized",
+            "fullscreen"
+          ]
+        }
+      },
+      "required": [
+        "windowId",
+        "state"
       ],
       "additionalProperties": false
     },

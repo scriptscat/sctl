@@ -287,6 +287,18 @@ type TabsCloseResult struct {
 	TabIds []int `json:"tabIds"`
 }
 
+type TabsDuplicateParams struct {
+	TabId int `json:"tabId"`
+}
+
+type TabsIdsParams struct {
+	TabIds []int `json:"tabIds"`
+}
+
+type TabsIdsResult struct {
+	TabIds []int `json:"tabIds"`
+}
+
 type TabsListParams struct {
 	WindowId *int `json:"windowId,omitempty"`
 }
@@ -303,6 +315,16 @@ type TabsListResult struct {
 	} `json:"tabs"`
 }
 
+type TabsMoveParams struct {
+	Index    *int  `json:"index,omitempty"`
+	TabIds   []int `json:"tabIds"`
+	WindowId *int  `json:"windowId,omitempty"`
+}
+
+type TabsMoveResult struct {
+	TabIds []int `json:"tabIds"`
+}
+
 type TabsOpenParams struct {
 	Background *bool  `json:"background,omitempty"`
 	URL        string `json:"url"`
@@ -311,6 +333,27 @@ type TabsOpenParams struct {
 
 type TabsOpenResult struct {
 	TabId int `json:"tabId"`
+}
+
+type TabsReloadParams struct {
+	BypassCache *bool `json:"bypassCache,omitempty"`
+	TabIds      []int `json:"tabIds"`
+}
+
+type WindowsCloseParams struct {
+	WindowIds []int `json:"windowIds"`
+}
+
+type WindowsCloseResult struct {
+	WindowIds []int `json:"windowIds"`
+}
+
+type WindowsFocusParams struct {
+	WindowId int `json:"windowId"`
+}
+
+type WindowsFocusResult struct {
+	WindowId int `json:"windowId"`
 }
 
 type WindowsListParams struct {
@@ -323,6 +366,25 @@ type WindowsListResult struct {
 		TabCount int    `json:"tabCount"`
 		WindowId int    `json:"windowId"`
 	} `json:"windows"`
+}
+
+type WindowsOpenParams struct {
+	State *string  `json:"state,omitempty"`
+	Urls  []string `json:"urls,omitempty"`
+}
+
+type WindowsOpenResult struct {
+	WindowId int `json:"windowId"`
+}
+
+type WindowsStateParams struct {
+	State    string `json:"state"`
+	WindowId int    `json:"windowId"`
+}
+
+type WindowsStateResult struct {
+	State    string `json:"state"`
+	WindowId int    `json:"windowId"`
 }
 
 type Method string
@@ -349,9 +411,20 @@ const (
 	MethodScriptsToggleRequest  Method = "scripts.toggle.request"
 	MethodTabsActivate          Method = "tabs.activate"
 	MethodTabsClose             Method = "tabs.close"
+	MethodTabsDuplicate         Method = "tabs.duplicate"
 	MethodTabsList              Method = "tabs.list"
+	MethodTabsMove              Method = "tabs.move"
+	MethodTabsMute              Method = "tabs.mute"
 	MethodTabsOpen              Method = "tabs.open"
+	MethodTabsPin               Method = "tabs.pin"
+	MethodTabsReload            Method = "tabs.reload"
+	MethodTabsUnmute            Method = "tabs.unmute"
+	MethodTabsUnpin             Method = "tabs.unpin"
+	MethodWindowsClose          Method = "windows.close"
+	MethodWindowsFocus          Method = "windows.focus"
 	MethodWindowsList           Method = "windows.list"
+	MethodWindowsOpen           Method = "windows.open"
+	MethodWindowsState          Method = "windows.state"
 )
 
 type MethodMetadata struct{ Params, Result, Scope, Effect, Blocking, Level, Peer, MergeField string }
@@ -378,9 +451,20 @@ var Methods = map[string]MethodMetadata{
 	"scripts.toggle.request":  {Params: "ScriptsToggleParams", Result: "ScriptsToggleResult", Scope: "scripts:toggle:request", Effect: "write", Blocking: "approval", Level: "L2", Peer: "scriptcat", MergeField: ""},
 	"tabs.activate":           {Params: "TabsActivateParams", Result: "TabsActivateResult", Scope: "tabs:activate", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
 	"tabs.close":              {Params: "TabsCloseParams", Result: "TabsCloseResult", Scope: "tabs:close", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"tabs.duplicate":          {Params: "TabsDuplicateParams", Result: "TabsOpenResult", Scope: "tabs:duplicate", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
 	"tabs.list":               {Params: "TabsListParams", Result: "TabsListResult", Scope: "tabs:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "tabs"},
+	"tabs.move":               {Params: "TabsMoveParams", Result: "TabsMoveResult", Scope: "tabs:move", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"tabs.mute":               {Params: "TabsIdsParams", Result: "TabsIdsResult", Scope: "tabs:mute", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
 	"tabs.open":               {Params: "TabsOpenParams", Result: "TabsOpenResult", Scope: "tabs:open", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"tabs.pin":                {Params: "TabsIdsParams", Result: "TabsIdsResult", Scope: "tabs:pin", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"tabs.reload":             {Params: "TabsReloadParams", Result: "TabsIdsResult", Scope: "tabs:reload", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"tabs.unmute":             {Params: "TabsIdsParams", Result: "TabsIdsResult", Scope: "tabs:unmute", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"tabs.unpin":              {Params: "TabsIdsParams", Result: "TabsIdsResult", Scope: "tabs:unpin", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"windows.close":           {Params: "WindowsCloseParams", Result: "WindowsCloseResult", Scope: "windows:close", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"windows.focus":           {Params: "WindowsFocusParams", Result: "WindowsFocusResult", Scope: "windows:focus", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
 	"windows.list":            {Params: "WindowsListParams", Result: "WindowsListResult", Scope: "windows:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "windows"},
+	"windows.open":            {Params: "WindowsOpenParams", Result: "WindowsOpenResult", Scope: "windows:open", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"windows.state":           {Params: "WindowsStateParams", Result: "WindowsStateResult", Scope: "windows:state", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
 }
 
 const (

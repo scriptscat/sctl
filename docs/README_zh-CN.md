@@ -18,7 +18,7 @@ CLI ─────────────────────────�
 - 将 ScriptCat 操作与浏览器标签页/窗口控制暴露为可发现、具有 Schema 类型的 MCP 工具。
 - 列出脚本并读取元数据或源码，支持按行读取和源码搜索。
 - 通过浏览器确认请求安装、基于内容锚点的编辑、启用/禁用和删除。
-- 在一个或多个已配对的 sctl Browser 实例上列出、打开、关闭、激活标签页,以及列出窗口。
+- 在一个或多个已配对的 sctl Browser 实例上列出、打开、关闭、激活、移动、固定、静音、刷新、复制标签页,以及列出、打开、关闭、聚焦窗口和修改窗口状态。
 - 在已配对的 sctl Browser 实例上列出、添加、标记已读或未读、移除阅读列表条目。
 - 在已配对的 sctl Browser 实例上列出、搜索、添加、移动和编辑书签与书签文件夹，并在该浏览器里批准后删除它们。
 - 在仅监听回环地址的 WebSocket 上使用 JSON-RPC 2.0 和双向认证。
@@ -92,7 +92,9 @@ sctl status
 | `sctl delete <uuid>` | 请求删除脚本。 |
 | `sctl browsers [list]` / `sctl browsers forget <name\|id>` | 列出已配对的 sctl Browser 实例，或忘记其中一个。 |
 | `sctl tabs list\|open\|close\|activate` | 在已配对的 sctl Browser 实例上列出、打开、关闭或激活标签页。 |
+| `sctl tabs move\|pin\|unpin\|mute\|unmute\|reload\|duplicate` | 移动、固定、静音、刷新或复制标签页（多个 ID 全有或全无）。 |
 | `sctl windows list` | 列出已配对的 sctl Browser 实例上的窗口。 |
+| `sctl windows open\|close\|focus\|state` | 打开、关闭、聚焦窗口或修改窗口状态。 |
 | `sctl reading-list list\|add\|mark-read\|rm` | 在已配对的 sctl Browser 实例上列出、添加、标记已读或未读、移除阅读列表条目。 |
 | `sctl bookmarks list\|search\|add\|mkdir\|move\|edit\|rm` | 在已配对的 sctl Browser 实例上列出、搜索、添加、移动、编辑或删除书签和书签文件夹。 |
 

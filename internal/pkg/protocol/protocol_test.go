@@ -96,6 +96,17 @@ func TestLoadExposesEachMethodsDestructionLevel(t *testing.T) {
 		"bookmarks.mkdir":        LevelDirect,
 		"bookmarks.move":         LevelDirect,
 		"bookmarks.edit":         LevelDirect,
+		"tabs.move":              LevelDirect,
+		"tabs.pin":               LevelDirect,
+		"tabs.unpin":             LevelDirect,
+		"tabs.mute":              LevelDirect,
+		"tabs.unmute":            LevelDirect,
+		"tabs.reload":            LevelDirect,
+		"tabs.duplicate":         LevelDirect,
+		"windows.open":           LevelDirect,
+		"windows.close":          LevelDirect,
+		"windows.focus":          LevelDirect,
+		"windows.state":          LevelDirect,
 	} {
 		action, ok := p.Actions[name]
 		if !ok {

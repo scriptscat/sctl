@@ -217,6 +217,12 @@ browser's built-in top-level folders cannot be moved, edited, or removed, and a 
 (`INVALID_REQUEST`); `move` changes nothing if any ID is unknown (`NOT_FOUND`) or invalid. `remove` deletes up to
 500 bookmarks or folders, each folder with its contents, only after a person approves the request in the browser.
 
+`tabs_manage` rearranges tabs and windows, with `action` set to `move`, `pin`, `unpin`, `mute`, `unmute`, `reload`,
+`duplicate`, `windows-open`, `windows-close`, `windows-focus`, or `windows-state`. It runs immediately with no
+confirmation. `duplicate` returns the new tab ID and `windows-open` the new window ID; actions taking several IDs
+change nothing if any ID is unknown (`NOT_FOUND`), and a `state` other than `normal`, `minimized`, `maximized`, or
+`fullscreen` is `INVALID_REQUEST`.
+
 Browser operations carry a destruction level. Most run immediately. A few are destructive enough to need explicit
 confirmation — currently only the reading list's `rm`: it runs only when the call passes `confirm: true`, and
 without it the daemon answers `CONFIRMATION_REQUIRED` and nothing runs. The command-line equivalent is `--yes`.

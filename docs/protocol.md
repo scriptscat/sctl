@@ -231,6 +231,17 @@ It is optional in the schema so that an unconfirmed call that reaches the extens
 | `tabs.close` | browser | close one or more tabs | none | L0 |
 | `tabs.activate` | browser | activate a tab and focus its window | none | L0 |
 | `windows.list` | browser | list windows | none | L0 |
+| `tabs.move` | browser | move tabs to a window and position (`index` -1 is the end) | none | L0 |
+| `tabs.pin` | browser | pin tabs | none | L0 |
+| `tabs.unpin` | browser | unpin tabs | none | L0 |
+| `tabs.mute` | browser | mute tabs | none | L0 |
+| `tabs.unmute` | browser | unmute tabs | none | L0 |
+| `tabs.reload` | browser | reload tabs, optionally bypassing the cache | none | L0 |
+| `tabs.duplicate` | browser | duplicate a tab and return the new tab ID | none | L0 |
+| `windows.open` | browser | open a window, optionally with URLs and a state, and return its window ID | none | L0 |
+| `windows.close` | browser | close windows | none | L0 |
+| `windows.focus` | browser | focus a window | none | L0 |
+| `windows.state` | browser | set a window's state | none | L0 |
 | `readingList.list` | browser | list reading list entries, newest first | none | L0 |
 | `readingList.add` | browser | add a URL to the reading list | none | L0 |
 | `readingList.markRead` | browser | mark reading list entries read or unread | none | L0 |
@@ -259,6 +270,13 @@ The reading list methods answer `UNSUPPORTED` when the browser does not provide 
 `readingList.add` answers `CONFLICT` for a URL that is already in the list, and its title defaults to the URL.
 `readingList.markRead` and `readingList.remove` are all-or-nothing: if any given URL is not in the list they
 answer `NOT_FOUND` and change nothing.
+
+The tab and window management methods (`tabs.move`, `tabs.pin`, `tabs.unpin`, `tabs.mute`, `tabs.unmute`,
+`tabs.reload`, `tabs.duplicate`, `windows.open`, `windows.close`, `windows.focus`, `windows.state`) are L0 and are
+all-or-nothing for several IDs: every tab or window is checked first, and an unknown one answers `NOT_FOUND` with
+nothing changed. `tabs.move` without `index` (or with `-1`) moves to the end of the window and answers `NOT_FOUND`
+for an unknown target `windowId`. A window `state` other than `normal`, `minimized`, `maximized`, or `fullscreen`
+answers `INVALID_REQUEST`, as does an `index` below -1.
 
 Bookmark IDs are the browser's own. An unknown ID answers `NOT_FOUND`. `bookmarks.list` returns a folder's direct
 children (the root's children, the built-in top-level folders, when no folder is given) and applies `limit`; with

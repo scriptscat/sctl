@@ -79,6 +79,30 @@ var domainTools = []domainTool{
 			{name: "remove", method: "bookmarks.remove"},
 		},
 	},
+	{
+		name: "tabs_manage",
+		description: "Rearrange tabs and windows of the browser. These actions run immediately, with no confirmation. " +
+			"move moves tabs into windowId (default: each tab's current window) at index (0 is the first position, -1 or omitted is the end). " +
+			"pin, unpin, mute, and unmute change those states of tabs; reload reloads tabs, skipping the cache with bypassCache: true. " +
+			"duplicate duplicates one tab and returns the new tab ID. " +
+			"windows-open opens a new window, optionally with urls and a state (normal, minimized, maximized, or fullscreen), and returns its window ID; " +
+			"windows-close closes windows (recently closed windows can be restored); windows-focus brings a window to the front; " +
+			"windows-state sets a window's state. " +
+			"Actions taking several IDs change nothing if any ID is unknown (NOT_FOUND). An invalid state returns INVALID_REQUEST.",
+		actions: []domainAction{
+			{name: "move", method: "tabs.move"},
+			{name: "pin", method: "tabs.pin"},
+			{name: "unpin", method: "tabs.unpin"},
+			{name: "mute", method: "tabs.mute"},
+			{name: "unmute", method: "tabs.unmute"},
+			{name: "reload", method: "tabs.reload"},
+			{name: "duplicate", method: "tabs.duplicate"},
+			{name: "windows-open", method: "windows.open"},
+			{name: "windows-close", method: "windows.close"},
+			{name: "windows-focus", method: "windows.focus"},
+			{name: "windows-state", method: "windows.state"},
+		},
+	},
 }
 
 // browserParamDomain 是领域工具的 browser 参数说明:一个工具里既有列表类也有操作类 action,

@@ -165,12 +165,29 @@ export interface TabsCloseParams {
 export interface TabsCloseResult {
   tabIds: Array<number>;
 }
+export interface TabsDuplicateParams {
+  tabId: number;
+}
+export interface TabsIdsParams {
+  tabIds: Array<number>;
+}
+export interface TabsIdsResult {
+  tabIds: Array<number>;
+}
 export interface TabsListParams {
   windowId?: number;
 }
 export interface TabsListResult {
   contentTrust: "untrusted-page-content";
   tabs: Array<{ active: boolean; pinned: boolean; tabId: number; title: string; url: string; windowId: number; }>;
+}
+export interface TabsMoveParams {
+  index?: number;
+  tabIds: Array<number>;
+  windowId?: number;
+}
+export interface TabsMoveResult {
+  tabIds: Array<number>;
 }
 export interface TabsOpenParams {
   background?: boolean;
@@ -180,9 +197,40 @@ export interface TabsOpenParams {
 export interface TabsOpenResult {
   tabId: number;
 }
+export interface TabsReloadParams {
+  bypassCache?: boolean;
+  tabIds: Array<number>;
+}
+export interface WindowsCloseParams {
+  windowIds: Array<number>;
+}
+export interface WindowsCloseResult {
+  windowIds: Array<number>;
+}
+export interface WindowsFocusParams {
+  windowId: number;
+}
+export interface WindowsFocusResult {
+  windowId: number;
+}
 export type WindowsListParams = Record<string, never>;
 export interface WindowsListResult {
   windows: Array<{ focused: boolean; state: "normal" | "minimized" | "maximized" | "fullscreen" | "locked-fullscreen"; tabCount: number; windowId: number; }>;
+}
+export interface WindowsOpenParams {
+  state?: "normal" | "minimized" | "maximized" | "fullscreen";
+  urls?: Array<string>;
+}
+export interface WindowsOpenResult {
+  windowId: number;
+}
+export interface WindowsStateParams {
+  state: "normal" | "minimized" | "maximized" | "fullscreen";
+  windowId: number;
+}
+export interface WindowsStateResult {
+  state: "normal" | "minimized" | "maximized" | "fullscreen";
+  windowId: number;
 }
 export interface RpcMethodMap {
   "bookmarks.add": { params: BookmarksAddParams; result: BookmarksAddResult };
@@ -198,9 +246,20 @@ export interface RpcMethodMap {
   "readingList.remove": { params: ReadingListRemoveParams; result: ReadingListRemoveResult };
   "tabs.activate": { params: TabsActivateParams; result: TabsActivateResult };
   "tabs.close": { params: TabsCloseParams; result: TabsCloseResult };
+  "tabs.duplicate": { params: TabsDuplicateParams; result: TabsOpenResult };
   "tabs.list": { params: TabsListParams; result: TabsListResult };
+  "tabs.move": { params: TabsMoveParams; result: TabsMoveResult };
+  "tabs.mute": { params: TabsIdsParams; result: TabsIdsResult };
   "tabs.open": { params: TabsOpenParams; result: TabsOpenResult };
+  "tabs.pin": { params: TabsIdsParams; result: TabsIdsResult };
+  "tabs.reload": { params: TabsReloadParams; result: TabsIdsResult };
+  "tabs.unmute": { params: TabsIdsParams; result: TabsIdsResult };
+  "tabs.unpin": { params: TabsIdsParams; result: TabsIdsResult };
+  "windows.close": { params: WindowsCloseParams; result: WindowsCloseResult };
+  "windows.focus": { params: WindowsFocusParams; result: WindowsFocusResult };
   "windows.list": { params: WindowsListParams; result: WindowsListResult };
+  "windows.open": { params: WindowsOpenParams; result: WindowsOpenResult };
+  "windows.state": { params: WindowsStateParams; result: WindowsStateResult };
 }
 export type RpcMethod = keyof RpcMethodMap;
 export type RpcParams<M extends RpcMethod> = RpcMethodMap[M]["params"];
@@ -310,11 +369,35 @@ export const RPC_METHODS = {
     blocking: "none",
     level: "L0",
   },
+  "tabs.duplicate": {
+    params: "TabsDuplicateParams",
+    result: "TabsOpenResult",
+    scope: "tabs:duplicate",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
   "tabs.list": {
     params: "TabsListParams",
     result: "TabsListResult",
     scope: "tabs:list",
     effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "tabs.move": {
+    params: "TabsMoveParams",
+    result: "TabsMoveResult",
+    scope: "tabs:move",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "tabs.mute": {
+    params: "TabsIdsParams",
+    result: "TabsIdsResult",
+    scope: "tabs:mute",
+    effect: "write",
     blocking: "none",
     level: "L0",
   },
@@ -326,11 +409,75 @@ export const RPC_METHODS = {
     blocking: "none",
     level: "L0",
   },
+  "tabs.pin": {
+    params: "TabsIdsParams",
+    result: "TabsIdsResult",
+    scope: "tabs:pin",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "tabs.reload": {
+    params: "TabsReloadParams",
+    result: "TabsIdsResult",
+    scope: "tabs:reload",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "tabs.unmute": {
+    params: "TabsIdsParams",
+    result: "TabsIdsResult",
+    scope: "tabs:unmute",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "tabs.unpin": {
+    params: "TabsIdsParams",
+    result: "TabsIdsResult",
+    scope: "tabs:unpin",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "windows.close": {
+    params: "WindowsCloseParams",
+    result: "WindowsCloseResult",
+    scope: "windows:close",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "windows.focus": {
+    params: "WindowsFocusParams",
+    result: "WindowsFocusResult",
+    scope: "windows:focus",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
   "windows.list": {
     params: "WindowsListParams",
     result: "WindowsListResult",
     scope: "windows:list",
     effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "windows.open": {
+    params: "WindowsOpenParams",
+    result: "WindowsOpenResult",
+    scope: "windows:open",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "windows.state": {
+    params: "WindowsStateParams",
+    result: "WindowsStateResult",
+    scope: "windows:state",
+    effect: "write",
     blocking: "none",
     level: "L0",
   },

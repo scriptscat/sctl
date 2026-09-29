@@ -9,14 +9,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newWindowsCmd 构造 `sctl windows`:目前只有 list 子命令(docs/specs 第 1 期命令表)。
+// newWindowsCmd 构造 `sctl windows`:list 之外还有 open/close/focus/state。
 func newWindowsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "windows",
 		Short: "Manage windows on a paired sctl Browser instance",
 	}
 	addBrowserFlag(cmd)
-	cmd.AddCommand(newWindowsListCmd())
+	cmd.AddCommand(newWindowsListCmd(), newWindowsOpenCmd(), newWindowsCloseCmd(), newWindowsFocusCmd(), newWindowsStateCmd())
 	return cmd
 }
 

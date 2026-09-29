@@ -300,3 +300,61 @@ func TestBookmarksToolRejectsArgumentsItsActionDoesNotAcceptBeforeForwarding(t *
 		So(caller.actions, ShouldBeEmpty)
 	})
 }
+
+func TestTabsManageToolForwardsEachActionToItsProtocolMethod(t *testing.T) {
+	Convey("tabs_manage 把每个 action 转发到对应的协议方法,并声明协议派生的参数", t, func() {
+		p := loadProto(t)
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+
+		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+		So(err, ShouldBeNil)
+		tool := toolByName(res, "tabs_manage")
+		props, required := inputSchemaOf(tool)
+		So(required, ShouldResemble, []any{"action"})
+		action, ok := props["action"].(map[string]any)
+		So(ok, ShouldBeTrue)
+		So(action["enum"], ShouldResemble, []any{
+			"move", "pin", "unpin", "mute", "unmute", "reload", "duplicate",
+			"windows-open", "windows-close", "windows-focus", "windows-state",
+		})
+		So(props, ShouldContainKey, "tabIds")
+		So(props, ShouldContainKey, "windowIds")
+		So(props, ShouldNotContainKey, protocol.ConfirmParam)
+
+		for _, args := range []map[string]any{
+			{"action": "move", "tabIds": []int{1, 2}, "windowId": 20, "index": -1},
+			{"action": "pin", "tabIds": []int{1}},
+			{"action": "unpin", "tabIds": []int{1}},
+			{"action": "mute", "tabIds": []int{1}},
+			{"action": "unmute", "tabIds": []int{1}},
+			{"action": "reload", "tabIds": []int{1}, "bypassCache": true},
+			{"action": "duplicate", "tabId": 1, "browser": "work"},
+			{"action": "windows-open", "urls": []string{"https://a.example/"}, "state": "maximized"},
+			{"action": "windows-close", "windowIds": []int{10}},
+			{"action": "windows-focus", "windowId": 10},
+			{"action": "windows-state", "windowId": 10, "state": "minimized"},
+		} {
+			res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "tabs_manage", Arguments: args})
+			So(err, ShouldBeNil)
+			So(res.IsError, ShouldBeFalse)
+		}
+		So(caller.actions, ShouldResemble, []string{
+			"tabs.move", "tabs.pin", "tabs.unpin", "tabs.mute", "tabs.unmute", "tabs.reload", "tabs.duplicate",
+			"windows.open", "windows.close", "windows.focus", "windows.state",
+		})
+		So(caller.browserParams[6], ShouldEqual, "work")
+
+		Convey("不属于所选 action 的参数与无效的 state 在转发前被拒绝", func() {
+			before := len(caller.actions)
+			for _, args := range []map[string]any{
+				{"action": "pin", "tabIds": []int{1}, "windowId": 3},
+				{"action": "windows-state", "windowId": 10, "state": "huge"},
+			} {
+				res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "tabs_manage", Arguments: args})
+				So(err == nil && res.IsError || err != nil, ShouldBeTrue)
+			}
+			So(len(caller.actions), ShouldEqual, before)
+		})
+	})
+}

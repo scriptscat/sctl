@@ -114,12 +114,32 @@ export function validateTabsCloseResult(value: unknown): value is Protocol.TabsC
   return (isRecord(value) && hasOnlyKeys(value, ["tabIds"]) && Array.isArray(value["tabIds"]) && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item)));
 }
 
+export function validateTabsDuplicateParams(value: unknown): value is Protocol.TabsDuplicateParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["tabId"]) && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0);
+}
+
+export function validateTabsIdsParams(value: unknown): value is Protocol.TabsIdsParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["tabIds"]) && Array.isArray(value["tabIds"]) && value["tabIds"].length >= 1 && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0));
+}
+
+export function validateTabsIdsResult(value: unknown): value is Protocol.TabsIdsResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["tabIds"]) && Array.isArray(value["tabIds"]) && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item)));
+}
+
 export function validateTabsListParams(value: unknown): value is Protocol.TabsListParams {
   return (isRecord(value) && hasOnlyKeys(value, ["windowId"]) && (value["windowId"] === undefined || (typeof value["windowId"] === "number" && Number.isInteger(value["windowId"]) && value["windowId"] >= 0)));
 }
 
 export function validateTabsListResult(value: unknown): value is Protocol.TabsListResult {
   return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "tabs"]) && value["contentTrust"] === "untrusted-page-content" && Array.isArray(value["tabs"]) && value["tabs"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["active", "pinned", "tabId", "title", "url", "windowId"]) && typeof item["active"] === "boolean" && typeof item["pinned"] === "boolean" && typeof item["tabId"] === "number" && Number.isInteger(item["tabId"]) && typeof item["title"] === "string" && typeof item["url"] === "string" && typeof item["windowId"] === "number" && Number.isInteger(item["windowId"]))));
+}
+
+export function validateTabsMoveParams(value: unknown): value is Protocol.TabsMoveParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["index", "tabIds", "windowId"]) && (value["index"] === undefined || (typeof value["index"] === "number" && Number.isInteger(value["index"]) && value["index"] >= -1)) && Array.isArray(value["tabIds"]) && value["tabIds"].length >= 1 && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0) && (value["windowId"] === undefined || (typeof value["windowId"] === "number" && Number.isInteger(value["windowId"]) && value["windowId"] >= 0)));
+}
+
+export function validateTabsMoveResult(value: unknown): value is Protocol.TabsMoveResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["tabIds"]) && Array.isArray(value["tabIds"]) && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item)));
 }
 
 export function validateTabsOpenParams(value: unknown): value is Protocol.TabsOpenParams {
@@ -130,12 +150,48 @@ export function validateTabsOpenResult(value: unknown): value is Protocol.TabsOp
   return (isRecord(value) && hasOnlyKeys(value, ["tabId"]) && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]));
 }
 
+export function validateTabsReloadParams(value: unknown): value is Protocol.TabsReloadParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["bypassCache", "tabIds"]) && (value["bypassCache"] === undefined || (typeof value["bypassCache"] === "boolean")) && Array.isArray(value["tabIds"]) && value["tabIds"].length >= 1 && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0));
+}
+
+export function validateWindowsCloseParams(value: unknown): value is Protocol.WindowsCloseParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["windowIds"]) && Array.isArray(value["windowIds"]) && value["windowIds"].length >= 1 && value["windowIds"].every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0));
+}
+
+export function validateWindowsCloseResult(value: unknown): value is Protocol.WindowsCloseResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["windowIds"]) && Array.isArray(value["windowIds"]) && value["windowIds"].every((item) => typeof item === "number" && Number.isInteger(item)));
+}
+
+export function validateWindowsFocusParams(value: unknown): value is Protocol.WindowsFocusParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["windowId"]) && typeof value["windowId"] === "number" && Number.isInteger(value["windowId"]) && value["windowId"] >= 0);
+}
+
+export function validateWindowsFocusResult(value: unknown): value is Protocol.WindowsFocusResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["windowId"]) && typeof value["windowId"] === "number" && Number.isInteger(value["windowId"]));
+}
+
 export function validateWindowsListParams(value: unknown): value is Protocol.WindowsListParams {
   return (isRecord(value) && hasOnlyKeys(value, []));
 }
 
 export function validateWindowsListResult(value: unknown): value is Protocol.WindowsListResult {
   return (isRecord(value) && hasOnlyKeys(value, ["windows"]) && Array.isArray(value["windows"]) && value["windows"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["focused", "state", "tabCount", "windowId"]) && typeof item["focused"] === "boolean" && (item["state"] === "normal" || item["state"] === "minimized" || item["state"] === "maximized" || item["state"] === "fullscreen" || item["state"] === "locked-fullscreen") && typeof item["tabCount"] === "number" && Number.isInteger(item["tabCount"]) && typeof item["windowId"] === "number" && Number.isInteger(item["windowId"]))));
+}
+
+export function validateWindowsOpenParams(value: unknown): value is Protocol.WindowsOpenParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["state", "urls"]) && (value["state"] === undefined || ((value["state"] === "normal" || value["state"] === "minimized" || value["state"] === "maximized" || value["state"] === "fullscreen"))) && (value["urls"] === undefined || (Array.isArray(value["urls"]) && value["urls"].every((item) => typeof item === "string"))));
+}
+
+export function validateWindowsOpenResult(value: unknown): value is Protocol.WindowsOpenResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["windowId"]) && typeof value["windowId"] === "number" && Number.isInteger(value["windowId"]));
+}
+
+export function validateWindowsStateParams(value: unknown): value is Protocol.WindowsStateParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["state", "windowId"]) && (value["state"] === "normal" || value["state"] === "minimized" || value["state"] === "maximized" || value["state"] === "fullscreen") && typeof value["windowId"] === "number" && Number.isInteger(value["windowId"]) && value["windowId"] >= 0);
+}
+
+export function validateWindowsStateResult(value: unknown): value is Protocol.WindowsStateResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["state", "windowId"]) && (value["state"] === "normal" || value["state"] === "minimized" || value["state"] === "maximized" || value["state"] === "fullscreen") && typeof value["windowId"] === "number" && Number.isInteger(value["windowId"]));
 }
 
 export const RPC_PARAM_VALIDATORS = {
@@ -152,9 +208,20 @@ export const RPC_PARAM_VALIDATORS = {
   "readingList.remove": validateReadingListRemoveParams,
   "tabs.activate": validateTabsActivateParams,
   "tabs.close": validateTabsCloseParams,
+  "tabs.duplicate": validateTabsDuplicateParams,
   "tabs.list": validateTabsListParams,
+  "tabs.move": validateTabsMoveParams,
+  "tabs.mute": validateTabsIdsParams,
   "tabs.open": validateTabsOpenParams,
+  "tabs.pin": validateTabsIdsParams,
+  "tabs.reload": validateTabsReloadParams,
+  "tabs.unmute": validateTabsIdsParams,
+  "tabs.unpin": validateTabsIdsParams,
+  "windows.close": validateWindowsCloseParams,
+  "windows.focus": validateWindowsFocusParams,
   "windows.list": validateWindowsListParams,
+  "windows.open": validateWindowsOpenParams,
+  "windows.state": validateWindowsStateParams,
 } as const;
 
 export const RPC_RESULT_VALIDATORS = {
@@ -171,7 +238,18 @@ export const RPC_RESULT_VALIDATORS = {
   "readingList.remove": validateReadingListRemoveResult,
   "tabs.activate": validateTabsActivateResult,
   "tabs.close": validateTabsCloseResult,
+  "tabs.duplicate": validateTabsOpenResult,
   "tabs.list": validateTabsListResult,
+  "tabs.move": validateTabsMoveResult,
+  "tabs.mute": validateTabsIdsResult,
   "tabs.open": validateTabsOpenResult,
+  "tabs.pin": validateTabsIdsResult,
+  "tabs.reload": validateTabsIdsResult,
+  "tabs.unmute": validateTabsIdsResult,
+  "tabs.unpin": validateTabsIdsResult,
+  "windows.close": validateWindowsCloseResult,
+  "windows.focus": validateWindowsFocusResult,
   "windows.list": validateWindowsListResult,
+  "windows.open": validateWindowsOpenResult,
+  "windows.state": validateWindowsStateResult,
 } as const;
