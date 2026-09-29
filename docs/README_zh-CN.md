@@ -100,11 +100,12 @@ sctl status
 | `sctl reading-list list\|add\|mark-read\|rm` | 在已配对的 sctl Browser 实例上列出、添加、标记已读或未读、移除阅读列表条目。 |
 | `sctl history search\|visits\|rm\|clear` | 搜索历史、列出某个 URL 的访问记录、按 URL 删除历史，或按时间范围清除历史。 |
 | `sctl browsing-data clear` | 按类型、时间和来源清除缓存、Cookie、存储等浏览数据。 |
+| `sctl recent list\|restore` | 列出最近关闭的标签页和窗口，或恢复其中一项（不给会话 ID 时恢复最近关闭的一项）。 |
 | `sctl bookmarks list\|search\|add\|mkdir\|move\|edit\|rm` | 在已配对的 sctl Browser 实例上列出、搜索、添加、移动、编辑或删除书签和书签文件夹。 |
 
 运行 `sctl --help` 或 `sctl <command> --help` 查看用法和参数。写操作会阻塞，直到用户在
 ScriptCat 中批准、拒绝或关闭确认流程；浏览器控制命令按设计没有审批步骤、立即执行(参见
-[`threat-model.md`](./threat-model.md))。当多个实例同时在线时，`tabs`、`windows`、`reading-list`、`bookmarks`、`history` 与 `browsing-data` 可用
+[`threat-model.md`](./threat-model.md))。当多个实例同时在线时，`tabs`、`windows`、`reading-list`、`bookmarks`、`history`、`browsing-data` 与 `recent` 可用
 `--browser <name|id>`（或环境变量 `SCTL_BROWSER`）指定目标实例。破坏性的浏览器操作需要显式确认：
 `reading-list rm`、`history rm`、`history clear` 与 `browsing-data clear` 必须加 `--yes`（MCP 传 `confirm: true`），否则什么都不执行，退出码为 3。
 `bookmarks rm <id>...` 则需要人工审批：浏览器打开审批窗口，命令一直等待；书签删除后退出码为 0，被拒绝或关闭窗口为 1，

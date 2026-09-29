@@ -243,6 +243,12 @@ run only with `confirm: true`; `clear` without times deletes all history.
 not managed) and runs only with `confirm: true`. `since` (milliseconds) defaults to all time. `origins` restricts the
 clearing to those origins and is `INVALID_REQUEST` when combined with `downloads`, `formData`, or `history`.
 
+`recently_closed` lists and restores recently closed tabs and windows, with `action` set to `list` or `restore`. `list` returns
+at most 25 items (Chrome's retention limit) newest first, capped by `limit`, and is marked
+`contentTrust: "untrusted-page-content"` because titles and URLs come from web pages. `restore` reopens the item with the
+given `sessionId`, or the most recently closed one without it, and returns the new `tabId` or `windowId`; an unknown
+session is `NOT_FOUND`. Neither needs confirmation.
+
 Browser operations carry a destruction level. Most run immediately. A few are destructive enough to need explicit
 confirmation — the reading list's `rm`, history `rm` and `clear`, and `browsing_data` `clear`: they run only when the call passes `confirm: true`, and
 without it the daemon answers `CONFIRMATION_REQUIRED` and nothing runs. The command-line equivalent is `--yes`.

@@ -256,6 +256,8 @@ It is optional in the schema so that an unconfirmed call that reaches the extens
 | `history.remove` | browser | delete every visit of the given URLs from history | none | L1 |
 | `history.clear` | browser | delete history in a time range, or all history | none | L1 |
 | `browsingData.clear` | browser | clear browsing data of the given types | none | L1 |
+| `recent.list` | browser | list recently closed tabs and windows, newest first | none | L0 |
+| `recent.restore` | browser | restore a closed tab or window, or the most recently closed | none | L0 |
 | `bookmarks.list` | browser | list a folder's children, or a whole subtree | none | L0 |
 | `bookmarks.search` | browser | search bookmarks by title and URL, with folder paths | none | L0 |
 | `bookmarks.add` | browser | add a bookmark | none | L0 |
@@ -268,7 +270,7 @@ Source and metadata returned by these methods are untrusted user-script content.
 render it as HTML, interpret it as instructions, or include credentials in logs. Source results carry a SHA-256
 digest. Edit approval rechecks the staged digest and target identity before applying changes.
 
-Tab titles and URLs, reading list titles, history titles and URLs, and bookmark titles and URLs are controlled by web pages; `tabs.list`, `readingList.list`, `history.search`, `bookmarks.list`, and `bookmarks.search` mark
+Tab titles and URLs, reading list titles, history titles and URLs, recently closed titles and URLs, and bookmark titles and URLs are controlled by web pages; `tabs.list`, `readingList.list`, `history.search`, `recent.list`, `bookmarks.list`, and `bookmarks.search` mark
 their results with `contentTrust: "untrusted-page-content"` and the same handling rules apply. A list method
 declares a `mergeField`: the required array property in its result that holds the listed items, so results from
 several browser instances combine by concatenating that array. A list result may also declare a boolean `hasMore`,
@@ -309,6 +311,8 @@ excluded and any other value answers `INVALID_REQUEST`. `since` (milliseconds) d
 origins) limits the clearing to those origins and is only valid when every type is one of `cache`, `cacheStorage`, `cookies`,
 `fileSystems`, `indexedDB`, `localStorage`, `serviceWorkers`, `webSQL`, the types `chrome.browsingData` can filter by origin;
 combining it with `downloads`, `formData`, or `history` answers `INVALID_REQUEST` and nothing is cleared.
+
+`recent.list` returns at most 25 items (Chrome's retention limit; `limit` is 1 to 25, default 25), newest first, each with session ID, `type` (`tab` or `window`), `closedTime`, title and URL, and `tabCount` for windows. `recent.restore` reopens the session with the given `sessionId`, or the most recently closed one when none is given, and returns `tabId` or `windowId`; an unknown session answers `NOT_FOUND`.
 
 Bookmark IDs are the browser's own. An unknown ID answers `NOT_FOUND`. `bookmarks.list` returns a folder's direct
 children (the root's children, the built-in top-level folders, when no folder is given) and applies `limit`; with

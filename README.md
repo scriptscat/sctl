@@ -108,12 +108,13 @@ troubleshooting.
 | `sctl reading-list list\|add\|mark-read\|rm` | List, add, mark read or unread, or remove reading list entries on a paired sctl Browser instance. |
 | `sctl history search\|visits\|rm\|clear` | Search history, list a URL's visits, delete URLs from history, or clear history by time range. |
 | `sctl browsing-data clear` | Clear cache, cookies, storage and other browsing data by type, time, and origin. |
+| `sctl recent list\|restore` | List recently closed tabs and windows, or restore one (the most recent when no session ID is given). |
 | `sctl bookmarks list\|search\|add\|mkdir\|move\|edit\|rm` | List, search, add, move, edit, or delete bookmarks and bookmark folders on a paired sctl Browser instance. |
 
 Run `sctl --help` or `sctl <command> --help` for usage and flags. Write operations block
 until the user approves, rejects, or closes the confirmation flow in ScriptCat; browser control commands run
 immediately with no approval step (see [`docs/threat-model.md`](./docs/threat-model.md)). `tabs`, `windows`,
-`reading-list`, `bookmarks`, `history`, and `browsing-data` accept `--browser <name|id>` (or `SCTL_BROWSER`) to pick an instance when more than one is online.
+`reading-list`, `bookmarks`, `history`, `browsing-data`, and `recent` accept `--browser <name|id>` (or `SCTL_BROWSER`) to pick an instance when more than one is online.
 Destructive browser operations need explicit confirmation: `reading-list rm`, `history rm`, `history clear` and `browsing-data clear` run only with `--yes` (MCP:
 `confirm: true`); without it nothing runs and the command exits with code 3. `bookmarks rm <id>...` needs human
 approval instead: the browser opens an approval window and the command waits, exiting 0 once the bookmarks are

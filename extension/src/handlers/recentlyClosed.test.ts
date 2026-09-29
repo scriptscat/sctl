@@ -1,8 +1,23 @@
 import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from "vitest";
 import { registerRecentlyClosedHandlers } from "./recentlyClosed";
 import { HandlerRegistry } from "@/background/registry";
+import type { RpcOutcome } from "@/shared/messages";
 
-type GetRecentlyClosedFn = (options?: chrome.sessions.GetRecentlyClosedOptions) => Promise<chrome.sessions.Session[]>;
+function tab(fields: Partial<chrome.tabs.Tab>): chrome.tabs.Tab {
+  return fields as chrome.tabs.Tab;
+}
+
+function win(fields: Partial<chrome.windows.Window>): chrome.windows.Window {
+  return fields as chrome.windows.Window;
+}
+
+// 处理器已按 recent.list 的结果类型返回；分发器只给出 unknown，这里收窄后再断言。
+function listItems(outcome: RpcOutcome): Record<string, unknown>[] {
+  if (!outcome.ok) throw new Error(`expected ok outcome, got ${outcome.code}`);
+  return (outcome.result as { items: Record<string, unknown>[] }).items;
+}
+
+type GetRecentlyClosedFn = (filter?: chrome.sessions.Filter) => Promise<chrome.sessions.Session[]>;
 type RestoreFn = (sessionId?: string) => Promise<chrome.sessions.Session | undefined>;
 
 interface SessionsMock {
@@ -33,17 +48,17 @@ describe("recently closed handlers", () => {
       const mockSessions: chrome.sessions.Session[] = [
         {
           lastModified: 100,
-          tab: { sessionId: "tab-1", title: "First Tab", url: "https://example1.com" },
+          tab: tab({ sessionId: "tab-1", title: "First Tab", url: "https://example1.com" }),
         },
         {
           lastModified: 50,
-          window: {
+          window: win({
             sessionId: "window-1",
             tabs: [
-              { sessionId: "tab-2", title: "Tab in Window", url: "https://example2.com" },
-              { sessionId: "tab-3", title: "Another Tab", url: "https://example3.com" },
+              tab({ sessionId: "tab-2", title: "Tab in Window", url: "https://example2.com" }),
+              tab({ sessionId: "tab-3", title: "Another Tab", url: "https://example3.com" }),
             ],
-          },
+          }),
         },
       ];
 
@@ -52,17 +67,15 @@ describe("recently closed handlers", () => {
       const outcome = await registry.dispatch("recent.list", {});
 
       expect(outcome.ok).toBe(true);
-      if (outcome.ok) {
-        const items = outcome.result.items as unknown[];
-        expect(items).toHaveLength(2);
-        expect(outcome.result).toHaveProperty("contentTrust", "untrusted-page-content");
-      }
+      const items = listItems(outcome);
+      expect(items).toHaveLength(2);
+      expect(outcome).toHaveProperty("result.contentTrust", "untrusted-page-content");
     });
 
     it("respects limit parameter (1-25)", async () => {
-      const mockSessions = Array.from({ length: 30 }, (_, i) => ({
+      const mockSessions: chrome.sessions.Session[] = Array.from({ length: 30 }, (_, i) => ({
         lastModified: 1000 - i,
-        tab: { sessionId: `tab-${i}`, title: `Tab ${i}`, url: "https://example.com" },
+        tab: tab({ sessionId: `tab-${i}`, title: `Tab ${i}`, url: "https://example.com" }),
       }));
 
       sessions.getRecentlyClosed.mockResolvedValue(mockSessions);
@@ -70,16 +83,14 @@ describe("recently closed handlers", () => {
       const outcome = await registry.dispatch("recent.list", { limit: 10 });
 
       expect(outcome.ok).toBe(true);
-      if (outcome.ok) {
-        const items = outcome.result.items as unknown[];
-        expect(items).toHaveLength(10);
-      }
+      const items = listItems(outcome);
+      expect(items).toHaveLength(10);
     });
 
     it("uses default limit of 25 when not specified", async () => {
-      const mockSessions = Array.from({ length: 30 }, (_, i) => ({
+      const mockSessions: chrome.sessions.Session[] = Array.from({ length: 30 }, (_, i) => ({
         lastModified: 1000 - i,
-        tab: { sessionId: `tab-${i}`, title: `Tab ${i}`, url: "https://example.com" },
+        tab: tab({ sessionId: `tab-${i}`, title: `Tab ${i}`, url: "https://example.com" }),
       }));
 
       sessions.getRecentlyClosed.mockResolvedValue(mockSessions);
@@ -87,24 +98,22 @@ describe("recently closed handlers", () => {
       const outcome = await registry.dispatch("recent.list", {});
 
       expect(outcome.ok).toBe(true);
-      if (outcome.ok) {
-        const items = outcome.result.items as unknown[];
-        expect(items).toHaveLength(25);
-      }
+      const items = listItems(outcome);
+      expect(items).toHaveLength(25);
     });
 
     it("includes tabCount for window sessions", async () => {
       const mockSessions: chrome.sessions.Session[] = [
         {
           lastModified: 100,
-          window: {
+          window: win({
             sessionId: "window-1",
             tabs: [
-              { sessionId: "tab-1", title: "Tab 1", url: "https://example1.com" },
-              { sessionId: "tab-2", title: "Tab 2", url: "https://example2.com" },
-              { sessionId: "tab-3", title: "Tab 3", url: "https://example3.com" },
+              tab({ sessionId: "tab-1", title: "Tab 1", url: "https://example1.com" }),
+              tab({ sessionId: "tab-2", title: "Tab 2", url: "https://example2.com" }),
+              tab({ sessionId: "tab-3", title: "Tab 3", url: "https://example3.com" }),
             ],
-          },
+          }),
         },
       ];
 
@@ -113,18 +122,16 @@ describe("recently closed handlers", () => {
       const outcome = await registry.dispatch("recent.list", {});
 
       expect(outcome.ok).toBe(true);
-      if (outcome.ok) {
-        const items = outcome.result.items as unknown[];
-        const item = items[0] as Record<string, unknown>;
-        expect(item).toMatchObject({ type: "window", tabCount: 3 });
-      }
+      const items = listItems(outcome);
+      const item = items[0];
+      expect(item).toMatchObject({ type: "window", tabCount: 3 });
     });
 
     it("does not include tabCount for tab sessions", async () => {
       const mockSessions: chrome.sessions.Session[] = [
         {
           lastModified: 100,
-          tab: { sessionId: "tab-1", title: "Tab", url: "https://example.com" },
+          tab: tab({ sessionId: "tab-1", title: "Tab", url: "https://example.com" }),
         },
       ];
 
@@ -133,12 +140,10 @@ describe("recently closed handlers", () => {
       const outcome = await registry.dispatch("recent.list", {});
 
       expect(outcome.ok).toBe(true);
-      if (outcome.ok) {
-        const items = outcome.result.items as unknown[];
-        const item = items[0] as Record<string, unknown>;
-        expect(item).toMatchObject({ type: "tab" });
-        expect(item).not.toHaveProperty("tabCount");
-      }
+      const items = listItems(outcome);
+      const item = items[0];
+      expect(item).toMatchObject({ type: "tab" });
+      expect(item).not.toHaveProperty("tabCount");
     });
 
     it("rejects invalid limit", async () => {
@@ -153,7 +158,8 @@ describe("recently closed handlers", () => {
   describe("recent.restore", () => {
     it("restores a tab session by sessionId", async () => {
       sessions.restore.mockResolvedValue({
-        tab: { id: 42, sessionId: "tab-1", title: "Restored Tab", url: "https://example.com" },
+        lastModified: 0,
+        tab: tab({ id: 42, sessionId: "tab-1", title: "Restored Tab", url: "https://example.com" }),
       });
 
       const outcome = await registry.dispatch("recent.restore", { sessionId: "tab-1" });
@@ -167,7 +173,8 @@ describe("recently closed handlers", () => {
 
     it("restores a window session by sessionId", async () => {
       sessions.restore.mockResolvedValue({
-        window: { id: 99, sessionId: "window-1", tabs: [] },
+        lastModified: 0,
+        window: win({ id: 99, sessionId: "window-1", tabs: [] }),
       });
 
       const outcome = await registry.dispatch("recent.restore", { sessionId: "window-1" });
@@ -181,7 +188,8 @@ describe("recently closed handlers", () => {
 
     it("restores most recent session when sessionId is not provided", async () => {
       sessions.restore.mockResolvedValue({
-        tab: { id: 42, sessionId: "tab-0", title: "Most Recent", url: "https://example.com" },
+        lastModified: 0,
+        tab: tab({ id: 42, sessionId: "tab-0", title: "Most Recent", url: "https://example.com" }),
       });
 
       const outcome = await registry.dispatch("recent.restore", {});
