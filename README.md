@@ -21,8 +21,9 @@ confirmation UI in the extension.
 - Lists scripts and reads metadata or source, including line windows and source search.
 - Requests installation, content-anchored editing, enable/disable, and deletion through browser approval.
 - Lists, opens, closes, and activates tabs and lists windows across one or more paired sctl Browser instances.
-- Takes accessibility snapshots with element refs of, clicks and hovers elements in, and evaluates JavaScript in, a
-  page of a paired sctl Browser tab, in the background without switching tabs.
+- Takes accessibility snapshots with element refs of, clicks, hovers, fills, types into, selects options in,
+  uploads files to, scrolls, and evaluates JavaScript in, a page of a paired sctl Browser tab, in the background
+  without switching tabs.
 - Uses JSON-RPC 2.0 over a WebSocket with mutual authentication; the listener defaults to loopback.
 - Ships as one binary; no browser automation or Native Messaging host is required.
 
@@ -107,6 +108,11 @@ troubleshooting.
 | `sctl windows list` | List windows on a paired sctl Browser instance. |
 | `sctl page snapshot [--root <ref\|selector>]` | Print a tab's accessibility snapshot, with refs such as `e5` on nodes that can be interacted with or have a name. |
 | `sctl page click <ref> \| --selector <css> [--button left\|right\|middle] [--count N] [--modifiers Alt,Control,Meta,Shift]` / `sctl page hover <ref> \| --selector <css>` | Click an element with trusted mouse events, or move the mouse over it. |
+| `sctl page fill <ref> \| --selector <css> <text>` | Clear an input, textarea, or contenteditable element and fill in the text, firing `input` and `change`. |
+| `sctl page type <text>` / `sctl page press <key>` | Type text key by key into the focused element, or press a key or combination such as `Enter`, `Control+A`, `Shift+Tab` (Playwright syntax). |
+| `sctl page select <ref> \| --selector <css> <value>...` | Choose `<select>` options by value or visible text. |
+| `sctl page upload <ref> \| --selector <css> <file>...` | Set the files of a file input; relative paths are resolved against the current directory. |
+| `sctl page scroll [<ref> \| --selector <css>] [--dx N] [--dy N]` | Scroll an element into view, or scroll the viewport by pixels. |
 | `sctl page eval <expression> [<ref>]` / `sctl page detach [--all]` | Evaluate JavaScript in a tab's page (with a ref, the expression is a function like `el => el.textContent` that receives the element), or detach the debugger from a tab or from every tab. |
 
 Run `sctl --help` or `sctl <command> --help` for usage and flags. Write operations block
@@ -141,6 +147,19 @@ fails with `PAGE_HIDDEN`; retry with `--activate`. When a click starts a navigat
 command waits for DOMContentLoaded. The summary prints the tab ID, plus the URL after a navigation or the ID of a
 new tab the click opened (which is not switched to); `-o json` also reports the page's URL and title, which are
 page content.
+
+`sctl page fill`, `select`, `upload`, and `scroll <target>` take a target like click does and scroll the element into view
+first. `fill` waits until the element is attached, visible, enabled, and editable (not read-only) and works on inputs,
+textareas, and contenteditable elements; checkbox and radio inputs fail with `INVALID_REQUEST` (use `click`), file inputs
+too (use `upload`). `select` needs a `<select>` (attached, visible, enabled), matches each value against option values and
+then visible text, takes several values only for a multi-select, and fails with `NOT_FOUND` when an option is missing.
+`upload` needs a file input (attached, enabled; it may be hidden); every file must exist and be readable or the command
+fails with `INVALID_REQUEST`, and several files need the `multiple` attribute. `scroll` with a target only needs the
+element attached; without one it scrolls the viewport with the mouse wheel at its center by `--dx` and `--dy` pixels
+(negative scrolls left and up) and needs one of them. `type` and `press` act on whatever has focus: `type` sends a
+trusted key event for each character, a newline as `Enter`, and inserts characters that have no US-keyboard key
+directly; `press` sends trusted `keydown` and `keyup` events, with modifiers `Alt`, `Control`, `Meta`, and `Shift`
+joined by `+`. These commands print the same one-line summary as click.
 
 ## License
 

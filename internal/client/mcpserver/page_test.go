@@ -171,6 +171,78 @@ func TestPageToolsForwardToThePageEndpoint(t *testing.T) {
 			So(seen, ShouldEqual, 2)
 		})
 
+		Convey("输入类工具把目标之外的参数作为动作输入转发,目标参数拆进请求字段", func() {
+			for _, c := range []struct {
+				tool, action string
+				args         map[string]any
+				input        string
+			}{
+				{"page_fill", "fill", map[string]any{"ref": "e3", "text": "hello", "tabId": 9}, `{"ref":"e3","text":"hello"}`},
+				{"page_fill", "fill", map[string]any{"selector": "#name", "text": ""}, `{"selector":"#name","text":""}`},
+				{"page_type", "type", map[string]any{"text": "abc", "activate": true}, `{"text":"abc"}`},
+				{"page_press", "press", map[string]any{"key": "Control+A"}, `{"key":"Control+A"}`},
+				{"page_select", "select", map[string]any{"ref": "e7", "values": []string{"red", "Green"}}, `{"ref":"e7","values":["red","Green"]}`},
+				{"page_upload", "upload", map[string]any{"selector": "#file", "files": []string{"/tmp/a.txt"}}, `{"selector":"#file","files":["/tmp/a.txt"]}`},
+				{"page_scroll", "scroll", map[string]any{"dy": 300, "dx": -10.5}, `{"dy":300,"dx":-10.5}`},
+				{"page_scroll", "scroll", map[string]any{"ref": "e5"}, `{"ref":"e5"}`},
+			} {
+				caller.pages = nil
+				res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: c.tool, Arguments: c.args})
+				So(err, ShouldBeNil)
+				So(res.IsError, ShouldBeFalse)
+				So(caller.pages, ShouldHaveLength, 1)
+				So(caller.pages[0].Action, ShouldEqual, c.action)
+				So(string(caller.pages[0].Input), ShouldEqualJSON, c.input)
+			}
+		})
+
+		Convey("输入类工具的参数不符合 schema 时不转发", func() {
+			for name, args := range map[string][]map[string]any{
+				"page_fill":   {{"ref": "e3"}, {"ref": "e3", "text": 5}, {"ref": "", "text": "x"}},
+				"page_type":   {{}, {"text": ""}, {"text": "x", "ref": "e3"}},
+				"page_press":  {{}, {"key": ""}},
+				"page_select": {{"ref": "e7"}, {"ref": "e7", "values": []string{}}, {"ref": "e7", "values": "red"}},
+				"page_upload": {{"ref": "e9"}, {"ref": "e9", "files": []string{}}, {"ref": "e9", "files": "/tmp/a"}},
+				"page_scroll": {{"dy": "x"}, {"ref": "e5", "tabId": -1}},
+			} {
+				for _, a := range args {
+					_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: a})
+					So(err, ShouldNotBeNil)
+				}
+			}
+			So(caller.pages, ShouldBeEmpty)
+		})
+
+		Convey("输入类工具的静态描述写明目标规则、专有行为与错误", func() {
+			tools, err := session.ListTools(context.Background(), nil)
+			So(err, ShouldBeNil)
+			wants := map[string][]string{
+				"page_fill":   {"exactly one of ref or selector", "INVALID_REQUEST", "page_upload", "page_click", "input and change"},
+				"page_type":   {"focus", "Enter"},
+				"page_press":  {"Control+A", "Shift+Tab", "Meta+V"},
+				"page_select": {"NOT_FOUND", "exactly one of ref or selector", "visible text"},
+				"page_upload": {"absolute", "INVALID_REQUEST", "exactly one of ref or selector"},
+				"page_scroll": {"dx", "dy", "into view"},
+			}
+			seen := 0
+			for _, tool := range tools.Tools {
+				want, ok := wants[tool.Name]
+				if !ok {
+					continue
+				}
+				seen++
+				for _, sub := range want {
+					So(tool.Description, ShouldContainSubstring, sub)
+				}
+				So(tool.Description, ShouldContainSubstring, "untrusted")
+				schema, err := json.Marshal(tool.InputSchema)
+				So(err, ShouldBeNil)
+				So(string(schema), ShouldContainSubstring, `"activate"`)
+				So(string(schema), ShouldContainSubstring, `"timeoutMs"`)
+			}
+			So(seen, ShouldEqual, len(wants))
+		})
+
 		Convey("页面错误作为工具错误结果返回,带错误码与消息", func() {
 			caller.result = control.CallResult{OK: false, Error: &control.CallError{Code: "EVAL_ERROR", Message: "Error: boom"}}
 			res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "page_eval", Arguments: map[string]any{"expression": "boom()"}})

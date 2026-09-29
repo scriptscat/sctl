@@ -170,6 +170,12 @@ func NewManager(cdp CDP, log *zap.Logger) *Manager {
 	m.register("snapshot", runSnapshot)
 	m.register("click", runClick)
 	m.register("hover", runHover)
+	m.register("fill", runFill)
+	m.register("type", runType)
+	m.register("press", runPress)
+	m.register("select", runSelect)
+	m.register("upload", runUpload)
+	m.register("scroll", runScroll)
 	m.registerBrowser("detach", m.detach)
 	return m
 }

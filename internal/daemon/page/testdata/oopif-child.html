@@ -11,6 +11,11 @@
     </form>
     <iframe title="Nested frame" id="nested"></iframe>
     <script>
+      // 记录本 frame 里输入框收到的事件,测试经元素引用在本 frame 里读取。
+      window.inputEvents = [];
+      for (const type of ["input", "change"]) {
+        document.addEventListener(type, (e) => window.inputEvents.push({ type, trusted: e.isTrusted, value: e.target.value }), true);
+      }
       // 嵌套 iframe 回到顶层页面的站点,它与父 frame 跨站,仍是独立的 OOPIF。
       document.getElementById("nested").src = `http://127.0.0.1:${location.port}/oopif-nested.html`;
       window.top.postMessage("child", "*");

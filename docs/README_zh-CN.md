@@ -98,6 +98,11 @@ Chrome DevTools Protocol 驱动页面时,Chrome 会在浏览器顶部显示"sctl
 | `sctl windows list` | 列出已配对的 sctl Browser 实例上的窗口。 |
 | `sctl page snapshot [--root <ref\|selector>]` | 输出标签页的无障碍快照,可交互或有名称的节点带 `e5` 这样的引用。 |
 | `sctl page click <ref> \| --selector <css> [--button left\|right\|middle] [--count N] [--modifiers Alt,Control,Meta,Shift]` / `sctl page hover <ref> \| --selector <css>` | 用可信的鼠标事件点击元素,或把鼠标移到元素上。 |
+| `sctl page fill <ref> \| --selector <css> <text>` | 清空 input、textarea 或 contenteditable 元素后填入文本,触发 `input` 与 `change`。 |
+| `sctl page type <text>` / `sctl page press <key>` | 在当前焦点元素上逐键输入文本,或按下一个键或组合键,如 `Enter`、`Control+A`、`Shift+Tab`(Playwright 写法)。 |
+| `sctl page select <ref> \| --selector <css> <value>...` | 按 value 或可见文本选择 `<select>` 的选项。 |
+| `sctl page upload <ref> \| --selector <css> <file>...` | 为 file input 设置文件;相对路径按当前目录解析。 |
+| `sctl page scroll [<ref> \| --selector <css>] [--dx N] [--dy N]` | 把元素滚入可视区域,或按像素滚动视口。 |
 | `sctl page eval <expression> [<ref>]` / `sctl page detach [--all]` | 在标签页的页面里执行 JavaScript(给了引用时表达式写成函数,如 `el => el.textContent`,元素作为参数传入),或断开一个标签页或全部标签页的调试器。 |
 
 运行 `sctl --help` 或 `sctl <command> --help` 查看用法和参数。写操作会阻塞，直到用户在
@@ -122,6 +127,14 @@ ScriptCat 中批准、拒绝或关闭确认流程；浏览器控制命令按设�
 条件,例如 `obscured by div.modal-backdrop`。开启焦点模拟后页面仍不渲染时返回 `PAGE_HIDDEN`,可以加 `--activate` 重试。点击后
 500 ms 内页面开始导航的,命令等到 DOMContentLoaded 再返回。摘要输出 tabId,外加导航后的 URL 或点击打开的新标签页 ID(不会切换过去);
 `-o json` 还会给出页面的 URL 和标题,它们是网页内容。
+
+`sctl page fill`、`select`、`upload` 与带目标的 `scroll` 和 click 一样接受目标,并先把元素滚动到可视区域内。`fill` 等元素已挂载、可见、可用、可编辑
+(没有 readonly),适用于 input、textarea 与 contenteditable;checkbox、radio 类型的 input 返回 `INVALID_REQUEST`(请用 `click`),file 类型同样(请用 `upload`)。
+`select` 要求元素是 `<select>`(已挂载、可见、可用),先按 option 的 value、再按可见文本匹配每个值,只有多选框能给多个值,选项不存在时返回 `NOT_FOUND`。
+`upload` 要求元素是 file input(已挂载、可用,可以是隐藏的);每个文件都必须存在且可读,否则返回 `INVALID_REQUEST`,给多个文件时 input 需要有 `multiple` 属性。
+带目标的 `scroll` 只要求元素已挂载;不带目标时在视口中心用鼠标滚轮按 `--dx`、`--dy` 像素滚动(负数向左、向上),二者至少给一个。
+`type` 与 `press` 作用于当前焦点元素:`type` 对每个字符发出可信的按键事件,换行按 `Enter`,美式键盘上没有对应键的字符直接插入;`press` 发出可信的
+`keydown` 与 `keyup`,修饰键 `Alt`、`Control`、`Meta`、`Shift` 用 `+` 连接。这些命令的摘要与 click 相同。
 
 ## 许可证
 

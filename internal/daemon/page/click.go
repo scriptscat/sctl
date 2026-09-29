@@ -126,21 +126,35 @@ func runHover(ctx context.Context, t *Tab, input json.RawMessage) (any, error) {
 // actionTarget 解析目标并等它满足 c,返回鼠标事件的目标点。选择器匹配到的元素在等待期间离开文档
 // (例如被框架重新渲染)时重新查询;引用指向的元素离开文档则引用失效。
 func actionTarget(ctx context.Context, t *Tab, spec TargetSpec, c checks) (actionPoint, error) {
+	_, point, err := actionElement(ctx, t, spec, c, nil)
+	return point, err
+}
+
+// actionElement 是 actionTarget 的完整形态:同时返回解析出的元素,并在等待条件之前让 pre 检查元素
+// (例如元素类型不对时立即以 INVALID_REQUEST 失败,而不是等到超时)。pre 返回 errDetached 与元素在
+// 等待期间离开文档同样处理。
+func actionElement(ctx context.Context, t *Tab, spec TargetSpec, c checks, pre func(element) error) (element, actionPoint, error) {
 	var wait backoff
 	for {
 		el, err := resolveTarget(ctx, t, spec)
 		if err != nil {
-			return actionPoint{}, err
+			return element{}, actionPoint{}, err
 		}
-		point, err := waitActionable(ctx, t, el, c)
+		var point actionPoint
+		if pre != nil {
+			err = pre(el)
+		}
+		if err == nil {
+			point, err = waitActionable(ctx, t, el, c)
+		}
 		if !errors.Is(err, errDetached) {
-			return point, err
+			return el, point, err
 		}
 		if spec.Ref != "" {
-			return actionPoint{}, staleRef(spec.Ref, t.id)
+			return element{}, actionPoint{}, staleRef(spec.Ref, t.id)
 		}
 		if err := wait.sleep(ctx); err != nil {
-			return actionPoint{}, waitFailed(ctx, err, "the element matching the selector keeps leaving the document")
+			return element{}, actionPoint{}, waitFailed(ctx, err, "the element matching the selector keeps leaving the document")
 		}
 	}
 }
