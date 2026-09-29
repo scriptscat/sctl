@@ -1,4 +1,5 @@
 import { HandlerError, type HandlerRegistry, type RpcHandler } from "@/background/registry";
+import { registerBookmarkHandlers } from "./bookmarks";
 import { registerReadingListHandlers } from "./readingList";
 
 // chrome.tabs.get/chrome.windows.get 对不存在的 ID 只会 reject，这里把它翻译成协议的 NOT_FOUND 领域错误。
@@ -88,4 +89,5 @@ export function registerHandlers(registry: HandlerRegistry): void {
   registry.register("tabs.activate", handleTabsActivate);
   registry.register("windows.list", handleWindowsList);
   registerReadingListHandlers(registry);
+  registerBookmarkHandlers(registry);
 }

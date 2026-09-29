@@ -213,3 +213,101 @@ func TestProgressFollowsTheMethodsBlockingMode(t *testing.T) {
 		So(unblockedProgress.Load(), ShouldEqual, 0)
 	})
 }
+
+func TestBookmarksToolDeclaresItsActionsAndProtocolDerivedParameters(t *testing.T) {
+	Convey("bookmarks 用 action 枚举选择操作,不含删除;其余参数声明与 protocol.json 各方法的参数类型一致", t, func() {
+		p := loadProto(t)
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: &fakeCaller{}}, nil)
+		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+		So(err, ShouldBeNil)
+		tool := toolByName(res, "bookmarks")
+		props, required := inputSchemaOf(tool)
+
+		So(required, ShouldResemble, []any{"action"})
+		action, ok := props["action"].(map[string]any)
+		So(ok, ShouldBeTrue)
+		So(action["enum"], ShouldResemble, []any{"list", "search", "add", "mkdir", "move", "edit"})
+		So(props, ShouldContainKey, "browser")
+		So(props, ShouldNotContainKey, protocol.ConfirmParam)
+		So(tool.Description, ShouldContainSubstring, "untrusted")
+
+		var definition struct {
+			Types map[string]struct {
+				Properties map[string]any `json:"properties"`
+			} `json:"types"`
+		}
+		So(json.Unmarshal(protocol.DefinitionJSON, &definition), ShouldBeNil)
+		declared := 0
+		for _, method := range []string{"bookmarks.list", "bookmarks.search", "bookmarks.add", "bookmarks.mkdir", "bookmarks.move", "bookmarks.edit"} {
+			for name, schema := range definition.Types[p.Actions[method].Params].Properties {
+				So(props[name], ShouldResemble, schema)
+				declared++
+			}
+		}
+		So(declared, ShouldBeGreaterThan, 0)
+	})
+}
+
+func TestBookmarksToolForwardsEachActionToItsProtocolMethod(t *testing.T) {
+	Convey("bookmarks 把每个 action 转发到对应的协议方法,browser 作为目标", t, func() {
+		p := loadProto(t)
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+
+		for _, args := range []map[string]any{
+			{"action": "list", "folder": "1", "recursive": true},
+			{"action": "search", "query": "go", "limit": 5, "browser": "work"},
+			{"action": "add", "url": "https://a.example/", "title": "A", "folder": "10", "index": 0},
+			{"action": "mkdir", "title": "Reading", "browser": "work"},
+			{"action": "move", "ids": []string{"14", "20"}, "folder": "10", "index": 1},
+			{"action": "edit", "id": "14", "url": "https://b.example/"},
+		} {
+			res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "bookmarks", Arguments: args})
+			So(err, ShouldBeNil)
+			So(res.IsError, ShouldBeFalse)
+		}
+
+		So(caller.actions, ShouldResemble, []string{"bookmarks.list", "bookmarks.search", "bookmarks.add", "bookmarks.mkdir", "bookmarks.move", "bookmarks.edit"})
+		So(caller.browserParams, ShouldResemble, []string{"", "work", "", "work", "", ""})
+		inputs := make([]string, 0, len(caller.inputs))
+		for _, input := range caller.inputs {
+			inputs = append(inputs, string(input))
+		}
+		So(inputs, ShouldResemble, []string{
+			`{"folder":"1","recursive":true}`,
+			`{"limit":5,"query":"go"}`,
+			`{"folder":"10","index":0,"title":"A","url":"https://a.example/"}`,
+			`{"title":"Reading"}`,
+			`{"folder":"10","ids":["14","20"],"index":1}`,
+			`{"id":"14","url":"https://b.example/"}`,
+		})
+	})
+}
+
+func TestBookmarksToolRejectsArgumentsItsActionDoesNotAcceptBeforeForwarding(t *testing.T) {
+	Convey("bookmarks 拒绝删除动作、别的 action 的参数与越界值,且不转发", t, func() {
+		p := loadProto(t)
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+
+		for _, args := range []map[string]any{
+			{"action": "rm", "ids": []string{"14"}},
+			{"action": "search"},
+			{"action": "list", "query": "x"},
+			{"action": "list", "limit": 1001},
+			{"action": "add", "url": "https://a.example/", "index": -1},
+			{"action": "move", "ids": []string{}, "folder": "10"},
+			{"action": "move", "ids": []string{"14"}},
+			{"action": "edit", "id": "14", "confirm": true},
+		} {
+			_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "bookmarks", Arguments: args})
+			if err == nil {
+				t.Errorf("bookmarks accepted invalid arguments %#v", args)
+			}
+		}
+
+		caller.mu.Lock()
+		defer caller.mu.Unlock()
+		So(caller.actions, ShouldBeEmpty)
+	})
+}

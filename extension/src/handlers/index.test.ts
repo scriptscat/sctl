@@ -98,7 +98,7 @@ describe("browser method handlers", () => {
     vi.unstubAllGlobals();
   });
 
-  it("declares capabilities for exactly the tab, window and reading list methods", () => {
+  it("declares capabilities for exactly the tab, window, reading list and bookmark methods", () => {
     expect(new Set(registry.methods())).toEqual(
       new Set([
         "tabs.list",
@@ -110,6 +110,12 @@ describe("browser method handlers", () => {
         "readingList.add",
         "readingList.markRead",
         "readingList.remove",
+        "bookmarks.list",
+        "bookmarks.search",
+        "bookmarks.add",
+        "bookmarks.mkdir",
+        "bookmarks.move",
+        "bookmarks.edit",
       ]),
     );
   });

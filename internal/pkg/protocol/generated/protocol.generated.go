@@ -4,6 +4,89 @@ package generated
 const SchemaVersion = "1.0.0"
 const JSONRPCVersion = "2.0"
 
+type BookmarksAddParams struct {
+	Folder *string `json:"folder,omitempty"`
+	Index  *int    `json:"index,omitempty"`
+	Title  *string `json:"title,omitempty"`
+	URL    string  `json:"url"`
+}
+
+type BookmarksAddResult struct {
+	Id string `json:"id"`
+}
+
+type BookmarksEditParams struct {
+	Id    string  `json:"id"`
+	Title *string `json:"title,omitempty"`
+	URL   *string `json:"url,omitempty"`
+}
+
+type BookmarksEditResult struct {
+	Id string `json:"id"`
+}
+
+type BookmarksListParams struct {
+	Folder    *string `json:"folder,omitempty"`
+	Limit     *int    `json:"limit,omitempty"`
+	Recursive *bool   `json:"recursive,omitempty"`
+}
+
+type BookmarksListResult struct {
+	ContentTrust string `json:"contentTrust"`
+	HasMore      bool   `json:"hasMore"`
+	Nodes        []struct {
+		AddedAt    *int    `json:"addedAt,omitempty"`
+		ChildCount *int    `json:"childCount,omitempty"`
+		Id         string  `json:"id"`
+		Index      int     `json:"index"`
+		ParentId   *string `json:"parentId,omitempty"`
+		Title      string  `json:"title"`
+		Type       string  `json:"type"`
+		URL        *string `json:"url,omitempty"`
+	} `json:"nodes"`
+}
+
+type BookmarksMkdirParams struct {
+	Folder *string `json:"folder,omitempty"`
+	Index  *int    `json:"index,omitempty"`
+	Title  string  `json:"title"`
+}
+
+type BookmarksMkdirResult struct {
+	Id string `json:"id"`
+}
+
+type BookmarksMoveParams struct {
+	Folder string   `json:"folder"`
+	Ids    []string `json:"ids"`
+	Index  *int     `json:"index,omitempty"`
+}
+
+type BookmarksMoveResult struct {
+	Ids []string `json:"ids"`
+}
+
+type BookmarksSearchParams struct {
+	Limit *int   `json:"limit,omitempty"`
+	Query string `json:"query"`
+}
+
+type BookmarksSearchResult struct {
+	ContentTrust string `json:"contentTrust"`
+	HasMore      bool   `json:"hasMore"`
+	Nodes        []struct {
+		AddedAt    *int     `json:"addedAt,omitempty"`
+		ChildCount *int     `json:"childCount,omitempty"`
+		Id         string   `json:"id"`
+		Index      int      `json:"index"`
+		ParentId   *string  `json:"parentId,omitempty"`
+		Path       []string `json:"path"`
+		Title      string   `json:"title"`
+		Type       string   `json:"type"`
+		URL        *string  `json:"url,omitempty"`
+	} `json:"nodes"`
+}
+
 type ReadingListAddParams struct {
 	Title *string `json:"title,omitempty"`
 	URL   string  `json:"url"`
@@ -235,6 +318,12 @@ type WindowsListResult struct {
 type Method string
 
 const (
+	MethodBookmarksAdd          Method = "bookmarks.add"
+	MethodBookmarksEdit         Method = "bookmarks.edit"
+	MethodBookmarksList         Method = "bookmarks.list"
+	MethodBookmarksMkdir        Method = "bookmarks.mkdir"
+	MethodBookmarksMove         Method = "bookmarks.move"
+	MethodBookmarksSearch       Method = "bookmarks.search"
 	MethodReadingListAdd        Method = "readingList.add"
 	MethodReadingListList       Method = "readingList.list"
 	MethodReadingListMarkRead   Method = "readingList.markRead"
@@ -257,6 +346,12 @@ const (
 type MethodMetadata struct{ Params, Result, Scope, Effect, Blocking, Level, Peer, MergeField string }
 
 var Methods = map[string]MethodMetadata{
+	"bookmarks.add":           {Params: "BookmarksAddParams", Result: "BookmarksAddResult", Scope: "bookmarks:add", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"bookmarks.edit":          {Params: "BookmarksEditParams", Result: "BookmarksEditResult", Scope: "bookmarks:edit", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"bookmarks.list":          {Params: "BookmarksListParams", Result: "BookmarksListResult", Scope: "bookmarks:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "nodes"},
+	"bookmarks.mkdir":         {Params: "BookmarksMkdirParams", Result: "BookmarksMkdirResult", Scope: "bookmarks:mkdir", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"bookmarks.move":          {Params: "BookmarksMoveParams", Result: "BookmarksMoveResult", Scope: "bookmarks:move", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
+	"bookmarks.search":        {Params: "BookmarksSearchParams", Result: "BookmarksSearchResult", Scope: "bookmarks:search", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "nodes"},
 	"readingList.add":         {Params: "ReadingListAddParams", Result: "ReadingListAddResult", Scope: "readingList:add", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},
 	"readingList.list":        {Params: "ReadingListListParams", Result: "ReadingListListResult", Scope: "readingList:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "entries"},
 	"readingList.markRead":    {Params: "ReadingListMarkReadParams", Result: "ReadingListMarkReadResult", Scope: "readingList:markRead", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: ""},

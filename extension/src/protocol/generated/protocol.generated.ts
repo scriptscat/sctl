@@ -60,6 +60,58 @@ export const PAIRING_CODE = {
   "length": 8,
   "display": "XXXX-XXXX"
 } as const;
+export interface BookmarksAddParams {
+  folder?: string;
+  index?: number;
+  title?: string;
+  url: string;
+}
+export interface BookmarksAddResult {
+  id: string;
+}
+export interface BookmarksEditParams {
+  id: string;
+  title?: string;
+  url?: string;
+}
+export interface BookmarksEditResult {
+  id: string;
+}
+export interface BookmarksListParams {
+  folder?: string;
+  limit?: number;
+  recursive?: boolean;
+}
+export interface BookmarksListResult {
+  contentTrust: "untrusted-page-content";
+  hasMore: boolean;
+  nodes: Array<{ addedAt?: number; childCount?: number; id: string; index: number; parentId?: string; title: string; type: "bookmark" | "folder"; url?: string; }>;
+}
+export interface BookmarksMkdirParams {
+  folder?: string;
+  index?: number;
+  title: string;
+}
+export interface BookmarksMkdirResult {
+  id: string;
+}
+export interface BookmarksMoveParams {
+  folder: string;
+  ids: Array<string>;
+  index?: number;
+}
+export interface BookmarksMoveResult {
+  ids: Array<string>;
+}
+export interface BookmarksSearchParams {
+  limit?: number;
+  query: string;
+}
+export interface BookmarksSearchResult {
+  contentTrust: "untrusted-page-content";
+  hasMore: boolean;
+  nodes: Array<{ addedAt?: number; childCount?: number; id: string; index: number; parentId?: string; path: Array<string>; title: string; type: "bookmark" | "folder"; url?: string; }>;
+}
 export interface ReadingListAddParams {
   title?: string;
   url: string;
@@ -125,6 +177,12 @@ export interface WindowsListResult {
   windows: Array<{ focused: boolean; state: "normal" | "minimized" | "maximized" | "fullscreen" | "locked-fullscreen"; tabCount: number; windowId: number; }>;
 }
 export interface RpcMethodMap {
+  "bookmarks.add": { params: BookmarksAddParams; result: BookmarksAddResult };
+  "bookmarks.edit": { params: BookmarksEditParams; result: BookmarksEditResult };
+  "bookmarks.list": { params: BookmarksListParams; result: BookmarksListResult };
+  "bookmarks.mkdir": { params: BookmarksMkdirParams; result: BookmarksMkdirResult };
+  "bookmarks.move": { params: BookmarksMoveParams; result: BookmarksMoveResult };
+  "bookmarks.search": { params: BookmarksSearchParams; result: BookmarksSearchResult };
   "readingList.add": { params: ReadingListAddParams; result: ReadingListAddResult };
   "readingList.list": { params: ReadingListListParams; result: ReadingListListResult };
   "readingList.markRead": { params: ReadingListMarkReadParams; result: ReadingListMarkReadResult };
@@ -139,6 +197,54 @@ export type RpcMethod = keyof RpcMethodMap;
 export type RpcParams<M extends RpcMethod> = RpcMethodMap[M]["params"];
 export type RpcResult<M extends RpcMethod> = RpcMethodMap[M]["result"];
 export const RPC_METHODS = {
+  "bookmarks.add": {
+    params: "BookmarksAddParams",
+    result: "BookmarksAddResult",
+    scope: "bookmarks:add",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "bookmarks.edit": {
+    params: "BookmarksEditParams",
+    result: "BookmarksEditResult",
+    scope: "bookmarks:edit",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "bookmarks.list": {
+    params: "BookmarksListParams",
+    result: "BookmarksListResult",
+    scope: "bookmarks:list",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "bookmarks.mkdir": {
+    params: "BookmarksMkdirParams",
+    result: "BookmarksMkdirResult",
+    scope: "bookmarks:mkdir",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "bookmarks.move": {
+    params: "BookmarksMoveParams",
+    result: "BookmarksMoveResult",
+    scope: "bookmarks:move",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "bookmarks.search": {
+    params: "BookmarksSearchParams",
+    result: "BookmarksSearchResult",
+    scope: "bookmarks:search",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
   "readingList.add": {
     params: "ReadingListAddParams",
     result: "ReadingListAddResult",

@@ -20,6 +20,7 @@ CLI ─────────────────────────�
 - 通过浏览器确认请求安装、基于内容锚点的编辑、启用/禁用和删除。
 - 在一个或多个已配对的 sctl Browser 实例上列出、打开、关闭、激活标签页,以及列出窗口。
 - 在已配对的 sctl Browser 实例上列出、添加、标记已读或未读、移除阅读列表条目。
+- 在已配对的 sctl Browser 实例上列出、搜索、添加、移动和编辑书签与书签文件夹。
 - 在仅监听回环地址的 WebSocket 上使用 JSON-RPC 2.0 和双向认证。
 - 单二进制交付，不依赖浏览器自动化或 Native Messaging Host。
 
@@ -93,10 +94,11 @@ sctl status
 | `sctl tabs list\|open\|close\|activate` | 在已配对的 sctl Browser 实例上列出、打开、关闭或激活标签页。 |
 | `sctl windows list` | 列出已配对的 sctl Browser 实例上的窗口。 |
 | `sctl reading-list list\|add\|mark-read\|rm` | 在已配对的 sctl Browser 实例上列出、添加、标记已读或未读、移除阅读列表条目。 |
+| `sctl bookmarks list\|search\|add\|mkdir\|move\|edit` | 在已配对的 sctl Browser 实例上列出、搜索、添加、移动或编辑书签和书签文件夹。 |
 
 运行 `sctl --help` 或 `sctl <command> --help` 查看用法和参数。写操作会阻塞，直到用户在
 ScriptCat 中批准、拒绝或关闭确认流程；浏览器控制命令按设计没有审批步骤、立即执行(参见
-[`threat-model.md`](./threat-model.md))。当多个实例同时在线时，`tabs`、`windows` 与 `reading-list` 可用
+[`threat-model.md`](./threat-model.md))。当多个实例同时在线时，`tabs`、`windows`、`reading-list` 与 `bookmarks` 可用
 `--browser <name|id>`（或环境变量 `SCTL_BROWSER`）指定目标实例。破坏性的浏览器操作需要显式确认：
 `reading-list rm` 必须加 `--yes`（MCP 传 `confirm: true`），否则什么都不执行，退出码为 3。
 `reading-list list` 默认最多返回 100 条，可用 `--limit` 提到 1000 条；还有更多条目时在 stderr 提示。

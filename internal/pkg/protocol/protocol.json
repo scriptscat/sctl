@@ -171,6 +171,62 @@
       "blocking": "none",
       "level": "L1",
       "peer": "browser"
+    },
+    "bookmarks.list": {
+      "params": "BookmarksListParams",
+      "result": "BookmarksListResult",
+      "scope": "bookmarks:list",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "mergeField": "nodes"
+    },
+    "bookmarks.search": {
+      "params": "BookmarksSearchParams",
+      "result": "BookmarksSearchResult",
+      "scope": "bookmarks:search",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "mergeField": "nodes"
+    },
+    "bookmarks.add": {
+      "params": "BookmarksAddParams",
+      "result": "BookmarksAddResult",
+      "scope": "bookmarks:add",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "bookmarks.mkdir": {
+      "params": "BookmarksMkdirParams",
+      "result": "BookmarksMkdirResult",
+      "scope": "bookmarks:mkdir",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "bookmarks.move": {
+      "params": "BookmarksMoveParams",
+      "result": "BookmarksMoveResult",
+      "scope": "bookmarks:move",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "bookmarks.edit": {
+      "params": "BookmarksEditParams",
+      "result": "BookmarksEditResult",
+      "scope": "bookmarks:edit",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
     }
   },
   "types": {
@@ -1019,6 +1075,301 @@
       },
       "required": [
         "urls"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksListParams": {
+      "type": "object",
+      "properties": {
+        "folder": {
+          "type": "string"
+        },
+        "recursive": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "additionalProperties": false
+    },
+    "BookmarksListResult": {
+      "type": "object",
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "bookmark",
+                  "folder"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              },
+              "parentId": {
+                "type": "string"
+              },
+              "index": {
+                "type": "integer"
+              },
+              "addedAt": {
+                "type": "integer"
+              },
+              "childCount": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "title",
+              "index"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "nodes",
+        "hasMore",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksSearchParams": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksSearchResult": {
+      "type": "object",
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "bookmark",
+                  "folder"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              },
+              "parentId": {
+                "type": "string"
+              },
+              "index": {
+                "type": "integer"
+              },
+              "addedAt": {
+                "type": "integer"
+              },
+              "childCount": {
+                "type": "integer"
+              },
+              "path": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "title",
+              "index",
+              "path"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "nodes",
+        "hasMore",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksAddParams": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "folder": {
+          "type": "string"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksAddResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksMkdirParams": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "folder": {
+          "type": "string"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksMkdirResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksMoveParams": {
+      "type": "object",
+      "properties": {
+        "ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "folder": {
+          "type": "string"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "ids",
+        "folder"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksMoveResult": {
+      "type": "object",
+      "properties": {
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "ids"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksEditParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksEditResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
       ],
       "additionalProperties": false
     }

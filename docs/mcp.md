@@ -210,6 +210,12 @@ arguments that the chosen action does not take are rejected before anything is s
 `browser` argument: with several instances online and no target, `list` combines every online instance while the
 other actions return an error listing them. A browser without the reading list API answers `UNSUPPORTED`.
 
+`bookmarks` manages bookmarks the same way, with `action` set to `list`, `search`, `add`, `mkdir`, `move`, or
+`edit`. `list` takes an optional `folder` and `recursive`; `search` takes `query`; results carry
+`contentTrust: "untrusted-page-content"` because bookmark titles and URLs come from web pages. The root and the
+browser's built-in top-level folders cannot be moved or edited, and a folder cannot be given a URL
+(`INVALID_REQUEST`); `move` changes nothing if any ID is unknown (`NOT_FOUND`) or invalid. There is no delete action.
+
 Browser operations carry a destruction level. Most run immediately. A few are destructive enough to need explicit
 confirmation — currently only the reading list's `rm`: it runs only when the call passes `confirm: true`, and
 without it the daemon answers `CONFIRMATION_REQUIRED` and nothing runs. The command-line equivalent is `--yes`.

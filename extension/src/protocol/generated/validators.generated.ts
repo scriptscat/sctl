@@ -10,6 +10,54 @@ function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[])
   return Object.keys(value).every((key) => allowedKeys.has(key));
 }
 
+export function validateBookmarksAddParams(value: unknown): value is Protocol.BookmarksAddParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["folder", "index", "title", "url"]) && (value["folder"] === undefined || (typeof value["folder"] === "string")) && (value["index"] === undefined || (typeof value["index"] === "number" && Number.isInteger(value["index"]) && value["index"] >= 0)) && (value["title"] === undefined || (typeof value["title"] === "string")) && typeof value["url"] === "string");
+}
+
+export function validateBookmarksAddResult(value: unknown): value is Protocol.BookmarksAddResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "string");
+}
+
+export function validateBookmarksEditParams(value: unknown): value is Protocol.BookmarksEditParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["id", "title", "url"]) && typeof value["id"] === "string" && (value["title"] === undefined || (typeof value["title"] === "string")) && (value["url"] === undefined || (typeof value["url"] === "string")));
+}
+
+export function validateBookmarksEditResult(value: unknown): value is Protocol.BookmarksEditResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "string");
+}
+
+export function validateBookmarksListParams(value: unknown): value is Protocol.BookmarksListParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["folder", "limit", "recursive"]) && (value["folder"] === undefined || (typeof value["folder"] === "string")) && (value["limit"] === undefined || (typeof value["limit"] === "number" && Number.isInteger(value["limit"]) && value["limit"] >= 1)) && (value["recursive"] === undefined || (typeof value["recursive"] === "boolean")));
+}
+
+export function validateBookmarksListResult(value: unknown): value is Protocol.BookmarksListResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "hasMore", "nodes"]) && value["contentTrust"] === "untrusted-page-content" && typeof value["hasMore"] === "boolean" && Array.isArray(value["nodes"]) && value["nodes"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["addedAt", "childCount", "id", "index", "parentId", "title", "type", "url"]) && (item["addedAt"] === undefined || (typeof item["addedAt"] === "number" && Number.isInteger(item["addedAt"]))) && (item["childCount"] === undefined || (typeof item["childCount"] === "number" && Number.isInteger(item["childCount"]))) && typeof item["id"] === "string" && typeof item["index"] === "number" && Number.isInteger(item["index"]) && (item["parentId"] === undefined || (typeof item["parentId"] === "string")) && typeof item["title"] === "string" && (item["type"] === "bookmark" || item["type"] === "folder") && (item["url"] === undefined || (typeof item["url"] === "string")))));
+}
+
+export function validateBookmarksMkdirParams(value: unknown): value is Protocol.BookmarksMkdirParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["folder", "index", "title"]) && (value["folder"] === undefined || (typeof value["folder"] === "string")) && (value["index"] === undefined || (typeof value["index"] === "number" && Number.isInteger(value["index"]) && value["index"] >= 0)) && typeof value["title"] === "string");
+}
+
+export function validateBookmarksMkdirResult(value: unknown): value is Protocol.BookmarksMkdirResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "string");
+}
+
+export function validateBookmarksMoveParams(value: unknown): value is Protocol.BookmarksMoveParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["folder", "ids", "index"]) && typeof value["folder"] === "string" && Array.isArray(value["ids"]) && value["ids"].length >= 1 && value["ids"].every((item) => typeof item === "string") && (value["index"] === undefined || (typeof value["index"] === "number" && Number.isInteger(value["index"]) && value["index"] >= 0)));
+}
+
+export function validateBookmarksMoveResult(value: unknown): value is Protocol.BookmarksMoveResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["ids"]) && Array.isArray(value["ids"]) && value["ids"].every((item) => typeof item === "string"));
+}
+
+export function validateBookmarksSearchParams(value: unknown): value is Protocol.BookmarksSearchParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["limit", "query"]) && (value["limit"] === undefined || (typeof value["limit"] === "number" && Number.isInteger(value["limit"]) && value["limit"] >= 1)) && typeof value["query"] === "string");
+}
+
+export function validateBookmarksSearchResult(value: unknown): value is Protocol.BookmarksSearchResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "hasMore", "nodes"]) && value["contentTrust"] === "untrusted-page-content" && typeof value["hasMore"] === "boolean" && Array.isArray(value["nodes"]) && value["nodes"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["addedAt", "childCount", "id", "index", "parentId", "path", "title", "type", "url"]) && (item["addedAt"] === undefined || (typeof item["addedAt"] === "number" && Number.isInteger(item["addedAt"]))) && (item["childCount"] === undefined || (typeof item["childCount"] === "number" && Number.isInteger(item["childCount"]))) && typeof item["id"] === "string" && typeof item["index"] === "number" && Number.isInteger(item["index"]) && (item["parentId"] === undefined || (typeof item["parentId"] === "string")) && Array.isArray(item["path"]) && item["path"].every((item) => typeof item === "string") && typeof item["title"] === "string" && (item["type"] === "bookmark" || item["type"] === "folder") && (item["url"] === undefined || (typeof item["url"] === "string")))));
+}
+
 export function validateReadingListAddParams(value: unknown): value is Protocol.ReadingListAddParams {
   return (isRecord(value) && hasOnlyKeys(value, ["title", "url"]) && (value["title"] === undefined || (typeof value["title"] === "string")) && typeof value["url"] === "string");
 }
@@ -83,6 +131,12 @@ export function validateWindowsListResult(value: unknown): value is Protocol.Win
 }
 
 export const RPC_PARAM_VALIDATORS = {
+  "bookmarks.add": validateBookmarksAddParams,
+  "bookmarks.edit": validateBookmarksEditParams,
+  "bookmarks.list": validateBookmarksListParams,
+  "bookmarks.mkdir": validateBookmarksMkdirParams,
+  "bookmarks.move": validateBookmarksMoveParams,
+  "bookmarks.search": validateBookmarksSearchParams,
   "readingList.add": validateReadingListAddParams,
   "readingList.list": validateReadingListListParams,
   "readingList.markRead": validateReadingListMarkReadParams,
@@ -95,6 +149,12 @@ export const RPC_PARAM_VALIDATORS = {
 } as const;
 
 export const RPC_RESULT_VALIDATORS = {
+  "bookmarks.add": validateBookmarksAddResult,
+  "bookmarks.edit": validateBookmarksEditResult,
+  "bookmarks.list": validateBookmarksListResult,
+  "bookmarks.mkdir": validateBookmarksMkdirResult,
+  "bookmarks.move": validateBookmarksMoveResult,
+  "bookmarks.search": validateBookmarksSearchResult,
   "readingList.add": validateReadingListAddResult,
   "readingList.list": validateReadingListListResult,
   "readingList.markRead": validateReadingListMarkReadResult,

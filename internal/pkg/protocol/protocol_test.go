@@ -56,6 +56,12 @@ func TestLoadExposesMethodPeerAndListMergeField(t *testing.T) {
 		"readingList.add":      {PeerBrowser, ""},
 		"readingList.markRead": {PeerBrowser, ""},
 		"readingList.remove":   {PeerBrowser, ""},
+		"bookmarks.list":       {PeerBrowser, "nodes"},
+		"bookmarks.search":     {PeerBrowser, "nodes"},
+		"bookmarks.add":        {PeerBrowser, ""},
+		"bookmarks.mkdir":      {PeerBrowser, ""},
+		"bookmarks.move":       {PeerBrowser, ""},
+		"bookmarks.edit":       {PeerBrowser, ""},
 	} {
 		action, ok := p.Actions[name]
 		if !ok {
@@ -84,6 +90,12 @@ func TestLoadExposesEachMethodsDestructionLevel(t *testing.T) {
 		"readingList.add":        LevelDirect,
 		"readingList.markRead":   LevelDirect,
 		"readingList.remove":     LevelConfirm,
+		"bookmarks.list":         LevelDirect,
+		"bookmarks.search":       LevelDirect,
+		"bookmarks.add":          LevelDirect,
+		"bookmarks.mkdir":        LevelDirect,
+		"bookmarks.move":         LevelDirect,
+		"bookmarks.edit":         LevelDirect,
 	} {
 		action, ok := p.Actions[name]
 		if !ok {

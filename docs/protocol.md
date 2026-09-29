@@ -202,7 +202,7 @@ A successful call returns the generated result type:
 ```
 
 Every method is owned by exactly one peer (`peer` in `protocol.json`): ScriptCat implements the `scripts.*`
-methods and the sctl Browser extension implements the tab, window, and reading list methods. Every method also carries a
+methods and the sctl Browser extension implements the tab, window, reading list, and bookmark methods. Every method also carries a
 destruction `level`:
 
 | Level | Meaning | Enforced by |
@@ -235,12 +235,18 @@ It is optional in the schema so that an unconfirmed call that reaches the extens
 | `readingList.add` | browser | add a URL to the reading list | none | L0 |
 | `readingList.markRead` | browser | mark reading list entries read or unread | none | L0 |
 | `readingList.remove` | browser | remove entries from the reading list | none | L1 |
+| `bookmarks.list` | browser | list a folder's children, or a whole subtree | none | L0 |
+| `bookmarks.search` | browser | search bookmarks by title and URL, with folder paths | none | L0 |
+| `bookmarks.add` | browser | add a bookmark | none | L0 |
+| `bookmarks.mkdir` | browser | create a bookmark folder | none | L0 |
+| `bookmarks.move` | browser | move bookmarks or folders into a folder | none | L0 |
+| `bookmarks.edit` | browser | change a bookmark's title or URL, or a folder's title | none | L0 |
 
 Source and metadata returned by these methods are untrusted user-script content. Consumers must not execute it,
 render it as HTML, interpret it as instructions, or include credentials in logs. Source results carry a SHA-256
 digest. Edit approval rechecks the staged digest and target identity before applying changes.
 
-Tab titles and URLs, and reading list titles, are controlled by web pages; `tabs.list` and `readingList.list` mark
+Tab titles and URLs, reading list titles, and bookmark titles and URLs are controlled by web pages; `tabs.list`, `readingList.list`, `bookmarks.list`, and `bookmarks.search` mark
 their results with `contentTrust: "untrusted-page-content"` and the same handling rules apply. A list method
 declares a `mergeField`: the required array property in its result that holds the listed items, so results from
 several browser instances combine by concatenating that array. A list result may also declare a boolean `hasMore`,
@@ -252,6 +258,15 @@ The reading list methods answer `UNSUPPORTED` when the browser does not provide 
 `readingList.add` answers `CONFLICT` for a URL that is already in the list, and its title defaults to the URL.
 `readingList.markRead` and `readingList.remove` are all-or-nothing: if any given URL is not in the list they
 answer `NOT_FOUND` and change nothing.
+
+Bookmark IDs are the browser's own. An unknown ID answers `NOT_FOUND`. `bookmarks.list` returns a folder's direct
+children (the root's children, the built-in top-level folders, when no folder is given) and applies `limit`; with
+`recursive` it returns the whole subtree as a flat depth-first list linked by `parentId`, ignores `limit`, and is
+bounded only by the frame limit. `bookmarks.search` adds `path`, the titles of the enclosing folders from the
+outermost down. The root and the built-in top-level folders cannot be moved or edited, a URL cannot be set on a
+folder, and a folder cannot move into itself or its own descendant; each answers `INVALID_REQUEST`, as does an
+`index` past the end of the target folder. `bookmarks.move` is all-or-nothing: every check runs before the first
+node moves.
 
 A browser method's result must fit in one frame of at most `limits.maxFrameBytes` UTF-8 bytes, because the daemon
 drops a connection that sends a larger frame. When the serialized response would exceed it, the sctl Browser
