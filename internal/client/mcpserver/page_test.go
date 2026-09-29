@@ -36,6 +36,28 @@ func TestPageToolsForwardToThePageEndpoint(t *testing.T) {
 			So(caller.actions, ShouldBeEmpty)
 		})
 
+		Convey("page_eval 的 ref 留在动作输入里,schema 与静态描述都提到它", func() {
+			_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "page_eval", Arguments: map[string]any{
+				"expression": "el => el.textContent", "ref": "e5",
+			}})
+			So(err, ShouldBeNil)
+			So(string(caller.pages[0].Input), ShouldEqualJSON, `{"expression":"el => el.textContent","ref":"e5"}`)
+			tools, err := session.ListTools(context.Background(), nil)
+			So(err, ShouldBeNil)
+			for _, tool := range tools.Tools {
+				switch tool.Name {
+				case "page_eval":
+					schema, err := json.Marshal(tool.InputSchema)
+					So(err, ShouldBeNil)
+					So(string(schema), ShouldContainSubstring, `"ref"`)
+					So(tool.Description, ShouldContainSubstring, "ref")
+				case "page_snapshot":
+					So(tool.Description, ShouldNotContainSubstring, "Same-process")
+					So(tool.Description, ShouldContainSubstring, "[unavailable]")
+				}
+			}
+		})
+
 		Convey("省略可选参数时请求不带目标,标签页交给 daemon 选择", func() {
 			_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "page_detach", Arguments: map[string]any{"all": true}})
 			So(err, ShouldBeNil)
@@ -79,7 +101,7 @@ func TestPageToolsForwardToThePageEndpoint(t *testing.T) {
 				{},
 				{"expression": ""},
 				{"expression": "1", "tabId": -1},
-				{"expression": "1", "ref": "e5"},
+				{"expression": "1", "ref": ""},
 			} {
 				_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "page_eval", Arguments: args})
 				So(err, ShouldNotBeNil)

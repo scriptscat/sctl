@@ -106,7 +106,7 @@ troubleshooting.
 | `sctl tabs list\|open\|close\|activate` | List, open, close, or activate tabs on a paired sctl Browser instance. |
 | `sctl windows list` | List windows on a paired sctl Browser instance. |
 | `sctl page snapshot [--root <ref\|selector>]` | Print a tab's accessibility snapshot, with refs such as `e5` on nodes that can be interacted with or have a name. |
-| `sctl page eval <expression>` / `sctl page detach [--all]` | Evaluate JavaScript in a tab's page, or detach the debugger from a tab or from every tab. |
+| `sctl page eval <expression> [<ref>]` / `sctl page detach [--all]` | Evaluate JavaScript in a tab's page (with a ref, the expression is a function like `el => el.textContent` that receives the element), or detach the debugger from a tab or from every tab. |
 
 Run `sctl --help` or `sctl <command> --help` for usage and flags. Write operations block
 until the user approves, rejects, or closes the confirmation flow in ScriptCat; browser control commands run
@@ -123,7 +123,7 @@ when the debugger detaches while it runs (for example, the infobar was dismissed
 
 `sctl page snapshot` prints one line per visible node, indented by level: `- role "name" [states] [ref=eN]`, with
 the current value of form controls after a colon, link URLs in `/url:` child lines, and plain text in `text:`
-lines; same-process iframes are expanded under their iframe node. `--root` limits it to the subtree rooted at a
+lines; all iframes, cross-origin and nested ones included, are expanded under their iframe node (one that cannot be attached shows `[unavailable]`). `--root` limits it to the subtree rooted at a
 ref, or at the one element a CSS selector matches in the main document. Refs are unique within a tab; a new
 snapshot of the tab replaces them, and they also expire when the page navigates, the element is removed, or the
 debugger detaches. Using an expired ref, or one from another tab, fails with `STALE_REF`. A snapshot over 1 MiB

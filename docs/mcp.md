@@ -224,7 +224,13 @@ with or have a name; its optional `root` limits it to the subtree rooted at a re
 selector matches in the main document. Refs are unique within a tab. A new snapshot of the tab replaces them, and
 they also expire when the page navigates, the element is removed, or the debugger detaches; an expired ref, or
 one from another tab, returns `STALE_REF`. A snapshot over 1 MiB returns `PAYLOAD_TOO_LARGE`; pass `root` to
-narrow it.
+narrow it. Iframes, including cross-origin and nested ones, are expanded under their iframe node; one that
+cannot be attached shows `[unavailable]`.
+
+`page_eval` takes an optional `ref` from the tab's latest snapshot. With it, `expression` must be a function that
+receives the element, such as `el => el.textContent`, and it runs in the element's own frame, so elements inside
+cross-origin iframes work. An expired ref returns `STALE_REF`, a non-function expression `INVALID_REQUEST`, and an
+exception thrown by the page `EVAL_ERROR`.
 
 ## Troubleshooting
 

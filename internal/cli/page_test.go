@@ -101,11 +101,22 @@ func TestPageEval(t *testing.T) {
 			So(out, ShouldNotContainSubstring, "\u202e")
 		})
 
-		Convey("第二个参数(元素目标)暂不支持:退出码 3,不发请求", func() {
+		Convey("第二个位置参数作为元素引用以 ref 转发", func() {
 			stub := stubPageDaemon(t, ok)
 			code, _ := runCLI("page", "eval", "el => el.textContent", "e5")
+			So(code, ShouldEqual, exitOK)
+			So(stub.calls, ShouldEqual, 1)
+			So(string(stub.last.Input), ShouldEqualJSON, `{"expression":"el => el.textContent","ref":"e5"}`)
+		})
+
+		Convey("没有第二个参数时不带 ref;三个参数退出码 3,不发请求", func() {
+			stub := stubPageDaemon(t, ok)
+			code, _ := runCLI("page", "eval", "1")
+			So(code, ShouldEqual, exitOK)
+			So(string(stub.last.Input), ShouldEqual, `{"expression":"1"}`)
+			code, _ = runCLI("page", "eval", "1", "e5", "e6")
 			So(code, ShouldEqual, exitError)
-			So(stub.calls, ShouldEqual, 0)
+			So(stub.calls, ShouldEqual, 1)
 		})
 
 		Convey("非法 --timeout 与负的 --tab:退出码 3,不发请求", func() {
