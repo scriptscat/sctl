@@ -143,3 +143,14 @@ func onTargetDetached(t *Tab, _ string, params json.RawMessage) {
 		t.refs.replaceFrame(frameID)
 	}
 }
+
+// owner 返回子会话对应的 frame 与报告它的会话(顶层会话为空);sessionID 不是已附加的子会话时 ok 为 false。
+func (fs *frameSessions) owner(sessionID string) (frameID, parent string, ok bool) {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	s, ok := fs.sessions[sessionID]
+	if !ok {
+		return "", "", false
+	}
+	return s.frameID, s.parent, true
+}

@@ -186,6 +186,7 @@ func NewManager(cdp CDP, log *zap.Logger) *Manager {
 	m.register("select", runSelect)
 	m.register("upload", runUpload)
 	m.register("scroll", runScroll)
+	m.addAction("screenshot", action{tab: runScreenshot, timeout: screenshotActionTimeout})
 	m.addAction("navigate", action{tab: runNavigate, timeout: navigationTimeout})
 	m.register("wait", runWait)
 	m.registerBrowser("detach", m.detach)

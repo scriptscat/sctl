@@ -36,7 +36,7 @@ func newPageCmd() *cobra.Command {
 	cmd.AddCommand(
 		newPageSnapshotCmd(), newPageClickCmd(), newPageHoverCmd(), newPageFillCmd(), newPageTypeCmd(), newPagePressCmd(),
 		newPageSelectCmd(), newPageUploadCmd(), newPageScrollCmd(), newPageEvalCmd(), newPageDetachCmd(),
-		newPageGotoCmd(), newPageBackCmd(), newPageForwardCmd(), newPageReloadCmd(), newPageWaitCmd(),
+		newPageGotoCmd(), newPageBackCmd(), newPageForwardCmd(), newPageReloadCmd(), newPageWaitCmd(), newPageScreenshotCmd(),
 	)
 	return cmd
 }

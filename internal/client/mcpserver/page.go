@@ -196,6 +196,25 @@ var pageTools = []pageToolDef{
 		activatable: true,
 	},
 	{
+		action: "screenshot",
+		name:   "page_screenshot",
+		description: "Take a screenshot of a page in a browser tab and return it as an image. By default it captures the visible viewport; " +
+			"full captures the whole page beyond the viewport; ref or selector captures the border box of one element. " +
+			"full and a target cannot be combined (INVALID_REQUEST). " + pageTargetDescription +
+			"An element is scrolled into view and waited for until it is attached and visible. " +
+			"format is png (default) or jpeg; quality 0-100 applies to jpeg only (INVALID_REQUEST with png). " +
+			"An image larger than one protocol frame (4 MiB) returns PAYLOAD_TOO_LARGE: use jpeg, a lower quality, or capture only the viewport. " +
+			"Runs in a background tab without switching tabs or focusing the window. If the tab produces no image within 15 seconds, " +
+			"PAGE_HIDDEN is returned instead of a blank image, and activate may help. " +
+			"Alongside the image, a short text reports tabId, the page's url and title, and the mimeType. " + pageActionTrustDescription,
+		inputSchema: `{"type":"object","properties":{` + pageTargetProperties + `,` +
+			`"full":{"type":"boolean","description":"Capture the whole page instead of the viewport. Not with ref or selector."},` +
+			`"format":{"type":"string","enum":["png","jpeg"],"description":"Image format. Defaults to png."},` +
+			`"quality":{"type":"integer","minimum":0,"maximum":100,"description":"JPEG quality 0-100. Only with format jpeg."}` +
+			`},"additionalProperties":false}`,
+		activatable: true,
+	},
+	{
 		action: "eval",
 		name:   "page_eval",
 		description: "Evaluate a JavaScript expression in the main world of a page in a browser tab and return its value. " +
@@ -259,6 +278,9 @@ func registerPageTool(srv *mcp.Server, td pageToolDef, caller BridgeCaller) {
 			return nil, err
 		}
 		if res.OK {
+			if td.action == "screenshot" {
+				return okImageResult(res.Result)
+			}
 			return okResult(res.Result), nil
 		}
 		return errorResult(res.Error), nil

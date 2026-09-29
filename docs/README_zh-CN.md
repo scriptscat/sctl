@@ -105,6 +105,7 @@ Chrome DevTools Protocol 驱动页面时,Chrome 会在浏览器顶部显示"sctl
 | `sctl page scroll [<ref> \| --selector <css>] [--dx N] [--dy N]` | 把元素滚入可视区域,或按像素滚动视口。 |
 | `sctl page goto <url> [--wait load\|domcontentloaded\|networkidle]` / `sctl page back` / `sctl page forward` / `sctl page reload` | 让标签页导航并等待加载状态(默认 `load`;`networkidle` 指至少 500 ms 内没有进行中的请求)。 |
 | `sctl page wait (--text T \| --gone T \| --selector S \| --selector-gone S \| --url P \| --load STATE)` | 等待文本可见或消失、元素可见或消失、URL 包含子串,或到达某个加载状态。 |
+| `sctl page screenshot [-f FILE] [--full \| <ref> \| --selector <css>] [--format png\|jpeg] [--quality N]` | 把视口、整页或某个元素截图存成文件,并输出文件路径。 |
 | `sctl page eval <expression> [<ref>]` / `sctl page detach [--all]` | 在标签页的页面里执行 JavaScript(给了引用时表达式写成函数,如 `el => el.textContent`,元素作为参数传入),或断开一个标签页或全部标签页的调试器。 |
 
 运行 `sctl --help` 或 `sctl <command> --help` 查看用法和参数。写操作会阻塞，直到用户在
@@ -147,6 +148,11 @@ ScriptCat 中批准、拒绝或关闭确认流程；浏览器控制命令按设�
 `sctl page wait` 恰好接受一个条件并轮询到它成立,超时返回写明条件的 `TIMEOUT`(默认 10 秒):`--text T` 等文本可见,`--gone T` 等文本消失(被移除或隐藏),
 `--selector S` 等匹配 CSS 选择器的元素可见,`--selector-gone S` 等没有可见元素匹配它,`--url P` 等标签页 URL 包含 `P`,`--load STATE` 等到达加载状态。
 文本与选择器只在主文档里匹配,不进入 iframe;选择器非法返回 `INVALID_REQUEST`。
+
+`sctl page screenshot` 默认截可见视口,`--full` 截整页,给引用或 `--selector` 时截该元素的边界框(先滚入视口;跨域 iframe 里的引用同样可用)。
+图片写入 `-f` 指定的文件,未指定时写到当前目录的 `screenshot-<tabId>-<时间戳>.<扩展名>`,并输出路径;二进制数据从不写到 stdout,`-o json` 输出结果元数据和路径,不含图片。
+`--format` 为 `png`(默认)或 `jpeg`,`--quality 0-100` 只对 jpeg 有效。图片超过单帧上限(4 MiB)时返回 `PAYLOAD_TOO_LARGE`:改用 `--format jpeg` 或只截视口。
+标签页 15 秒内(截图的等待上限)得不到图像时返回 `PAGE_HIDDEN`,不会保存空白图;可加 `--activate` 重试。
 
 ## 许可证
 

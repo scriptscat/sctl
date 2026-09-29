@@ -253,6 +253,33 @@ func okResult(result json.RawMessage) *mcp.CallToolResult {
 	return out
 }
 
+// okImageResult 把带 base64 图像(data)与 mimeType 的动作结果转成 MCP 图片内容,后面跟一段不含图像数据的
+// 简短文本(其余结果字段),让模型直接看到图,而不是几百 KB 的 base64 文本。
+func okImageResult(result json.RawMessage) (*mcp.CallToolResult, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(result, &fields); err != nil {
+		return nil, fmt.Errorf("decode the screenshot result: %w", err)
+	}
+	var (
+		data     []byte
+		mimeType string
+	)
+	if err := json.Unmarshal(fields["data"], &data); err != nil {
+		return nil, fmt.Errorf("decode the screenshot image data: %w", err)
+	}
+	if err := json.Unmarshal(fields["mimeType"], &mimeType); err != nil {
+		return nil, fmt.Errorf("decode the screenshot mimeType: %w", err)
+	}
+	delete(fields, "data")
+	meta, err := json.Marshal(fields)
+	if err != nil {
+		return nil, fmt.Errorf("encode the screenshot metadata: %w", err)
+	}
+	out := okResult(meta)
+	out.Content = []mcp.Content{&mcp.ImageContent{Data: data, MIMEType: mimeType}, out.Content[0]}
+	return out, nil
+}
+
 func errorResult(e *control.CallError) *mcp.CallToolResult {
 	msg := "call failed"
 	if e != nil {

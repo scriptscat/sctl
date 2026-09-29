@@ -115,6 +115,7 @@ troubleshooting.
 | `sctl page scroll [<ref> \| --selector <css>] [--dx N] [--dy N]` | Scroll an element into view, or scroll the viewport by pixels. |
 | `sctl page goto <url> [--wait load\|domcontentloaded\|networkidle]` / `sctl page back` / `sctl page forward` / `sctl page reload` | Navigate a tab and wait for the load state (default `load`; `networkidle` means no request in flight for 500ms). |
 | `sctl page wait (--text T \| --gone T \| --selector S \| --selector-gone S \| --url P \| --load STATE)` | Wait until text is visible or gone, an element is visible or gone, the URL contains a substring, or a load state is reached. |
+| `sctl page screenshot [-f FILE] [--full \| <ref> \| --selector <css>] [--format png\|jpeg] [--quality N]` | Save a screenshot of the viewport, the whole page, or one element to a file, and print the path. |
 | `sctl page eval <expression> [<ref>]` / `sctl page detach [--all]` | Evaluate JavaScript in a tab's page (with a ref, the expression is a function like `el => el.textContent` that receives the element), or detach the debugger from a tab or from every tab. |
 
 Run `sctl --help` or `sctl <command> --help` for usage and flags. Write operations block
@@ -175,6 +176,14 @@ Network errors such as a refused connection or a DNS failure fail with `NAVIGATI
 `--selector S` for an element matching the CSS selector to be visible, `--selector-gone S` for no visible element to
 match it, `--url P` for the tab's URL to contain `P`, and `--load STATE` for a load state. Text and selectors are matched
 in the main document, not inside iframes; an invalid selector fails with `INVALID_REQUEST`.
+
+`sctl page screenshot` captures the visible viewport by default, the whole page with `--full`, or the border box of an
+element given as a ref or `--selector` (scrolled into view first; refs inside cross-origin iframes work). The image is
+written to `-f`, or to `screenshot-<tabId>-<timestamp>.<ext>` in the current directory, and the path is printed; binary
+data never goes to stdout, and `-o json` prints the result metadata and the path without the image. `--format` is `png`
+(default) or `jpeg`; `--quality 0-100` applies to jpeg only. An image larger than one protocol frame (4 MiB) fails with
+`PAYLOAD_TOO_LARGE`: use `--format jpeg` or capture only the viewport. If the tab produces no image within 15 seconds
+(the capture bound), the command fails with `PAGE_HIDDEN` instead of saving a blank image; retry with `--activate`.
 
 ## License
 

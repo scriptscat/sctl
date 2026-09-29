@@ -210,7 +210,7 @@ each item with its browser, while `tabs_open`, `tabs_close`, and `tabs_activate`
 approval step (see [threat-model.md](./threat-model.md)).
 
 The page tools `page_snapshot`, `page_click`, `page_hover`, `page_fill`, `page_type`, `page_press`, `page_select`,
-`page_upload`, `page_scroll`, `page_navigate`, `page_wait`, `page_eval`, and `page_detach` work the same way and
+`page_upload`, `page_scroll`, `page_navigate`, `page_wait`, `page_screenshot`, `page_eval`, and `page_detach` work the same way and
 also run without approval. Besides `browser`, each takes an optional `tabId`; without it, the tool acts on the active tab of the browser's
 last-focused window, fixed when the call starts, and every result reports the `tabId` it acted on. All but `page_snapshot` and `page_detach` also take `activate`, which makes the tab active in its window first without
 focusing the window, and all take `timeoutMs` (default 10000; 30000 for `page_navigate`). Page tools run in background tabs and never switch tabs or focus a window. The
@@ -266,6 +266,16 @@ failure return `NAVIGATION_FAILED` with Chrome's error text, `back` or `forward`
 `gone` (text disappeared, removed or hidden), `selector` (a matching element is visible), `selectorGone` (no visible
 element matches), `url` (the URL contains the substring), or `load` (a load state), matched in the main document only;
 on timeout it returns `TIMEOUT` naming the condition, and an invalid selector returns `INVALID_REQUEST`.
+
+`page_screenshot` returns the picture as MCP image content, followed by a short text with `tabId`, `url`, `title`, and
+`mimeType`. It captures the visible viewport by default, the whole page with `full`, or the border box of one element
+given as `ref` or `selector` like `page_click` (scrolled into view and waited for until attached and visible; an element
+inside a cross-origin iframe works); `full` together with a target returns `INVALID_REQUEST`. `format` is `png`
+(default) or `jpeg`, and `quality` (0-100) applies to jpeg only, otherwise `INVALID_REQUEST`. An image larger than one
+protocol frame (4 MiB) returns `PAYLOAD_TOO_LARGE`; use `jpeg`, a lower `quality`, or the viewport. The daemon waits at
+most 15 seconds for the browser to return the image; if it does not (a tab that is not rendering even with focus
+emulation, such as a minimized window or a frozen tab), the tool returns `PAGE_HIDDEN` rather than a blank image, and
+retrying with `activate` may help.
 
 ## Troubleshooting
 

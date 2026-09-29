@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>screenshot fixture</title>
+    <style>
+      body { margin: 0; height: 1500px; position: relative; background: rgb(255, 255, 255); }
+      .box { position: absolute; border: 0; padding: 0; margin: 0; }
+      #red { left: 0; top: 0; width: 200px; height: 100px; background: rgb(255, 0, 0); }
+      #blue { left: 50px; top: 1000px; width: 200px; height: 100px; background: rgb(0, 0, 255); }
+      #tall { left: 700px; top: 200px; width: 50px; height: 900px; background: rgb(0, 128, 0); }
+      #frame { left: 300px; top: 1200px; width: 300px; height: 200px; }
+    </style>
+  </head>
+  <body>
+    <div id="red" class="box"></div>
+    <div id="blue" class="box"></div>
+    <div id="tall" class="box"></div>
+    <iframe id="frame" class="box" title="Cross frame"></iframe>
+    <script>
+      document.getElementById("frame").src = `http://localhost:${location.port}/screenshot-frame.html`;
+    </script>
+  </body>
+</html>

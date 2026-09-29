@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"testing"
 
@@ -335,6 +336,73 @@ func TestPageNavigateAndWaitTools(t *testing.T) {
 				So(string(schema), ShouldContainSubstring, `"timeoutMs"`)
 			}
 			So(seen, ShouldEqual, len(wants))
+		})
+	})
+}
+
+func TestPageScreenshotReturnsImageContent(t *testing.T) {
+	Convey("page_screenshot", t, func() {
+		p := loadProto(t)
+		image := []byte("\x89PNG-bytes\x00\xff")
+		result := json.RawMessage(`{"contentTrust":"untrusted-page-content","tabId":5,"url":"https://example.test/","title":"Example","navigated":false,` +
+			`"data":"` + base64.StdEncoding.EncodeToString(image) + `","mimeType":"image/png"}`)
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: result}}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+
+		Convey("以 MCP 图片内容返回图像,另附不含图像数据的简短文本", func() {
+			res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "page_screenshot", Arguments: map[string]any{
+				"full": true, "format": "png", "tabId": 9,
+			}})
+			So(err, ShouldBeNil)
+			So(res.IsError, ShouldBeFalse)
+			So(res.Content, ShouldHaveLength, 2)
+			img, ok := res.Content[0].(*mcp.ImageContent)
+			So(ok, ShouldBeTrue)
+			So(img.MIMEType, ShouldEqual, "image/png")
+			So(img.Data, ShouldResemble, image)
+			text, ok := res.Content[1].(*mcp.TextContent)
+			So(ok, ShouldBeTrue)
+			So(text.Text, ShouldNotContainSubstring, "data")
+			So(text.Text, ShouldContainSubstring, `"tabId":5`)
+			So(text.Text, ShouldContainSubstring, `"mimeType":"image/png"`)
+			So(len(text.Text), ShouldBeLessThan, 500)
+			So(caller.pages[0].Action, ShouldEqual, "screenshot")
+			So(*caller.pages[0].TabID, ShouldEqual, 9)
+			So(string(caller.pages[0].Input), ShouldEqualJSON, `{"full":true,"format":"png"}`)
+		})
+
+		Convey("参数在工具边界上校验:quality 越界、jpeg 以外的格式被拒", func() {
+			for _, args := range []map[string]any{
+				{"quality": 101},
+				{"format": "gif"},
+				{"unknown": true},
+			} {
+				_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "page_screenshot", Arguments: args})
+				So(err, ShouldNotBeNil)
+			}
+			So(caller.pages, ShouldBeEmpty)
+		})
+
+		Convey("描述是静态文本,写明模式、大小上限与 PAGE_HIDDEN", func() {
+			tools, err := session.ListTools(context.Background(), nil)
+			So(err, ShouldBeNil)
+			for _, tool := range tools.Tools {
+				if tool.Name != "page_screenshot" {
+					continue
+				}
+				for _, sub := range []string{"full", "PAYLOAD_TOO_LARGE", "jpeg", "PAGE_HIDDEN", "activate"} {
+					So(tool.Description, ShouldContainSubstring, sub)
+				}
+			}
+		})
+
+		Convey("错误结果仍是文本错误", func() {
+			caller.result = control.CallResult{OK: false, Error: &control.CallError{Code: "PAGE_HIDDEN", Message: "retry with activate"}}
+			res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "page_screenshot", Arguments: map[string]any{}})
+			So(err, ShouldBeNil)
+			So(res.IsError, ShouldBeTrue)
+			So(res.Content, ShouldHaveLength, 1)
+			So(res.Content[0].(*mcp.TextContent).Text, ShouldContainSubstring, "PAGE_HIDDEN")
 		})
 	})
 }
