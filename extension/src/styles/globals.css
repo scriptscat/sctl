@@ -36,36 +36,36 @@
 }
 
 /*
- * 同门配色：以 ScriptCat 的天蓝色为基础（docs/specs 扩展弹窗「视觉规范」表，浅色/深色各一套，
- * 2b4dd1a 修订）。品牌天蓝 --brand 只用于不承载文字的装饰元素（连线区的图标等）；凡是作文字颜色、
- * 或作白字按钮底色的地方一律用 --primary，浅色模式取同色相的加深值以满足 4.5:1 对比度，深色模式两者
- * 数值相同，因为原值已经达标。
- * 按钮悬停底色 --primary-hover/--bad-hover 各是对应底色在 oklch 里向文字的反方向移 12%（浅色加深、深色提亮），
+ * 配色：中性灰底 + 紫罗兰点缀（docs/specs 扩展弹窗「视觉规范」表，浅色/深色各一套）。弹窗本质是连接状态面板，
+ * 绿/琥珀/红专用于状态，品牌色因此只能落在这三者和 ScriptCat 天蓝之外；底色不带色调，让状态线始终是画面里
+ * 唯一的彩色信号。品牌紫罗兰 --brand 与工具栏图标同色，只用于不承载文字的装饰元素（连线区的图标、焦点框）；
+ * 凡是作文字颜色、或作按钮底色的地方一律用 --primary，取同色相中满足 4.5:1 对比度的值（浅色加深、深色提亮）。
+ * 按钮悬停底色 --primary-hover/--bad-hover 各是对应底色在 oklch 里向文字的反方向移动（浅色加深、深色提亮），
  * 让悬停时文字对比度只升不降；不用 bg-primary/80 这类透明度写法，它在浅色下会把白字按钮洗到 4.5:1 以下。
  */
 :root {
   --radius: 0.625rem;
   --background: #ffffff;
-  --foreground: #1b2733;
+  --foreground: #18181b;
   --card: #ffffff;
-  --card-foreground: #1b2733;
+  --card-foreground: #18181b;
   --popover: #ffffff;
-  --popover-foreground: #1b2733;
-  --brand: #1296db;
-  --primary: #0e77ae;
+  --popover-foreground: #18181b;
+  --brand: #a361fb;
+  --primary: #8347cf;
   --primary-foreground: #ffffff;
-  --primary-hover: #0a6392;
-  --secondary: #f2f7fb;
-  --secondary-foreground: #1b2733;
-  --muted: #f2f7fb;
-  --muted-foreground: #5c6b7a;
-  --accent: #f2f7fb;
-  --accent-foreground: #1b2733;
+  --primary-hover: #6f2fb7;
+  --secondary: #f6f6f7;
+  --secondary-foreground: #18181b;
+  --muted: #f6f6f7;
+  --muted-foreground: #6b6b74;
+  --accent: #f6f6f7;
+  --accent-foreground: #18181b;
   --destructive: #d2352c;
-  --border: #dce5ed;
-  --input: #dce5ed;
-  --ring: #1296db;
-  --surface: #f2f7fb;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #a361fb;
+  --surface: #f6f6f7;
   --ok: #128155;
   --warn: #9d6504;
   --bad: #d2352c;
@@ -74,32 +74,32 @@
 }
 
 .dark {
-  --background: #131a21;
-  --foreground: #e4ecf3;
-  --card: #131a21;
-  --card-foreground: #e4ecf3;
-  --popover: #131a21;
-  --popover-foreground: #e4ecf3;
-  --brand: #3aa9e6;
-  --primary: #3aa9e6;
-  --primary-foreground: #0a1622;
-  --primary-hover: #59b4ea;
-  --secondary: #1a232c;
-  --secondary-foreground: #e4ecf3;
-  --muted: #1a232c;
-  --muted-foreground: #8c9ba9;
-  --accent: #1a232c;
-  --accent-foreground: #e4ecf3;
+  --background: #141416;
+  --foreground: #ececee;
+  --card: #141416;
+  --card-foreground: #ececee;
+  --popover: #141416;
+  --popover-foreground: #ececee;
+  --brand: #a361fb;
+  --primary: #b287f5;
+  --primary-foreground: #141416;
+  --primary-hover: #c29ffd;
+  --secondary: #1c1c1f;
+  --secondary-foreground: #ececee;
+  --muted: #1c1c1f;
+  --muted-foreground: #9a9aa3;
+  --accent: #1c1c1f;
+  --accent-foreground: #ececee;
   --destructive: #f06a5f;
-  --border: #283440;
-  --input: #283440;
-  --ring: #3aa9e6;
-  --surface: #1a232c;
+  --border: #2b2b30;
+  --input: #2b2b30;
+  --ring: #a361fb;
+  --surface: #1c1c1f;
   --ok: #3cc98a;
   --warn: #e9a93a;
   --bad: #f06a5f;
   /* 与深色主色按钮一样用深色文字：白字在 #F06A5F 上的对比度不到 4.5:1。 */
-  --bad-foreground: #0a1622;
+  --bad-foreground: #141416;
   --bad-hover: #f47e72;
 }
 
