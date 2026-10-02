@@ -24,6 +24,10 @@ type pendingCall struct {
 	clientID string
 	method   string
 	respCh   chan Response
+	// approvalCh 收到值表示对端报告这个请求已进入人工审批;缓冲为 1 且至多投递一次,读循环永不阻塞在它上面。
+	approvalCh chan struct{}
+	// approvalSignaled 由 s.mu 保护,保证重复的 $/approvalPending 只投递一次。
+	approvalSignaled bool
 }
 
 // Call 按方法归属把一次 bridge action 转发给对端并阻塞等待应答:scripts.* 发给 ScriptCat,
@@ -68,7 +72,7 @@ func (s *Server) callConn(ctx context.Context, c *conn, req Request) (Response, 
 		return Response{}, &Error{Code: generated.ErrorCodeMethodNotFound, Message: "extension does not support " + req.Action}
 	}
 	requestID := uuid.NewString()
-	pc := &pendingCall{conn: c, clientID: req.ClientID, method: req.Action, respCh: make(chan Response, 1)}
+	pc := &pendingCall{conn: c, clientID: req.ClientID, method: req.Action, respCh: make(chan Response, 1), approvalCh: make(chan struct{}, 1)}
 	s.mu.Lock()
 	s.pending[requestID] = pc
 	s.mu.Unlock()
@@ -87,18 +91,44 @@ func (s *Server) callConn(ctx context.Context, c *conn, req Request) (Response, 
 	timer := time.NewTimer(s.writeDecisionTTL)
 	defer timer.Stop()
 
-	select {
-	case resp := <-pc.respCh:
-		return resp, nil
-	case <-ctx.Done():
-		s.cancelToExt(c, requestID)
-		return Response{}, ctx.Err()
-	case <-timer.C:
-		s.cancelToExt(c, requestID)
-		return Response{}, &Error{Code: CodeOperationExpired, Message: "operation expired"}
-	case <-c.closed:
-		return Response{}, ErrDisconnected
+	for {
+		select {
+		case resp := <-pc.respCh:
+			return resp, nil
+		case <-pc.approvalCh:
+			// 在调用方自己的 goroutine 里回调:它可以安全地写自己的响应,也不会拖住这条连接的读循环。
+			if req.OnPending != nil {
+				req.OnPending()
+			}
+		case <-ctx.Done():
+			s.cancelToExt(c, requestID)
+			return Response{}, ctx.Err()
+		case <-timer.C:
+			s.cancelToExt(c, requestID)
+			return Response{}, &Error{Code: CodeOperationExpired, Message: "operation expired"}
+		case <-c.closed:
+			return Response{}, ErrDisconnected
+		}
 	}
+}
+
+// handleApprovalPending 把对端「请求已进入审批」的通知交给等待它的调用方。与应答一样,只认发往的那条连接,
+// 其他对端不能冒名;未知或已结束的请求、重复的通知都被忽略。不等待人工决定的方法不会进入审批,对它们的通知
+// 也被忽略:汇总调用只用于这类方法(protocolgen 保证),它的各个 callConn 并发运行,回调在那里会被并发调用。
+func (s *Server) handleApprovalPending(c *conn, message Message) {
+	var params approvalPendingParams
+	if err := json.Unmarshal(message.Params, &params); err != nil || params.ID == "" {
+		s.log.Debug("invalid approval pending notification", zap.Error(err))
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	pc := s.pending[params.ID]
+	if pc == nil || pc.conn != c || pc.approvalSignaled || s.proto.Actions[pc.method].Blocking == protocol.BlockingNone {
+		return
+	}
+	pc.approvalSignaled = true
+	pc.approvalCh <- struct{}{}
 }
 
 // cancelToExt sends a JSON-RPC cancellation notification for an in-flight request.

@@ -183,7 +183,7 @@ func TestGenerateKeepsScriptCatTypeScriptByteIdenticalWhenBrowserMethodsExist(t 
 		"validators.generated.ts": scriptCatValidatorsSHA256,
 	} {
 		content := readFile(t, filepath.Join(out, name))
-		for _, browserOnly := range []string{"tabs.list", "TabsListParams", "BROWSER_OFFLINE", "browserSessionExt", "CONFIRMATION_REQUIRED", "UNSUPPORTED", "level"} {
+		for _, browserOnly := range []string{"tabs.list", "TabsListParams", "BROWSER_OFFLINE", "browserSessionExt", "CONFIRMATION_REQUIRED", "UNSUPPORTED", "level", "$/approvalPending"} {
 			if strings.Contains(content, browserOnly) {
 				t.Errorf("ScriptCat %s contains browser-owned %q", name, browserOnly)
 			}
@@ -215,6 +215,7 @@ func TestGenerateWritesBrowserTypeScriptWithOnlyBrowserContract(t *testing.T) {
 		`"PAYLOAD_TOO_LARGE"`,
 		`"CONFIRMATION_REQUIRED"`,
 		`"UNSUPPORTED"`,
+		"  \"$/cancelRequest\",\n  \"$/approvalPending\"\n",
 		"  \"tabs.close\": {\n    params: \"TabsCloseParams\",\n    result: \"TabsCloseResult\",\n    scope: \"tabs:close\",\n    effect: \"write\",\n    blocking: \"none\",\n    level: \"L0\",\n  },\n",
 	} {
 		if !strings.Contains(typescript, want) {
@@ -301,6 +302,10 @@ func TestGenerateRejectsInvalidPeerAnnotations(t *testing.T) {
 			items := resultProperty(def, "TabsListResult", "tabs")["items"].(map[string]any)
 			items["properties"].(map[string]any)["browser"] = map[string]any{"type": "string"}
 		},
+		"merge field on a method that waits for a human": func(def map[string]any) {
+			method(def, "tabs.list")["blocking"] = "approval"
+			method(def, "tabs.list")["level"] = "L2"
+		},
 		"merge field on a ScriptCat method": func(def map[string]any) {
 			method(def, "scripts.list")["mergeField"] = "scripts"
 		},
@@ -309,6 +314,12 @@ func TestGenerateRejectsInvalidPeerAnnotations(t *testing.T) {
 		},
 		"error code with unknown peer": func(def map[string]any) {
 			def["errorCodes"].([]any)[0].(map[string]any)["peers"] = []any{"firefox"}
+		},
+		"session method without peers": func(def map[string]any) {
+			def["sessionMethods"].([]any)[0].(map[string]any)["peers"] = []any{}
+		},
+		"session method with unknown peer": func(def map[string]any) {
+			def["sessionMethods"].([]any)[0].(map[string]any)["peers"] = []any{"firefox"}
 		},
 		"handshake context without peers": func(def map[string]any) {
 			context := def["crypto"].(map[string]any)["context"].(map[string]any)

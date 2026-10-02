@@ -490,7 +490,19 @@ The sctl Browser extension gates its L2 methods the same way, in its own approva
    check is answered at once and opens no window.
 2. Otherwise the request joins the approval queue, persisted in `chrome.storage.session`, and the service worker
    tells the offscreen document that the answer is deferred. The answer is not held open on that message, because
-   the service worker can be stopped while the user decides.
+   the service worker can be stopped while the user decides. The offscreen document then tells the daemon that the
+   request is waiting for a human, on the connection the request arrived on:
+
+   ```json
+   { "jsonrpc": "2.0", "method": "$/approvalPending", "params": { "id": "<original request id>" } }
+   ```
+
+   A request that fails its checks in step 1, or that the daemon cancelled before it was queued, gets no such
+   notification. The daemon passes it to the waiting requester at most once, and ignores it for an unknown request,
+   one sent on another connection, or a method that does not wait for a human. Requesters tell the user they are waiting only after it arrives: the CLI prints
+   its waiting line and `sctl mcp` starts sending progress then. Only the sctl Browser extension sends it
+   (`sessionMethods` lists it for the browser peer alone); for ScriptCat's gates, which send nothing similar,
+   requesters say they are waiting as soon as they call.
 3. The user's decision reaches the offscreen document as a separate command carrying the request `id`, and the
    offscreen document sends it as the JSON-RPC response on the connection the request arrived on. Approval
    re-checks the target against what the window showed and answers `CONFLICT`, changing nothing, if it differs.
@@ -515,14 +527,14 @@ The sctl Browser extension gates its L2 methods the same way, in its own approva
 ## 6. Generation and conformance
 
 `protocol.json` annotates ownership: each method has one `peer` (`scriptcat` or `browser`), and each
-`errorCodes` entry and each `crypto.context` entry lists the `peers` that use it. The `browser*` context strings
-are reserved for browser-instance handshakes, so a MAC computed for one peer kind never verifies as the other; the
-pairing KDF strings are shared. The generator emits one set of bindings per peer:
+`sessionMethods` entry, each `errorCodes` entry and each `crypto.context` entry lists the `peers` that use it. The
+`browser*` context strings are reserved for browser-instance handshakes, so a MAC computed for one peer kind never
+verifies as the other; the pairing KDF strings are shared. The generator emits one set of bindings per peer:
 
 | Output | Contents |
 |---|---|
 | `internal/pkg/protocol/generated/protocol.generated.go` | every method, type, error code, and context key, for the daemon and CLI |
-| `internal/pkg/protocol/generated/*.ts` | ScriptCat's methods, the types they reference, and the codes and contexts listing `scriptcat` |
+| `internal/pkg/protocol/generated/*.ts` | ScriptCat's methods, the types they reference, and the session methods, codes and contexts listing `scriptcat` |
 | `extension/src/protocol/generated/*.ts` | the same selection for `browser`, plus each method's `level` in `RPC_METHODS` |
 
 The ScriptCat TypeScript must stay byte-identical to the copy in the paired ScriptCat revision, because ScriptCat
@@ -531,8 +543,8 @@ lists exactly. Adding browser-owned definitions therefore never changes ScriptCa
 
 The generator rejects a method whose `level` is missing or not `L0`/`L1`/`L2`, an L2 method without a human gate
 (`blocking` is `none`) or a human-gated method that is not L2, an L1 method whose parameters do not declare the
-optional `confirm: {"const": true}`, and a list result whose `hasMore` is not a boolean. The ScriptCat TypeScript
-does not carry `level`, so it stays byte-identical.
+optional `confirm: {"const": true}`, a `mergeField` on a method that waits for a human, and a list result whose
+`hasMore` is not a boolean. The ScriptCat TypeScript does not carry `level`, so it stays byte-identical.
 
 Run `make protocol-generate` after editing `protocol.json`, and `make protocol-sync-scriptcat` to update the
 adjacent ScriptCat checkout. `make protocol-check` regenerates all artifacts and fails if the checked-in output

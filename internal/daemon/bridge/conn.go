@@ -249,6 +249,8 @@ func (c *conn) readLoop() {
 					c.log.Debug("failed to reply to ping", zap.Error(err))
 				}
 			}
+		case methodApprovalPending:
+			c.srv.handleApprovalPending(c, message)
 		default:
 			c.log.Debug("ignoring unexpected JSON-RPC method", zap.String("method", message.Method))
 		}

@@ -159,7 +159,7 @@ func TestReadingListToolRejectsArgumentsItsActionDoesNotAcceptBeforeForwarding(t
 }
 
 func TestProgressFollowsTheMethodsBlockingMode(t *testing.T) {
-	Convey("浏览器方法只在 blocking 不是 none 时发 progress;ScriptCat 工具保持第 1 期行为,等待期间都发", t, func() {
+	Convey("浏览器方法只在 blocking 不是 none 且请求已进入审批时发 progress;ScriptCat 工具保持第 1 期行为,等待期间都发", t, func() {
 		old := progressInterval
 		progressInterval = 10 * time.Millisecond
 		defer func() { progressInterval = old }()
@@ -171,7 +171,7 @@ func TestProgressFollowsTheMethodsBlockingMode(t *testing.T) {
 		// 断言失败提前退出时也放行阻塞的调用,否则会话关闭要等它们,测试会挂到超时。
 		release := sync.OnceFunc(func() { close(block) })
 		defer release()
-		caller := &fakeCaller{block: block, entered: make(chan struct{}, 3), result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
+		caller := &fakeCaller{block: block, entered: make(chan struct{}, 3), entersApproval: true, result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
 		opts := &mcp.ClientOptions{
 			ProgressNotificationHandler: func(_ context.Context, req *mcp.ProgressNotificationClientRequest) {
 				progress := gatedProgress
@@ -225,6 +225,62 @@ func TestProgressFollowsTheMethodsBlockingMode(t *testing.T) {
 		So((<-script).IsError, ShouldBeFalse)
 		So((<-unblocked).IsError, ShouldBeFalse)
 		So(unblockedProgress.Load(), ShouldEqual, 0)
+	})
+}
+
+func TestApprovalGatedToolsReportProgressOnlyAfterTheRequestEntersApproval(t *testing.T) {
+	Convey("等待审批的浏览器工具只在请求进入审批后发 progress;ScriptCat 工具照旧从调用开始就发", t, func() {
+		old := progressInterval
+		progressInterval = 10 * time.Millisecond
+		defer func() { progressInterval = old }()
+
+		var gatedProgress atomic.Int32
+		scriptProgress := make(chan struct{}, 64)
+		block := make(chan struct{})
+		release := sync.OnceFunc(func() { close(block) })
+		defer release()
+		caller := &fakeCaller{block: block, entered: make(chan struct{}, 2), result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
+		opts := &mcp.ClientOptions{
+			ProgressNotificationHandler: func(_ context.Context, req *mcp.ProgressNotificationClientRequest) {
+				if req.Params.ProgressToken == "tok-gated" {
+					gatedProgress.Add(1)
+					return
+				}
+				select {
+				case scriptProgress <- struct{}{}:
+				default:
+				}
+			},
+		}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: loadProto(t), Caller: caller}, opts)
+
+		call := func(name string, args map[string]any, token string) <-chan *mcp.CallToolResult {
+			resCh := make(chan *mcp.CallToolResult, 1)
+			go func() {
+				res, _ := session.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args, Meta: mcp.Meta{"progressToken": token}})
+				resCh <- res
+			}()
+			select {
+			case <-caller.entered:
+			case <-time.After(5 * time.Second):
+				t.Fatalf("%s did not reach the bridge", name)
+			}
+			return resCh
+		}
+		// 书签删除还没进入审批(扩展仍在预校验);ScriptCat 工具作时钟,滴答三次说明已过去至少两个间隔。
+		gated := call("bookmarks", map[string]any{"action": "remove", "ids": []string{"14"}}, "tok-gated")
+		script := call("scripts_list", map[string]any{}, "tok-script")
+		for range 3 {
+			select {
+			case <-scriptProgress:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the phase-1 ScriptCat tool reported no progress while it waited")
+			}
+		}
+		release()
+		So((<-gated).IsError, ShouldBeFalse)
+		So((<-script).IsError, ShouldBeFalse)
+		So(gatedProgress.Load(), ShouldEqual, 0)
 	})
 }
 
@@ -732,7 +788,7 @@ func TestExtensionsToolForwardsEachActionToItsProtocolMethod(t *testing.T) {
 }
 
 func TestExtensionsUninstallReportsProgressWhileWaitingForApproval(t *testing.T) {
-	Convey("extensions uninstall 等待浏览器里的审批与 Chrome 确认框期间持续发送 progress", t, func() {
+	Convey("extensions uninstall 进入审批后,等待浏览器里的审批与 Chrome 确认框期间持续发送 progress", t, func() {
 		old := progressInterval
 		progressInterval = 10 * time.Millisecond
 		defer func() { progressInterval = old }()
@@ -741,7 +797,7 @@ func TestExtensionsUninstallReportsProgressWhileWaitingForApproval(t *testing.T)
 		block := make(chan struct{})
 		release := sync.OnceFunc(func() { close(block) })
 		defer release()
-		caller := &fakeCaller{block: block, entered: make(chan struct{}, 1), result: control.CallResult{OK: true, Result: json.RawMessage(`{"contentTrust":"untrusted-page-content","id":"abc","name":"Tab Tidy"}`)}}
+		caller := &fakeCaller{block: block, entered: make(chan struct{}, 1), entersApproval: true, result: control.CallResult{OK: true, Result: json.RawMessage(`{"contentTrust":"untrusted-page-content","id":"abc","name":"Tab Tidy"}`)}}
 		opts := &mcp.ClientOptions{
 			ProgressNotificationHandler: func(context.Context, *mcp.ProgressNotificationClientRequest) {
 				select {

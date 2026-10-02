@@ -36,8 +36,11 @@ it forwards the call and blocks, as for ScriptCat's gates. The L2 gate lives ent
 its service worker validates the request, queues it in `chrome.storage.session` (so it survives the worker being
 suspended), badges the toolbar icon, and opens its own approval window (`extension/src/approval/`), a separate popup
 window of the extension. The offscreen document holds back the JSON-RPC answer until the window's decision is carried
-out, and forwards the daemon's cancellations and its own disconnects to the queue
-([protocol.md](./protocol.md#5-cancellation-and-approval)).
+out, tells the daemon with `$/approvalPending` once a request has entered the queue, and forwards the daemon's
+cancellations and its own disconnects to the queue ([protocol.md](./protocol.md#5-cancellation-and-approval)).
+`bridge` hands that notification to the waiting call through `Request.OnPending`; when the requester set
+`reportPending` on `/control/call`, `controlapi` writes an interim `{"pending":true}` line ahead of the result, which
+is when the CLI prints its waiting line and `sctl mcp` starts its progress notifications.
 
 ## Directory layout
 

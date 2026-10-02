@@ -18,7 +18,7 @@ type Protocol struct {
 	JSONRPCVersion string            `json:"jsonrpc"`
 	SchemaVersion  string            `json:"schemaVersion"`
 	Transport      Transport         `json:"transport"`
-	SessionMethods []string          `json:"sessionMethods"`
+	SessionMethods []SessionMethod   `json:"sessionMethods"`
 	Scopes         []string          `json:"scopes"`
 	Actions        map[string]Action `json:"methods"`
 	// Types 是 protocol.json 的类型定义(JSON Schema 原文),供需要按方法参数派生 schema 的一方使用。
@@ -74,6 +74,12 @@ const (
 	PeerScriptCat Peer = "scriptcat"
 	PeerBrowser   Peer = "browser"
 )
+
+// SessionMethod 是会话层方法或通知(不经 /control/call 转发);Peers 标明哪些对端的会话里会出现它。
+type SessionMethod struct {
+	Method string `json:"method"`
+	Peers  []Peer `json:"peers"`
+}
 
 type ErrorCode struct {
 	Code  string `json:"code"`

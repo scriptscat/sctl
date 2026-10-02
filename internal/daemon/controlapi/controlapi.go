@@ -163,12 +163,22 @@ func (h *Handler) call(w http.ResponseWriter, r *http.Request) {
 		clientID = label
 	}
 
-	resp, err := h.bridge.Call(r.Context(), bridge.Request{
+	bridgeReq := bridge.Request{
 		ClientID: clientID,
 		Action:   req.Action,
 		Browser:  req.Browser,
 		Input:    req.Input,
-	})
+	}
+	if req.ReportPending {
+		// 请求方据此才提示「等待批准」:审批前的校验失败时不会有这一行。必须立刻冲刷,否则它会和结论一起到达。
+		bridgeReq.OnPending = func() {
+			writeJSON(w, control.CallResult{Pending: true})
+			if err := http.NewResponseController(w).Flush(); err != nil {
+				h.log.Debug("failed to flush the approval pending line", zap.Error(err))
+			}
+		}
+	}
+	resp, err := h.bridge.Call(r.Context(), bridgeReq)
 	switch {
 	case err == nil:
 		res := control.CallResult{OK: resp.OK, Result: resp.Result}

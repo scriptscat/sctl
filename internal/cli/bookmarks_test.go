@@ -240,8 +240,15 @@ func TestBookmarksEdit(t *testing.T) {
 	})
 }
 
-// stubDaemonApproval 起一个假 daemon:/control/browsers 返回给定实例列表,/control/call 恒返回给定结果并记录请求。
+// stubDaemonApproval 起一个假 daemon:/control/browsers 返回给定实例列表,/control/call 记录请求,
+// 请求进入审批(请求方要了 pending 行时先写出它)后返回给定结果。
 func stubDaemonApproval(t *testing.T, list []control.BrowserInfo, result control.CallResult) *control.CallRequest {
+	t.Helper()
+	return stubDaemonL2(t, list, result, true)
+}
+
+// stubDaemonL2 与 stubDaemonApproval 相同;entersApproval 为 false 时模拟审批前的校验失败:不写 pending 行,直接给出结果。
+func stubDaemonL2(t *testing.T, list []control.BrowserInfo, result control.CallResult, entersApproval bool) *control.CallRequest {
 	t.Helper()
 	captured := &control.CallRequest{}
 	mux := http.NewServeMux()
@@ -253,6 +260,9 @@ func stubDaemonApproval(t *testing.T, list []control.BrowserInfo, result control
 	})
 	mux.HandleFunc(control.PathCall, func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewDecoder(r.Body).Decode(captured)
+		if entersApproval && captured.ReportPending {
+			_ = json.NewEncoder(w).Encode(control.CallResult{Pending: true})
+		}
 		_ = json.NewEncoder(w).Encode(result)
 	})
 	srv := httptest.NewServer(mux)

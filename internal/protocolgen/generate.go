@@ -20,7 +20,7 @@ type definition struct {
 	SchemaVersion  string                     `json:"schemaVersion"`
 	JSONRPC        string                     `json:"jsonrpc"`
 	Transport      json.RawMessage            `json:"transport"`
-	SessionMethods []string                   `json:"sessionMethods"`
+	SessionMethods []sessionMethod            `json:"sessionMethods"`
 	Methods        map[string]method          `json:"methods"`
 	Types          map[string]json.RawMessage `json:"types"`
 	ErrorCodes     []errorCode                `json:"errorCodes"`
@@ -40,6 +40,11 @@ type method struct {
 	Level      protocol.Level `json:"level"`
 	Peer       protocol.Peer  `json:"peer"`
 	MergeField string         `json:"mergeField"`
+}
+
+type sessionMethod struct {
+	Method string          `json:"method"`
+	Peers  []protocol.Peer `json:"peers"`
 }
 
 type errorCode struct {
@@ -123,7 +128,7 @@ func contractFor(def definition, peer protocol.Peer) (peerContract, error) {
 		SchemaVersion:  def.SchemaVersion,
 		JSONRPC:        def.JSONRPC,
 		Transport:      def.Transport,
-		SessionMethods: def.SessionMethods,
+		SessionMethods: []string{},
 		Methods:        map[string]method{},
 		Types:          map[string]json.RawMessage{},
 		ErrorCodes:     []string{},
@@ -138,6 +143,11 @@ func contractFor(def definition, peer protocol.Peer) (peerContract, error) {
 		contract.Methods[name] = m
 		contract.Types[m.Params] = def.Types[m.Params]
 		contract.Types[m.Result] = def.Types[m.Result]
+	}
+	for _, m := range def.SessionMethods {
+		if slices.Contains(m.Peers, peer) {
+			contract.SessionMethods = append(contract.SessionMethods, m.Method)
+		}
 	}
 	for _, code := range def.ErrorCodes {
 		if slices.Contains(code.Peers, peer) {
@@ -279,6 +289,10 @@ func validateDefinition(def definition) error {
 			if method.Peer != protocol.PeerBrowser {
 				return fmt.Errorf("rpc %q: mergeField is only meaningful for browser methods", name)
 			}
+			// 汇总调用并发发给每个实例;bridge 把 $/approvalPending 交给调用方的回调时假定只有一个目标在等人工决定。
+			if method.Blocking != protocol.BlockingNone {
+				return fmt.Errorf("rpc %q: a method that waits for a human cannot be merged across browsers", name)
+			}
 			if err := validateMergeField(def.Types[method.Result], method.MergeField); err != nil {
 				return fmt.Errorf("rpc %q: %w", name, err)
 			}
@@ -290,6 +304,16 @@ func validateDefinition(def definition) error {
 			return fmt.Errorf("type %q is not used by any rpc", name)
 		}
 		if err := validateCodegenSchema(raw, name); err != nil {
+			return err
+		}
+	}
+	sessionMethods := map[string]bool{}
+	for _, m := range def.SessionMethods {
+		if m.Method == "" || sessionMethods[m.Method] {
+			return fmt.Errorf("session method %q is empty or duplicated", m.Method)
+		}
+		sessionMethods[m.Method] = true
+		if err := validatePeers(m.Peers, fmt.Sprintf("session method %q", m.Method)); err != nil {
 			return err
 		}
 	}

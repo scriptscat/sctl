@@ -31,9 +31,11 @@ type fakeCaller struct {
 	sawCtx        atomic.Bool           // Call 是否因 ctx 取消而返回
 	browsersList  []control.BrowserInfo // Browsers 的返回值
 	browsersErr   error
+	// entersApproval 为 true 时,带 onPending 的调用一进入就报告请求已进入审批(模拟浏览器的 $/approvalPending)。
+	entersApproval bool
 }
 
-func (f *fakeCaller) Call(ctx context.Context, action, browser string, input json.RawMessage) (control.CallResult, error) {
+func (f *fakeCaller) Call(ctx context.Context, action, browser string, input json.RawMessage, onPending func()) (control.CallResult, error) {
 	f.mu.Lock()
 	f.actions = append(f.actions, action)
 	f.browserParams = append(f.browserParams, browser)
@@ -42,6 +44,9 @@ func (f *fakeCaller) Call(ctx context.Context, action, browser string, input jso
 	f.mu.Unlock()
 	if f.entered != nil {
 		f.entered <- struct{}{}
+	}
+	if f.entersApproval && onPending != nil {
+		onPending()
 	}
 	if block != nil {
 		select {

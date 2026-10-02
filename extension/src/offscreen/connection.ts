@@ -623,7 +623,10 @@ export class Connection {
           // 取消在 background 还在预校验时就到了：它现在才进入待审批队列，立即作废。
           if (request.cancelled) {
             this.cancelRequest(attempt, id);
+            return;
           }
+          // 请求方只在这之后提示「等待批准」：预校验失败的请求直接得到应答，不会有这条通知（docs/protocol.md §5）。
+          this.send(attempt, { method: "$/approvalPending", params: { id } });
           return;
         }
         attempt.requests.delete(id);

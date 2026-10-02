@@ -368,7 +368,7 @@ func registerDomainTool(srv *mcp.Server, dt domainTool, proto *protocol.Protocol
 			return nil, err
 		}
 		method := methods[actionName]
-		return handleCall(ctx, req, method, input, sendsProgress(proto.Actions[method]), browser, caller)
+		return handleCall(ctx, req, method, input, progressFor(proto.Actions[method]), browser, caller)
 	})
 }
 

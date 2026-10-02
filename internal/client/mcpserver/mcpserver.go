@@ -1,6 +1,6 @@
 // Package mcpserver 用官方 go-sdk 构建 sctl 的 stdio MCP server:把 protocol.json 定义的 bridge
 // action 暴露成 MCP 工具(第 1 期的方法一方法一工具,之后的浏览器领域按领域合并成一个工具),并在
-// 调用等待期间周期发送 progress 通知(支持的客户端可借此续期工具超时;哪些调用发见 sendsProgress)。
+// 调用等待期间周期发送 progress 通知(支持的客户端可借此续期工具超时;哪些调用、从何时开始发见 progressFor)。
 //
 // 扁平信任:接入(enrollment)建立可信通道后,MCP agent 继承信任、无需各自配对,故 tools/list
 // 暴露全部工具;权威授权仍在扩展侧(写操作审批 / 源码披露闸门)。
@@ -32,7 +32,7 @@ var progressInterval = 10 * time.Second
 // BridgeCaller 抽象「向 daemon 转发 bridge action 调用与查询浏览器列表」,便于测试注入桩。
 // browser 是浏览器方法的可选目标,其余方法传空串。
 type BridgeCaller interface {
-	Call(ctx context.Context, action, browser string, input json.RawMessage) (control.CallResult, error)
+	Call(ctx context.Context, action, browser string, input json.RawMessage, onPending func()) (control.CallResult, error)
 	Browsers(ctx context.Context) ([]control.BrowserInfo, error)
 }
 
@@ -168,7 +168,7 @@ func registerTool(srv *mcp.Server, td toolDef, action protocol.Action, caller Br
 				}
 			}
 		}
-		return handleCall(ctx, req, td.action, req.Params.Arguments, sendsProgress(action), browser, caller)
+		return handleCall(ctx, req, td.action, req.Params.Arguments, progressFor(action), browser, caller)
 	})
 }
 
@@ -201,20 +201,42 @@ func registerBrowsersListTool(srv *mcp.Server, caller BridgeCaller) {
 	})
 }
 
-// sendsProgress 报告调用等待期间是否发 progress。浏览器方法只在等待人工决定(blocking 不是 none)时发,否则客户端
-// 会看到从不存在的审批;ScriptCat 方法保持第 1 期的行为,等待期间都发(第 1 期行为不变是第 2 期的约束)。
-func sendsProgress(action protocol.Action) bool {
-	return action.Peer != protocol.PeerBrowser || action.Blocking != protocol.BlockingNone
+// progressStart 决定调用等待期间从何时开始发 progress。
+type progressStart int
+
+const (
+	// progressNever:收到即执行的浏览器方法,发 progress 会让客户端看到从不存在的审批。
+	progressNever progressStart = iota
+	// progressAtCall:ScriptCat 方法保持第 1 期的行为,等待期间都发(ScriptCat 不报告请求何时进入审批)。
+	progressAtCall
+	// progressOnPending:等待人工决定的浏览器方法,扩展报告请求进入审批后才发;审批前的校验失败不会有 progress。
+	progressOnPending
+)
+
+func progressFor(action protocol.Action) progressStart {
+	switch {
+	case action.Peer != protocol.PeerBrowser:
+		return progressAtCall
+	case action.Blocking != protocol.BlockingNone:
+		return progressOnPending
+	default:
+		return progressNever
+	}
 }
 
 // handleCall 把方法 action 的输入 input 转发到 daemon。桥接业务错误(拒绝/过期/scope 等)作为 IsError
 // 工具结果返回(模型可见并自我纠正);传输/取消错误作为协议级错误返回。
-func handleCall(ctx context.Context, req *mcp.CallToolRequest, action string, input json.RawMessage, progress bool, browser string, caller BridgeCaller) (*mcp.CallToolResult, error) {
+func handleCall(ctx context.Context, req *mcp.CallToolRequest, action string, input json.RawMessage, progress progressStart, browser string, caller BridgeCaller) (*mcp.CallToolResult, error) {
 	stop := func() {}
-	if progress {
+	var onPending func()
+	switch progress {
+	case progressAtCall:
 		stop = startProgress(ctx, req)
+	case progressOnPending:
+		// 回调与 Call 在同一个 goroutine 里执行,可以直接替换 stop。
+		onPending = func() { stop = startProgress(ctx, req) }
 	}
-	res, err := caller.Call(ctx, action, browser, input)
+	res, err := caller.Call(ctx, action, browser, input, onPending)
 	stop()
 	if err != nil {
 		return nil, err

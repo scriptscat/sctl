@@ -275,7 +275,7 @@ authors and are marked `contentTrust: "untrusted-page-content"`. `enable` and `d
 `enabled` state; `disable` runs only with `confirm: true`, and disabling ScriptCat disconnects it from the daemon.
 `uninstall` removes one extension (`id`) after two human confirmations: approval in the sctl Browser approval window,
 then Chrome's own uninstall dialog, which opens when the user clicks Uninstall in the window. The call waits for both,
-sending progress notifications, and returns the uninstalled extension's `id` and name; a cancel in Chrome's dialog is
+sending progress notifications once the request is in the approval window, and returns the uninstalled extension's `id` and name; a cancel in Chrome's dialog is
 `USER_REJECTED`, like a rejection. When the call is cancelled or times out while Chrome's dialog is open, the call gets
 `OPERATION_EXPIRED` and whether the extension was uninstalled follows that dialog. Closing the approval window while
 Chrome's dialog is open does not affect the uninstall: confirming the dialog still returns the result, while a cancel
@@ -287,9 +287,11 @@ Browser operations carry a destruction level. Most run immediately. A few are de
 confirmation — the reading list's `rm`, history `rm` and `clear`, `browsing_data` `clear`, downloads `cancel`, `erase` and `delete-file`, cookies `rm` and `clear`, and extensions `disable`: they run only when the call passes `confirm: true`, and
 without it the daemon answers `CONFIRMATION_REQUIRED` and nothing runs. The command-line equivalent is `--yes`.
 Deleting bookmarks and uninstalling an extension need human approval instead: the sctl Browser extension opens an approval window, and the call
-waits — sending progress notifications like the ScriptCat write tools — until the user approves (`CONFLICT` and
-nothing deleted if the bookmarks changed meanwhile), rejects or closes the window (`USER_REJECTED`), or nobody
-decides within 5 minutes (`OPERATION_EXPIRED`). Cancelling the call voids the request.
+waits — sending progress notifications like the ScriptCat write tools, from the moment the request enters the
+approval window — until the user approves (`CONFLICT` and nothing deleted if the bookmarks changed meanwhile), rejects
+or closes the window (`USER_REJECTED`), or nobody decides within 5 minutes (`OPERATION_EXPIRED`). A request that fails
+the checks made before the window opens returns its error at once, with no progress. Cancelling the call voids the
+request.
 
 ## Troubleshooting
 

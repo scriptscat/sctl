@@ -17,6 +17,8 @@ const (
 	methodPing          = "$session.ping"
 	methodShutdown      = "$session.shutdown"
 	methodCancel        = "$/cancelRequest"
+	// methodApprovalPending 是浏览器扩展发来的通知:请求已通过审批前的校验、进入审批窗口(docs/protocol.md §5)。
+	methodApprovalPending = "$/approvalPending"
 )
 
 const (
@@ -108,6 +110,10 @@ type cancelParams struct {
 	ID string `json:"id"`
 }
 
+type approvalPendingParams struct {
+	ID string `json:"id"`
+}
+
 type businessParams struct {
 	ClientID string          `json:"clientId,omitempty"`
 	Input    json.RawMessage `json:"input"`
@@ -119,6 +125,9 @@ type Request struct {
 	// Browser 是浏览器方法的目标实例:名称或实例 ID 前缀,空表示按在线实例自动选择。
 	Browser string          `json:"browser,omitempty"`
 	Input   json.RawMessage `json:"input"`
+	// OnPending 在对端报告这个请求进入人工审批时被调用,至多一次,在 Call 的 goroutine 里执行;
+	// 请求在进入审批前就得到答复时不会被调用。nil 表示调用方不关心。
+	OnPending func() `json:"-"`
 }
 
 type Response struct {

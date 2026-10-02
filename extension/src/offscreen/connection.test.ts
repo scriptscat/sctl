@@ -598,6 +598,32 @@ describe("approval requests", () => {
     ]);
   });
 
+  it("tells the daemon once the request has entered approval, so the requester can say it is waiting", async () => {
+    const h = await connected();
+    const socket = h.socket();
+    const notice = socket.nextSent();
+    socket.receive(removal("r1"));
+
+    expect(await notice).toEqual({ jsonrpc: "2.0", method: "$/approvalPending", params: { id: "r1" } });
+  });
+
+  it("does not announce approval for a request its pre-approval checks answered at once", async () => {
+    const h = await connected();
+    h.setOutcome({ ok: false, code: "NOT_FOUND", message: "no bookmark 999999" });
+    const socket = h.socket();
+    const before = socket.sent.length;
+    const answer = socket.nextSent();
+    socket.receive(removal("r1"));
+
+    expect(await answer).toEqual({
+      jsonrpc: "2.0",
+      id: "r1",
+      error: { code: -32000, message: "no bookmark 999999", data: { code: "NOT_FOUND" } },
+    });
+    await drainMicrotasks();
+    expect(socket.sent).toHaveLength(before + 1);
+  });
+
   it("holds the answer to a request awaiting approval until the background settles it, and answers it once", async () => {
     const h = await connected();
     const socket = h.socket();
@@ -651,6 +677,7 @@ describe("approval requests", () => {
     answer({ deferred: true });
     await until(() => h.cancelled.length === 1);
     expect(h.cancelled).toEqual(["r1"]);
+    expect(socket.sent.filter((m) => m.method === "$/approvalPending")).toEqual([]);
   });
 
   it("drops the answer to a request cancelled before the background answered it", async () => {

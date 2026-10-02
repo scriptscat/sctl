@@ -13,7 +13,8 @@ export const SESSION_METHODS = [
   "$session.capabilities",
   "$session.ping",
   "$session.shutdown",
-  "$/cancelRequest"
+  "$/cancelRequest",
+  "$/approvalPending"
 ] as const;
 export const ERROR_CODES = [
   "INVALID_REQUEST",

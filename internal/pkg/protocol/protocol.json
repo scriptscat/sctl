@@ -7,13 +7,14 @@
     "frame": "json-text"
   },
   "sessionMethods": [
-    "$session.authenticate",
-    "$session.authenticated",
-    "$session.hello",
-    "$session.capabilities",
-    "$session.ping",
-    "$session.shutdown",
-    "$/cancelRequest"
+    { "method": "$session.authenticate", "peers": ["scriptcat", "browser"] },
+    { "method": "$session.authenticated", "peers": ["scriptcat", "browser"] },
+    { "method": "$session.hello", "peers": ["scriptcat", "browser"] },
+    { "method": "$session.capabilities", "peers": ["scriptcat", "browser"] },
+    { "method": "$session.ping", "peers": ["scriptcat", "browser"] },
+    { "method": "$session.shutdown", "peers": ["scriptcat", "browser"] },
+    { "method": "$/cancelRequest", "peers": ["scriptcat", "browser"] },
+    { "method": "$/approvalPending", "peers": ["browser"] }
   ],
   "methods": {
     "scripts.list": {

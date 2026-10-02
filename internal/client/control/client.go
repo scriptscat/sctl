@@ -121,12 +121,13 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body []byt
 
 // Call 转发一次 bridge action 调用并阻塞至应答/作废。browser 是浏览器方法的可选目标
 // (名称或实例 ID 前缀),空串表示由 daemon 按在线实例选择;scripts.* 必须传空串。
-// ctx 取消(如 CLI Ctrl-C)会切断连接,daemon 侧据此发 $/cancelRequest 作废该操作;此时 Do 返回 context.Canceled。
-func (c *Client) Call(ctx context.Context, action, browser string, input json.RawMessage) (CallResult, error) {
+// onPending 非 nil 时请 daemon 报告请求进入人工审批,并在那时(结论到达之前)调用它;审批前就得出结论的请求
+// 不会回调。ctx 取消(如 CLI Ctrl-C)会切断连接,daemon 侧据此发 $/cancelRequest 作废该操作。
+func (c *Client) Call(ctx context.Context, action, browser string, input json.RawMessage, onPending func()) (CallResult, error) {
 	if input == nil {
 		input = json.RawMessage(`{}`)
 	}
-	body, err := json.Marshal(CallRequest{Action: action, Browser: browser, Input: input})
+	body, err := json.Marshal(CallRequest{Action: action, Browser: browser, Input: input, ReportPending: onPending != nil})
 	if err != nil {
 		return CallResult{}, err
 	}
@@ -142,11 +143,20 @@ func (c *Client) Call(ctx context.Context, action, browser string, input json.Ra
 	if resp.StatusCode != http.StatusOK {
 		return CallResult{}, statusError(resp)
 	}
-	var res CallResult
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return CallResult{}, fmt.Errorf("decode control response: %w", err)
+	decoder := json.NewDecoder(resp.Body)
+	for {
+		var res CallResult
+		if err := decoder.Decode(&res); err != nil {
+			return CallResult{}, fmt.Errorf("decode control response: %w", err)
+		}
+		if !res.Pending {
+			return res, nil
+		}
+		if onPending == nil {
+			return CallResult{}, errors.New("decode control response: unrequested approval pending line")
+		}
+		onPending()
 	}
-	return res, nil
 }
 
 // Status 查询 daemon 与扩展连接概览。
