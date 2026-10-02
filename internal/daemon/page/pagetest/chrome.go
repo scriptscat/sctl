@@ -25,6 +25,7 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/scriptscat/sctl/internal/daemon/page"
+	"github.com/scriptscat/sctl/internal/pkg/protocol"
 	"github.com/scriptscat/sctl/internal/pkg/protocol/generated"
 )
 
@@ -43,6 +44,9 @@ const (
 	deadlineMargin = 5 * time.Second
 	// maxMessageBytes 放宽 coder/websocket 默认 32 KiB 的读上限:CDP 结果(快照、截图)远超这个大小。
 	maxMessageBytes = 64 << 20
+	// relayEnvelopeBytes 是扩展中转的应答帧里 CDP 结果之外的部分({"jsonrpc":"2.0","id":…,"result":{"result":…}})
+	// 的上界。
+	relayEnvelopeBytes = 128
 )
 
 // Listener 接收 Chrome 产生的 debugger.event / debugger.detached 通知,形状与 bridge.BrowserListener 相同。
@@ -375,7 +379,25 @@ func (c *Chrome) Send(ctx context.Context, instanceID string, cmd page.Command) 
 			return nil, &page.Error{Code: generated.ErrorCodeInvalidRequest, Message: fmt.Sprintf("tab %d has no child session %s", cmd.TabID, sessionID)}
 		}
 	}
-	return c.call(ctx, sessionID, cmd.Method, cmd.Params)
+	res, err := c.call(ctx, sessionID, cmd.Method, cmd.Params)
+	if err != nil {
+		return nil, err
+	}
+	// 扩展中转不发超过单帧上限的应答帧,改答 PAYLOAD_TOO_LARGE(extension/src/offscreen/connection.ts)。
+	// 直连 Chrome 没有这个上限,在这里照做,大页面的集成测试才与生产一致。
+	if limit := maxFrameBytes(); len(res)+relayEnvelopeBytes > limit {
+		return nil, &page.Error{Code: generated.ErrorCodePayloadTooLarge, Message: fmt.Sprintf("result exceeds the %d byte frame limit", limit)}
+	}
+	return res, nil
+}
+
+// maxFrameBytes 是协议的单帧上限。
+func maxFrameBytes() int {
+	p, err := protocol.Load()
+	if err != nil {
+		panic("pagetest: load the embedded protocol: " + err.Error())
+	}
+	return p.Limits.MaxFrameBytes
 }
 
 // Detach 实现 page.CDP。调用方发起的断开不产生 debugger.detached 通知。

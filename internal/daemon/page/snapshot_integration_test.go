@@ -55,6 +55,11 @@ func refFor(snapshot, line string) string {
 	return ""
 }
 
+// withoutRefs 去掉快照里的引用编号,比较两次快照的内容。
+func withoutRefs(snapshot string) string {
+	return regexp.MustCompile(` \[ref=e\d+\]`).ReplaceAllString(snapshot, "")
+}
+
 // waitFor 轮询表达式直到它为 true。
 func waitFor(t *testing.T, m *page.Manager, tab int, expression string) {
 	t.Helper()
@@ -81,7 +86,7 @@ func TestSnapshotInChrome(t *testing.T) {
 		waitLoaded(t, m, tab)
 		waitFor(t, m, tab, `document.querySelector("iframe").contentDocument?.readyState === "complete"`)
 
-		Convey("按层级输出角色、名称、状态、值、链接与文本,排除不可见元素并展开布局容器与同进程 iframe", func() {
+		Convey("按层级输出角色、名称、状态、值、链接与文本,排除不可见元素并展开布局容器(含没有名称的 form)与同进程 iframe", func() {
 			raw, err := snapshotRaw(m, tab, "")
 			So(err, ShouldBeNil)
 			var res map[string]any
@@ -95,19 +100,18 @@ func TestSnapshotInChrome(t *testing.T) {
 				`  - link "a link" [ref=e2]`,
 				`    - /url: ` + base + `/next.html`,
 				`  - text: inside.`,
-				`- form`,
-				`  - text: Email`,
-				`  - textbox "Email" [required] [ref=e3]: "a@example.com"`,
-				`  - text: Notes`,
-				`  - textbox "Notes" [ref=e4]: "line one"`,
-				`  - text: Color`,
-				`  - combobox "Color" [ref=e5]: "Green"`,
-				`    - option "Red" [ref=e6]`,
-				`    - option "Green" [selected] [ref=e7]`,
-				`  - checkbox "Subscribe" [checked] [ref=e8]`,
-				`  - button "Disabled action" [disabled] [ref=e9]`,
-				`  - button "Menu" [expanded] [ref=e10]`,
-				`  - button "Bold" [pressed] [ref=e11]`,
+				`- text: Email`,
+				`- textbox "Email" [required] [ref=e3]: "a@example.com"`,
+				`- text: Notes`,
+				`- textbox "Notes" [ref=e4]: "line one"`,
+				`- text: Color`,
+				`- combobox "Color" [ref=e5]: "Green"`,
+				`  - option "Red" [ref=e6]`,
+				`  - option "Green" [selected] [ref=e7]`,
+				`- checkbox "Subscribe" [checked] [ref=e8]`,
+				`- button "Disabled action" [disabled] [ref=e9]`,
+				`- button "Menu" [expanded] [ref=e10]`,
+				`- button "Bold" [pressed] [ref=e11]`,
 				`- generic [ref=e12]`,
 				`  - text: Focusable div`,
 				`- link "Card title" [ref=e13]`,
@@ -166,7 +170,7 @@ func TestSnapshotInChrome(t *testing.T) {
 		Convey("--root 选择器在主文档里严格匹配", func() {
 			sub, err := snapshotOf(m, tab, "form")
 			So(err, ShouldBeNil)
-			So(sub, ShouldStartWith, "- form\n  - text: Email\n")
+			So(sub, ShouldStartWith, "- text: Email\n- textbox \"Email\"")
 			So(sub, ShouldNotContainSubstring, "heading")
 
 			_, err = snapshotOf(m, tab, "#missing")
@@ -232,6 +236,54 @@ func TestSnapshotInChrome(t *testing.T) {
 			So(err, ShouldBeNil)
 			_, err = snapshotOf(m, other, refFor(snap, `- button "Menu"`))
 			So(codeOf(err), ShouldEqual, generated.ErrorCodeStaleRef)
+		})
+	})
+}
+
+func TestSnapshotRootInChrome(t *testing.T) {
+	m, tab := startPage(t, "snapshot.html")
+	waitFor(t, m, tab, `document.querySelector("iframe").contentDocument?.readyState === "complete"`)
+
+	Convey("--root 只读取子树的数据,输出与整页快照里的同一部分相同(可见性、链接、iframe 展开)", t, func() {
+		full, err := snapshotOf(m, tab, "")
+		So(err, ShouldBeNil)
+		sub, err := snapshotOf(m, tab, "body")
+		So(err, ShouldBeNil)
+		So(withoutRefs(sub), ShouldEqual, withoutRefs(full))
+	})
+}
+
+func TestSnapshotLargePageInChrome(t *testing.T) {
+	chrome := pagetest.Start(t)
+	base := pagetest.Serve(t, "testdata")
+
+	Convey("无障碍数据超过扩展中转单帧上限的大页面", t, func() {
+		m := page.NewManager(chrome, zap.NewNop())
+		chrome.SetListener(m)
+		tab := chrome.NewTab(t, base+"/snapshot-large.html")
+		waitLoaded(t, m, tab)
+		waitFor(t, m, tab, `window.crossLoaded === true && document.querySelector("iframe").contentDocument?.readyState === "complete"`)
+
+		Convey("整页快照返回 PAYLOAD_TOO_LARGE 并提示用 --root 缩小范围", func() {
+			_, err := snapshotOf(m, tab, "")
+			So(codeOf(err), ShouldEqual, generated.ErrorCodePayloadTooLarge)
+			So(err.Error(), ShouldContainSubstring, "--root")
+		})
+
+		Convey("--root 只读取子树:成功,子树里同进程与跨进程的 iframe 都展开,子树的引用可以再做根", func() {
+			sub, err := snapshotOf(m, tab, "#small")
+			So(err, ShouldBeNil)
+			So(sub, ShouldEqual, strings.Join([]string{
+				`- navigation`,
+				`  - button "Only me" [ref=e1]`,
+				`  - iframe "Same frame" [ref=e2]`,
+				`    - button "Inside frame" [ref=e3]`,
+				`  - iframe "Cross frame" [ref=e4]`,
+				`    - button "Inside frame" [ref=e5]`,
+			}, "\n"))
+			sub, err = snapshotOf(m, tab, "e4")
+			So(err, ShouldBeNil)
+			So(sub, ShouldEqual, "- iframe \"Cross frame\" [ref=e6]\n  - button \"Inside frame\" [ref=e7]")
 		})
 	})
 }

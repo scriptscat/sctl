@@ -61,10 +61,9 @@ func TestCrossOriginIframesInChrome(t *testing.T) {
 			So(snap, ShouldEqual, strings.Join([]string{
 				`- button "Top button" [ref=e1]`,
 				`- iframe "Cross frame" [ref=e2]`,
-				`  - form`,
-				`    - text: Name`,
-				`    - textbox "Name" [ref=e3]: "child value"`,
-				`    - button "Child submit" [ref=e4]`,
+				`  - text: Name`,
+				`  - textbox "Name" [ref=e3]: "child value"`,
+				`  - button "Child submit" [ref=e4]`,
 				`  - iframe "Nested frame" [ref=e5]`,
 				`    - button "Nested button" [ref=e6]`,
 			}, "\n"))

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -51,12 +52,45 @@ type axProperty struct {
 	Value axValue `json:"value"`
 }
 
+// axName 是节点的可访问名称与 Chrome 考察过的名称来源。
+type axName struct {
+	axValue
+	Sources []axNameSource `json:"sources"`
+}
+
+// axNameSource 是一个名称来源;给出名称的来源带 value,排在它之后的来源标为 superseded。
+type axNameSource struct {
+	Type       string   `json:"type"`
+	Value      *axValue `json:"value"`
+	Superseded bool     `json:"superseded"`
+}
+
+func (n *axName) String() string {
+	if n == nil {
+		return ""
+	}
+	return n.axValue.String()
+}
+
+// fromContents 表示名称取自元素的内容,而不是作者给出的属性或关联的 label。
+func (n *axName) fromContents() bool {
+	if n == nil {
+		return false
+	}
+	for _, s := range n.Sources {
+		if s.Value != nil && !s.Superseded {
+			return s.Type == "contents"
+		}
+	}
+	return false
+}
+
 type axNode struct {
 	NodeID           string       `json:"nodeId"`
 	ParentID         string       `json:"parentId"`
 	Ignored          bool         `json:"ignored"`
 	Role             *axValue     `json:"role"`
-	Name             *axValue     `json:"name"`
+	Name             *axName      `json:"name"`
 	Value            *axValue     `json:"value"`
 	Properties       []axProperty `json:"properties"`
 	ChildIDs         []string     `json:"childIds"`
@@ -64,7 +98,18 @@ type axNode struct {
 }
 
 func (n *axNode) role() string { return n.Role.String() }
-func (n *axNode) name() string { return strings.TrimSpace(n.Name.String()) }
+
+// name 是节点的可访问名称。ARIA 禁止给布局容器(generic 等)取名,Chrome 125 却为可聚焦的布局容器从内容
+// 计算名称,新版 Chrome 不再这样做;忽略这种名称,同一页面在各版本上的快照才一致,内容仍作为文本输出。
+func (n *axNode) name() string {
+	if layoutRoles[n.role()] && n.Name.fromContents() {
+		return ""
+	}
+	return strings.TrimSpace(n.Name.String())
+}
+
+// excluded 表示节点不呈现给用户。Chrome 125 不忽略 aria-hidden 的元素本身,只给它 hidden 属性;新版 Chrome 直接忽略。
+func (n *axNode) excluded() bool { return n.Ignored || n.property("hidden") == "true" }
 
 func (n *axNode) property(name string) string {
 	for _, p := range n.Properties {
@@ -85,8 +130,9 @@ type axDocument struct {
 
 // 快照里用到的角色集合,取值是 Chrome 在 CDP 里报告的角色名。
 var (
-	// layoutRoles 是没有语义的容器,没有名称、不可聚焦时直接展开子节点。
-	layoutRoles = map[string]bool{"": true, "generic": true, "none": true, "presentation": true}
+	// layoutRoles 是没有语义的容器,没有名称、不可聚焦时直接展开子节点。没有名称的 form 按 HTML-AAM 也是
+	// generic:Chrome 125 把它报告为内部角色 Section,新版 Chrome 报告为 form,归到这里两者输出一致。
+	layoutRoles = map[string]bool{"": true, "generic": true, "none": true, "presentation": true, "form": true}
 	// valueRoles 是在行尾写出当前值的表单控件;它们内部编辑区的文本就是这个值,不再重复输出。
 	valueRoles = map[string]bool{"textbox": true, "searchbox": true, "combobox": true, "spinbutton": true, "slider": true}
 	// interactiveRoles 即使没有名称也带引用。
@@ -115,7 +161,10 @@ type item struct {
 // snapshotBuilder 生成一次快照。
 type snapshotBuilder struct {
 	t *Tab
-	// hidden 是有布局框但宽或高为零的节点(backendNodeId),按会话区分。
+	// scoped 表示只读取 --root 子树的数据。整页的无障碍树与布局数据可能超过扩展中转的单帧上限,
+	// --root 正是在这样的大页面上缩小范围用的,不能先读整页。
+	scoped bool
+	// hidden 是有布局框但宽或高为零的节点(backendNodeId),按会话区分;scoped 时逐个节点查询,不用它。
 	hidden map[string]map[int]bool
 	build  *refBuild
 }
@@ -134,7 +183,7 @@ func runSnapshot(ctx context.Context, t *Tab, input json.RawMessage) (any, error
 		}
 		root = &el
 	}
-	b := &snapshotBuilder{t: t, hidden: map[string]map[int]bool{}, build: t.refs.begin()}
+	b := &snapshotBuilder{t: t, scoped: root != nil, hidden: map[string]map[int]bool{}, build: t.refs.begin()}
 	committed := false
 	defer func() {
 		if !committed {
@@ -143,6 +192,14 @@ func runSnapshot(ctx context.Context, t *Tab, input json.RawMessage) (any, error
 	}()
 	items, err := b.items(ctx, root)
 	if err != nil {
+		var pe *Error
+		if errors.As(err, &pe) && pe.Code == generated.ErrorCodePayloadTooLarge {
+			// 扩展中转以结果超过单帧上限拒绝了原始的无障碍或布局数据。
+			return nil, &Error{
+				Code:    generated.ErrorCodePayloadTooLarge,
+				Message: "the page's accessibility data is larger than one protocol frame: use --root to snapshot a smaller part of the page",
+			}
+		}
 		return nil, err
 	}
 	text := b.render(items)
@@ -177,40 +234,51 @@ func (t *Tab) snapshotRoot(ctx context.Context, root string) (element, error) {
 	}
 }
 
-// items 读取无障碍树并转换为快照行;root 非 nil 时只转换以它为根的子树。
+// items 读取无障碍树并转换为快照行;root 非 nil 时只读取并转换以它为根的子树。
 func (b *snapshotBuilder) items(ctx context.Context, root *element) ([]*item, error) {
-	var sessionID, frameID string
-	if root != nil {
-		sessionID, frameID = root.sessionID, root.frameID
+	var doc *axDocument
+	var err error
+	if root == nil {
+		doc, err = b.document(ctx, "", "")
+	} else {
+		doc, err = b.subtree(ctx, *root)
 	}
-	doc, err := b.document(ctx, sessionID, frameID)
 	if err != nil {
 		return nil, err
 	}
-	start := doc.root
-	if root != nil {
-		start = nil
-		for _, n := range doc.nodes {
-			if n.BackendDOMNodeID == root.backendNodeID {
-				start = n
-				break
-			}
-		}
-		if start == nil {
-			// 元素在,但不在无障碍树里(例如此刻不可见):子树里没有可输出的内容。
-			return nil, nil
-		}
+	if doc.root == nil {
+		// 元素在,但不在无障碍树里(例如此刻不可见):子树里没有可输出的内容。
+		return nil, nil
 	}
-	items, err := b.visit(ctx, doc, start, "", true, false)
+	items, err := b.visit(ctx, doc, doc.root, "", true, false)
 	if err != nil {
 		return nil, err
 	}
 	return tidy(items, ""), nil
 }
 
+// subtree 只读取 root 子树的无障碍节点,文档的根取 root 元素自己的节点。
+func (b *snapshotBuilder) subtree(ctx context.Context, root element) (*axDocument, error) {
+	var tree struct {
+		Nodes []*axNode `json:"nodes"`
+	}
+	if err := b.t.sendTo(ctx, root.sessionID, "Accessibility.queryAXTree", map[string]int{"backendNodeId": root.backendNodeID}, &tree); err != nil {
+		return nil, err
+	}
+	doc := &axDocument{sessionID: root.sessionID, frameID: root.frameID, nodes: make(map[string]*axNode, len(tree.Nodes))}
+	for _, n := range tree.Nodes {
+		doc.nodes[n.NodeID] = n
+		if n.BackendDOMNodeID == root.backendNodeID {
+			doc.root = n
+		}
+	}
+	return doc, nil
+}
+
 // document 读取一个文档的无障碍树;frameID 为空时是会话的顶层文档。
 func (b *snapshotBuilder) document(ctx context.Context, sessionID, frameID string) (*axDocument, error) {
-	if _, ok := b.hidden[sessionID]; !ok {
+	// 布局快照覆盖会话里的全部文档:--root 子树里的同进程 iframe 与大页面同属一个会话,不能读它。
+	if _, ok := b.hidden[sessionID]; !ok && !b.scoped {
 		hidden, err := b.zeroSizeNodes(ctx, sessionID)
 		if err != nil {
 			return nil, err
@@ -238,6 +306,28 @@ func (b *snapshotBuilder) document(ctx context.Context, sessionID, frameID strin
 		return nil, &Error{Code: generated.ErrorCodeInternalError, Message: "the accessibility tree has no root node"}
 	}
 	return doc, nil
+}
+
+// visible 判断节点不是有布局框但宽或高为零的节点。
+func (b *snapshotBuilder) visible(ctx context.Context, doc *axDocument, n *axNode) (bool, error) {
+	if !b.scoped {
+		return !b.hidden[doc.sessionID][n.BackendDOMNodeID], nil
+	}
+	var box struct {
+		Model struct {
+			Width  float64 `json:"width"`
+			Height float64 `json:"height"`
+		} `json:"model"`
+	}
+	err := b.t.sendTo(ctx, doc.sessionID, "DOM.getBoxModel", map[string]int{"backendNodeId": n.BackendDOMNodeID}, &box)
+	if isCDPError(err) {
+		// 没有布局框(display:contents、收起的下拉框里的选项)与布局快照里一样不算尺寸为零。
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return box.Model.Width != 0 && box.Model.Height != 0, nil
 }
 
 // zeroSizeNodes 返回会话里有布局框但宽或高为零的节点。没有布局框的节点(display:contents、
@@ -280,7 +370,7 @@ func (b *snapshotBuilder) visit(ctx context.Context, doc *axDocument, n *axNode,
 	case skippedRoles[role]:
 		return nil, nil
 	case role == "StaticText":
-		if n.Ignored || !parentVisible || inControl {
+		if n.excluded() || !parentVisible || inControl {
 			return nil, nil
 		}
 		text := n.Name.String()
@@ -289,8 +379,11 @@ func (b *snapshotBuilder) visit(ctx context.Context, doc *axDocument, n *axNode,
 		}
 		return []*item{{text: text, textParent: parent}}, nil
 	}
-	visible := !b.hidden[doc.sessionID][n.BackendDOMNodeID]
-	shown := !n.Ignored && visible
+	visible, err := b.visible(ctx, doc, n)
+	if err != nil {
+		return nil, err
+	}
+	shown := !n.excluded() && visible
 	if role == "Iframe" {
 		if !shown {
 			return nil, nil
@@ -312,7 +405,10 @@ func (b *snapshotBuilder) visit(ctx context.Context, doc *axDocument, n *axNode,
 	if !shown || role == "RootWebArea" || b.flattened(n) {
 		return children, nil
 	}
-	it := b.node(doc, n)
+	it, err := b.node(ctx, doc, n)
+	if err != nil {
+		return nil, err
+	}
 	it.children = tidy(children, it.name)
 	return []*item{it}, nil
 }
@@ -329,19 +425,43 @@ func (b *snapshotBuilder) flattened(n *axNode) bool {
 }
 
 // node 转换一个要输出的元素节点。
-func (b *snapshotBuilder) node(doc *axDocument, n *axNode) *item {
+func (b *snapshotBuilder) node(ctx context.Context, doc *axDocument, n *axNode) (*item, error) {
 	role := n.role()
+	el := element{sessionID: doc.sessionID, frameID: doc.frameID, backendNodeID: n.BackendDOMNodeID}
 	it := &item{role: role, name: n.name(), states: states(n)}
 	if valueRoles[role] {
 		it.value = n.Value.String()
 	}
 	if role == "link" {
 		it.url = n.property("url")
+		if it.url == "" {
+			// Chrome 125 的链接节点不带 url 属性;元素的 href 与新版 Chrome 报告的 url 一样是解析后的地址。
+			href, err := b.href(ctx, el)
+			if err != nil {
+				return nil, err
+			}
+			it.url = href
+		}
 	}
 	if it.name != "" || interactiveRoles[role] || n.property("focusable") == "true" {
-		it.target = &element{sessionID: doc.sessionID, frameID: doc.frameID, backendNodeID: n.BackendDOMNodeID}
+		it.target = &el
 	}
-	return it
+	return it, nil
+}
+
+// hrefFunction 读取链接元素的 href;SVG 的 <a> 的 href 不是字符串,role="link" 的其他元素没有 href。
+const hrefFunction = `function () { return typeof this.href === "string" ? this.href : "" }`
+
+// href 返回链接元素解析后的地址;元素在读取期间离开了文档时为空。
+func (b *snapshotBuilder) href(ctx context.Context, el element) (string, error) {
+	var href string
+	err := withObject(ctx, b.t, el, func(objectID string) error {
+		return callOn(ctx, b.t, el.sessionID, objectID, hrefFunction, &href)
+	})
+	if errors.Is(err, errDetached) {
+		return "", nil
+	}
+	return href, err
 }
 
 // iframe 输出 iframe 节点,并把它的文档(同进程的经父会话,跨进程的经子会话)展开在它下面。拿不到内容的
@@ -383,7 +503,10 @@ func (b *snapshotBuilder) iframe(ctx context.Context, doc *axDocument, n *axNode
 		return nil, err
 	}
 	b.build.parents[child.frameID] = doc.frameID
-	it := b.node(doc, n)
+	it, err := b.node(ctx, doc, n)
+	if err != nil {
+		return nil, err
+	}
 	it.role = "iframe"
 	children, err := b.visit(ctx, child, child.root, "", true, false)
 	if err != nil {

@@ -223,8 +223,8 @@ focused. Page results other than `page_detach` are marked
 with or have a name; its optional `root` limits it to the subtree rooted at a ref or at the one element a CSS
 selector matches in the main document. Refs are unique within a tab. A new snapshot of the tab replaces them, and
 they also expire when the page navigates, the element is removed, or the debugger detaches; an expired ref, or
-one from another tab, returns `STALE_REF`. A snapshot over 1 MiB returns `PAYLOAD_TOO_LARGE`; pass `root` to
-narrow it. Iframes, including cross-origin and nested ones, are expanded under their iframe node; one that
+one from another tab, returns `STALE_REF`. A snapshot over 1 MiB, or of a page whose accessibility data exceeds
+one protocol frame (4 MiB), returns `PAYLOAD_TOO_LARGE`; pass `root` to narrow it, which reads only that subtree. Iframes, including cross-origin and nested ones, are expanded under their iframe node; one that
 cannot be attached shows `[unavailable]`.
 
 While a JS dialog (alert, confirm, prompt, beforeunload) is open in a tab, every page tool except `page_dialog`,

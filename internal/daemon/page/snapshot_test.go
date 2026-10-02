@@ -269,3 +269,161 @@ func TestSnapshotSizeLimit(t *testing.T) {
 		})
 	})
 }
+
+// treePage 是按给定无障碍节点回答的假页面,用来模拟不同 Chrome 版本报告的节点形状与超大页面。
+type treePage struct {
+	// nodes 是顶层文档的无障碍节点;Accessibility.queryAXTree 也返回它们,快照从根元素对应的节点开始。
+	nodes []string
+	// hrefs 是元素(backendNodeId)在 DOM 里的 href。
+	hrefs map[int]string
+	// tooLarge 里的方法像扩展中转那样以结果超过单帧上限失败。
+	tooLarge map[string]bool
+}
+
+func (p *treePage) send(_ context.Context, cmd Command) (json.RawMessage, error) {
+	if p.tooLarge[cmd.Method] {
+		return nil, &Error{Code: generated.ErrorCodePayloadTooLarge, Message: "result exceeds the 4194304 byte frame limit"}
+	}
+	switch cmd.Method {
+	case "Accessibility.getFullAXTree", "Accessibility.queryAXTree":
+		return axTree(p.nodes...), nil
+	case "DOMSnapshot.captureSnapshot":
+		return json.RawMessage(`{"documents":[]}`), nil
+	case "DOM.getBoxModel":
+		return json.RawMessage(`{"model":{"width":10,"height":10}}`), nil
+	case "DOM.getDocument":
+		return json.RawMessage(`{"root":{"nodeId":1}}`), nil
+	case "DOM.querySelectorAll":
+		return json.RawMessage(`{"nodeIds":[2]}`), nil
+	case "DOM.describeNode":
+		return json.RawMessage(`{"node":{"backendNodeId":2}}`), nil
+	case "DOM.resolveNode":
+		var params struct {
+			BackendNodeID int `json:"backendNodeId"`
+		}
+		_ = json.Unmarshal(cmd.Params, &params)
+		return json.RawMessage(fmt.Sprintf(`{"object":{"objectId":"node-%d"}}`, params.BackendNodeID)), nil
+	case "Runtime.callFunctionOn":
+		var params struct {
+			ObjectID string `json:"objectId"`
+		}
+		_ = json.Unmarshal(cmd.Params, &params)
+		var backend int
+		_, _ = fmt.Sscanf(params.ObjectID, "node-%d", &backend)
+		return json.RawMessage(fmt.Sprintf(`{"result":{"value":%q}}`, p.hrefs[backend])), nil
+	}
+	return json.RawMessage(`{}`), nil
+}
+
+func TestSnapshotNodeShapesOfOlderChrome(t *testing.T) {
+	Convey("Chrome 125 报告的节点形状与新版不同,快照输出相同", t, func() {
+		cdp := newFakeCDP()
+		pg := &treePage{}
+		cdp.setSend(pg.send)
+		m := newSnapshotManager(cdp)
+
+		Convey("链接节点没有 url 属性时从元素的 href 写出 /url 子行", func() {
+			pg.nodes = []string{
+				axRoot("a"),
+				`{"nodeId":"a","parentId":"root","role":{"value":"link"},"name":{"value":"a link"},"backendDOMNodeId":5}`,
+			}
+			pg.hrefs = map[int]string{5: "http://x/next.html"}
+			snap, err := takeSnapshot(m, 3)
+			So(err, ShouldBeNil)
+			So(snap, ShouldEqual, "- link \"a link\" [ref=e1]\n  - /url: http://x/next.html")
+		})
+
+		Convey("带 url 属性的链接直接用它", func() {
+			pg.nodes = []string{
+				axRoot("a"),
+				`{"nodeId":"a","parentId":"root","role":{"value":"link"},"name":{"value":"a link"},"properties":[{"name":"url","value":{"value":"http://x/from-ax"}}],"backendDOMNodeId":5}`,
+			}
+			pg.hrefs = map[int]string{5: "http://x/from-dom"}
+			snap, err := takeSnapshot(m, 3)
+			So(err, ShouldBeNil)
+			So(snap, ShouldEqual, "- link \"a link\" [ref=e1]\n  - /url: http://x/from-ax")
+		})
+
+		Convey("aria-hidden 的节点没有被忽略、只带 hidden 属性时不输出", func() {
+			pg.nodes = []string{
+				axRoot("a", "b"),
+				`{"nodeId":"a","parentId":"root","role":{"value":"button"},"name":{"value":"aria hidden"},"properties":[{"name":"hidden","value":{"value":true}}],"childIds":["t"],"backendDOMNodeId":5}`,
+				`{"nodeId":"t","parentId":"a","ignored":true,"role":{"value":"StaticText"},"name":{"value":"aria hidden"},"backendDOMNodeId":6}`,
+				axElement("b", "button", "Shown", 7),
+			}
+			snap, err := takeSnapshot(m, 3)
+			So(err, ShouldBeNil)
+			So(snap, ShouldEqual, `- button "Shown" [ref=e1]`)
+		})
+
+		Convey("可聚焦的 generic 从内容得到的名称不算名称,内容仍作为文本输出", func() {
+			pg.nodes = []string{
+				axRoot("a"),
+				`{"nodeId":"a","parentId":"root","role":{"value":"generic"},"name":{"value":"Focusable div","sources":[{"type":"attribute","attribute":"aria-label"},{"type":"contents","value":{"value":"Focusable div"}},{"type":"attribute","attribute":"title","superseded":true}]},"properties":[{"name":"focusable","value":{"value":true}}],"childIds":["t"],"backendDOMNodeId":5}`,
+				`{"nodeId":"t","parentId":"a","role":{"value":"StaticText"},"name":{"value":"Focusable div"},"backendDOMNodeId":6}`,
+			}
+			snap, err := takeSnapshot(m, 3)
+			So(err, ShouldBeNil)
+			So(snap, ShouldEqual, "- generic [ref=e1]\n  - text: Focusable div")
+		})
+
+		Convey("generic 由作者给出的名称保留", func() {
+			pg.nodes = []string{
+				axRoot("a"),
+				`{"nodeId":"a","parentId":"root","role":{"value":"generic"},"name":{"value":"Labelled","sources":[{"type":"attribute","attribute":"aria-label","value":{"value":"Labelled"}},{"type":"contents","superseded":true}]},"backendDOMNodeId":5}`,
+			}
+			snap, err := takeSnapshot(m, 3)
+			So(err, ShouldBeNil)
+			So(snap, ShouldEqual, `- generic "Labelled" [ref=e1]`)
+		})
+
+		Convey("没有名称的 form 与其他布局容器一样展开,有名称的 form 保留", func() {
+			pg.nodes = []string{
+				axRoot("f", "g"),
+				`{"nodeId":"f","parentId":"root","role":{"value":"form"},"name":{"value":""},"childIds":["a"],"backendDOMNodeId":5}`,
+				`{"nodeId":"a","parentId":"f","role":{"value":"button"},"name":{"value":"In form"},"backendDOMNodeId":6}`,
+				`{"nodeId":"g","parentId":"root","role":{"value":"form"},"name":{"value":"Signup"},"childIds":["b"],"backendDOMNodeId":7}`,
+				`{"nodeId":"b","parentId":"g","role":{"value":"button"},"name":{"value":"In named form"},"backendDOMNodeId":8}`,
+			}
+			snap, err := takeSnapshot(m, 3)
+			So(err, ShouldBeNil)
+			So(snap, ShouldEqual, strings.Join([]string{
+				`- button "In form" [ref=e1]`,
+				`- form "Signup" [ref=e2]`,
+				`  - button "In named form" [ref=e3]`,
+			}, "\n"))
+		})
+	})
+}
+
+func TestSnapshotOversizedPage(t *testing.T) {
+	Convey("整页的原始无障碍数据超过扩展中转的单帧上限时", t, func() {
+		cdp := newFakeCDP()
+		pg := &treePage{nodes: []string{
+			axRoot("n"),
+			`{"nodeId":"n","parentId":"root","role":{"value":"navigation"},"childIds":["a"],"backendDOMNodeId":2}`,
+			axElement("a", "button", "Only me", 5),
+		}}
+		cdp.setSend(pg.send)
+		m := newSnapshotManager(cdp)
+
+		for _, method := range []string{"Accessibility.getFullAXTree", "DOMSnapshot.captureSnapshot"} {
+			Convey(method+" 超限:返回 PAYLOAD_TOO_LARGE 并提示用 --root 缩小范围", func() {
+				pg.tooLarge = map[string]bool{method: true}
+				_, err := takeSnapshot(m, 3)
+				So(errorCode(err), ShouldEqual, generated.ErrorCodePayloadTooLarge)
+				So(err.Error(), ShouldContainSubstring, "--root")
+			})
+		}
+
+		Convey("--root 只读取根元素的子树,不读整页数据,因此成功", func() {
+			pg.tooLarge = map[string]bool{"Accessibility.getFullAXTree": true, "DOMSnapshot.captureSnapshot": true}
+			tab := 3
+			raw, err := m.Do(context.Background(), Request{Action: "snapshot", TabID: &tab, Input: json.RawMessage(`{"root":"#small"}`)})
+			So(err, ShouldBeNil)
+			var res snapshotResult
+			So(json.Unmarshal(raw, &res), ShouldBeNil)
+			So(res.Snapshot, ShouldEqual, "- navigation\n  - button \"Only me\" [ref=e1]")
+		})
+	})
+}
