@@ -18,7 +18,6 @@ export function parseAddress(input: string): string | null {
     return null;
   }
   // 正则放过的主机仍可能不是合法主机（如 999.1.1.1、[:::]），WebSocket 构造时才抛错；在保存前按同一 URL 规则挡掉。
-  // 不用 URL.canParse：它要 Chrome 120，而 manifest 的最低版本是 116。
   try {
     new URL(websocketUrl(trimmed));
   } catch {

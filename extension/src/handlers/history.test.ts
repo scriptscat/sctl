@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { HandlerRegistry } from "@/background/registry";
 import { validateHistorySearchResult, validateHistoryVisitsResult } from "@/protocol/generated/validators.generated";
-import { registerHandlers } from "./index";
+import { registerAllHandlers } from "./handlers.fixture";
 
 type SearchFn = (query: chrome.history.HistoryQuery) => Promise<chrome.history.HistoryItem[]>;
 type GetVisitsFn = (details: chrome.history.UrlDetails) => Promise<chrome.history.VisitItem[]>;
@@ -35,7 +35,7 @@ describe("history handlers", () => {
     };
     vi.stubGlobal("chrome", { history });
     registry = new HandlerRegistry();
-    registerHandlers(registry);
+    registerAllHandlers(registry);
   });
 
   afterEach(() => {

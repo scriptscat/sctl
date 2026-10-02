@@ -1,0 +1,17 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>nav idle</title>
+    <script>
+      window.fetchDone = false;
+      // 在 load 之后 200 ms 才发出一个要 1.5 s 才返回的请求:只有 networkidle 会等它。
+      addEventListener("load", () => {
+        setTimeout(() => fetch("/slow?fetch").then(() => (window.fetchDone = true)), 200);
+      });
+    </script>
+  </head>
+  <body>
+    <p>Fetching later.</p>
+  </body>
+</html>

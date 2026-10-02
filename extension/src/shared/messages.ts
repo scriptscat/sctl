@@ -1,4 +1,9 @@
-import type { ERROR_CODES, RpcMethod } from "@/protocol/generated/protocol.generated";
+import type {
+  ERROR_CODES,
+  NotificationMethod,
+  NotificationParams,
+  RpcMethod,
+} from "@/protocol/generated/protocol.generated";
 import type { ApprovalMessage } from "./approvals";
 import type { ConnectionState } from "./state";
 
@@ -54,7 +59,9 @@ export type OffscreenEvent =
   | { target: "background"; type: "renamed"; name: string }
   | { target: "background"; type: "rpc"; method: RpcMethod; input: unknown; context: RpcContext }
   | { target: "background"; type: "rpcCancel"; requestId: string }
-  | { target: "background"; type: "disconnected"; connection: string };
+  | { target: "background"; type: "disconnected"; connection: string }
+  // 已连接的会话结束（断开、忘记、换地址），依赖这条连接的调试器附加要随之释放。
+  | { target: "background"; type: "connectionClosed" };
 
 export type BackgroundMessage = PopupRequest | OffscreenEvent | ApprovalMessage;
 
@@ -65,7 +72,10 @@ export type OffscreenCommand =
   | { target: "offscreen"; type: "retryNow" }
   | { target: "offscreen"; type: "forget" }
   | { target: "offscreen"; type: "setAddress"; address: string }
-  | { target: "offscreen"; type: "settle"; requestId: string; outcome: RpcOutcome };
+  | { target: "offscreen"; type: "settle"; requestId: string; outcome: RpcOutcome }
+  | {
+      [N in NotificationMethod]: { target: "offscreen"; type: "notify"; method: N; params: NotificationParams<N> };
+    }[NotificationMethod];
 
 export interface StateBroadcast {
   target: "popup";

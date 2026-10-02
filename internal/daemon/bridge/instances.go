@@ -59,14 +59,27 @@ func (s *Server) Instances() []InstanceInfo {
 // ForgetInstance 按名称或完整实例 ID 删除一个已配对浏览器实例的密钥与登记;实例在线时断开它,
 // 之后它的握手会因实例未配对而失败。
 func (s *Server) ForgetInstance(ref string) error {
+	id, forgotten, err := s.forgetRegistered(ref)
+	if err != nil {
+		return err
+	}
+	// 回调放在释放 regMu 之后:监听者可能再调用 ForgetInstance/登记相关方法。
+	if forgotten != nil {
+		s.instanceGone(id)
+	}
+	return nil
+}
+
+// forgetRegistered 在 regMu 下删除登记并把在线连接移出在线表,返回被移出的连接(离线时为 nil)。
+func (s *Server) forgetRegistered(ref string) (string, *conn, error) {
 	s.regMu.Lock()
 	defer s.regMu.Unlock()
 	id, ok := s.resolveRegistered(ref)
 	if !ok {
-		return ErrInstanceNotFound
+		return "", nil, ErrInstanceNotFound
 	}
 	if err := s.browsers.Delete(id); err != nil {
-		return err
+		return "", nil, err
 	}
 	s.mu.Lock()
 	c := s.online[id]
@@ -75,7 +88,7 @@ func (s *Server) ForgetInstance(ref string) error {
 	if c != nil {
 		c.closeInBackground(websocket.StatusPolicyViolation, "")
 	}
-	return nil
+	return id, c, nil
 }
 
 // resolveRegistered 与 matchTarget 一样名称优先:名称可以恰好写成另一个实例的 ID,
@@ -96,6 +109,19 @@ func (s *Server) resolveRegistered(ref string) (string, bool) {
 // 新配对在此首次落盘(名称随能力声明才到达);会话连接只能更新仍以同一密钥登记的实例,
 // 与 ForgetInstance 由 regMu 串行,被忘记的实例无法借一条进行中的握手重新登记。
 func (s *Server) registerBrowser(c *conn) error {
+	replaced, err := s.registerOnline(c)
+	if err != nil {
+		return err
+	}
+	// 回调放在释放 regMu 之后:监听者可能再调用登记相关方法。
+	if replaced {
+		s.instanceGone(c.instanceID)
+	}
+	return nil
+}
+
+// registerOnline 在 regMu 下完成登记并把 c 置为在线,报告是否替换了同一实例的旧连接。
+func (s *Server) registerOnline(c *conn) (replaced bool, err error) {
 	s.regMu.Lock()
 	defer s.regMu.Unlock()
 	inst := store.BrowserInstance{
@@ -106,14 +132,13 @@ func (s *Server) registerBrowser(c *conn) error {
 		ProductVersion:   c.peer.ProductVersion,
 		ExtensionVersion: c.peer.ExtensionVersion,
 	}
-	var err error
 	if c.paired {
 		err = s.browsers.Pair(inst)
 	} else {
 		err = s.browsers.Update(inst)
 	}
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	c.connectedAt = time.Now()
@@ -124,7 +149,7 @@ func (s *Server) registerBrowser(c *conn) error {
 	if old != nil && old != c {
 		old.closeInBackground(websocket.StatusNormalClosure, "replaced by new connection")
 	}
-	return nil
+	return old != nil && old != c, nil
 }
 
 func validCapabilitiesPeer(p *capabilitiesPeer) bool {

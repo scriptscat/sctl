@@ -6,7 +6,7 @@ import {
   validateBookmarksRemoveResult,
   validateBookmarksSearchResult,
 } from "@/protocol/generated/validators.generated";
-import { registerHandlers } from "./index";
+import { registerAllHandlers } from "./handlers.fixture";
 
 interface FakeNode {
   id: string;
@@ -130,7 +130,7 @@ describe("bookmark handlers", () => {
     Object.values(bookmarks).forEach((fn) => fn.mockClear());
     vi.stubGlobal("chrome", { bookmarks });
     registry = new HandlerRegistry();
-    registerHandlers(registry);
+    registerAllHandlers(registry);
   });
 
   afterEach(() => {

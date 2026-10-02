@@ -30,7 +30,16 @@ export const ERROR_CODES = [
   "BROWSER_NOT_FOUND",
   "BROWSER_AMBIGUOUS",
   "CONFIRMATION_REQUIRED",
-  "UNSUPPORTED"
+  "UNSUPPORTED",
+  "STALE_REF",
+  "TIMEOUT",
+  "TARGET_AMBIGUOUS",
+  "PAGE_NOT_AUTOMATABLE",
+  "PAGE_HIDDEN",
+  "DEBUGGER_DETACHED",
+  "DIALOG_OPEN",
+  "EVAL_ERROR",
+  "NAVIGATION_FAILED"
 ] as const;
 export const CRYPTO = {
   "mac": "HMAC-SHA-256",
@@ -179,6 +188,31 @@ export interface CookiesSetParams {
 export interface CookiesSetResult {
   contentTrust: "untrusted-page-content";
   cookie: { domain: string; expires?: number; httpOnly: boolean; name: string; partitionTopLevelSite?: string; path: string; sameSite: "no_restriction" | "lax" | "strict" | "unspecified"; secure: boolean; session: boolean; value: string; };
+}
+export interface DebuggerDetachParams {
+  tabId?: number;
+}
+export interface DebuggerDetachResult {
+  tabIds: Array<number>;
+}
+export interface DebuggerDetachedNotification {
+  reason: string;
+  tabId: number;
+}
+export interface DebuggerEventNotification {
+  method: string;
+  params?: Record<string, unknown>;
+  sessionId?: string;
+  tabId: number;
+}
+export interface DebuggerSendParams {
+  method: string;
+  params?: Record<string, unknown>;
+  sessionId?: string;
+  tabId: number;
+}
+export interface DebuggerSendResult {
+  result: Record<string, unknown>;
 }
 export interface DownloadsCancelParams {
   confirm?: true;
@@ -392,6 +426,11 @@ export interface TabsCloseParams {
 export interface TabsCloseResult {
   tabIds: Array<number>;
 }
+export type TabsCurrentParams = Record<string, never>;
+export interface TabsCurrentResult {
+  tabId: number;
+  windowId: number;
+}
 export interface TabsDuplicateParams {
   tabId: number;
 }
@@ -473,6 +512,8 @@ export interface RpcMethodMap {
   "cookies.list": { params: CookiesListParams; result: CookiesListResult };
   "cookies.remove": { params: CookiesRemoveParams; result: CookiesRemoveResult };
   "cookies.set": { params: CookiesSetParams; result: CookiesSetResult };
+  "debugger.detach": { params: DebuggerDetachParams; result: DebuggerDetachResult };
+  "debugger.send": { params: DebuggerSendParams; result: DebuggerSendResult };
   "downloads.cancel": { params: DownloadsCancelParams; result: DownloadsCancelResult };
   "downloads.deleteFile": { params: DownloadsDeleteFileParams; result: DownloadsDeleteFileResult };
   "downloads.erase": { params: DownloadsEraseParams; result: DownloadsEraseResult };
@@ -502,6 +543,7 @@ export interface RpcMethodMap {
   "tabGroups.ungroup": { params: TabGroupsUngroupParams; result: TabGroupsUngroupResult };
   "tabs.activate": { params: TabsActivateParams; result: TabsActivateResult };
   "tabs.close": { params: TabsCloseParams; result: TabsCloseResult };
+  "tabs.current": { params: TabsCurrentParams; result: TabsCurrentResult };
   "tabs.duplicate": { params: TabsDuplicateParams; result: TabsOpenResult };
   "tabs.list": { params: TabsListParams; result: TabsListResult };
   "tabs.move": { params: TabsMoveParams; result: TabsMoveResult };
@@ -509,6 +551,7 @@ export interface RpcMethodMap {
   "tabs.open": { params: TabsOpenParams; result: TabsOpenResult };
   "tabs.pin": { params: TabsIdsParams; result: TabsIdsResult };
   "tabs.reload": { params: TabsReloadParams; result: TabsIdsResult };
+  "tabs.select": { params: TabsActivateParams; result: TabsActivateResult };
   "tabs.unmute": { params: TabsIdsParams; result: TabsIdsResult };
   "tabs.unpin": { params: TabsIdsParams; result: TabsIdsResult };
   "windows.close": { params: WindowsCloseParams; result: WindowsCloseResult };
@@ -621,6 +664,22 @@ export const RPC_METHODS = {
     params: "CookiesSetParams",
     result: "CookiesSetResult",
     scope: "cookies:set",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "debugger.detach": {
+    params: "DebuggerDetachParams",
+    result: "DebuggerDetachResult",
+    scope: "debugger:detach",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "debugger.send": {
+    params: "DebuggerSendParams",
+    result: "DebuggerSendResult",
+    scope: "debugger:send",
     effect: "write",
     blocking: "none",
     level: "L0",
@@ -857,6 +916,14 @@ export const RPC_METHODS = {
     blocking: "none",
     level: "L0",
   },
+  "tabs.current": {
+    params: "TabsCurrentParams",
+    result: "TabsCurrentResult",
+    scope: "tabs:current",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
   "tabs.duplicate": {
     params: "TabsDuplicateParams",
     result: "TabsOpenResult",
@@ -909,6 +976,14 @@ export const RPC_METHODS = {
     params: "TabsReloadParams",
     result: "TabsIdsResult",
     scope: "tabs:reload",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "tabs.select": {
+    params: "TabsActivateParams",
+    result: "TabsActivateResult",
+    scope: "tabs:select",
     effect: "write",
     blocking: "none",
     level: "L0",
@@ -973,3 +1048,9 @@ export const RPC_METHODS = {
   RpcMethod,
   { params: string; result: string; scope: string; effect: string; blocking: string; level: "L0" | "L1" | "L2" }
 >;
+export interface NotificationMap {
+  "debugger.detached": DebuggerDetachedNotification;
+  "debugger.event": DebuggerEventNotification;
+}
+export type NotificationMethod = keyof NotificationMap;
+export type NotificationParams<N extends NotificationMethod> = NotificationMap[N];

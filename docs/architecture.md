@@ -4,12 +4,12 @@
 
 ```text
 MCP client (Claude/Codex…) ─ stdio ─→ sctl mcp ─┐ (authenticated control API)
-CLI verbs (sctl get / edit / install / browsers / tabs / windows …) ┤
+CLI verbs (sctl get / edit / install / browsers / tabs / windows / page …) ┤
                                                 ▼
                           sctl serve (daemon; defaults to 127.0.0.1:8643)
                                                 ▲ WebSocket (each extension dials in + mutual HMAC handshake)
                      ScriptCat browser extension (authority for write approval and source disclosure)
-                     sctl Browser extension, one or more paired instances (browser control; approval window for L2)
+                     sctl Browser extension, one or more paired instances (browser control; approval window for L2; CDP relay)
 ```
 
 `sctl mcp` and the CLI verbs are **separate processes** from `sctl serve`. They talk over the
@@ -42,6 +42,25 @@ cancellations and its own disconnects to the queue ([protocol.md](./protocol.md#
 `reportPending` on `/control/call`, `controlapi` writes an interim `{"pending":true}` line ahead of the result, which
 is when the CLI prints its waiting line and `sctl mcp` starts its progress notifications.
 
+### Page automation
+
+`sctl page` commands and the `page_*` MCP tools reach the daemon through `/control/page`, not `/control/call`: a
+page action is not one extension method but a sequence of Chrome DevTools Protocol (CDP) commands decided in Go.
+The page automation component (`internal/daemon/page`) resolves the browser and tab, then drives the tab through
+the extension's internal relay methods ([protocol.md](./protocol.md#32-internal-methods)):
+
+```text
+sctl page / page_* ─/control/page─▶ controlapi ─▶ page.Manager ─▶ bridge ─WS─▶ sctl Browser ─chrome.debugger─▶ tab
+                                                      ▲                            │
+                                                      └── debugger.detached ◀──────┘ (BrowserListener)
+```
+
+The extension only relays CDP commands, events, and detach notices; the page logic lives in Go so it can be
+tested against a real headless Chrome. Page state — which tabs are attached, their idle
+timers, and the per-tab queue that runs commands on one tab in arrival order — lives in the daemon's memory,
+because the daemon is the only process that outlives a single command. When the daemon attaches and detaches a
+tab is described in [protocol.md](./protocol.md#32-internal-methods).
+
 ## Directory layout
 
 `internal/` is grouped by **process role**: `daemon/` is the guard side (`sctl serve`), `client/` is the
@@ -61,18 +80,23 @@ internal/cli/               # subcommand definitions; spans both sides, hence to
   edit.go write.go          #   write verbs (edit / install / enable / disable / delete)
   browsers.go               #   sctl browsers [list] / sctl browsers forget <name|id>
   tabs.go windows.go        #   sctl tabs list|open|close|activate, sctl windows list
+  page*.go                  #   sctl page snapshot|click|hover|fill|type|press|select|upload|scroll|goto|back|forward|
+                            #   reload|wait|screenshot|eval|dialog|detach (reach /control/page through dispatchPage)
   resource.go               #   the optional scripts|script|sc resource word shared by those verbs
   dispatch.go               #   action forwarding and bridge error → exit code mapping
 
 internal/daemon/            # ── sctl serve side ──
-  component.go              #   cago Component: assembles listener + bridge + controlapi
+  component.go              #   cago Component: assembles listener + bridge + page + controlapi
   bridge/                   #   WS service core
     server.go               #     Server struct, Serve, Origin whitelist, handshake admission, connection registry
     conn.go                 #     single connection: handshake, read loop, send
     call.go                 #     action forwarding, pending-call table, JSON-RPC cancellation
     pairing.go              #     extension enrollment window (out-of-band code → key K)
     envelope.go             #     envelope, payload structs, error codes
-  controlapi/               #   /control/* handlers (controller role), depends on the narrow Bridge interface
+  controlapi/               #   /control/* handlers (controller role), depends on the narrow Bridge and Page interfaces
+  page/                     #   page automation: Manager (target tab, per-tab queue, attach and idle detach),
+                             #     page actions, the bridge-backed CDP implementation
+    pagetest/               #     CDP implementation over a headless Chrome's debugging port, for integration tests
   auth/                     #   mutual HMAC handshake, enrollment-code derivation (HKDF), key delivery (AES-GCM)
   store/                    #   persistence (repository role): ScriptCat's long-term key K, plus the
                              #     browsers.json registry of paired sctl Browser instances and their own
@@ -94,7 +118,8 @@ internal/pkg/               # ── shared by both sides ──
 extension/                  # ── sctl Browser, the second extension kind (MV3, pnpm/Vite/React) ──
   src/background/           #   service worker: identity and settings storage, message routing, method dispatch
   src/offscreen/            #   holds the WebSocket and connection state, pairing and session handshake, retry/backoff
-  src/handlers/             #   browser method implementations, one module per domain (chrome.tabs, chrome.bookmarks, …)
+  src/handlers/             #   browser method implementations, one module per domain (chrome.tabs, chrome.bookmarks,
+                             #     chrome.debugger, …)
   src/approval/             #   L2 approval window UI (bookmark deletion, extension uninstall)
   src/popup/                #   popup UI: pairing, rename, forget, daemon address
   src/protocol/generated/   #   browser-only generated protocol TS (see protocol.md §6)
@@ -102,9 +127,11 @@ extension/                  # ── sctl Browser, the second extension kind (MV
 
 ## Dependency direction
 
-`cli` → `daemon` (for `serve` only) and `client`. `daemon/controlapi` → `daemon/bridge`, never the reverse:
-the control API sees the guard only through the narrow `controlapi.Bridge` interface and `bridge` knows
-nothing about HTTP paths. The `/control/*` routes are registered by `controlapi.Handler.Register`, on the mux
+`cli` → `daemon` (for `serve` only) and `client`. `daemon/controlapi` → `daemon/page` → `daemon/bridge`, never
+the reverse: the control API sees the guard only through the narrow `controlapi.Bridge` and `controlapi.Page`
+interfaces, `page` reaches browsers only through its narrow `page.CDP` interface, and `bridge` knows
+nothing about HTTP paths or page automation — `component.go` registers the page `Manager` as the bridge's
+`BrowserListener`. The `/control/*` routes are registered by `controlapi.Handler.Register`, on the mux
 `internal/daemon/component.go` assembles and hands to `bridge.Server.Serve` (which owns only `/`). The shared
 DTOs live in `client/control` and are referenced one-way by `controlapi`.
 

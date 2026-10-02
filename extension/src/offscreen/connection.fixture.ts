@@ -220,6 +220,8 @@ export function harness(start: Partial<ConnectionConfig> = {}) {
     ok: true,
     result: { contentTrust: "untrusted-page-content", tabs: [] },
   };
+  // 已连接的会话结束的次数（onDisconnected），调试器附加随之释放。
+  const sessionEnds = { count: 0 };
   // 测试可以让持久化挂起，模拟 service worker 写存储期间用户又发出了别的命令。
   let persistence: Promise<void> = Promise.resolve();
   // 测试可以让持久化失败，模拟 service worker 写存储出错。
@@ -244,6 +246,9 @@ export function harness(start: Partial<ConnectionConfig> = {}) {
     persistName: (name) => {
       persisted.names.push(name);
       return persistFailure ? Promise.reject(persistFailure) : persistence;
+    },
+    onDisconnected: () => {
+      sessionEnds.count++;
     },
     dispatch: (method, input, context) => {
       dispatched.push({ method, input });
@@ -270,6 +275,7 @@ export function harness(start: Partial<ConnectionConfig> = {}) {
     contexts,
     cancelled,
     disconnects,
+    sessionEnds,
     socket: (): FakeSocket => {
       const last = sockets.at(-1);
       if (!last) {

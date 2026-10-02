@@ -114,6 +114,30 @@ export function validateCookiesSetResult(value: unknown): value is Protocol.Cook
   return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "cookie"]) && value["contentTrust"] === "untrusted-page-content" && (isRecord(value["cookie"]) && hasOnlyKeys(value["cookie"], ["domain", "expires", "httpOnly", "name", "partitionTopLevelSite", "path", "sameSite", "secure", "session", "value"]) && typeof value["cookie"]["domain"] === "string" && (value["cookie"]["expires"] === undefined || (typeof value["cookie"]["expires"] === "number" && Number.isInteger(value["cookie"]["expires"]) && value["cookie"]["expires"] >= 0)) && typeof value["cookie"]["httpOnly"] === "boolean" && typeof value["cookie"]["name"] === "string" && (value["cookie"]["partitionTopLevelSite"] === undefined || (typeof value["cookie"]["partitionTopLevelSite"] === "string")) && typeof value["cookie"]["path"] === "string" && (value["cookie"]["sameSite"] === "no_restriction" || value["cookie"]["sameSite"] === "lax" || value["cookie"]["sameSite"] === "strict" || value["cookie"]["sameSite"] === "unspecified") && typeof value["cookie"]["secure"] === "boolean" && typeof value["cookie"]["session"] === "boolean" && typeof value["cookie"]["value"] === "string"));
 }
 
+export function validateDebuggerDetachParams(value: unknown): value is Protocol.DebuggerDetachParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["tabId"]) && (value["tabId"] === undefined || (typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0)));
+}
+
+export function validateDebuggerDetachResult(value: unknown): value is Protocol.DebuggerDetachResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["tabIds"]) && Array.isArray(value["tabIds"]) && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item)));
+}
+
+export function validateDebuggerDetachedNotification(value: unknown): value is Protocol.DebuggerDetachedNotification {
+  return (isRecord(value) && hasOnlyKeys(value, ["reason", "tabId"]) && typeof value["reason"] === "string" && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0);
+}
+
+export function validateDebuggerEventNotification(value: unknown): value is Protocol.DebuggerEventNotification {
+  return (isRecord(value) && hasOnlyKeys(value, ["method", "params", "sessionId", "tabId"]) && typeof value["method"] === "string" && (value["params"] === undefined || ((isRecord(value["params"])))) && (value["sessionId"] === undefined || (typeof value["sessionId"] === "string")) && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0);
+}
+
+export function validateDebuggerSendParams(value: unknown): value is Protocol.DebuggerSendParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["method", "params", "sessionId", "tabId"]) && typeof value["method"] === "string" && (value["params"] === undefined || ((isRecord(value["params"])))) && (value["sessionId"] === undefined || (typeof value["sessionId"] === "string")) && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0);
+}
+
+export function validateDebuggerSendResult(value: unknown): value is Protocol.DebuggerSendResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["result"]) && (isRecord(value["result"])));
+}
+
 export function validateDownloadsCancelParams(value: unknown): value is Protocol.DownloadsCancelParams {
   return (isRecord(value) && hasOnlyKeys(value, ["confirm", "id"]) && (value["confirm"] === undefined || (value["confirm"] === true)) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
 }
@@ -342,6 +366,14 @@ export function validateTabsCloseResult(value: unknown): value is Protocol.TabsC
   return (isRecord(value) && hasOnlyKeys(value, ["tabIds"]) && Array.isArray(value["tabIds"]) && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item)));
 }
 
+export function validateTabsCurrentParams(value: unknown): value is Protocol.TabsCurrentParams {
+  return (isRecord(value) && hasOnlyKeys(value, []));
+}
+
+export function validateTabsCurrentResult(value: unknown): value is Protocol.TabsCurrentResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["tabId", "windowId"]) && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && typeof value["windowId"] === "number" && Number.isInteger(value["windowId"]));
+}
+
 export function validateTabsDuplicateParams(value: unknown): value is Protocol.TabsDuplicateParams {
   return (isRecord(value) && hasOnlyKeys(value, ["tabId"]) && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0);
 }
@@ -436,6 +468,8 @@ export const RPC_PARAM_VALIDATORS = {
   "cookies.list": validateCookiesListParams,
   "cookies.remove": validateCookiesRemoveParams,
   "cookies.set": validateCookiesSetParams,
+  "debugger.detach": validateDebuggerDetachParams,
+  "debugger.send": validateDebuggerSendParams,
   "downloads.cancel": validateDownloadsCancelParams,
   "downloads.deleteFile": validateDownloadsDeleteFileParams,
   "downloads.erase": validateDownloadsEraseParams,
@@ -465,6 +499,7 @@ export const RPC_PARAM_VALIDATORS = {
   "tabGroups.ungroup": validateTabGroupsUngroupParams,
   "tabs.activate": validateTabsActivateParams,
   "tabs.close": validateTabsCloseParams,
+  "tabs.current": validateTabsCurrentParams,
   "tabs.duplicate": validateTabsDuplicateParams,
   "tabs.list": validateTabsListParams,
   "tabs.move": validateTabsMoveParams,
@@ -472,6 +507,7 @@ export const RPC_PARAM_VALIDATORS = {
   "tabs.open": validateTabsOpenParams,
   "tabs.pin": validateTabsIdsParams,
   "tabs.reload": validateTabsReloadParams,
+  "tabs.select": validateTabsActivateParams,
   "tabs.unmute": validateTabsIdsParams,
   "tabs.unpin": validateTabsIdsParams,
   "windows.close": validateWindowsCloseParams,
@@ -495,6 +531,8 @@ export const RPC_RESULT_VALIDATORS = {
   "cookies.list": validateCookiesListResult,
   "cookies.remove": validateCookiesRemoveResult,
   "cookies.set": validateCookiesSetResult,
+  "debugger.detach": validateDebuggerDetachResult,
+  "debugger.send": validateDebuggerSendResult,
   "downloads.cancel": validateDownloadsCancelResult,
   "downloads.deleteFile": validateDownloadsDeleteFileResult,
   "downloads.erase": validateDownloadsEraseResult,
@@ -524,6 +562,7 @@ export const RPC_RESULT_VALIDATORS = {
   "tabGroups.ungroup": validateTabGroupsUngroupResult,
   "tabs.activate": validateTabsActivateResult,
   "tabs.close": validateTabsCloseResult,
+  "tabs.current": validateTabsCurrentResult,
   "tabs.duplicate": validateTabsOpenResult,
   "tabs.list": validateTabsListResult,
   "tabs.move": validateTabsMoveResult,
@@ -531,6 +570,7 @@ export const RPC_RESULT_VALIDATORS = {
   "tabs.open": validateTabsOpenResult,
   "tabs.pin": validateTabsIdsResult,
   "tabs.reload": validateTabsIdsResult,
+  "tabs.select": validateTabsActivateResult,
   "tabs.unmute": validateTabsIdsResult,
   "tabs.unpin": validateTabsIdsResult,
   "windows.close": validateWindowsCloseResult,
@@ -538,4 +578,9 @@ export const RPC_RESULT_VALIDATORS = {
   "windows.list": validateWindowsListResult,
   "windows.open": validateWindowsOpenResult,
   "windows.state": validateWindowsStateResult,
+} as const;
+
+export const NOTIFICATION_PARAM_VALIDATORS = {
+  "debugger.detached": validateDebuggerDetachedNotification,
+  "debugger.event": validateDebuggerEventNotification,
 } as const;

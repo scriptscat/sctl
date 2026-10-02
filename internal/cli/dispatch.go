@@ -17,8 +17,8 @@ import (
 // 阻塞调用,再把结果/错误映射为退出码。onOK 负责把成功结果打印出来。
 //
 // Ctrl-C 会取消 ctx → 切断到 daemon 的连接 → daemon 向扩展发 $/cancelRequest 作废操作;此处映射为
-// exitVoided。桥接业务错误按 code 映射:USER_REJECTED→exitRejected,OPERATION_EXPIRED→exitVoided,
-// 其余→exitError。
+// exitVoided。桥接业务错误按 code 映射:USER_REJECTED→exitRejected,OPERATION_EXPIRED 与
+// DEBUGGER_DETACHED→exitVoided,其余→exitError。
 func dispatch(cmd *cobra.Command, action string, input json.RawMessage, onOK func(result json.RawMessage) error) error {
 	return dispatchAction(cmd, action, "", input, nil, canceledVoided, onOK)
 }
@@ -95,6 +95,26 @@ type approvalWait struct {
 
 // wait 为 nil 表示调用不等待人工决定。
 func dispatchAction(cmd *cobra.Command, action, browser string, input json.RawMessage, wait *approvalWait, canceled string, onOK func(result json.RawMessage) error) error {
+	return dispatchWith(cmd, browser, wait, canceled, func(ctx context.Context, client *control.Client, onPending func()) (control.CallResult, error) {
+		return client.Call(ctx, action, browser, input, onPending)
+	}, onOK)
+}
+
+// dispatchPage 是 `sctl page` 子命令的骨架:与 dispatchBrowser 相同,但走 /control/page,并带上 page 命令树
+// 共用的 --browser/--tab/--activate/--timeout。页面命令同样没有人工审批,取消只是不再等结果。
+func dispatchPage(cmd *cobra.Command, action string, input json.RawMessage, onOK func(result json.RawMessage) error) error {
+	req, err := pageRequest(cmd, action, input)
+	if err != nil {
+		return err
+	}
+	return dispatchWith(cmd, req.Browser, nil, canceledUnconfirmed, func(ctx context.Context, client *control.Client, _ func()) (control.CallResult, error) {
+		return client.Page(ctx, req)
+	}, onOK)
+}
+
+// dispatchWith 连上已有 daemon,以可被 Ctrl-C 取消的 ctx 发起 call,再把结果/错误映射为退出码。
+// call 收到的 onPending 只在 wait 要求等对端报告进入审批时非 nil。
+func dispatchWith(cmd *cobra.Command, browser string, wait *approvalWait, canceled string, call func(ctx context.Context, client *control.Client, onPending func()) (control.CallResult, error), onOK func(result json.RawMessage) error) error {
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt)
 	defer stop()
 
@@ -115,7 +135,7 @@ func dispatchAction(cmd *cobra.Command, action, browser string, input json.RawMe
 			announce()
 		}
 	}
-	res, err := client.Call(ctx, action, browser, input, onPending)
+	res, err := call(ctx, client, onPending)
 	if err != nil {
 		// 看 ctx 而不是错误本身:Ctrl-C 经 signal.NotifyContext 取消时带 cause,net/http 返回的是这个 cause,
 		// 它不包装 context.Canceled。
@@ -139,7 +159,8 @@ func dispatchAction(cmd *cobra.Command, action, browser string, input json.RawMe
 	return mapBridgeError(res.Error)
 }
 
-// mapBridgeError 把桥接错误码映射为带退出码的 ExitError。
+// mapBridgeError 把桥接错误码映射为带退出码的 ExitError。消息原样打印到终端,而页面命令的错误会带上网页
+// 控制的文字(页面抛出的异常、遮挡元素的 id 与 class),所以其中的控制字符转义后再交出。
 func mapBridgeError(e *control.CallError) error {
 	if e == nil {
 		return &ExitError{Code: exitError, Message: "call failed"}
@@ -149,8 +170,11 @@ func mapBridgeError(e *control.CallError) error {
 		return &ExitError{Code: exitRejected, Message: "operation rejected by the user"}
 	case "OPERATION_EXPIRED":
 		return &ExitError{Code: exitVoided, Message: "operation voided or timed out"}
+	case "DEBUGGER_DETACHED":
+		// 与作废同类:命令被外部事件打断(用户关掉调试提示条、标签页关闭、浏览器断开),重试可能成功。
+		return &ExitError{Code: exitVoided, Message: terminalSafe(e.Error())}
 	default:
-		return &ExitError{Code: exitError, Message: e.Error()}
+		return &ExitError{Code: exitError, Message: terminalSafe(e.Error())}
 	}
 }
 

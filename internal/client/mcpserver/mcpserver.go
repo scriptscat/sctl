@@ -29,10 +29,11 @@ const maxFullSourceResponseBytes = 64 * 1024
 // 超时的值,使每次通知都能刷新其倒计时。以 var 暴露仅为便于测试压缩等待。
 var progressInterval = 10 * time.Second
 
-// BridgeCaller 抽象「向 daemon 转发 bridge action 调用与查询浏览器列表」,便于测试注入桩。
+// BridgeCaller 抽象「向 daemon 转发 bridge action 调用、页面动作与查询浏览器列表」,便于测试注入桩。
 // browser 是浏览器方法的可选目标,其余方法传空串。
 type BridgeCaller interface {
 	Call(ctx context.Context, action, browser string, input json.RawMessage, onPending func()) (control.CallResult, error)
+	Page(ctx context.Context, req control.PageRequest) (control.CallResult, error)
 	Browsers(ctx context.Context) ([]control.BrowserInfo, error)
 }
 
@@ -45,14 +46,15 @@ type Deps struct {
 	Caller  BridgeCaller
 }
 
-// New 按依赖构建 MCP server,注册 protocol.json 里定义的逐方法工具、按领域合并的工具以及 browsers_list。
-// 方法是否是浏览器方法、是否汇总多实例、是否等待人工决定,都取自 protocol.json 的 peer、mergeField 与
+// New 按依赖构建 MCP server,注册 protocol.json 里定义的非内部逐方法工具、按领域合并的工具、page_* 页面工具以及
+// browsers_list。方法是否是浏览器方法、是否汇总多实例、是否等待人工决定,都取自 protocol.json 的 peer、mergeField 与
 // blocking,不按方法名推断。
 func New(d Deps) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{Name: d.Name, Version: d.Version}, &mcp.ServerOptions{})
 	for _, td := range toolDefs {
 		action, ok := d.Proto.Actions[td.action]
-		if !ok {
+		// 内部方法(原始 CDP 中转)只给 daemon 内的组件用,不直接交给 agent。
+		if !ok || action.Internal {
 			continue
 		}
 		browser := action.Peer == protocol.PeerBrowser
@@ -63,6 +65,9 @@ func New(d Deps) *mcp.Server {
 	}
 	for _, dt := range domainTools {
 		registerDomainTool(srv, dt, d.Proto, d.Caller)
+	}
+	for _, td := range pageTools {
+		registerPageTool(srv, td, d.Caller)
 	}
 	// browsers_list 特殊处理:不是 bridge action,由控制 API 直接提供已配对实例列表。
 	registerBrowsersListTool(srv, d.Caller)
@@ -288,6 +293,33 @@ func okResult(result json.RawMessage) *mcp.CallToolResult {
 		out.StructuredContent = result
 	}
 	return out
+}
+
+// okImageResult 把带 base64 图像(data)与 mimeType 的动作结果转成 MCP 图片内容,后面跟一段不含图像数据的
+// 简短文本(其余结果字段),让模型直接看到图,而不是几百 KB 的 base64 文本。
+func okImageResult(result json.RawMessage) (*mcp.CallToolResult, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(result, &fields); err != nil {
+		return nil, fmt.Errorf("decode the screenshot result: %w", err)
+	}
+	var (
+		data     []byte
+		mimeType string
+	)
+	if err := json.Unmarshal(fields["data"], &data); err != nil {
+		return nil, fmt.Errorf("decode the screenshot image data: %w", err)
+	}
+	if err := json.Unmarshal(fields["mimeType"], &mimeType); err != nil {
+		return nil, fmt.Errorf("decode the screenshot mimeType: %w", err)
+	}
+	delete(fields, "data")
+	meta, err := json.Marshal(fields)
+	if err != nil {
+		return nil, fmt.Errorf("encode the screenshot metadata: %w", err)
+	}
+	out := okResult(meta)
+	out.Content = []mcp.Content{&mcp.ImageContent{Data: data, MIMEType: mimeType}, out.Content[0]}
+	return out, nil
 }
 
 func errorResult(e *control.CallError) *mcp.CallToolResult {

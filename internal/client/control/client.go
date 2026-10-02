@@ -127,11 +127,22 @@ func (c *Client) Call(ctx context.Context, action, browser string, input json.Ra
 	if input == nil {
 		input = json.RawMessage(`{}`)
 	}
-	body, err := json.Marshal(CallRequest{Action: action, Browser: browser, Input: input, ReportPending: onPending != nil})
+	return c.post(ctx, PathCall, CallRequest{Action: action, Browser: browser, Input: input, ReportPending: onPending != nil}, onPending)
+}
+
+// Page 在浏览器标签页上执行一次页面动作并阻塞至完成。ctx 取消会切断连接,daemon 侧随之结束该动作。
+func (c *Client) Page(ctx context.Context, req PageRequest) (CallResult, error) {
+	return c.post(ctx, PathPage, req, nil)
+}
+
+// post 发送一个返回 CallResult 的控制请求。onPending 非 nil 时接受 daemon 至多一行的审批等待行并回调;
+// 为 nil 时任何等待行都是协议错误。
+func (c *Client) post(ctx context.Context, path string, payload any, onPending func()) (CallResult, error) {
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return CallResult{}, err
 	}
-	req, err := c.newRequest(ctx, http.MethodPost, PathCall, body)
+	req, err := c.newRequest(ctx, http.MethodPost, path, body)
 	if err != nil {
 		return CallResult{}, err
 	}

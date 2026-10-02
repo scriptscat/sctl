@@ -21,6 +21,11 @@ const connection = new Connection({
   onState: (state) => broadcast(chrome.runtime, { target: "popup", type: "state", state } satisfies StateBroadcast),
   persistKey: (key, name) => toBackground({ target: "background", type: "paired", key, name }),
   persistName: (name) => toBackground({ target: "background", type: "renamed", name }),
+  onDisconnected: () => {
+    toBackground({ target: "background", type: "connectionClosed" }).catch((error: unknown) =>
+      console.error("failed to report the closed connection", error),
+    );
+  },
   dispatch: (method, input, context) =>
     toBackground<RpcReply>({ target: "background", type: "rpc", method, input, context }),
   cancel: (requestId) => toBackground({ target: "background", type: "rpcCancel", requestId }),
@@ -52,5 +57,7 @@ listen<OffscreenCommand>(chrome.runtime, "offscreen", async (command) => {
       return connection.setAddress(command.address);
     case "settle":
       return connection.settle(command.requestId, command.outcome);
+    case "notify":
+      return connection.notify(command.method, command.params);
   }
 });

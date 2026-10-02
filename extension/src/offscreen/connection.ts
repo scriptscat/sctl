@@ -1,5 +1,12 @@
-import { CRYPTO, LIMITS, SCHEMA_VERSION, type RpcMethod } from "@/protocol/generated/protocol.generated";
-import { RPC_PARAM_VALIDATORS } from "@/protocol/generated/validators.generated";
+import {
+  CRYPTO,
+  LIMITS,
+  SCHEMA_VERSION,
+  type NotificationMethod,
+  type NotificationParams,
+  type RpcMethod,
+} from "@/protocol/generated/protocol.generated";
+import { NOTIFICATION_PARAM_VALIDATORS, RPC_PARAM_VALIDATORS } from "@/protocol/generated/validators.generated";
 import { websocketUrl } from "@/shared/address";
 import type { ConnectionConfig, RenameResult, RpcContext, RpcOutcome, RpcReply } from "@/shared/messages";
 import type { ConnectionState, StatusDetail } from "@/shared/state";
@@ -59,6 +66,8 @@ export interface ConnectionDeps {
   cancel(requestId: string): Promise<void>;
   // 一条已建立的连接结束了，它上面等待审批的请求随之作废。
   disconnected(connection: string): Promise<void>;
+  // 已连接的会话结束时调用（断开、忘记、换地址都算），握手未完成的尝试不触发。
+  onDisconnected(): void;
 }
 
 // 一条已转交 background、还没有应答的业务请求。
@@ -210,6 +219,9 @@ export class Connection {
     this.clearAuthTimer(attempt);
     this.ended(attempt);
     attempt.socket.close(CLOSE_NORMAL);
+    if (attempt.phase === "connected") {
+      this.deps.onDisconnected();
+    }
   }
 
   // 已建立的连接一结束，daemon 就作废了它上面的全部请求（docs/protocol.md §2.3）；让 background 同步作废待审批的请求。
@@ -370,6 +382,9 @@ export class Connection {
     this.attempt = null;
     this.clearAuthTimer(attempt);
     this.ended(attempt);
+    if (attempt.phase === "connected") {
+      this.deps.onDisconnected();
+    }
     if (attempt.auth.mode === "pairing" && attempt.phase !== "connected") {
       this.pairingClosed(attempt);
       return;
@@ -410,8 +425,44 @@ export class Connection {
     this.setState({ status: "reconnecting", attempt: this.failures, retryAt: this.deps.timers.now() + delay });
   }
 
+  // 向 daemon 发送业务通知；未连接时静默丢弃。参数来自 CDP 事件，先按 schema 校验：
+  // daemon 收到 schema 外的帧会断开连接，一个坏事件不能拖垮整条连接。
+  notify<N extends NotificationMethod>(method: N, params: NotificationParams<N>): void {
+    const attempt = this.attempt;
+    if (attempt?.phase !== "connected") {
+      return;
+    }
+    if (!NOTIFICATION_PARAM_VALIDATORS[method](params)) {
+      console.warn(`dropping ${method}: parameters do not match the schema`);
+      return;
+    }
+    this.send(attempt, { method, params: params as unknown as Record<string, unknown> });
+  }
+
+  // 除业务结果（reply 按方法名先行限制）外的帧都从这里发出，所以在这里统一限制大小：daemon 收到超过
+  // maxFrameBytes 的帧会断开连接。
   private send(attempt: Attempt, message: Omit<JsonRpcMessage, "jsonrpc">): void {
-    this.sendFrame(attempt, JSON.stringify({ jsonrpc: "2.0", ...message }));
+    if (attempt !== this.attempt) {
+      return;
+    }
+    let frame = JSON.stringify({ jsonrpc: "2.0", ...message });
+    // 每个 UTF-16 码元编码成最多 3 个字节，短于 maxFrameBytes/3 的帧必然不超限，只有大帧才付编码的开销。
+    if (frame.length > LIMITS.maxFrameBytes / 3 && utf8.encode(frame).length > LIMITS.maxFrameBytes) {
+      if (message.id === undefined || message.result === undefined) {
+        console.warn(`dropping an oversized ${message.method ?? "response"} frame`);
+        return;
+      }
+      frame = JSON.stringify({
+        jsonrpc: "2.0",
+        id: message.id,
+        error: {
+          code: RPC_APPLICATION_ERROR,
+          message: `result exceeds the ${LIMITS.maxFrameBytes} byte frame limit`,
+          data: { code: "PAYLOAD_TOO_LARGE" },
+        },
+      });
+    }
+    this.sendFrame(attempt, frame);
   }
 
   private sendFrame(attempt: Attempt, frame: string): void {

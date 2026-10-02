@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite
 import { HandlerRegistry, runApproved } from "@/background/registry";
 import { validateExtensionsListResult } from "@/protocol/generated/validators.generated";
 import type { ApprovalRequest, ExtensionUninstallDetail } from "@/shared/approvals";
-import { registerHandlers } from "./index";
+import { registerAllHandlers } from "./handlers.fixture";
 import { uninstallExtension, uninstallObserved } from "./extensions";
 
 type GetAllFn = () => Promise<chrome.management.ExtensionInfo[]>;
@@ -66,7 +66,7 @@ describe("extensions handlers", () => {
     };
     vi.stubGlobal("chrome", { management, runtime: { id: SELF_ID } });
     registry = new HandlerRegistry();
-    registerHandlers(registry);
+    registerAllHandlers(registry);
   });
 
   afterEach(() => {

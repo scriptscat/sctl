@@ -1,4 +1,4 @@
-import type { RpcMethod } from "@/protocol/generated/protocol.generated";
+import type { NotificationMethod, NotificationParams, RpcMethod } from "@/protocol/generated/protocol.generated";
 import { DEFAULT_ADDRESS, parseAddress } from "@/shared/address";
 import { type ProductInfo, defaultName, isValidName, newInstanceId } from "@/shared/identity";
 import type {
@@ -28,6 +28,7 @@ export interface BackgroundDeps {
   offscreen(command: OffscreenCommand): Promise<unknown>;
   registry: HandlerRegistry;
   approvals: Approvals;
+  onConnectionClosed(): Promise<void>;
   // 浏览器的完整版本号只能异步取得（navigator.userAgentData.getHighEntropyValues）。
   browser: Promise<BrowserInfo>;
   extensionVersion: string;
@@ -80,6 +81,8 @@ export class Background {
         return this.deps.approvals.closeWindow();
       case "approvalFocus":
         return this.deps.approvals.focus();
+      case "connectionClosed":
+        return this.deps.onConnectionClosed();
       case "getState":
         return this.deps.offscreen({ target: "offscreen", type: "getState" });
       case "pair":
@@ -113,6 +116,11 @@ export class Background {
     }
     await this.deps.approvals.enqueue(context, prepared.request);
     return { deferred: true };
+  }
+
+  // 扩展主动发给 daemon 的通知走 offscreen 里的 WebSocket；未连接时由 offscreen 丢弃。
+  async notify<N extends NotificationMethod>(method: N, params: NotificationParams<N>): Promise<void> {
+    await this.deps.offscreen({ target: "offscreen", type: "notify", method, params } as OffscreenCommand);
   }
 
   // 实例 ID 首次使用时生成并持久化；同一 service worker 生命周期内的并发调用共享同一次生成。

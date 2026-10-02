@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HandlerRegistry } from "@/background/registry";
-import { registerHandlers } from "./index";
+import { registerAllHandlers } from "./handlers.fixture";
 
 // 伪造的浏览器：标签页 1、2 在窗口 10，标签页 3 在窗口 20。
 const known = new Map<number, chrome.tabs.Tab>();
@@ -48,7 +48,7 @@ describe("tab and window management handlers", () => {
     Object.values(win).forEach((fn) => fn.mockClear());
     vi.stubGlobal("chrome", { tabs, windows: win });
     registry = new HandlerRegistry();
-    registerHandlers(registry);
+    registerAllHandlers(registry);
   });
 
   afterEach(() => {

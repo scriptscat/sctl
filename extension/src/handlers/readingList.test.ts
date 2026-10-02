@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { HandlerRegistry } from "@/background/registry";
 import { validateReadingListListResult } from "@/protocol/generated/validators.generated";
-import { registerHandlers } from "./index";
+import { registerAllHandlers } from "./handlers.fixture";
 
 type QueryFn = (info: chrome.readingList.QueryInfo) => Promise<chrome.readingList.ReadingListEntry[]>;
 type AddEntryFn = (entry: chrome.readingList.AddEntryOptions) => Promise<void>;
@@ -44,7 +44,7 @@ describe("reading list handlers", () => {
     };
     vi.stubGlobal("chrome", { readingList });
     registry = new HandlerRegistry();
-    registerHandlers(registry);
+    registerAllHandlers(registry);
   });
 
   afterEach(() => {

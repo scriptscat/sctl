@@ -16,6 +16,7 @@ import (
 	"github.com/scriptscat/sctl/internal/daemon/auth"
 	"github.com/scriptscat/sctl/internal/pkg/audit"
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
+	"github.com/scriptscat/sctl/internal/pkg/protocol/generated"
 	"github.com/scriptscat/sctl/internal/pkg/protocolschema"
 )
 
@@ -251,6 +252,8 @@ func (c *conn) readLoop() {
 			}
 		case methodApprovalPending:
 			c.srv.handleApprovalPending(c, message)
+		case string(generated.NotificationDebuggerEvent), string(generated.NotificationDebuggerDetached):
+			c.srv.deliverNotification(c, message)
 		default:
 			c.log.Debug("ignoring unexpected JSON-RPC method", zap.String("method", message.Method))
 		}

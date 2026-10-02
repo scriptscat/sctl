@@ -103,6 +103,7 @@ func NewRootCmd() *cobra.Command {
 		newExtensionsCmd(),
 		newReadingListCmd(),
 		newBookmarksCmd(),
+		newPageCmd(),
 		newVersionCmd(),
 		newGetCmd(),
 		newGrepCmd(),

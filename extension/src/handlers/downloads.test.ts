@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { HandlerRegistry } from "@/background/registry";
 import { validateDownloadsListResult } from "@/protocol/generated/validators.generated";
-import { registerHandlers } from "./index";
+import { registerAllHandlers } from "./handlers.fixture";
 
 type SearchFn = (query: chrome.downloads.DownloadQuery) => Promise<chrome.downloads.DownloadItem[]>;
 type DownloadFn = (options: chrome.downloads.DownloadOptions) => Promise<number>;
@@ -60,7 +60,7 @@ describe("downloads handlers", () => {
     };
     vi.stubGlobal("chrome", { downloads });
     registry = new HandlerRegistry();
-    registerHandlers(registry);
+    registerAllHandlers(registry);
   });
 
   afterEach(() => {

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { HandlerRegistry } from "@/background/registry";
 import { validateBrowsingDataClearParams } from "@/protocol/generated/validators.generated";
-import { registerHandlers } from "./index";
+import { registerAllHandlers } from "./handlers.fixture";
 
 type RemoveFn = (options: chrome.browsingData.RemovalOptions, data: chrome.browsingData.DataTypeSet) => Promise<void>;
 
@@ -13,7 +13,7 @@ describe("browsingData.clear", () => {
     remove = vi.fn<RemoveFn>().mockResolvedValue(undefined);
     vi.stubGlobal("chrome", { browsingData: { remove } });
     registry = new HandlerRegistry();
-    registerHandlers(registry);
+    registerAllHandlers(registry);
   });
 
   afterEach(() => {

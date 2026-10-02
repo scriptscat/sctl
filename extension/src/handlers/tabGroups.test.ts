@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { HandlerRegistry } from "@/background/registry";
 import { validateTabGroupsListResult, validateTabGroupsCreateResult } from "@/protocol/generated/validators.generated";
-import { registerHandlers } from "./index";
+import { registerAllHandlers } from "./handlers.fixture";
 
 // 伪造的浏览器：标签页 1、2 在窗口 10（1 在组 5 里），标签页 3 在窗口 20；组 5 在窗口 10。
 const tabsById = new Map<number, chrome.tabs.Tab>();
@@ -57,7 +57,7 @@ describe("tab group handlers", () => {
     }
     vi.stubGlobal("chrome", { tabs, tabGroups, windows: win });
     registry = new HandlerRegistry();
-    registerHandlers(registry);
+    registerAllHandlers(registry);
   });
 
   afterEach(() => {

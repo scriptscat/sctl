@@ -58,6 +58,23 @@ holds the host permission `<all_urls>` for this. `cookies list` also covers part
 showed that `chrome.cookies.getAll` without a partition key omits them and that the empty key `partitionKey: {}` returns all of
 them, so the extension always passes it and the partitioned login state is exposed the same way.
 
+**Page automation carries the same trade, with a larger reach.** The `sctl page` commands and `page_*` MCP tools
+attach Chrome's debugger to a tab through the sctl Browser extension's `debugger` permission, again with no
+per-operation approval and no per-site limit. A control-token holder can therefore:
+- read the content of any page Chrome lets the debugger attach to, in any paired instance;
+- type into, click, and submit forms in those pages with trusted input events, and run scripts in them
+  (`page eval`) — and so act with the user's signed-in session: read what the page can read, submit what the page
+  can submit;
+- do this in background tabs the user is not looking at.
+
+Chrome's "sctl Browser started debugging this browser" infobar is the only visible sign that a page is attached,
+and launching Chrome with `--silent-debugger-extension-api` hides it. While a tab is attached, the daemon turns
+on focus emulation for it, so the page believes it is visible and focused: timers, animations, and media that a
+hidden page would pause keep running, and a page that checks visibility or focus cannot tell it is in the
+background. The emulation ends when the debugger detaches. Everything a page returns — snapshots, `page eval`
+results, JS dialog text, page URLs and titles — is untrusted page content (`contentTrust: untrusted-page-content`): it can carry prompt
+injection aimed at the agent reading it, and must be treated as data, never as instructions.
+
 ## 2. Attack surface and countermeasures
 
 | Threat | Countermeasure | Residual risk |
@@ -65,7 +82,7 @@ them, so the extension always passes it and the partitioned login state is expos
 | A web page connects straight to the daemon with `new WebSocket("ws://127.0.0.1:8643")` | An **Origin whitelist** rejects any connection whose `Origin` is present and not an extension origin (`chrome-extension://` etc.) — a cheap pre-filter that a browser page cannot get past (the browser stamps Origin, page JS cannot forge it). Beyond that, a connection must complete the mutual HMAC handshake before it can send or receive any business message; without credentials it fails the challenge-response and is disconnected on the 5s timeout **with no reason echoed back** (close 1008). A non-browser process can forge any Origin, so the handshake remains the real gate. Both rejections are recorded in the daemon-side audit (§6) | A page can probe that the port is open |
 | A web page impersonates the local frontend with `fetch("http://127.0.0.1:8643/control/…")` | Apart from `/control/health`, every control API requires an `X-Sctl-Control-Token` header, compared in constant time against the daemon's user-only token; a web page cannot read that file, so it gets a 401 and the action never runs at all | Port / health information can be probed (see below) |
 | A local process grabs 8643 to impersonate the daemon, or connects in while impersonating the extension | **Mutual** HMAC-SHA-256 challenge-response between the extension and the daemon ([protocol.md](./protocol.md#21-authentication)); long-term keys come from a one-time enrollment code and never travel in plaintext; nonces are regenerated per connection, so replays are useless. A browser instance's MAC also binds its peer kind and instance ID, so a recorded MAC cannot be replayed as ScriptCat or as another instance | See the "malicious same-user process" row |
-| A process that reaches the daemon requests a privileged action | Flat trust deliberately grants any control-token holder full read/list and the ability to *request* writes; the gate is not per-client authorization but the **per-operation human gate**: writes need browser approval and source reads need disclosure approval, both keyed by script (extension session). There is no per-client scope or request-frequency limit | Any process that obtains the control token has the same capabilities; write requests remain browser-gated unless always-allow is enabled, while browser control (tabs, windows, tab groups, reading list, bookmarks, history, recently closed, downloads, cookies, browsing data, and extensions in every paired sctl Browser instance) is not gated at all except for L2 bookmark deletion and extension uninstall, which need approval in that browser |
+| A process that reaches the daemon requests a privileged action | Flat trust deliberately grants any control-token holder full read/list and the ability to *request* writes; the gate is not per-client authorization but the **per-operation human gate**: writes need browser approval and source reads need disclosure approval, both keyed by script (extension session). There is no per-client scope or request-frequency limit | Any process that obtains the control token has the same capabilities; write requests remain browser-gated unless always-allow is enabled, while browser control (tabs, windows, tab groups, reading list, bookmarks, history, recently closed, downloads, cookies, browsing data, and extensions in every paired sctl Browser instance) and page automation (reading pages and running scripts in them) are not gated at all except for L2 bookmark deletion and extension uninstall, which need approval in that browser |
 | Write operations are abused (installing a malicious script / bulk deletion) | Two-phase confirmation plus a TOCTOU re-check at the moment of approval (staged `contentHash`, target `existingCodeHash`); calls are purely blocking, so a requester disconnect voids them. The install page's own enable toggle decides the enabled state (installs are usable immediately, like a normal install). "Always-allow" is an explicit security-downgrade switch (amber warning in the UI) | Under "always-allow" a write is no longer confirmed by a human — the user takes that risk |
 | Source code leaks | Source disclosure is gated by its own **source-read policy** (approval by default), applied to the CLI and MCP alike — the CLI is **not** exempt; reading is a privacy matter and is not covered by the write policy. Script-controlled text is always returned as structured data (`contentTrust: untrusted-user-script-source`) and must never be concatenated into a tool description | Under a "always-allow" source-read policy, reads are no longer confirmed — the user takes that risk |
 | The port's existence is found by scanning | Accepted: the extension is the client and cannot read a discovery file, so the default port 8643 has to be fixed; authentication is the backstop | The open port is visible |
@@ -76,7 +93,8 @@ them, so the extension always passes it and the partitioned login state is expos
 - **A malicious local process with the user's full privileges**: it can read `pairing.key` / `browsers.json` /
   `control.token` (all 0600) and can ptrace this user's processes. No purely local scheme can stop it; browser-side human
   approval of write operations is the only mitigation still in effect (unless the user turned on
-  "always-allow"); browser control has no such gate, so it can drive every paired browser freely.
+  "always-allow"); browser control and page automation have no such gate, so it can drive every paired browser and
+  every debuggable page in it freely.
 - **Per-client isolation**: flat trust intentionally drops per-agent tokens, scopes, and individual
   revocation. Any same-user process that holds the control token has the same capabilities (full read/list,
   request writes). Revocation collapses to per-peer switches — discarding ScriptCat's K, or forgetting a browser

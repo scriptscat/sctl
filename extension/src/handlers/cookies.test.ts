@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { HandlerRegistry } from "@/background/registry";
 import { validateCookiesListResult } from "@/protocol/generated/validators.generated";
-import { registerHandlers } from "./index";
+import { registerAllHandlers } from "./handlers.fixture";
 
 type GetAllFn = (details: chrome.cookies.GetAllDetails) => Promise<chrome.cookies.Cookie[]>;
 type SetFn = (details: chrome.cookies.SetDetails) => Promise<chrome.cookies.Cookie | null>;
@@ -48,7 +48,7 @@ describe("cookies handlers", () => {
     };
     vi.stubGlobal("chrome", { cookies });
     registry = new HandlerRegistry();
-    registerHandlers(registry);
+    registerAllHandlers(registry);
   });
 
   afterEach(() => {

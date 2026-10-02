@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>wrapped link fixture</title>
+    <style>
+      body { margin: 0; }
+      /* 等宽字体与固定宽度让链接从第一行末尾折到第二行开头:它的边界框横跨两行整个宽度,
+         中心落在两行之间、链接之外的 #middle 上。 */
+      #para { width: 200px; margin: 8px; font: 16px/24px monospace; }
+      #middle { display: inline-block; width: 120px; height: 24px; vertical-align: top; background: rgb(200, 200, 200); }
+      .cover { position: fixed; inset: 0; }
+    </style>
+  </head>
+  <body>
+    <p id="para">abc def ghi <a id="wrapped" href="#clicked">wrapped yy</a> <span id="middle"></span></p>
+    <!-- 以换行开头的链接:第一行只留下一个宽为零的片段(DOM.getContentQuads 照样报告它,getBoundingClientRect 不算它)。 -->
+    <p id="para2">abc def <a id="leading" href="#leading"><br />after break</a></p>
+    <script>
+      // 页面自己记录收到的鼠标事件,测试据此判断点击落在哪个元素上、事件是否可信。
+      window.events = [];
+      for (const type of ["click", "mouseover"]) {
+        document.addEventListener(type, (e) => window.events.push({ type: e.type, id: e.target.id, trusted: e.isTrusted }), true);
+      }
+      for (const id of ["wrapped", "leading"]) document.getElementById(id).addEventListener("click", (e) => e.preventDefault());
+    </script>
+  </body>
+</html>

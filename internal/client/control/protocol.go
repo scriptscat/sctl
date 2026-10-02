@@ -26,6 +26,7 @@ const (
 	PathStatus        = "/control/status"
 	PathBrowsers      = "/control/browsers"
 	PathBrowserForget = "/control/browsers/forget"
+	PathPage          = "/control/page"
 )
 
 // 控制 API 请求头。
@@ -49,6 +50,18 @@ type CallRequest struct {
 	// ReportPending 请 daemon 在对端报告请求进入人工审批时先写出一行 CallResult{Pending: true},
 	// 结论随后另起一行。不带时响应体只有结论一行。
 	ReportPending bool `json:"reportPending,omitempty"`
+}
+
+// PageRequest 是 /control/page 的请求体:在一个浏览器标签页上执行一次页面动作,响应体是 CallResult。
+// TabID 为 nil 时由 daemon 在命令开始时取该浏览器最后获得焦点窗口的激活标签页;Activate 先让目标成为
+// 窗口内的激活标签页(不聚焦窗口);TimeoutMs 为 0 时使用动作的默认超时。Input 是动作自己的参数。
+type PageRequest struct {
+	Action    string          `json:"action"`
+	Browser   string          `json:"browser,omitempty"`
+	TabID     *int            `json:"tabId,omitempty"`
+	Activate  bool            `json:"activate,omitempty"`
+	TimeoutMs int             `json:"timeoutMs,omitempty"`
+	Input     json.RawMessage `json:"input,omitempty"`
 }
 
 // CallResult 是 /control/call 的响应体,映射桥接的 JSON-RPC result/error。

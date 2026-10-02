@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>actions fixture</title>
+    <style>
+      body { margin: 0; font: 14px sans-serif; }
+      button, #hover-box { display: block; margin: 8px; }
+      #hover-box { width: 120px; padding: 8px; }
+      #hover-box:hover { background: rgb(255, 0, 0); }
+      .modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.3); }
+      @keyframes slide { from { transform: translateX(0); } to { transform: translateX(240px); } }
+      .sliding { animation: slide 0.6s linear 1 forwards; }
+      /* 不来回、周期不是帧间隔的整数倍:来回的动画在折返点两侧对称,负载下丢一帧时隔帧的两次测量位置相同,
+         会被误判为稳定。 */
+      .forever { animation: slide 0.37s linear infinite; }
+      #frame { margin: 40px 0 0 60px; width: 300px; height: 120px; border: 5px solid #888; }
+      .spacer { height: 3000px; }
+    </style>
+  </head>
+  <body>
+    <button type="button" id="plain">Plain</button>
+    <button type="button" id="late" disabled>Late</button>
+    <button type="button" id="hidden" style="display: none">Hidden</button>
+    <button type="button" id="mover">Mover</button>
+    <div id="hover-box">Hover me</div>
+    <div class="item">One</div>
+    <div class="item">Two</div>
+    <a id="nav" href="/actions-next.html">Next page</a>
+    <a id="hash" href="#far">Jump down</a>
+    <a id="blank" href="/actions-next.html?new" target="_blank">New tab</a>
+    <iframe id="frame" title="Same frame" src="/actions-frame.html"></iframe>
+    <div class="spacer"></div>
+    <button type="button" id="far">Far below</button>
+    <script>
+      // 页面自己记录收到的鼠标事件,测试据此判断事件是否可信、按键与修饰键是否如实送达。
+      window.events = [];
+      const record = (e) =>
+        window.events.push({
+          type: e.type,
+          id: e.target.id,
+          trusted: e.isTrusted,
+          button: e.button,
+          detail: e.detail,
+          modifiers: [e.altKey && "Alt", e.ctrlKey && "Control", e.metaKey && "Meta", e.shiftKey && "Shift"].filter(Boolean),
+        });
+      for (const type of ["click", "dblclick", "auxclick", "contextmenu", "mouseover"]) {
+        document.addEventListener(type, record, true);
+      }
+      document.addEventListener("contextmenu", (e) => e.preventDefault());
+      window.clicksOn = (id) => window.events.filter((e) => e.type === "click" && e.id === id).length;
+    </script>
+  </body>
+</html>

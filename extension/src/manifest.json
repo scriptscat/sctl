@@ -3,7 +3,7 @@
   "name": "__MSG_extName__",
   "description": "__MSG_extDescription__",
   "default_locale": "en",
-  "minimum_chrome_version": "116",
+  "minimum_chrome_version": "125",
   "permissions": [
     "tabs",
     "storage",
@@ -16,7 +16,8 @@
     "sessions",
     "downloads",
     "cookies",
-    "management"
+    "management",
+    "debugger"
   ],
   "host_permissions": ["<all_urls>"],
   "background": {

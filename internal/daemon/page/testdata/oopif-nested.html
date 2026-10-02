@@ -1,0 +1,13 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>nested</title>
+  </head>
+  <body>
+    <button type="button">Nested button</button>
+    <script>
+      window.top.postMessage("nested", "*");
+    </script>
+  </body>
+</html>

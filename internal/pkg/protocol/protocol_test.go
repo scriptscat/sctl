@@ -176,3 +176,48 @@ func TestLoadListsBrowserTargetErrorCodes(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadMarksDebuggerRelayAsInternalBrowserMethods(t *testing.T) {
+	p, err := Load()
+	if err != nil {
+		t.Fatalf("load protocol: %v", err)
+	}
+	for _, name := range []string{string(generated.MethodDebuggerSend), string(generated.MethodDebuggerDetach)} {
+		action, ok := p.Actions[name]
+		if !ok {
+			t.Errorf("%s is not a protocol action", name)
+			continue
+		}
+		if action.Peer != PeerBrowser || !action.Internal {
+			t.Errorf("%s: peer=%q internal=%v, want an internal browser method", name, action.Peer, action.Internal)
+		}
+	}
+	if p.Actions["tabs.list"].Internal {
+		t.Error("tabs.list is marked internal, but it is a public browser method")
+	}
+}
+
+func TestLoadListsPageAutomationErrorCodesForBrowser(t *testing.T) {
+	p, err := Load()
+	if err != nil {
+		t.Fatalf("load protocol: %v", err)
+	}
+	peers := map[string][]Peer{}
+	for _, code := range p.ErrorCodes {
+		peers[code.Code] = code.Peers
+	}
+	browserOnly := []string{
+		generated.ErrorCodeStaleRef, generated.ErrorCodeTimeout, generated.ErrorCodeTargetAmbiguous,
+		generated.ErrorCodePageNotAutomatable, generated.ErrorCodePageHidden,
+		generated.ErrorCodeDebuggerDetached, generated.ErrorCodeDialogOpen,
+		generated.ErrorCodeEvalError, generated.ErrorCodeNavigationFailed,
+	}
+	for _, code := range browserOnly {
+		if got := peers[code]; len(got) != 1 || got[0] != PeerBrowser {
+			t.Errorf("error code %q peers = %v, want [browser]", code, got)
+		}
+	}
+	if got := peers[generated.ErrorCodePayloadTooLarge]; len(got) != 2 || got[0] != PeerScriptCat || got[1] != PeerBrowser {
+		t.Errorf("PAYLOAD_TOO_LARGE peers = %v, want [scriptcat browser]", got)
+	}
+}
