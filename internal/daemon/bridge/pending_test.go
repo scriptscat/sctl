@@ -75,6 +75,25 @@ func TestApprovalPendingReachesTheWaitingCaller(t *testing.T) {
 		So(fired.Load(), ShouldEqual, 0)
 	})
 
+	Convey("ScriptCat 连接发来的 $/approvalPending 不触发 OnPending:protocol.json 只把它列给浏览器对端", t, func() {
+		h := startTestServer(t)
+		sc := h.connectScriptCat()
+
+		var fired atomic.Int32
+		out := h.goCall(Request{
+			Action:    "scripts.install.request",
+			Input:     json.RawMessage(`{"url":"https://example.com/x.user.js"}`),
+			OnPending: func() { fired.Add(1) },
+		})
+		req := sc.read()
+		sc.writeRequest(methodApprovalPending, "", approvalPendingParams{ID: req.ID})
+		sc.alive()
+		sc.writeResult(req.ID, json.RawMessage(`{"uuid":"u1"}`))
+		got := <-out
+		So(got.err, ShouldBeNil)
+		So(fired.Load(), ShouldEqual, 0)
+	})
+
 	Convey("对不等待人工决定的方法报 $/approvalPending 不触发 OnPending,汇总调用也不会", t, func() {
 		h := startTestServer(t)
 		keyA := h.registerBrowser(instanceA, "chrome-0123")

@@ -115,7 +115,12 @@ func (s *Server) callConn(ctx context.Context, c *conn, req Request) (Response, 
 // handleApprovalPending 把对端「请求已进入审批」的通知交给等待它的调用方。与应答一样,只认发往的那条连接,
 // 其他对端不能冒名;未知或已结束的请求、重复的通知都被忽略。不等待人工决定的方法不会进入审批,对它们的通知
 // 也被忽略:汇总调用只用于这类方法(protocolgen 保证),它的各个 callConn 并发运行,回调在那里会被并发调用。
+// protocol.json 只把这条通知列给浏览器对端:ScriptCat 的闸门不报告审批开始,它发来的同名消息不算数。
 func (s *Server) handleApprovalPending(c *conn, message Message) {
+	if c.kind != protocol.PeerBrowser {
+		s.log.Debug("ignoring an approval pending notification from a non-browser peer")
+		return
+	}
 	var params approvalPendingParams
 	if err := json.Unmarshal(message.Params, &params); err != nil || params.ID == "" {
 		s.log.Debug("invalid approval pending notification", zap.Error(err))

@@ -174,3 +174,33 @@ func TestCallReportsApprovalPending(t *testing.T) {
 		So(has, ShouldBeFalse)
 	})
 }
+
+// serveCallBody 起一个模拟控制服务,对 /control/call 原样写出 body。
+func serveCallBody(t *testing.T, body string) *Client {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return &Client{http: srv.Client(), base: srv.URL, controlToken: "t"}
+}
+
+func TestCallRejectsPendingLinesOutsideItsContract(t *testing.T) {
+	Convey("daemon 写出调用方没要的或重复的 pending 行时,Call 报错而不是当作结论或再次回调", t, func() {
+		Convey("没带 onPending 却收到 pending 行", func() {
+			c := serveCallBody(t, `{"ok":false,"pending":true}`+"\n"+`{"ok":true,"result":{}}`+"\n")
+			_, err := c.Call(context.Background(), "bookmarks.remove", "", json.RawMessage(`{"ids":["14"]}`), nil)
+			So(err, ShouldNotBeNil)
+			So(err.Error(), ShouldContainSubstring, "unrequested approval pending line")
+		})
+
+		Convey("同一次调用收到第二行 pending:onPending 至多被调用一次", func() {
+			c := serveCallBody(t, `{"ok":false,"pending":true}`+"\n"+`{"ok":false,"pending":true}`+"\n"+`{"ok":true,"result":{}}`+"\n")
+			calls := 0
+			_, err := c.Call(context.Background(), "bookmarks.remove", "", json.RawMessage(`{"ids":["14"]}`), func() { calls++ })
+			So(err, ShouldNotBeNil)
+			So(err.Error(), ShouldContainSubstring, "duplicate approval pending line")
+			So(calls, ShouldEqual, 1)
+		})
+	})
+}

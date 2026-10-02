@@ -499,7 +499,7 @@ The sctl Browser extension gates its L2 methods the same way, in its own approva
 
    A request that fails its checks in step 1, or that the daemon cancelled before it was queued, gets no such
    notification. The daemon passes it to the waiting requester at most once, and ignores it for an unknown request,
-   one sent on another connection, or a method that does not wait for a human. Requesters tell the user they are waiting only after it arrives: the CLI prints
+   one sent on another connection or by a ScriptCat connection, or a method that does not wait for a human. Requesters tell the user they are waiting only after it arrives: the CLI prints
    its waiting line and `sctl mcp` starts sending progress then. Only the sctl Browser extension sends it
    (`sessionMethods` lists it for the browser peer alone); for ScriptCat's gates, which send nothing similar,
    requesters say they are waiting as soon as they call.

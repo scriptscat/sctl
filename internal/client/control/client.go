@@ -121,7 +121,7 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body []byt
 
 // Call 转发一次 bridge action 调用并阻塞至应答/作废。browser 是浏览器方法的可选目标
 // (名称或实例 ID 前缀),空串表示由 daemon 按在线实例选择;scripts.* 必须传空串。
-// onPending 非 nil 时请 daemon 报告请求进入人工审批,并在那时(结论到达之前)调用它;审批前就得出结论的请求
+// onPending 非 nil 时请 daemon 报告请求进入人工审批,并在那时(结论到达之前)调用它,至多一次;审批前就得出结论的请求
 // 不会回调。ctx 取消(如 CLI Ctrl-C)会切断连接,daemon 侧据此发 $/cancelRequest 作废该操作。
 func (c *Client) Call(ctx context.Context, action, browser string, input json.RawMessage, onPending func()) (CallResult, error) {
 	if input == nil {
@@ -144,6 +144,7 @@ func (c *Client) Call(ctx context.Context, action, browser string, input json.Ra
 		return CallResult{}, statusError(resp)
 	}
 	decoder := json.NewDecoder(resp.Body)
+	pending := false
 	for {
 		var res CallResult
 		if err := decoder.Decode(&res); err != nil {
@@ -155,6 +156,11 @@ func (c *Client) Call(ctx context.Context, action, browser string, input json.Ra
 		if onPending == nil {
 			return CallResult{}, errors.New("decode control response: unrequested approval pending line")
 		}
+		// daemon 对每个请求至多写一行 pending;回调方据此只启动一次提示(MCP 的 progress ticker 只停最后一个)。
+		if pending {
+			return CallResult{}, errors.New("decode control response: duplicate approval pending line")
+		}
+		pending = true
 		onPending()
 	}
 }
