@@ -126,18 +126,43 @@ var macEditingCommands = map[string][]string{
 	"Shift+Meta+KeyZ": {"redo"},
 }
 
-// macCommands 返回 macOS 上按下 c 的主键时要带上的编辑命令。
+// macCommands 返回 macOS 上按下 c 的主键时要带上的编辑命令;c 里的 ControlOrMeta 须已解析。
 func (c combo) macCommands() []string {
 	if c.key == nil {
 		return nil
 	}
 	var parts []string
 	for _, name := range []string{"Shift", "Control", "Alt", "Meta"} {
-		if slices.Contains(c.modifiers, name) {
+		if c.hasModifier(name) {
 			parts = append(parts, name)
 		}
 	}
 	return macEditingCommands[strings.Join(append(parts, c.key.code), "+")]
+}
+
+// forBrowser 按标签页所在浏览器的平台准备 c:ControlOrMeta 在 macOS 上换成 Meta,其他平台换成 Control
+// (同 Playwright,但看浏览器而不是 sctl 所在的平台);浏览器在 macOS 上时还返回主键按下时要带的编辑命令。
+// 只有需要时才问平台。
+func (c combo) forBrowser(ctx context.Context, t *Tab) (combo, []string, error) {
+	smart := slices.Index(c.modifiers, controlOrMeta)
+	if smart < 0 && len(c.macCommands()) == 0 {
+		return c, nil, nil
+	}
+	onMac, err := t.browserOnMac(ctx)
+	if err != nil {
+		return combo{}, nil, err
+	}
+	if smart >= 0 {
+		c.modifiers = slices.Clone(c.modifiers)
+		c.modifiers[smart] = "Control"
+		if onMac {
+			c.modifiers[smart] = "Meta"
+		}
+	}
+	if !onMac {
+		return c, nil, nil
+	}
+	return c, c.macCommands(), nil
 }
 
 // browserOnMac 报告标签页所在的浏览器是否运行在 macOS 上,一次附加内只问一次。平台取自页面的

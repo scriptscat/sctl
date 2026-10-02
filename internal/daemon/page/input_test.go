@@ -69,8 +69,45 @@ func TestParseCombo(t *testing.T) {
 			So(c.key, ShouldBeNil)
 		})
 
+		Convey("Playwright 的按键码写法:KeyA、Digit1、标点键码,Shift 时取上档字符", func() {
+			c, err := parseCombo("KeyA")
+			So(err, ShouldBeNil)
+			So(c.key.key, ShouldEqual, "a")
+			So(c.key.code, ShouldEqual, "KeyA")
+			So(c.key.text, ShouldEqual, "a")
+
+			c, err = parseCombo("Shift+Digit1")
+			So(err, ShouldBeNil)
+			So(c.key.key, ShouldEqual, "!")
+			So(c.key.code, ShouldEqual, "Digit1")
+
+			c, err = parseCombo("Control+Minus")
+			So(err, ShouldBeNil)
+			So(c.key.key, ShouldEqual, "-")
+			So(c.key.text, ShouldEqual, "")
+		})
+
+		Convey("左右侧修饰键与 ControlOrMeta 是修饰键", func() {
+			c, err := parseCombo("ShiftLeft+KeyA")
+			So(err, ShouldBeNil)
+			So(c.modifiers, ShouldResemble, []string{"ShiftLeft"})
+			So(c.key.key, ShouldEqual, "A")
+
+			c, err = parseCombo("ControlRight")
+			So(err, ShouldBeNil)
+			So(c.modifiers, ShouldResemble, []string{"ControlRight"})
+			So(c.key, ShouldBeNil)
+
+			c, err = parseCombo("ControlOrMeta+A")
+			So(err, ShouldBeNil)
+			So(c.modifiers, ShouldResemble, []string{"ControlOrMeta"})
+		})
+
 		Convey("未知键名与畸形组合是 INVALID_REQUEST", func() {
-			for _, in := range []string{"", "Foo", "enter", "Control+", "+A", "Hyper+A", "Control+Control+A", "Shift+Shift", "Enter+A", "ab", "é"} {
+			for _, in := range []string{
+				"", "Foo", "enter", "Control+", "+A", "Hyper+A", "Control+Control+A", "Shift+Shift", "Enter+A", "ab", "é",
+				"Shift+ShiftLeft+A", "Control+ControlOrMeta+A", "Meta+ControlOrMeta+A", "Keya", "Digit10",
+			} {
 				_, err := parseCombo(in)
 				So(errorCode(err), ShouldEqual, generated.ErrorCodeInvalidRequest)
 			}
@@ -240,6 +277,25 @@ func TestPressEditingCommandsOnMac(t *testing.T) {
 				So(err, ShouldBeNil)
 			}
 			So(keyDowns(cdp), ShouldResemble, []string{"Meta", "A", "Control", "A", "Shift", "ArrowLeft"})
+		}
+	})
+}
+
+func TestPressControlOrMetaFollowsTheBrowserPlatform(t *testing.T) {
+	Convey("ControlOrMeta 按浏览器所在平台解析:macOS 上是 Meta(并带编辑命令),其他平台是 Control", t, func() {
+		for platform, want := range map[string][]string{
+			"MacIntel":     {"Meta", "a:selectAll", "Meta", "Shift", "Z:redo"},
+			"Win32":        {"Control", "a", "Control", "Shift", "Z"},
+			"Linux x86_64": {"Control", "a", "Control", "Shift", "Z"},
+		} {
+			cdp := newFakeCDP()
+			cdp.setSend((&platformPage{renderingPage: renderingPage{rendering: true}, platform: platform}).send)
+			m := newTestManager(cdp, &fakeClock{})
+			for _, key := range []string{"ControlOrMeta+KeyA", "ControlOrMeta+Shift+Z"} {
+				_, err := doAction(m, "press", `{"key":"`+key+`"}`, time.Minute)
+				So(err, ShouldBeNil)
+			}
+			So(keyDowns(cdp), ShouldResemble, want)
 		}
 	})
 }

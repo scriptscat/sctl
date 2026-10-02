@@ -144,7 +144,8 @@ ScriptCat 中批准、拒绝或关闭确认流程；浏览器控制命令按设�
 `upload` 要求元素是 file input(已挂载、可用,可以是隐藏的);每个文件都必须存在且可读,否则返回 `INVALID_REQUEST`,给多个文件时 input 需要有 `multiple` 属性。
 带目标的 `scroll` 只要求元素已挂载;不带目标时在视口中心用鼠标滚轮按 `--dx`、`--dy` 像素滚动(负数向左、向上),二者至少给一个。
 `type` 与 `press` 作用于当前焦点元素:`type` 对每个字符发出可信的按键事件,换行按 `Enter`,美式键盘上没有对应键的字符直接插入;`press` 发出可信的
-`keydown` 与 `keyup`,修饰键 `Alt`、`Control`、`Meta`、`Shift` 用 `+` 连接。浏览器运行在 macOS 上时(按浏览器所在平台判断,而不是运行 `sctl serve` 的机器),
+`keydown` 与 `keyup`,修饰键 `Alt`、`Control`、`Meta`、`Shift`(或 `ShiftLeft` 等区分左右的写法)用 `+` 连接,也接受 `KeyA`、`Digit1`
+这类 Playwright 键码;`ControlOrMeta` 在浏览器运行于 macOS 时是 `Meta`,其他平台是 `Control`。浏览器运行在 macOS 上时(按浏览器所在平台判断,而不是运行 `sctl serve` 的机器),
 `Meta+A`、`Meta+C`、`Meta+V`、`Meta+X`、`Meta+Z` 以及 `Alt`/`Meta` 加方向键等编辑快捷键还会像手动按下时一样执行对应的编辑操作。这些命令的摘要与 click 相同。
 
 `sctl page goto <url>`、`back`、`forward`、`reload` 让标签页导航,并按 `--wait` 等待:`load`(默认)、`domcontentloaded`,或 `networkidle`

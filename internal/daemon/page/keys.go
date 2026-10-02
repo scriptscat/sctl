@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -43,12 +44,26 @@ var namedKeys = func() map[string]keySpec {
 	return keys
 }()
 
-// modifierKeys 是修饰键自身作为按键时的参数。
-var modifierKeys = map[string]keySpec{
-	"Alt":     {key: "Alt", code: "AltLeft", vk: 18},
-	"Control": {key: "Control", code: "ControlLeft", vk: 17},
-	"Meta":    {key: "Meta", code: "MetaLeft", vk: 91},
-	"Shift":   {key: "Shift", code: "ShiftLeft", vk: 16},
+// modifierKeys 是修饰键自身作为按键时的参数,键是 Playwright 的写法:Shift 等不分左右的名称按左侧的键,
+// ShiftLeft、ShiftRight 等指定一侧。keySpec.key 是修饰键的名称(modifierBits 的键)。
+var modifierKeys = func() map[string]keySpec {
+	keys := map[string]keySpec{}
+	for name, vk := range map[string][2]int{"Alt": {18, 18}, "Control": {17, 17}, "Meta": {91, 92}, "Shift": {16, 16}} {
+		left := keySpec{key: name, code: name + "Left", vk: vk[0]}
+		keys[name], keys[name+"Left"] = left, left
+		keys[name+"Right"] = keySpec{key: name, code: name + "Right", vk: vk[1]}
+	}
+	return keys
+}()
+
+// controlOrMeta 是 Playwright 的跨平台修饰键:浏览器在 macOS 上时是 Meta,其他平台是 Control。它在按下时
+// 才按浏览器的平台解析(combo.forBrowser)。
+const controlOrMeta = "ControlOrMeta"
+
+// isModifier 报告 name 是不是修饰键的写法。
+func isModifier(name string) bool {
+	_, ok := modifierKeys[name]
+	return ok || name == controlOrMeta
 }
 
 // charKey 是美式键盘上产生某个字符的物理键。
@@ -96,6 +111,17 @@ var usLayout, shiftOf = func() (map[rune]charKey, map[rune]rune) {
 	return layout, shift
 }()
 
+// codeKeys 是 Playwright 按物理键码写的可打印键(KeyA、Digit1、Minus 等)到它未按 Shift 时的字符。
+var codeKeys = func() map[string]rune {
+	keys := map[string]rune{}
+	for r, ck := range usLayout {
+		if !ck.shifted {
+			keys[ck.code] = r
+		}
+	}
+	return keys
+}()
+
 // charSpec 返回按字符 r 的参数;r 不在美式键盘上时 ok 为 false。holdShift 表示按键时按着 Shift,
 // 此时字符取它的 Shift 形态(Shift+a 产生 "A")。
 func charSpec(r rune, holdShift bool) (keySpec, bool) {
@@ -111,14 +137,21 @@ func charSpec(r rune, holdShift bool) (keySpec, bool) {
 	return keySpec{key: string(r), code: ck.code, vk: ck.vk, text: string(r)}, true
 }
 
-// combo 是解析后的按键组合:依次按下的修饰键与最后的主键。只按修饰键(如 Shift)时没有主键。
+// combo 是解析后的按键组合:依次按下的修饰键(按输入的写法,可以是 ControlOrMeta)与最后的主键。
+// 只按修饰键(如 Shift)时没有主键。
 type combo struct {
 	modifiers []string
 	key       *keySpec
 }
 
-// parseCombo 解析 Playwright 写法的按键:`Enter`、`a`、`Control+A`、`Shift+Tab`、`Control++`。
-// 修饰键是 Alt、Control、Meta、Shift;主键是命名键(区分大小写)、单个字符,或修饰键自身。
+// hasModifier 报告 c 按着名为 name(Alt、Control、Meta、Shift)的修饰键;ControlOrMeta 解析前不算。
+func (c combo) hasModifier(name string) bool {
+	return slices.ContainsFunc(c.modifiers, func(m string) bool { return modifierKeys[m].key == name })
+}
+
+// parseCombo 解析 Playwright 写法的按键:`Enter`、`a`、`KeyA`、`Control+A`、`Shift+Tab`、`Control++`、
+// `ControlOrMeta+A`。修饰键是 Alt、Control、Meta、Shift、它们的 Left/Right 写法与 ControlOrMeta;主键是
+// 命名键(区分大小写)、可打印键的键码、单个字符,或修饰键自身。
 func parseCombo(input string) (combo, error) {
 	var names []string
 	key := input
@@ -133,29 +166,38 @@ func parseCombo(input string) (combo, error) {
 		names = names[:len(names)-1]
 	}
 	modifierOnly := false
-	if _, ok := modifierBits[key]; ok {
+	if isModifier(key) {
 		names, key, modifierOnly = append(names, key), "", true
 	}
 	var c combo
-	seen := map[string]bool{}
+	// held 按修饰键的名称记录已给出的修饰键;ControlOrMeta 同时占用 Control 与 Meta。
+	held := map[string]bool{}
 	for _, name := range names {
-		if _, ok := modifierBits[name]; !ok {
-			return combo{}, invalidRequest(fmt.Sprintf("invalid key %q: %q is not a modifier; use Alt, Control, Meta or Shift before the last +", input, name))
+		if !isModifier(name) {
+			return combo{}, invalidRequest(fmt.Sprintf("invalid key %q: %q is not a modifier; use Alt, Control, Meta, Shift (or their Left and Right forms such as ShiftLeft) or ControlOrMeta before the last +", input, name))
 		}
-		if seen[name] {
-			return combo{}, invalidRequest(fmt.Sprintf("invalid key %q: modifier %s is given twice", input, name))
+		covers := []string{modifierKeys[name].key}
+		if name == controlOrMeta {
+			covers = []string{"Control", "Meta"}
 		}
-		seen[name] = true
+		for _, m := range covers {
+			if held[m] {
+				return combo{}, invalidRequest(fmt.Sprintf("invalid key %q: modifier %s is given twice", input, m))
+			}
+		}
+		for _, m := range covers {
+			held[m] = true
+		}
 		c.modifiers = append(c.modifiers, name)
 	}
 	if modifierOnly {
 		return c, nil
 	}
-	spec, err := resolveKey(input, key, seen["Shift"])
+	spec, err := resolveKey(input, key, held["Shift"])
 	if err != nil {
 		return combo{}, err
 	}
-	if seen["Control"] || seen["Alt"] || seen["Meta"] {
+	if held["Control"] || held["Alt"] || held["Meta"] {
 		// 带 Control、Alt、Meta 的组合是快捷键,不是输入文字。
 		spec.text = ""
 	}
@@ -167,12 +209,16 @@ func resolveKey(input, key string, holdShift bool) (keySpec, error) {
 	if spec, ok := namedKeys[key]; ok {
 		return spec, nil
 	}
+	if r, ok := codeKeys[key]; ok {
+		spec, _ := charSpec(r, holdShift)
+		return spec, nil
+	}
 	if r, size := utf8.DecodeRuneInString(key); key != "" && size == len(key) {
 		if spec, ok := charSpec(r, holdShift); ok {
 			return spec, nil
 		}
 	}
-	return keySpec{}, invalidRequest(fmt.Sprintf("invalid key %q: unknown key %q; use a name such as Enter, Tab, Escape, ArrowDown, F5, or one character, optionally with Alt, Control, Meta, Shift and + before it (Control+A)", input, key))
+	return keySpec{}, invalidRequest(fmt.Sprintf("invalid key %q: unknown key %q; use a name such as Enter, Tab, Escape, ArrowDown, F5, a key code such as KeyA or Digit1, or one character, optionally with modifiers such as Control, Shift or ControlOrMeta and + before it (Control+A)", input, key))
 }
 
 func (k keySpec) params(kind string, modifiers int) map[string]any {
@@ -191,24 +237,19 @@ func (k keySpec) params(kind string, modifiers int) map[string]any {
 }
 
 // pressCombo 按下修饰键与主键,再按相反顺序松开,全部是可信的键盘事件。修饰键按下时事件的
-// modifiers 已含它自己,松开时不含。浏览器在 macOS 上时,主键的按下事件带上快捷键对应的编辑命令。
+// modifiers 已含它自己,松开时不含。按浏览器的平台解析 ControlOrMeta;浏览器在 macOS 上时,主键的按下
+// 事件带上快捷键对应的编辑命令。
 func pressCombo(ctx context.Context, t *Tab, c combo) error {
-	var commands []string
-	if mapped := c.macCommands(); len(mapped) > 0 {
-		onMac, err := t.browserOnMac(ctx)
-		if err != nil {
-			return err
-		}
-		if onMac {
-			commands = mapped
-		}
+	c, commands, err := c.forBrowser(ctx, t)
+	if err != nil {
+		return err
 	}
 	send := func(k keySpec, kind string, mods int) error {
 		return t.send(ctx, "Input.dispatchKeyEvent", k.params(kind, mods), nil)
 	}
 	mods := 0
 	for _, name := range c.modifiers {
-		mods |= modifierBits[name]
+		mods |= modifierBits[modifierKeys[name].key]
 		if err := send(modifierKeys[name], "keyDown", mods); err != nil {
 			return err
 		}
@@ -226,7 +267,7 @@ func pressCombo(ctx context.Context, t *Tab, c combo) error {
 		}
 	}
 	for i := len(c.modifiers) - 1; i >= 0; i-- {
-		mods &^= modifierBits[c.modifiers[i]]
+		mods &^= modifierBits[modifierKeys[c.modifiers[i]].key]
 		if err := send(modifierKeys[c.modifiers[i]], "keyUp", mods); err != nil {
 			return err
 		}

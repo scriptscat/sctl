@@ -90,8 +90,9 @@ func newPagePressCmd() *cobra.Command {
 		Short: "Press a key or key combination, such as Enter, Control+A or Shift+Tab",
 		Long: "Press a key or key combination in the element that currently has focus, with trusted keydown and keyup events.\n" +
 			"The syntax is Playwright's: a key name such as Enter, Tab, Escape, Backspace, Delete, ArrowDown, Home, End,\n" +
-			"PageDown, F5 or a single character, optionally after modifiers Alt, Control, Meta, Shift joined by +\n" +
-			"(Control+A, Shift+Tab, Meta+V).",
+			"PageDown, F5, a key code such as KeyA or Digit1, or a single character, optionally after modifiers Alt,\n" +
+			"Control, Meta, Shift (or ShiftLeft and the other Left/Right forms) joined by + (Control+A, Shift+Tab, Meta+V).\n" +
+			"ControlOrMeta is Meta when the browser runs on macOS and Control elsewhere (ControlOrMeta+A selects all).",
 		Args: oneArg("press", "the key"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return dispatchPage(cmd, "press", mustInput(map[string]any{"key": args[0]}), printActionResult)

@@ -212,7 +212,7 @@ approval step (see [threat-model.md](./threat-model.md)).
 The page tools `page_snapshot`, `page_click`, `page_hover`, `page_fill`, `page_type`, `page_press`, `page_select`,
 `page_upload`, `page_scroll`, `page_navigate`, `page_wait`, `page_screenshot`, `page_eval`, `page_dialog`, and `page_detach` work the same way and
 also run without approval. Besides `browser`, each takes an optional `tabId`; without it, the tool acts on the active tab of the browser's
-last-focused window, fixed when the call starts, and every result reports the `tabId` it acted on. All but `page_snapshot` and `page_detach` also take `activate`, which makes the tab active in its window first without
+last-focused window, fixed when the call starts, and every result reports the `tabId` it acted on. All but `page_detach` also take `activate`, which makes the tab active in its window first without
 focusing the window, and all take `timeoutMs` (default 10000; 30000 for `page_navigate` and `page_screenshot`). Page tools run in background tabs and never switch tabs or focus a window. The
 first page tool call on a tab attaches the debugger and shows the infobar described in step 4 until the tab has
 been idle for 5 minutes or `page_detach` detaches it; while attached, the page behaves as if it were visible and
@@ -265,8 +265,9 @@ a relative path, or a file that is missing, unreadable, or not a regular file, r
 files need the `multiple` attribute. `page_scroll` scrolls a target into view, or, without a target, the viewport by
 `dx` and `dy` pixels with the mouse wheel at its center; a target together with `dx`/`dy`, or neither, returns
 `INVALID_REQUEST`. `page_type` (`text`) and `page_press` (`key`, Playwright syntax such as `Enter`, `Control+A`,
-`Shift+Tab`, `Meta+V`) act on the focused element with trusted keyboard events; an unknown key returns
-`INVALID_REQUEST`. When the browser runs on macOS (the browser's platform counts, not the daemon's), editing
+`Shift+Tab`, `Meta+V`, key codes such as `KeyA` and `Digit1`, and `Left`/`Right` modifier forms such as `ShiftLeft`)
+act on the focused element with trusted keyboard events; an unknown key returns `INVALID_REQUEST`. `ControlOrMeta`
+is `Meta` when the browser runs on macOS and `Control` elsewhere. When the browser runs on macOS (the browser's platform counts, not the daemon's), editing
 shortcuts such as `Meta+A`, `Meta+C`, `Meta+V`, `Meta+X`, `Meta+Z`, and `Alt`/`Meta` arrow-key combinations also
 perform their editing action, as they do when typed. All of them return the same fields as `page_click`, `newTabId` included.
 

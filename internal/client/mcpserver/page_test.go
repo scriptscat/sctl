@@ -114,6 +114,15 @@ func TestPageToolsForwardToThePageEndpoint(t *testing.T) {
 			So(string(req.Input), ShouldEqual, `{"root":"e5"}`)
 		})
 
+		Convey("page_snapshot 与其他动作一样接受 activate,并作为请求字段转发", func() {
+			_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "page_snapshot", Arguments: map[string]any{
+				"activate": true,
+			}})
+			So(err, ShouldBeNil)
+			So(caller.pages[0].Activate, ShouldBeTrue)
+			So(string(caller.pages[0].Input), ShouldEqual, `{}`)
+		})
+
 		Convey("page_snapshot 的参数都是可选的", func() {
 			_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "page_snapshot", Arguments: map[string]any{}})
 			So(err, ShouldBeNil)

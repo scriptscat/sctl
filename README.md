@@ -171,7 +171,8 @@ element attached; without one it scrolls the viewport with the mouse wheel at it
 (negative scrolls left and up) and needs one of them. `type` and `press` act on whatever has focus: `type` sends a
 trusted key event for each character, a newline as `Enter`, and inserts characters that have no US-keyboard key
 directly; `press` sends trusted `keydown` and `keyup` events, with modifiers `Alt`, `Control`, `Meta`, and `Shift`
-joined by `+`. When the browser runs on macOS (the browser's platform counts, not that of the machine running
+(or `Left`/`Right` forms such as `ShiftLeft`) joined by `+`, and also takes Playwright key codes such as `KeyA` and
+`Digit1`; `ControlOrMeta` is `Meta` when the browser runs on macOS and `Control` elsewhere. When the browser runs on macOS (the browser's platform counts, not that of the machine running
 `sctl serve`), editing shortcuts such as `Meta+A`, `Meta+C`, `Meta+V`, `Meta+X`, `Meta+Z`, and `Alt`/`Meta` arrow-key
 combinations also perform their editing action, as they do when typed. These commands print the same one-line summary
 as click.
