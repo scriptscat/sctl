@@ -42,7 +42,7 @@ func TestDialogsInChrome(t *testing.T) {
 			So(codeOf(err), ShouldEqual, generated.ErrorCodeNotFound)
 		})
 
-		Convey("alert:点击立即返回 DIALOG_OPEN,其他命令被拒,截图可用,accept 后页面继续", func() {
+		Convey("alert:点击立即返回 DIALOG_OPEN,其他命令与截图都被拒,accept 后页面继续", func() {
 			err := clickButton("alert")
 			So(codeOf(err), ShouldEqual, generated.ErrorCodeDialogOpen)
 			So(err.Error(), ShouldContainSubstring, "alert")
@@ -53,13 +53,12 @@ func TestDialogsInChrome(t *testing.T) {
 			_, err = act(m, tab, "snapshot", map[string]any{}, promptly)
 			So(codeOf(err), ShouldEqual, generated.ErrorCodeDialogOpen)
 
-			// 截图不被 DIALOG_OPEN 拒绝而是真的去截:headless Chrome 的渲染进程被弹框卡住时不出图,
-			// 此时报告的是"没有图像"的 DIALOG_OPEN(而不是 PAGE_HIDDEN),有图像时则成功。
+			// 截图和其他命令一样立即被拒:弹框卡住渲染,等它超时只会白等 15 秒。
+			started := time.Now()
 			_, _, err = takeShot(m, tab, map[string]any{})
-			if err != nil {
-				So(codeOf(err), ShouldEqual, generated.ErrorCodeDialogOpen)
-				So(err.Error(), ShouldContainSubstring, "no image")
-			}
+			So(codeOf(err), ShouldEqual, generated.ErrorCodeDialogOpen)
+			So(err.Error(), ShouldContainSubstring, "alert")
+			So(time.Since(started), ShouldBeLessThan, 2*time.Second)
 
 			raw, err := handle(map[string]any{"action": "accept"})
 			So(err, ShouldBeNil)

@@ -227,14 +227,14 @@ one from another tab, returns `STALE_REF`. A snapshot over 1 MiB, or of a page w
 one protocol frame (4 MiB), returns `PAYLOAD_TOO_LARGE`; pass `root` to narrow it, which reads only that subtree. Iframes, including cross-origin and nested ones, are expanded under their iframe node; one that
 cannot be attached shows `[unavailable]`.
 
-While a JS dialog (alert, confirm, prompt, beforeunload) is open in a tab, every page tool except `page_dialog`,
-`page_detach` and `page_screenshot` returns `DIALOG_OPEN`, whose message names the dialog type and its text
+While a JS dialog (alert, confirm, prompt, beforeunload) is open in a tab, every page tool except `page_dialog`
+and `page_detach` returns `DIALOG_OPEN`, whose message names the dialog type and its text
 (untrusted page content). Dialogs are never handled automatically: `page_dialog` takes `action` (`accept` or
 `dismiss`) and an optional `text` for a prompt, returns `tabId`, `dialogType`, and the page's `url`, `title`, and
 `navigated` after handling it, and returns `NOT_FOUND` when no dialog is open. A tool call that is running
 when a dialog opens, such as a click that triggers an `alert`, returns `DIALOG_OPEN` at once and leaves the dialog open; the
-action may already have taken effect. `page_screenshot` is still attempted while a dialog is open, but a page blocked by the dialog
-may not render, and then it returns `DIALOG_OPEN`.
+action may already have taken effect. `page_screenshot` is included: a dialog blocks page rendering, so no image can be taken while one is open and it returns
+`DIALOG_OPEN` at once, including a screenshot already running when the dialog opens.
 
 `page_eval` takes an optional `ref` from the tab's latest snapshot. With it, `expression` must be a function that
 receives the element, such as `el => el.textContent`, and it runs in the element's own frame, so elements inside

@@ -61,29 +61,7 @@ func (in *screenshotInput) validate() error {
 	return nil
 }
 
-// runScreenshot 在弹框打开期间也会尝试截图(spec 允许),但渲染进程被弹框卡住时 Chrome 连最初的
-// Page.getFrameTree 都不会回应,所以这时把整个动作限制在 screenshotTimeout 内,超时报告 DIALOG_OPEN。
 func runScreenshot(ctx context.Context, t *Tab, input json.RawMessage) (any, error) {
-	d := t.dialog.current()
-	if d == nil {
-		return takeScreenshot(ctx, t, input)
-	}
-	bounded, cancel := context.WithTimeout(ctx, screenshotTimeout)
-	defer cancel()
-	res, err := takeScreenshot(bounded, t, input)
-	if err != nil && ctx.Err() == nil && bounded.Err() != nil {
-		return nil, noImageDialogError(t.id, *d)
-	}
-	return res, err
-}
-
-func noImageDialogError(tabID int, d dialogInfo) *Error {
-	e := dialogOpenError(tabID, d)
-	e.Message = fmt.Sprintf("tab %d produced no image because a JS dialog blocks the page: ", tabID) + e.Message
-	return e
-}
-
-func takeScreenshot(ctx context.Context, t *Tab, input json.RawMessage) (any, error) {
 	var in screenshotInput
 	if err := decodeInput(input, &in); err != nil {
 		return nil, err
@@ -257,10 +235,6 @@ func capture(ctx context.Context, t *Tab, params map[string]any) (string, error)
 	case err == nil && res.Data != "":
 		return res.Data, nil
 	case err == nil, ctx.Err() == nil && wait.Err() != nil:
-		// 弹框卡住渲染进程时截图不会返回;这不是标签页被隐藏,--activate 帮不上忙。
-		if d := t.dialog.current(); d != nil {
-			return "", noImageDialogError(t.id, *d)
-		}
 		return "", &Error{
 			Code: generated.ErrorCodePageHidden,
 			Message: fmt.Sprintf("tab %d produced no image (no screenshot within %s), so a blank picture is not returned; retry with --activate",

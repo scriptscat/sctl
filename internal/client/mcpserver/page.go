@@ -235,7 +235,7 @@ var pageTools = []pageToolDef{
 		action: "dialog",
 		name:   "page_dialog",
 		description: "Accept or dismiss the JS dialog (alert, confirm, prompt or beforeunload) that is open in a tab. While a dialog is open " +
-			"every other page command except page_detach and page_screenshot returns DIALOG_OPEN, naming the dialog type and its text, " +
+			"every other page command except page_detach returns DIALOG_OPEN, naming the dialog type and its text, " +
 			"and a command that was running when the dialog opened, such as a click that triggers an alert, returns DIALOG_OPEN at once " +
 			"(it may already have taken effect). Dialogs are never handled automatically. text is the input of a prompt and only applies " +
 			"to accept. With no open dialog the call returns NOT_FOUND. The result reports tabId, the dialog type, and the page's url, " +

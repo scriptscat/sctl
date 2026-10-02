@@ -132,12 +132,12 @@ command on a tab attaches the debugger, which shows the debugging infobar until 
 `--timeout` overrides the default 10s limit (30s for navigation and screenshots), and `-o json` prints the full result. A page command exits with 2
 when the debugger detaches while it runs (for example, the infobar was dismissed) and with 3 on other errors.
 
-While a JS dialog is open in a tab, every page command except `sctl page dialog`, `detach` and `screenshot` fails with
+While a JS dialog is open in a tab, every page command except `sctl page dialog` and `detach` fails with
 `DIALOG_OPEN` (exit 3), naming the dialog type and its text (page-controlled content). Dialogs are never handled
 automatically: handle one with `sctl page dialog accept` or `dismiss`, which fails with `NOT_FOUND` when none is
 open. A command already running when a dialog opens, such as a click that triggers an `alert`, returns `DIALOG_OPEN` at
-once instead of waiting for its timeout; the dialog stays open and the action may already have taken effect. A screenshot
-is still attempted while a dialog is open, but a page blocked by the dialog may not render it, and then it fails with `DIALOG_OPEN`.
+once instead of waiting for its timeout; the dialog stays open and the action may already have taken effect. This includes
+`screenshot`, since a dialog blocks page rendering and no image can be taken while it is open.
 
 `sctl page snapshot` prints one line per visible node, indented by level: `- role "name" [states] [ref=eN]`, with
 the current value of form controls after a colon, link URLs in `/url:` child lines, and plain text in `text:`

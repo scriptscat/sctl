@@ -100,7 +100,7 @@ type action struct {
 	browser browserHandler
 	// timeout 是动作自己的默认超时,0 表示 defaultTimeout。
 	timeout time.Duration
-	// dialogSafe 表示动作在 JS 弹框打开时仍可执行(处理弹框本身与截图),它不会被弹框拒绝或中断。
+	// dialogSafe 表示动作在 JS 弹框打开时仍可执行(只有处理弹框本身),它不会被弹框拒绝或中断。
 	dialogSafe bool
 }
 
@@ -194,7 +194,7 @@ func NewManager(cdp CDP, log *zap.Logger) *Manager {
 	m.register("select", runSelect)
 	m.register("upload", runUpload)
 	m.register("scroll", runScroll)
-	m.addAction("screenshot", action{tab: runScreenshot, timeout: screenshotActionTimeout, dialogSafe: true})
+	m.addAction("screenshot", action{tab: runScreenshot, timeout: screenshotActionTimeout})
 	m.addAction("dialog", action{tab: runDialog, dialogSafe: true})
 	m.addAction("navigate", action{tab: runNavigate, timeout: navigationTimeout})
 	m.register("wait", runWait)
