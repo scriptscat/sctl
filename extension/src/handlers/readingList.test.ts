@@ -72,8 +72,8 @@ describe("reading list handlers", () => {
     it("lists entries newest first with page-controlled titles untouched and reports whether more remain", async () => {
       readingList.query.mockImplementation(
         listing([
-          entry("https://old.example/", 100, { title: "<b>old</b>", hasBeenRead: true }),
-          entry("https://new.example/", 300),
+          entry("https://old.example/", 100, { hasBeenRead: true }),
+          entry("https://new.example/", 300, { title: "<b>new</b>" }),
           entry("https://mid.example/", 200),
         ]),
       );
@@ -89,7 +89,7 @@ describe("reading list handlers", () => {
           entries: [
             {
               url: "https://new.example/",
-              title: "title of https://new.example/",
+              title: "<b>new</b>",
               read: false,
               createdAt: 300,
               updatedAt: 301,

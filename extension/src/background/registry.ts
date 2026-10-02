@@ -36,12 +36,9 @@ export class HandlerRegistry {
   private readonly handlers = new Map<RpcMethod, (params: unknown) => Promise<unknown>>();
   private readonly approvals = new Map<ApprovalKind, ApprovalHandler<ApprovalKind>>();
 
-  // 级别默认取自生成的协议；测试注入它，才能在还没有 L1 方法的协议上驱动确认检查。
-  constructor(private readonly levelOf: (method: RpcMethod) => MethodLevel = (method) => RPC_METHODS[method].level) {}
-
   register<M extends RpcMethod>(method: M, handler: RpcHandler<M>): void {
     this.requireUnregistered(method);
-    if (this.levelOf(method) === "L2") {
+    if (levelOf(method) === "L2") {
       throw new Error(`${method} is L2 and must be registered with registerApproval`);
     }
     this.handlers.set(method, handler as (params: unknown) => Promise<unknown>);
@@ -50,7 +47,7 @@ export class HandlerRegistry {
   // L2 方法只能这样注册：它永远不会被 dispatch 直接执行。
   registerApproval<K extends ApprovalKind>(method: K, handler: ApprovalHandler<K>): void {
     this.requireUnregistered(method);
-    if (this.levelOf(method) !== "L2") {
+    if (levelOf(method) !== "L2") {
       throw new Error(`${method} is not L2 and needs no approval`);
     }
     this.approvals.set(method, handler);
@@ -104,7 +101,7 @@ export class HandlerRegistry {
       throw new Error(`no handler registered for ${method}`);
     }
     // daemon 转发前已检查过确认；这里再查一次，daemon 的检查出错或被绕过时也不会执行 L1 操作。
-    if (this.levelOf(method) === "L1" && !isConfirmed(params)) {
+    if (levelOf(method) === "L1" && !isConfirmed(params)) {
       return {
         ok: false,
         code: "CONFIRMATION_REQUIRED",
@@ -141,4 +138,8 @@ type RpcFailure = Extract<RpcOutcome, { ok: false }>;
 
 function isConfirmed(params: unknown): boolean {
   return typeof params === "object" && params !== null && (params as { confirm?: unknown }).confirm === true;
+}
+
+function levelOf(method: RpcMethod): MethodLevel {
+  return RPC_METHODS[method].level;
 }

@@ -12,8 +12,9 @@ function closedTime(session: chrome.sessions.Session): number {
 
 const handleList: RpcHandler<"recent.list"> = async (params) => {
   const limit = params.limit ?? MAX_RECENT;
-  if (limit < 1 || limit > MAX_RECENT) {
-    throw new HandlerError("INVALID_REQUEST", `limit must be between 1 and ${MAX_RECENT}`);
+  // 生成的校验器不检查 maximum（见 listLimit），上限只能在这里兑现。
+  if (limit > MAX_RECENT) {
+    throw new HandlerError("INVALID_REQUEST", `limit must be at most ${MAX_RECENT}`);
   }
 
   // 取 Chrome 保留的全部（最多 25 条），才知道 limit 之外是否还有。
@@ -49,31 +50,27 @@ const handleList: RpcHandler<"recent.list"> = async (params) => {
 };
 
 const handleRestore: RpcHandler<"recent.restore"> = async (params) => {
+  let restored: chrome.sessions.Session | undefined;
+  // 空串是调用方给出的会话 ID，不是「不给」：按不存在的 ID 交给 chrome，不能退回成恢复最近一项。
+  // chrome 对不存在的会话 ID（以及没有可恢复的项）只会 reject；只翻译这一步，后面的不变量失败仍是内部错误。
   try {
-    let restored: chrome.sessions.Session | undefined;
-    if (params.sessionId) {
-      restored = await chrome.sessions.restore(params.sessionId);
-    } else {
-      restored = await chrome.sessions.restore();
-    }
-
-    if (!restored) {
-      throw new HandlerError("NOT_FOUND", "Session not found");
-    }
-
-    if (restored.tab) {
-      return { tabId: restored.tab.id! };
-    } else if (restored.window) {
-      return { windowId: restored.window.id! };
-    }
-
-    throw new Error("Invalid restored session: no tab or window");
-  } catch (err) {
-    if (err instanceof HandlerError) {
-      throw err;
-    }
+    restored =
+      params.sessionId === undefined
+        ? await chrome.sessions.restore()
+        : await chrome.sessions.restore(params.sessionId);
+  } catch (error) {
+    throw new HandlerError("NOT_FOUND", error instanceof Error ? error.message : String(error));
+  }
+  if (!restored) {
     throw new HandlerError("NOT_FOUND", "Session not found");
   }
+  if (restored.tab) {
+    return { tabId: restored.tab.id! };
+  }
+  if (restored.window) {
+    return { windowId: restored.window.id! };
+  }
+  throw new Error("Invalid restored session: no tab or window");
 };
 
 export function registerRecentlyClosedHandlers(registry: HandlerRegistry): void {

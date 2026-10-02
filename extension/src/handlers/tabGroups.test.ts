@@ -122,23 +122,6 @@ describe("tab group handlers", () => {
       expect(outcome).toMatchObject({ ok: false, code: "NOT_FOUND" });
       expect(tabs.group).not.toHaveBeenCalled();
     });
-
-    it("rejects a colour outside the nine Chrome colours before any chrome call", async () => {
-      const outcome = await registry.dispatch("tabGroups.create", { tabIds: [1], color: "magenta" });
-
-      expect(outcome).toMatchObject({ ok: false, code: "INVALID_REQUEST" });
-      expect(tabs.get).not.toHaveBeenCalled();
-      expect(tabs.group).not.toHaveBeenCalled();
-    });
-
-    it.each(["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"])(
-      "accepts %s",
-      async (color) => {
-        const outcome = await registry.dispatch("tabGroups.create", { tabIds: [2], color });
-
-        expect(outcome).toMatchObject({ ok: true });
-      },
-    );
   });
 
   describe("tabGroups.add", () => {
@@ -177,11 +160,7 @@ describe("tab group handlers", () => {
       expect(tabGroups.update).not.toHaveBeenCalled();
     });
 
-    it("rejects an invalid colour and an edit that changes nothing", async () => {
-      expect(await registry.dispatch("tabGroups.edit", { groupId: 5, color: "magenta" })).toMatchObject({
-        ok: false,
-        code: "INVALID_REQUEST",
-      });
+    it("rejects an edit that changes nothing", async () => {
       expect(await registry.dispatch("tabGroups.edit", { groupId: 5 })).toMatchObject({
         ok: false,
         code: "INVALID_REQUEST",

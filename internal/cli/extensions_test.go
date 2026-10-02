@@ -12,7 +12,7 @@ import (
 
 func TestExtensionsList(t *testing.T) {
 	result := `{"contentTrust":"untrusted-page-content","items":[
-		{"id":"aaaabbbbccccddddeeeeffffgggghhhh","name":"Tab Tidy","version":"0.9.3","enabled":true,"type":"extension","installType":"development","mayDisable":true},
+		{"id":"aaaabbbbccccddddeeeeffffgggghhhh","name":"Tab Tidy","version":"0.9.3","enabled":true,"type":"extension","installType":"development","mayDisable":true,"browser":{"id":"a1","name":"chrome-a"}},
 		{"id":"mhoplkcgjabnfdieanpgkcbjlhmoedfa","name":"Helper\u001b[31m","version":"3.1.0","enabled":false,"type":"extension","installType":"admin","mayDisable":false,"browser":{"id":"b1","name":"edge-b"}}]}`
 
 	Convey("sctl extensions list 列出已安装的扩展", t, func() {

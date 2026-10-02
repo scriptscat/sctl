@@ -82,13 +82,6 @@ describe("tab and window management handlers", () => {
       expect(outcome).toMatchObject({ ok: false, code: "NOT_FOUND" });
       expect(tabs.move).not.toHaveBeenCalled();
     });
-
-    it("rejects an index below -1", async () => {
-      const outcome = await registry.dispatch("tabs.move", { tabIds: [1], index: -2 });
-
-      expect(outcome).toMatchObject({ ok: false, code: "INVALID_REQUEST" });
-      expect(tabs.move).not.toHaveBeenCalled();
-    });
   });
 
   describe.each([
@@ -166,13 +159,6 @@ describe("tab and window management handlers", () => {
 
       expect(win.create).toHaveBeenCalledWith({});
     });
-
-    it("rejects an unknown state before opening anything", async () => {
-      const outcome = await registry.dispatch("windows.open", { state: "huge" });
-
-      expect(outcome).toMatchObject({ ok: false, code: "INVALID_REQUEST" });
-      expect(win.create).not.toHaveBeenCalled();
-    });
   });
 
   describe("windows.close", () => {
@@ -216,11 +202,9 @@ describe("tab and window management handlers", () => {
       expect(win.update).toHaveBeenCalledWith(10, { state: "minimized" });
     });
 
-    it("rejects an unknown state and answers NOT_FOUND for an unknown window", async () => {
-      const bad = await registry.dispatch("windows.state", { windowId: 10, state: "huge" });
+    it("answers NOT_FOUND for an unknown window", async () => {
       const missing = await registry.dispatch("windows.state", { windowId: 404, state: "normal" });
 
-      expect(bad).toMatchObject({ ok: false, code: "INVALID_REQUEST" });
       expect(missing).toMatchObject({ ok: false, code: "NOT_FOUND" });
       expect(win.update).not.toHaveBeenCalled();
     });

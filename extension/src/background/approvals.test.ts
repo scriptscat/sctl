@@ -571,7 +571,7 @@ describe("requests carried out by the approval window", () => {
     expect(await approvals.decide("u1", "approve")).toEqual({ executeInWindow: false });
   });
 
-  it("does not hand over a request that was cancelled, expired or rejected before the click", async () => {
+  it("does not hand over a request that was cancelled or rejected before the click", async () => {
     const { w, approvals } = await withUninstall();
     await approvals.enqueue(w.context("u2"), uninstall("ext-b"));
     await approvals.cancel("u1");

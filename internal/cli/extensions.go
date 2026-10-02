@@ -148,11 +148,7 @@ func printExtensionsTable(result json.RawMessage) error {
 			terminalSafe(r.ID), terminalSafe(r.Name), terminalSafe(r.Version), strconv.FormatBool(r.Enabled),
 			terminalSafe(r.Type), terminalSafe(r.InstallType), strconv.FormatBool(r.MayDisable))
 		if multi {
-			browser := ""
-			if r.Browser != nil {
-				browser = terminalSafe(r.Browser.Name)
-			}
-			row += "\t" + browser
+			row += "\t" + r.Browser.Name
 		}
 		fmt.Fprintln(tw, row)
 	}

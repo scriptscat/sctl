@@ -2,16 +2,6 @@ import { HandlerError, type HandlerRegistry, type RpcHandler } from "@/backgroun
 import { needs } from "./api";
 import { requireAllTabs, requireTab, requireTabGroup, requireWindow } from "./targets";
 
-const GROUP_COLORS = ["grey", "blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange"];
-
-// 扩展侧不再校验协议 schema，颜色取值在这里兑现；先于任何 chrome.* 调用，失败时什么都不改。
-function requireColor(color: string | undefined): chrome.tabGroups.Color | undefined {
-  if (color !== undefined && !GROUP_COLORS.includes(color)) {
-    throw new HandlerError("INVALID_REQUEST", `invalid group colour ${JSON.stringify(color)}`);
-  }
-  return color as chrome.tabGroups.Color | undefined;
-}
-
 // chrome.tabs.group/ungroup 的类型要求至少一个 ID；协议的 minItems: 1 已在 daemon 边界保证。
 type TabIds = [number, ...number[]];
 
@@ -40,7 +30,6 @@ const handleList: RpcHandler<"tabGroups.list"> = async (params) => {
 };
 
 const handleCreate: RpcHandler<"tabGroups.create"> = async (params) => {
-  const color = requireColor(params.color);
   const tabIds = [...new Set(params.tabIds)] as TabIds;
   const windowIds = new Set<number>();
   for (const tabId of tabIds) {
@@ -52,7 +41,7 @@ const handleCreate: RpcHandler<"tabGroups.create"> = async (params) => {
   const groupId = await chrome.tabs.group({ tabIds, createProperties: { windowId: [...windowIds][0] } });
   const update: chrome.tabGroups.UpdateProperties = {
     ...(params.title === undefined ? {} : { title: params.title }),
-    ...(color === undefined ? {} : { color }),
+    ...(params.color === undefined ? {} : { color: params.color }),
   };
   if (Object.keys(update).length > 0) {
     await chrome.tabGroups.update(groupId, update);
@@ -68,10 +57,9 @@ const handleAdd: RpcHandler<"tabGroups.add"> = async (params) => {
 };
 
 const handleEdit: RpcHandler<"tabGroups.edit"> = async (params) => {
-  const color = requireColor(params.color);
   const update: chrome.tabGroups.UpdateProperties = {
     ...(params.title === undefined ? {} : { title: params.title }),
-    ...(color === undefined ? {} : { color }),
+    ...(params.color === undefined ? {} : { color: params.color }),
     ...(params.collapsed === undefined ? {} : { collapsed: params.collapsed }),
   };
   if (Object.keys(update).length === 0) {

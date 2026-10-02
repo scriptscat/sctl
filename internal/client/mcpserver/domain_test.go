@@ -380,8 +380,10 @@ func TestTabsManageToolForwardsEachActionToItsProtocolMethod(t *testing.T) {
 				{"action": "pin", "tabIds": []int{1}, "windowId": 3},
 				{"action": "windows-state", "windowId": 10, "state": "huge"},
 			} {
-				res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "tabs_manage", Arguments: args})
-				So(err == nil && res.IsError || err != nil, ShouldBeTrue)
+				_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "tabs_manage", Arguments: args})
+				if err == nil {
+					t.Errorf("tabs_manage accepted invalid arguments %#v", args)
+				}
 			}
 			So(len(caller.actions), ShouldEqual, before)
 		})

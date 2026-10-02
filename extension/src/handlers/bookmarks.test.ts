@@ -578,7 +578,7 @@ describe("bookmark handlers", () => {
     }
 
     it("is never run directly: dispatching it without approval is refused", async () => {
-      await expect(registry.dispatch("bookmarks.remove", { ids: ["14"] })).rejects.toThrow();
+      await expect(registry.dispatch("bookmarks.remove", { ids: ["14"] })).rejects.toThrow(/no handler registered/);
       expect(bookmarks.remove).not.toHaveBeenCalled();
     });
   });

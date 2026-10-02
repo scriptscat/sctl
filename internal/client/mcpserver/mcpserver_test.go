@@ -88,6 +88,27 @@ func toolNames(res *mcp.ListToolsResult) []string {
 	return names
 }
 
+func TestEveryProtocolMethodIsReachableThroughExactlyOneTool(t *testing.T) {
+	Convey("protocol.json 的每个方法恰好由一个 MCP 工具(逐方法工具或领域工具的一个 action)转发", t, func() {
+		p := loadProto(t)
+		reach := map[string]int{}
+		for _, td := range toolDefs {
+			reach[td.action]++
+		}
+		for _, dt := range domainTools {
+			for _, da := range dt.actions {
+				reach[da.method]++
+			}
+		}
+		for name := range p.Actions {
+			So(fmt.Sprintf("%s: %d", name, reach[name]), ShouldEqual, name+": 1")
+		}
+		for name := range reach {
+			So(p.Actions, ShouldContainKey, name)
+		}
+	})
+}
+
 func TestToolsListExposesAllTools(t *testing.T) {
 	Convey("扁平信任:tools/list 暴露第 1 期的逐方法工具、按领域合并的工具与特殊的 browsers_list", t, func() {
 		p := loadProto(t)

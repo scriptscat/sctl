@@ -1,4 +1,4 @@
-import { HandlerError, type HandlerRegistry, type RpcHandler } from "@/background/registry";
+import type { HandlerRegistry, RpcHandler } from "@/background/registry";
 import { requireAllTabs, requireTab, requireWindow } from "./targets";
 
 async function requireAllWindows(windowIds: number[]): Promise<number[]> {
@@ -9,19 +9,7 @@ async function requireAllWindows(windowIds: number[]): Promise<number[]> {
   return unique;
 }
 
-const WINDOW_STATES = ["normal", "minimized", "maximized", "fullscreen"];
-
-// 扩展侧不再校验协议 schema，取值范围在这里兑现；先于任何 chrome.* 调用，失败时什么都不改。
-function requireState(state: string | undefined): void {
-  if (state !== undefined && !WINDOW_STATES.includes(state)) {
-    throw new HandlerError("INVALID_REQUEST", `invalid window state ${JSON.stringify(state)}`);
-  }
-}
-
 const handleMove: RpcHandler<"tabs.move"> = async (params) => {
-  if (params.index !== undefined && (!Number.isInteger(params.index) || params.index < -1)) {
-    throw new HandlerError("INVALID_REQUEST", "index must be an integer of -1 or more");
-  }
   const tabIds = await requireAllTabs(params.tabIds);
   if (params.windowId !== undefined) {
     await requireWindow(params.windowId);
@@ -63,7 +51,6 @@ const handleDuplicate: RpcHandler<"tabs.duplicate"> = async (params) => {
 };
 
 const handleWindowsOpen: RpcHandler<"windows.open"> = async (params) => {
-  requireState(params.state);
   const win = await chrome.windows.create({
     ...(params.urls === undefined || params.urls.length === 0 ? {} : { url: params.urls }),
     ...(params.state === undefined ? {} : { state: params.state }),
@@ -86,7 +73,6 @@ const handleWindowsFocus: RpcHandler<"windows.focus"> = async (params) => {
 };
 
 const handleWindowsState: RpcHandler<"windows.state"> = async (params) => {
-  requireState(params.state);
   await requireWindow(params.windowId);
   await chrome.windows.update(params.windowId, { state: params.state });
   return { windowId: params.windowId, state: params.state };

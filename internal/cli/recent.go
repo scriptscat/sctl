@@ -38,7 +38,7 @@ func newRecentListCmd() *cobra.Command {
 			return &ExitError{Code: exitError, Message: fmt.Sprintf("invalid --limit %d: must be between 1 and %d", limit, maxRecentLimit)}
 		}
 		input := map[string]any{}
-		if limit > 0 && cmd.Flags().Changed("limit") {
+		if cmd.Flags().Changed("limit") {
 			input["limit"] = limit
 		}
 		return dispatchBrowser(cmd, "recent.list", browserTarget, mustInput(input), func(result json.RawMessage) error {

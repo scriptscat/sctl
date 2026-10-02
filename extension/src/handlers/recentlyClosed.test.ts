@@ -44,7 +44,7 @@ describe("recently closed handlers", () => {
   });
 
   describe("recent.list", () => {
-    it("returns recently closed sessions ordered by closedTime newest first", async () => {
+    it("maps closed tabs and windows in Chrome's order, a window taking its first tab's title and URL", async () => {
       const mockSessions: chrome.sessions.Session[] = [
         {
           lastModified: 100,
@@ -66,10 +66,24 @@ describe("recently closed handlers", () => {
 
       const outcome = await registry.dispatch("recent.list", {});
 
-      expect(outcome.ok).toBe(true);
-      const items = listItems(outcome);
-      expect(items).toHaveLength(2);
-      expect(outcome).toHaveProperty("result.contentTrust", "untrusted-page-content");
+      expect(outcome).toEqual({
+        ok: true,
+        result: {
+          contentTrust: "untrusted-page-content",
+          hasMore: false,
+          items: [
+            { sessionId: "tab-1", type: "tab", closedTime: 100_000, title: "First Tab", url: "https://example1.com" },
+            {
+              sessionId: "window-1",
+              type: "window",
+              closedTime: 50_000,
+              title: "Tab in Window",
+              url: "https://example2.com",
+              tabCount: 2,
+            },
+          ],
+        },
+      });
     });
 
     it("respects limit parameter (1-25)", async () => {
@@ -173,12 +187,9 @@ describe("recently closed handlers", () => {
       expect(item).not.toHaveProperty("tabCount");
     });
 
-    it("rejects invalid limit", async () => {
-      const result1 = await registry.dispatch("recent.list", { limit: 0 });
-      expect(result1).toMatchObject({ ok: false, code: "INVALID_REQUEST" });
-
-      const result2 = await registry.dispatch("recent.list", { limit: 26 });
-      expect(result2).toMatchObject({ ok: false, code: "INVALID_REQUEST" });
+    it("rejects a limit above the 25 items Chrome retains", async () => {
+      const outcome = await registry.dispatch("recent.list", { limit: 26 });
+      expect(outcome).toMatchObject({ ok: false, code: "INVALID_REQUEST" });
     });
   });
 
@@ -226,6 +237,18 @@ describe("recently closed handlers", () => {
         expect(outcome.result).toHaveProperty("tabId", 42);
       }
       expect(sessions.restore).toHaveBeenCalledWith();
+    });
+
+    it("treats an empty sessionId as an unknown session instead of restoring the most recent item", async () => {
+      sessions.restore.mockImplementation((sessionId?: string) =>
+        sessionId === undefined
+          ? Promise.resolve({ lastModified: 0, tab: tab({ id: 42 }) })
+          : Promise.reject(new Error(`Invalid session id: "${sessionId}".`)),
+      );
+
+      const outcome = await registry.dispatch("recent.restore", { sessionId: "" });
+
+      expect(outcome).toMatchObject({ ok: false, code: "NOT_FOUND" });
     });
 
     it("returns NOT_FOUND when session does not exist", async () => {

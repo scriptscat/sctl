@@ -388,7 +388,11 @@ export function App({
             // 与 Note 的 warn 色调同一套混色；整行是一个按钮。「查看」用正文色：主色在琥珀底上不到 4.5:1。
             <button
               type="button"
-              onClick={() => void api.focusApprovals()}
+              onClick={() => {
+                api
+                  .focusApprovals()
+                  .catch((error: unknown) => console.error("failed to open the approval window", error));
+              }}
               className="flex w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
               style={{
                 borderColor: "color-mix(in oklch, var(--warn), transparent 60%)",

@@ -33,28 +33,25 @@ describe("handler registry", () => {
   });
 
   it("refuses an L1 call without confirm: true before running its handler", async () => {
-    const closed: unknown[] = [];
-    // 协议里还没有 L1 浏览器方法，用注入的级别把 tabs.close 当作 L1。
-    const registry = new HandlerRegistry(() => "L1");
-    registry.register("tabs.close", (params) => {
-      closed.push(params);
-      return Promise.resolve({ tabIds: params.tabIds });
+    const removed: unknown[] = [];
+    const registry = new HandlerRegistry();
+    registry.register("history.remove", (params) => {
+      removed.push(params);
+      return Promise.resolve({ urls: params.urls });
     });
 
-    for (const params of [{ tabIds: [1] }, { tabIds: [1], confirm: false }, { tabIds: [1], confirm: "true" }]) {
-      await expect(registry.dispatch("tabs.close", params)).resolves.toEqual({
-        ok: false,
-        code: "CONFIRMATION_REQUIRED",
-        message: expect.stringContaining("confirm") as string,
-      });
-    }
-    expect(closed).toEqual([]);
-
-    await expect(registry.dispatch("tabs.close", { tabIds: [1], confirm: true })).resolves.toEqual({
-      ok: true,
-      result: { tabIds: [1] },
+    // offscreen 的校验器只放行 confirm 为 true 或缺省，所以缺省是唯一能到达这里的未确认形态。
+    await expect(registry.dispatch("history.remove", { urls: ["https://a.example/"] })).resolves.toEqual({
+      ok: false,
+      code: "CONFIRMATION_REQUIRED",
+      message: expect.stringContaining("confirm") as string,
     });
-    expect(closed).toEqual([{ tabIds: [1], confirm: true }]);
+    expect(removed).toEqual([]);
+
+    await expect(registry.dispatch("history.remove", { urls: ["https://a.example/"], confirm: true })).resolves.toEqual(
+      { ok: true, result: { urls: ["https://a.example/"] } },
+    );
+    expect(removed).toEqual([{ urls: ["https://a.example/"], confirm: true }]);
   });
 
   it("refuses to register the same method twice", () => {

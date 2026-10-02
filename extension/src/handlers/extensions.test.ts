@@ -174,6 +174,16 @@ describe("extensions handlers", () => {
       expect(management.setEnabled).not.toHaveBeenCalled();
     });
 
+    it("refuses an extension Chrome marks as not user-disableable even when it is not policy-installed", async () => {
+      const locked = info("lockedlockedlockedlockedlockedlo", { installType: "normal", mayDisable: false });
+      installed.set(locked.id, locked);
+
+      const outcome = await registry.dispatch("extensions.disable", { id: locked.id, confirm: true });
+
+      expect(outcome).toMatchObject({ ok: false, code: "INVALID_REQUEST" });
+      expect(management.setEnabled).not.toHaveBeenCalled();
+    });
+
     it("returns NOT_FOUND for an unknown id", async () => {
       const outcome = await registry.dispatch("extensions.disable", { id: "unknown", confirm: true });
 
