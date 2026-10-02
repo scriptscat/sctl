@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	. "github.com/smartystreets/goconvey/convey"
 	"go.uber.org/zap"
@@ -462,5 +463,38 @@ func TestRandomRefStartStaysShort(t *testing.T) {
 			seq.n.Store(s)
 			So(regexp.MustCompile(`^e\d{1,13}$`).MatchString(seq.next()), ShouldBeTrue)
 		}
+	})
+}
+
+func TestSnapshotRootOnLargeSubtree(t *testing.T) {
+	Convey("--root 的子树有上千个元素、每次 CDP 往返 5 毫秒时,快照在 2 秒的超时内完成:逐个节点的布局查询不能依次等待", t, func() {
+		const buttons = 1000
+		ids := make([]string, buttons)
+		nodes := []string{axRoot("n"), ""}
+		for i := range ids {
+			ids[i] = fmt.Sprintf("b%d", i)
+			nodes = append(nodes, fmt.Sprintf(`{"nodeId":%q,"parentId":"n","role":{"value":"button"},"name":{"value":"B%d"},"backendDOMNodeId":%d}`, ids[i], i, 100+i))
+		}
+		nodes[1] = fmt.Sprintf(`{"nodeId":"n","parentId":"root","role":{"value":"navigation"},"childIds":[%s],"backendDOMNodeId":2}`, quoteAll(ids))
+		pg := &treePage{nodes: nodes}
+		cdp := newFakeCDP()
+		cdp.setSend(func(ctx context.Context, cmd Command) (json.RawMessage, error) {
+			if cmd.Method == "DOM.getBoxModel" {
+				select {
+				case <-time.After(5 * time.Millisecond):
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
+			return pg.send(ctx, cmd)
+		})
+		m := newSnapshotManager(cdp)
+		tab := 3
+		raw, err := m.Do(context.Background(), Request{Action: "snapshot", TabID: &tab, Timeout: 2 * time.Second, Input: json.RawMessage(`{"root":"#small"}`)})
+		So(err, ShouldBeNil)
+		var res snapshotResult
+		So(json.Unmarshal(raw, &res), ShouldBeNil)
+		So(res.Snapshot, ShouldStartWith, "- navigation\n  - button \"B0\" [ref=e1]\n")
+		So(strings.Count(res.Snapshot, "\n"), ShouldEqual, buttons)
 	})
 }

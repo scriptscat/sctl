@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -75,7 +76,14 @@ func (t *Tab) sendTo(ctx context.Context, sessionID, method string, params, resu
 		}
 		raw = encoded
 	}
+	var retry backoff
 	res, err := t.m.cdp.Send(ctx, t.instanceID, Command{TabID: t.id, SessionID: sessionID, Method: method, Params: raw})
+	for isInactivePage(err) {
+		if err := retry.sleep(ctx); err != nil {
+			return err
+		}
+		res, err = t.m.cdp.Send(ctx, t.instanceID, Command{TabID: t.id, SessionID: sessionID, Method: method, Params: raw})
+	}
 	if err != nil {
 		return err
 	}
@@ -86,6 +94,18 @@ func (t *Tab) sendTo(ctx context.Context, sessionID, method string, params, resu
 		return fmt.Errorf("decode %s result: %w", method, err)
 	}
 	return nil
+}
+
+// inactivePageError 是 Chrome 浏览器进程里的 Page 命令(getNavigationHistory、reload、navigateToHistoryEntry 等)
+// 在主文档被替换、新文档还没接手调试会话的瞬间给出的拒绝(content/browser/devtools/protocol/page_handler.cc 的
+// AssureTopLevelActiveFrame)。命令在检查处就被拒绝、没有执行,新文档接手后重发即可;ChromeDriver 同样把它
+// 当作被导航打断。eval location.reload() 之后读取动作结果时就会遇到它。
+const inactivePageError = "Not attached to an active page"
+
+// isInactivePage 判断 err 是 inactivePageError。扩展中转给出的是 chrome.debugger 序列化成 JSON 的 CDP 错误,
+// 所以按子串匹配。
+func isInactivePage(err error) bool {
+	return isCDPError(err) && strings.Contains(err.Error(), inactivePageError)
 }
 
 // handler 在已解析、已附加并按标签页串行化的目标上执行一个动作,返回值编码为动作结果。

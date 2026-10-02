@@ -148,7 +148,7 @@ func pageClip(ctx context.Context, t *Tab) (clip, error) {
 func elementClip(ctx context.Context, t *Tab, spec TargetSpec) (c clip, oversized bool, err error) {
 	var wait backoff
 	for {
-		el, _, err := actionElement(ctx, t, spec, checks{visible: true}, nil)
+		el, _, err := actionElement(ctx, t, spec, checks{visible: true, rendered: true}, nil)
 		if err != nil {
 			return clip{}, false, err
 		}

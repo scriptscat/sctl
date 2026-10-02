@@ -8,8 +8,11 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/sync/errgroup"
 
 	"github.com/scriptscat/sctl/internal/pkg/protocol/generated"
 )
@@ -164,7 +167,8 @@ type snapshotBuilder struct {
 	// scoped 表示只读取 --root 子树的数据。整页的无障碍树与布局数据可能超过扩展中转的单帧上限,
 	// --root 正是在这样的大页面上缩小范围用的,不能先读整页。
 	scoped bool
-	// hidden 是有布局框但宽或高为零的节点(backendNodeId),按会话区分;scoped 时逐个节点查询,不用它。
+	// hidden 是有布局框但宽或高为零的节点(backendNodeId),按会话区分。整页时来自会话的布局快照,
+	// scoped 时由 measure 逐个节点查询得到。
 	hidden map[string]map[int]bool
 	build  *refBuild
 }
@@ -272,6 +276,9 @@ func (b *snapshotBuilder) subtree(ctx context.Context, root element) (*axDocumen
 			doc.root = n
 		}
 	}
+	if err := b.measure(ctx, doc); err != nil {
+		return nil, err
+	}
 	return doc, nil
 }
 
@@ -305,29 +312,58 @@ func (b *snapshotBuilder) document(ctx context.Context, sessionID, frameID strin
 	if doc.root == nil {
 		return nil, &Error{Code: generated.ErrorCodeInternalError, Message: "the accessibility tree has no root node"}
 	}
+	if b.scoped {
+		if err := b.measure(ctx, doc); err != nil {
+			return nil, err
+		}
+	}
 	return doc, nil
 }
 
-// visible 判断节点不是有布局框但宽或高为零的节点。
-func (b *snapshotBuilder) visible(ctx context.Context, doc *axDocument, n *axNode) (bool, error) {
-	if !b.scoped {
-		return !b.hidden[doc.sessionID][n.BackendDOMNodeID], nil
+// measureConcurrency 限定 measure 同时进行的 DOM.getBoxModel 数:一条命令只量一个节点,依次等待时每次
+// 经扩展中转的往返延迟随子树的节点数累加,上千个元素的子树就会超过动作的超时。
+const measureConcurrency = 16
+
+// measure 为 --root 快照逐个查询 doc 里元素节点的布局框,把宽或高为零的记入 b.hidden。--root 不能读整个会话
+// 的布局快照(见 scoped),只能逐个节点查询,所以并发进行。
+func (b *snapshotBuilder) measure(ctx context.Context, doc *axDocument) error {
+	hidden := b.hidden[doc.sessionID]
+	if hidden == nil {
+		hidden = map[int]bool{}
+		b.hidden[doc.sessionID] = hidden
 	}
-	var box struct {
-		Model struct {
-			Width  float64 `json:"width"`
-			Height float64 `json:"height"`
-		} `json:"model"`
+	var mu sync.Mutex
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(measureConcurrency)
+	for _, n := range doc.nodes {
+		// 文本的可见性随它的父元素(visit 的 parentVisible),没有 DOM 节点的无障碍节点没有布局框可量。
+		if n.role() == "StaticText" || skippedRoles[n.role()] || n.BackendDOMNodeID == 0 {
+			continue
+		}
+		g.Go(func() error {
+			var box struct {
+				Model struct {
+					Width  float64 `json:"width"`
+					Height float64 `json:"height"`
+				} `json:"model"`
+			}
+			err := b.t.sendTo(gctx, doc.sessionID, "DOM.getBoxModel", map[string]int{"backendNodeId": n.BackendDOMNodeID}, &box)
+			if isCDPError(err) {
+				// 没有布局框(display:contents、收起的下拉框里的选项)与布局快照里一样不算尺寸为零。
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			if box.Model.Width == 0 || box.Model.Height == 0 {
+				mu.Lock()
+				hidden[n.BackendDOMNodeID] = true
+				mu.Unlock()
+			}
+			return nil
+		})
 	}
-	err := b.t.sendTo(ctx, doc.sessionID, "DOM.getBoxModel", map[string]int{"backendNodeId": n.BackendDOMNodeID}, &box)
-	if isCDPError(err) {
-		// 没有布局框(display:contents、收起的下拉框里的选项)与布局快照里一样不算尺寸为零。
-		return true, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	return box.Model.Width != 0 && box.Model.Height != 0, nil
+	return g.Wait()
 }
 
 // zeroSizeNodes 返回会话里有布局框但宽或高为零的节点。没有布局框的节点(display:contents、
@@ -379,10 +415,7 @@ func (b *snapshotBuilder) visit(ctx context.Context, doc *axDocument, n *axNode,
 		}
 		return []*item{{text: text, textParent: parent}}, nil
 	}
-	visible, err := b.visible(ctx, doc, n)
-	if err != nil {
-		return nil, err
-	}
+	visible := !b.hidden[doc.sessionID][n.BackendDOMNodeID]
 	shown := !n.excluded() && visible
 	if role == "Iframe" {
 		if !shown {

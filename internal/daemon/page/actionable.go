@@ -21,6 +21,10 @@ type checks struct {
 	editable bool
 	// hitTarget 要求点击点落在元素自身或其后代上。
 	hitTarget bool
+	// rendered 要求跨进程 iframe 里的元素所在 frame 已在渲染(产生动画帧)。iframe 被滚入视口时,父页面的
+	// 滚动经浏览器进程异步完成,视口外的跨域 iframe 不渲染;此刻截图,它在图里是空白(真机复现)。
+	// 同进程的元素由截图时强制绘制的那个渲染进程画出,不需要等。
+	rendered bool
 }
 
 var (
@@ -89,8 +93,10 @@ const stableFunction = `async function (frameWait) {
 
 // hitPointFunction 从 DOM.getContentQuads 给出的四边形(会话视口坐标;折行的行内元素每行一个)里
 // 依次取在视口内的那部分的中心,在元素所在 frame 里做命中测试(穿过 shadow root),返回第一个命中
-// 元素自身或其后代的点,坐标仍是会话视口坐标。四边形与 frame 坐标之间按全部四边形的外接矩形与
-// stableFunction 测得的边界框 box 对应换算:元素在同进程 iframe 里时两者相差 iframe 的位置。
+// 元素自身或其后代的点,坐标仍是会话视口坐标。四边形与 frame 坐标之间按四边形的外接矩形与
+// stableFunction 测得的边界框 box 对应换算:元素在同进程 iframe 里时两者相差 iframe 的位置。外接矩形
+// 与 getBoundingClientRect 一样只算宽高都不为零的四边形:以换行开头的行内元素在上一行留下宽为零的
+// 片段,算进去会让换算错位,命中测试的点与点击的点不再是同一个点(真机复现:点到了遮挡元素上)。
 // 边界框与 box 不同说明元素又动了。全部被挡住时报告第一个可见区域上的遮挡元素。
 const hitPointFunction = `function (quads, box, hitTarget) {
   const el = this.nodeType === 1 ? this : this.parentElement;
@@ -99,7 +105,10 @@ const hitPointFunction = `function (quads, box, hitTarget) {
   if (range) range.selectNodeContents(this);
   const r = (range || el).getBoundingClientRect();
   if (r.left !== box[0] || r.top !== box[1] || r.width !== box[2] || r.height !== box[3]) return { state: "unstable" };
-  const xs = quads.flatMap((q) => [q[0], q[2], q[4], q[6]]), ys = quads.flatMap((q) => [q[1], q[3], q[5], q[7]]);
+  const xsOf = (q) => [q[0], q[2], q[4], q[6]], ysOf = (q) => [q[1], q[3], q[5], q[7]];
+  const sized = quads.filter((q) => Math.max(...xsOf(q)) > Math.min(...xsOf(q)) && Math.max(...ysOf(q)) > Math.min(...ysOf(q)));
+  const bounding = sized.length > 0 ? sized : quads;
+  const xs = bounding.flatMap(xsOf), ys = bounding.flatMap(ysOf);
   const qx = Math.min(...xs), qy = Math.min(...ys), qw = Math.max(...xs) - qx, qh = Math.max(...ys) - qy;
   const sx = qw > 0 ? box[2] / qw : 1, sy = qh > 0 ? box[3] / qh : 1;
   const toFrame = (x, y) => [box[0] + (x - qx) * sx, box[1] + (y - qy) * sy];
@@ -172,10 +181,14 @@ func waitActionable(ctx context.Context, t *Tab, el element, c checks) (actionPo
 		case why == whyNoFrame:
 			noFrames++
 			if noFrames >= hiddenAfterFrames {
+				consequence := "the element's position cannot be confirmed stable"
+				if !c.needsPoint() {
+					consequence = "the iframe containing the element would be captured blank"
+				}
 				return actionPoint{}, &Error{
 					Code: generated.ErrorCodePageHidden,
-					Message: fmt.Sprintf("tab %d is not rendering (no animation frame within %s), so the element's position cannot be confirmed stable; retry with --activate",
-						t.id, frameWait*hiddenAfterFrames),
+					Message: fmt.Sprintf("tab %d is not rendering (no animation frame within %s), so %s; retry with --activate",
+						t.id, frameWait*hiddenAfterFrames, consequence),
 				}
 			}
 		default:
@@ -222,12 +235,21 @@ func probeOnce(ctx context.Context, t *Tab, el element, c checks) (actionPoint, 
 			return actionPoint{}, "the element is not visible", nil
 		}
 	}
-	if !c.needsPoint() {
+	waitFrames := c.rendered && el.sessionID != ""
+	if !c.needsPoint() && !waitFrames {
 		return actionPoint{}, "", nil
 	}
 	var stable probeResult
 	if err := callOn(ctx, t, el.sessionID, node.Object.ObjectID, stableFunction, &stable, frameWait.Milliseconds()); err != nil {
 		return actionPoint{}, "", err
+	}
+	if !c.needsPoint() {
+		// 只等渲染:两个动画帧都来了即可,元素是否还在动不是这里的条件。
+		if stable.State == "unstable" {
+			stable.State = "ok"
+		}
+		why, err := positionReason(stable)
+		return actionPoint{}, why, err
 	}
 	if why, err := positionReason(stable); why != "" || err != nil {
 		return actionPoint{}, why, err
@@ -293,23 +315,45 @@ func stateReason(state probeResult) (string, error) {
 	return "", fmt.Errorf("unexpected actionability state %q", state.State)
 }
 
-// quadBounds 返回全部四边形的外接矩形;一个元素折行时有多个四边形,外接矩形与 getBoundingClientRect 对应。
+// quadBounds 返回四边形的外接矩形;一个元素折行时有多个四边形。与 getBoundingClientRect(及 hitPointFunction)
+// 一样只算宽高都不为零的四边形,全部为零时才用全部:以换行开头的行内元素在上一行留下宽为零的片段,它不属于
+// 元素看得见的范围。
 func quadBounds(quads [][]float64) (minX, minY, maxX, maxY float64, ok bool) {
+	var sized [][]float64
 	for _, q := range quads {
 		if len(q) != 8 {
 			continue
 		}
-		for i := 0; i < 8; i += 2 {
-			x, y := q[i], q[i+1]
-			if !ok {
-				minX, maxX, minY, maxY, ok = x, x, y, y, true
-				continue
-			}
-			minX, maxX = min(minX, x), max(maxX, x)
-			minY, maxY = min(minY, y), max(maxY, y)
+		if x0, y0, x1, y1 := pointBounds(q); x1 > x0 && y1 > y0 {
+			sized = append(sized, q)
 		}
 	}
+	if len(sized) == 0 {
+		sized = quads
+	}
+	for _, q := range sized {
+		if len(q) != 8 {
+			continue
+		}
+		x0, y0, x1, y1 := pointBounds(q)
+		if !ok {
+			minX, minY, maxX, maxY, ok = x0, y0, x1, y1, true
+			continue
+		}
+		minX, maxX = min(minX, x0), max(maxX, x1)
+		minY, maxY = min(minY, y0), max(maxY, y1)
+	}
 	return minX, minY, maxX, maxY, ok
+}
+
+// pointBounds 返回一个四边形四个顶点的外接矩形。
+func pointBounds(q []float64) (minX, minY, maxX, maxY float64) {
+	minX, maxX, minY, maxY = q[0], q[0], q[1], q[1]
+	for i := 2; i < 8; i += 2 {
+		minX, maxX = min(minX, q[i]), max(maxX, q[i])
+		minY, maxY = min(minY, q[i+1]), max(maxY, q[i+1])
+	}
+	return minX, minY, maxX, maxY
 }
 
 // callOn 以 args 为参数在对象上调用函数,把按值返回的结果解到 result。页面在函数里抛出的异常是内部错误:

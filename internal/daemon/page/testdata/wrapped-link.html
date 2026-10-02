@@ -14,13 +14,15 @@
   </head>
   <body>
     <p id="para">abc def ghi <a id="wrapped" href="#clicked">wrapped yy</a> <span id="middle"></span></p>
+    <!-- 以换行开头的链接:第一行只留下一个宽为零的片段(DOM.getContentQuads 照样报告它,getBoundingClientRect 不算它)。 -->
+    <p id="para2">abc def <a id="leading" href="#leading"><br />after break</a></p>
     <script>
       // 页面自己记录收到的鼠标事件,测试据此判断点击落在哪个元素上、事件是否可信。
       window.events = [];
       for (const type of ["click", "mouseover"]) {
         document.addEventListener(type, (e) => window.events.push({ type: e.type, id: e.target.id, trusted: e.isTrusted }), true);
       }
-      document.getElementById("wrapped").addEventListener("click", (e) => e.preventDefault());
+      for (const id of ["wrapped", "leading"]) document.getElementById(id).addEventListener("click", (e) => e.preventDefault());
     </script>
   </body>
 </html>

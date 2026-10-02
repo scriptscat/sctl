@@ -382,5 +382,21 @@ func TestClickWrappedInlineLinkInChrome(t *testing.T) {
 			So(err.Error(), ShouldContainSubstring, "obscured by div#cover.cover")
 			So(clickEvents(m, tab, "click", "wrapped"), ShouldBeEmpty)
 		})
+
+		Convey("以换行开头的链接中心被挡住时,命中测试与点击用同一个点:超时报告遮挡,不点到遮挡元素上", func() {
+			// 遮挡元素盖住链接文字那一行的上半部(含中心);行的下半部露在外面。
+			_, err := eval(m, tab, `(() => {
+				const r = document.getElementById("leading").getBoundingClientRect();
+				document.body.insertAdjacentHTML("beforeend", '<div id="lid" style="position:fixed;left:0;width:400px"></div>');
+				const lid = document.getElementById("lid");
+				lid.style.top = r.top + "px";
+				lid.style.height = r.height * 0.6 + "px";
+			})()`)
+			So(err, ShouldBeNil)
+			_, err = act(m, tab, "click", map[string]any{"selector": "#leading"}, expectTimeout)
+			So(clickEvents(m, tab, "click", "lid"), ShouldBeEmpty)
+			So(codeOf(err), ShouldEqual, generated.ErrorCodeTimeout)
+			So(err.Error(), ShouldContainSubstring, "obscured by div#lid")
+		})
 	})
 }

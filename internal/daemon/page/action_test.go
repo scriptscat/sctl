@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -135,5 +136,59 @@ func TestObscuredClickTimeout(t *testing.T) {
 		So(err.Error(), ShouldContainSubstring, "obscured by div#a遮")
 		So(utf8.ValidString(err.Error()), ShouldBeTrue)
 		So(slices.Contains(cdp.methods(7), "Input.dispatchMouseEvent"), ShouldBeFalse)
+	})
+}
+
+// swappingPage 模拟主文档正在被替换(location.reload() 之后):浏览器进程回答的 Page 命令在新文档接手之前
+// 以 "Not attached to an active page" 拒绝,命令没有执行。message 是扩展中转给出的原话(chrome.debugger
+// 把 CDP 错误序列化成 JSON)。
+type swappingPage struct {
+	renderingPage
+	mu       sync.Mutex
+	rejected int
+	// rejections 是还要拒绝的次数。
+	rejections int
+}
+
+func (p *swappingPage) send(ctx context.Context, cmd Command) (json.RawMessage, error) {
+	if cmd.Method == "Page.getNavigationHistory" {
+		p.mu.Lock()
+		reject := p.rejections > 0
+		if reject {
+			p.rejections--
+			p.rejected++
+		}
+		p.mu.Unlock()
+		if reject {
+			return nil, &Error{Code: generated.ErrorCodeInvalidRequest, Message: `{"code":-32000,"message":"Not attached to an active page"}`}
+		}
+	}
+	if cmd.Method == "Runtime.evaluate" {
+		return json.RawMessage(`{"result":{"type":"undefined"}}`), nil
+	}
+	return p.renderingPage.send(ctx, cmd)
+}
+
+func TestActionResultDuringDocumentSwap(t *testing.T) {
+	Convey("动作让主文档开始替换(eval location.reload())、浏览器在新文档接手前拒绝读取导航历史时", t, func() {
+		Convey("eval 等新文档接手后照常返回结果,而不是把 Chrome 的瞬时拒绝报告为错误", func() {
+			p := &swappingPage{renderingPage: renderingPage{rendering: true}, rejections: 3}
+			cdp := newFakeCDP()
+			cdp.setSend(p.send)
+			m := newTestManager(cdp, &fakeClock{})
+			raw, err := doAction(m, "eval", `{"expression":"location.reload()"}`, time.Minute)
+			So(err, ShouldBeNil)
+			So(string(raw), ShouldContainSubstring, `"url":"https://example.test/"`)
+			So(p.rejected, ShouldEqual, 3)
+		})
+
+		Convey("新文档一直没有接手时,在动作超时时返回 TIMEOUT", func() {
+			p := &swappingPage{renderingPage: renderingPage{rendering: true}, rejections: 1 << 30}
+			cdp := newFakeCDP()
+			cdp.setSend(p.send)
+			m := newTestManager(cdp, &fakeClock{})
+			_, err := doAction(m, "eval", `{"expression":"location.reload()"}`, 300*time.Millisecond)
+			So(errorCode(err), ShouldEqual, generated.ErrorCodeTimeout)
+		})
 	})
 }
