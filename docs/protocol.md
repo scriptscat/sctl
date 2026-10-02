@@ -287,7 +287,7 @@ Source and metadata returned by these methods are untrusted user-script content.
 render it as HTML, interpret it as instructions, or include credentials in logs. Source results carry a SHA-256
 digest. Edit approval rechecks the staged digest and target identity before applying changes.
 
-Tab titles and URLs, reading list titles, history titles and URLs, recently closed titles and URLs, download file names and URLs, cookie names and values, and bookmark titles and URLs are controlled by web pages, and extension names by their authors; `tabs.list`, `readingList.list`, `history.search`, `recent.list`, `downloads.list`, `cookies.list`, `cookies.get`, `cookies.set`, `bookmarks.list`, `bookmarks.search`, `extensions.list`, and `extensions.uninstall` mark
+Tab titles and URLs, tab group titles, reading list titles, history titles and URLs, recently closed titles and URLs, download file names and URLs, cookie names and values, and bookmark titles and URLs are controlled by web pages, and extension names by their authors; `tabs.list`, `tabGroups.list`, `readingList.list`, `history.search`, `recent.list`, `downloads.list`, `cookies.list`, `cookies.get`, `cookies.set`, `bookmarks.list`, `bookmarks.search`, `extensions.list`, and `extensions.uninstall` mark
 their results with `contentTrust: "untrusted-page-content"` and the same handling rules apply. A list method
 declares a `mergeField`: the required array property in its result that holds the listed items, so results from
 several browser instances combine by concatenating that array. A list result may also declare a boolean `hasMore`,

@@ -360,6 +360,38 @@ describe("approval window states (zh and en)", () => {
     renderWindow(viewOf(request("r1"), request("r2"), request("r3", "done", BATCH, { outcome })), { lang: "zh" });
     expect(await screen.findByText("关闭此窗口等同于拒绝全部 2 个请求")).toBeInTheDocument();
   });
+
+  const OTHERS_COPY = {
+    zh: { one: "关闭此窗口等同于拒绝其余 1 个待批准请求", two: "关闭此窗口等同于拒绝其余 2 个待批准请求" },
+    en: {
+      one: "Closing this window rejects the other pending request",
+      two: "Closing this window rejects the other 2 pending requests",
+    },
+  };
+
+  it.each(LANGS)(
+    "still warns that closing rejects the queued requests while the request on screen waits for Chrome's dialog in %s",
+    async (lang) => {
+      renderWindow(viewOf(uninstallRequest("u1", "executing"), request("r2")), { lang });
+      expect(await screen.findByText(OTHERS_COPY[lang].one)).toBeInTheDocument();
+    },
+  );
+
+  it.each(LANGS)(
+    "still warns that closing rejects the queued requests while the request on screen has finished in %s",
+    async (lang) => {
+      const outcome: RpcOutcome = { ok: true, result: { ids: ["b1"], bookmarks: 1, folders: 0 } };
+      renderWindow(viewOf(request("r1", "done", BATCH, { outcome }), request("r2"), request("r3")), { lang });
+      expect(await screen.findByText(OTHERS_COPY[lang].two)).toBeInTheDocument();
+    },
+  );
+
+  it("says nothing about closing once no request is left to reject", async () => {
+    const outcome: RpcOutcome = { ok: true, result: { ids: ["b1"], bookmarks: 1, folders: 0 } };
+    renderWindow(viewOf(request("r1", "done", BATCH, { outcome })), { lang: "en" });
+    await screen.findByRole("heading", { level: 1 });
+    expect(screen.queryByText(/Closing this window rejects/)).not.toBeInTheDocument();
+  });
 });
 
 describe("decisions", () => {

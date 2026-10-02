@@ -101,6 +101,8 @@ export interface ApprovalStrings {
   close: string;
   // pending 是队列里等待决定的请求数：关窗会把它们全部拒绝。
   closeHint: (pending: number) => string;
+  // 屏幕上的请求已不在等待决定（执行中或已结束）时，提醒关窗仍会拒绝队列里其余 pending 个请求。
+  closeHintOthers: (pending: number) => string;
   expiredTitle: string;
   cancelledTitle: string;
   voidedTitle: string;
@@ -253,6 +255,7 @@ export const dictionary: Record<Lang, Strings> = {
       close: "关闭",
       closeHint: (pending: number) =>
         pending > 1 ? `关闭此窗口等同于拒绝全部 ${pending} 个请求` : "关闭此窗口等同于拒绝",
+      closeHintOthers: (pending: number) => `关闭此窗口等同于拒绝其余 ${pending} 个待批准请求`,
       expiredTitle: "已超时，已自动拒绝",
       cancelledTitle: "请求方已取消，此请求已失效",
       voidedTitle: "与 daemon 的连接已断开，此请求已失效",
@@ -433,6 +436,10 @@ export const dictionary: Record<Lang, Strings> = {
       close: "Close",
       closeHint: (pending: number) =>
         pending > 1 ? `Closing this window rejects all ${pending} requests` : "Closing this window rejects the request",
+      closeHintOthers: (pending: number) =>
+        pending > 1
+          ? `Closing this window rejects the other ${pending} pending requests`
+          : "Closing this window rejects the other pending request",
       expiredTitle: "Timed out and rejected automatically",
       cancelledTitle: "The requester cancelled; this request is void",
       voidedTitle: "Lost the connection to the daemon; this request is void",

@@ -220,7 +220,7 @@ var domainTools = []domainTool{
 			"uninstall removes one extension, but only after a person approves the request in the browser's approval window and then confirms Chrome's own uninstall dialog: " +
 			"the call waits for both and returns the uninstalled extension's id and name; it fails with USER_REJECTED when the request is rejected, the approval window is closed before approval, or the uninstall is cancelled in Chrome's dialog, " +
 			"and with OPERATION_EXPIRED when nobody decides within 5 minutes; whether the extension was then uninstalled follows that dialog. " +
-			"Closing the approval window while Chrome's dialog is open does not affect the uninstall, whose result still follows that dialog. " +
+			"Closing the approval window while Chrome's dialog is open does not affect the uninstall: confirming the dialog still returns the result, but a cancel there can no longer be observed and the call gets OPERATION_EXPIRED when the 5 minutes run out. " +
 			"sctl Browser itself cannot be disabled or uninstalled, and extensions installed by enterprise policy cannot be either (INVALID_REQUEST, with the reason); " +
 			"an unknown id is NOT_FOUND, and uninstall opens no window when a check fails.",
 		actions: []domainAction{

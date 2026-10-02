@@ -360,15 +360,24 @@ function Request<K extends ApprovalKind>({
             <p className="text-center text-[11px] text-muted-foreground" role={executing ? "status" : undefined}>
               {executing ? kind.executing(s).hint : s.approval.closeHint(pending)}
             </p>
+            {executing && pending > 0 && <CloseHintOthers s={s} pending={pending} />}
           </>
         ) : (
-          <Button ref={safeRef} size="lg" className="w-full" onClick={onDismiss}>
-            {s.approval.close}
-          </Button>
+          <>
+            <Button ref={safeRef} size="lg" className="w-full" onClick={onDismiss}>
+              {s.approval.close}
+            </Button>
+            {pending > 0 && <CloseHintOthers s={s} pending={pending} />}
+          </>
         )}
       </footer>
     </main>
   );
+}
+
+// 关闭窗口会拒绝队列里全部待批准的请求，屏幕上的请求不在等待时也要写明（spec「关闭窗口」）。
+function CloseHintOthers({ s, pending }: { s: Strings; pending: number }) {
+  return <p className="text-center text-[11px] text-muted-foreground">{s.approval.closeHintOthers(pending)}</p>;
 }
 
 function Outcome<K extends ApprovalKind>({

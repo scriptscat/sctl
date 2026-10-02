@@ -20,12 +20,15 @@ function refuseSelf(id: string, action: "disable" | "uninstall"): void {
 }
 
 // 企业策略强制安装的扩展 Chrome 不许用户禁用或卸载；mayDisable 与 installType 就是 Chrome 给出的原因。
+// 只有 installType 为 admin 时才说是企业策略：mayDisable 为 false 的扩展未必由策略安装。
 function refuseManaged(ext: chrome.management.ExtensionInfo, action: "disabled" | "uninstalled"): void {
   if (ext.installType === "admin" || !ext.mayDisable) {
+    const why =
+      ext.installType === "admin" ? "it is installed by enterprise policy" : "Chrome marks it as not user-modifiable";
     throw new HandlerError(
       "INVALID_REQUEST",
-      `Chrome does not let the user change extension ${ext.id}: it is installed by enterprise policy ` +
-        `(installType ${ext.installType}, mayDisable ${ext.mayDisable}) and cannot be ${action}`,
+      `Chrome does not let the user change extension ${ext.id}: ${why} ` +
+        `(installType ${ext.installType}, mayDisable ${ext.mayDisable}) and it cannot be ${action}`,
     );
   }
 }

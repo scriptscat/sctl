@@ -120,7 +120,7 @@ troubleshooting.
 
 Run `sctl --help` or `sctl <command> --help` for usage and flags. Write operations block
 until the user approves, rejects, or closes the confirmation flow in ScriptCat; browser control commands run
-immediately with no approval step (see [`docs/threat-model.md`](./docs/threat-model.md)). `tabs`, `windows`,
+immediately with no approval step (see [`docs/threat-model.md`](./docs/threat-model.md)). `tabs`, `windows`, `groups`,
 `reading-list`, `bookmarks`, `history`, `browsing-data`, `recent`, `downloads`, `cookies`, and `extensions` accept `--browser <name|id>` (or `SCTL_BROWSER`) to pick an instance when more than one is online.
 Destructive browser operations need explicit confirmation: `reading-list rm`, `history rm`, `history clear`, `browsing-data clear`, `downloads cancel`, `erase` and `delete-file`, `cookies rm` and `clear`, and `extensions disable` run only with `--yes` (MCP:
 `confirm: true`); without it nothing runs and the command exits with code 3. `bookmarks rm <id>...` needs human

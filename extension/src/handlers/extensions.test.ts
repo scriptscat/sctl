@@ -181,6 +181,9 @@ describe("extensions handlers", () => {
       const outcome = await registry.dispatch("extensions.disable", { id: locked.id, confirm: true });
 
       expect(outcome).toMatchObject({ ok: false, code: "INVALID_REQUEST" });
+      // 原因按 Chrome 给出的事实写，不把它说成企业策略安装。
+      expect(outcome.ok ? "" : outcome.message).not.toContain("policy");
+      expect(outcome.ok ? "" : outcome.message).toContain("mayDisable false");
       expect(management.setEnabled).not.toHaveBeenCalled();
     });
 

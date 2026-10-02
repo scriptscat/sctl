@@ -111,7 +111,7 @@ sctl status
 
 运行 `sctl --help` 或 `sctl <command> --help` 查看用法和参数。写操作会阻塞，直到用户在
 ScriptCat 中批准、拒绝或关闭确认流程；浏览器控制命令按设计没有审批步骤、立即执行(参见
-[`threat-model.md`](./threat-model.md))。当多个实例同时在线时，`tabs`、`windows`、`reading-list`、`bookmarks`、`history`、`browsing-data`、`recent`、`downloads`、`cookies` 与 `extensions` 可用
+[`threat-model.md`](./threat-model.md))。当多个实例同时在线时，`tabs`、`windows`、`groups`、`reading-list`、`bookmarks`、`history`、`browsing-data`、`recent`、`downloads`、`cookies` 与 `extensions` 可用
 `--browser <name|id>`（或环境变量 `SCTL_BROWSER`）指定目标实例。破坏性的浏览器操作需要显式确认：
 `reading-list rm`、`history rm`、`history clear`、`browsing-data clear`，`downloads cancel`、`erase`、`delete-file`，`cookies rm`、`clear`，以及 `extensions disable` 必须加 `--yes`（MCP 传 `confirm: true`），否则什么都不执行，退出码为 3。
 `bookmarks rm <id>...` 则需要人工审批：浏览器打开审批窗口，命令一直等待；书签删除后退出码为 0，被拒绝或关闭窗口为 1，
