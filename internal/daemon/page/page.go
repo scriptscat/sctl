@@ -3,7 +3,7 @@
 // 状态放在 daemon 而不是前端,因为只有 daemon 活得比单条命令长(docs/architecture.md)。
 //
 // 它只经窄接口 CDP 与浏览器交互:生产环境由 NewBridgeCDP 经 bridge 转发给 sctl Browser 扩展,
-// 集成测试由 pagetest.Chrome 直连 headless Chrome。
+// 单元测试用假 CDP 替身。
 package page
 
 import (

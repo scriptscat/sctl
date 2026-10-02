@@ -56,7 +56,7 @@ sctl page / page_* ─/control/page─▶ controlapi ─▶ page.Manager ─▶ 
 ```
 
 The extension only relays CDP commands, events, and detach notices; the page logic lives in Go so it can be
-tested against a real headless Chrome. Page state — which tabs are attached, their idle
+tested against a fake CDP. Page state — which tabs are attached, their idle
 timers, and the per-tab queue that runs commands on one tab in arrival order — lives in the daemon's memory,
 because the daemon is the only process that outlives a single command. When the daemon attaches and detaches a
 tab is described in [protocol.md](./protocol.md#32-internal-methods).
@@ -96,7 +96,6 @@ internal/daemon/            # ── sctl serve side ──
   controlapi/               #   /control/* handlers (controller role), depends on the narrow Bridge and Page interfaces
   page/                     #   page automation: Manager (target tab, per-tab queue, attach and idle detach),
                              #     page actions, the bridge-backed CDP implementation
-    pagetest/               #     CDP implementation over a headless Chrome's debugging port, for integration tests
   auth/                     #   mutual HMAC handshake, enrollment-code derivation (HKDF), key delivery (AES-GCM)
   store/                    #   persistence (repository role): ScriptCat's long-term key K, plus the
                              #     browsers.json registry of paired sctl Browser instances and their own

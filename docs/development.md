@@ -30,27 +30,11 @@ implementation detail. For a reported bug, follow the reproduction-first workflo
 [verification.md](./verification.md#reproduction-is-step-one-of-a-fix), then commit the smallest test that fails
 for the confirmed cause before changing production code.
 
-### Real-Chrome integration tests
+### Page automation tests
 
-Page automation (`internal/daemon/page`) has integration tests that drive a real headless Chrome through
-`pagetest.Chrome`, which talks to Chrome's remote debugging port directly instead of going through the sctl
-Browser extension, and serves fixture pages from `internal/daemon/page/testdata/` over a local HTTP server. Each
-test starts its own Chrome with a throwaway profile. On Unix the test process also holds the write end of a
-`--remote-debugging-pipe` pipe, so Chrome exits whenever the test process ends, even when it is killed by a signal
-or by the `go test` timeout. They look for Chrome in this order:
-
-1. the executable named by `SCTL_TEST_CHROME`;
-2. the standard install locations of Google Chrome on macOS and Windows (and Chromium on macOS);
-3. `google-chrome`, `google-chrome-stable`, `chromium`, `chromium-browser`, or `chrome` on `PATH`.
-
-When none is found the tests are skipped, so `go test ./...` still passes on a machine without Chrome. When
-`SCTL_TEST_CHROME` is set but does not name an existing file, the tests fail instead of skipping. CI installs
-stable Chrome in the Go `test` job on every OS and sets `SCTL_TEST_CHROME`, so the tests always run there.
-
-```bash
-go test ./internal/daemon/page/...
-SCTL_TEST_CHROME=/path/to/chrome go test ./internal/daemon/page/...
-```
+Page automation (`internal/daemon/page`) is tested only against a fake `CDP` implementation, so `go test ./...`
+needs no browser. Behaviour that depends on a real Chrome is confirmed by one-off runtime verification (see
+[verification.md](./verification.md)), not by automated tests.
 
 ### Choose cases by behavior, not sample count
 
@@ -115,7 +99,7 @@ Thin tests can still be valuable: protocol drift checks, exact exit-code or perm
 identity, serialization compatibility, security blocklists, and the only coverage of a real branch all protect
 stable contracts. Judge each test against its production path rather than by line count.
 
-Before deleting or consolidating a test, read the source it covers, search nearby package and integration tests
+Before deleting or consolidating a test, read the source it covers, search nearby package tests
 for the same contract, and name the regression signal that would be lost. A failing or slow test is not
 automatically low value: fix production regressions; update a genuinely changed contract; reproduce and remove
 the cause of flakes; and move misclassified integration work to the appropriate boundary. Do not weaken a valid
@@ -145,7 +129,7 @@ isolation with these flags, and what evidence makes a change count as
 
 | Trigger | What runs |
 |---|---|
-| Every PR (any target branch) | `lint` + native Linux/macOS/Windows `test` (`build`, `vet`, `-race`, with Chrome installed for the real-Chrome integration tests) + `extension` (lint, format check, type check, unit tests, build) + protocol generation and exact paired-ScriptCat drift |
+| Every PR (any target branch) | `lint` + Linux `test` (`build`, `vet`, `-race`) + `extension` (lint, format check, type check, unit tests, build) + protocol generation and exact paired-ScriptCat drift |
 | push to `main` / `release/**` | Same as above |
 | push tag `v*` | Reuses the full test gate first; only builds and publishes once it passes |
 
