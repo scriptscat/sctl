@@ -80,7 +80,7 @@ func TestSnapshotInChrome(t *testing.T) {
 
 	Convey("page snapshot 在真 Chrome 的 fixture 页面上", t, func() {
 		// 每个分支用新的 Manager 与新的标签页:引用编号从 e1 开始,页面状态互不影响。
-		m := page.NewManager(chrome, zap.NewNop())
+		m := page.NewManagerWithRefStart(chrome, zap.NewNop(), 0)
 		chrome.SetListener(m)
 		tab := chrome.NewTab(t, base+"/snapshot.html")
 		waitLoaded(t, m, tab)
@@ -258,7 +258,7 @@ func TestSnapshotLargePageInChrome(t *testing.T) {
 	base := pagetest.Serve(t, "testdata")
 
 	Convey("无障碍数据超过扩展中转单帧上限的大页面", t, func() {
-		m := page.NewManager(chrome, zap.NewNop())
+		m := page.NewManagerWithRefStart(chrome, zap.NewNop(), 0)
 		chrome.SetListener(m)
 		tab := chrome.NewTab(t, base+"/snapshot-large.html")
 		waitLoaded(t, m, tab)

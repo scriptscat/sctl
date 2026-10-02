@@ -2,9 +2,11 @@ package page
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -24,9 +26,24 @@ type element struct {
 }
 
 // refSeq 为整个 daemon 进程分配引用编号。编号跨标签页、跨快照递增而不复用:同一个 daemon 进程里,旧快照或
-// 其他标签页的引用永远不会碰巧解析到这个标签页当前表里的另一个元素。编号不跨进程保存,daemon 重启后从 e1
-// 重新开始:重启前拿到的引用在重启后的第一份快照之前返回 STALE_REF,之后可能与新编号重合。
+// 其他标签页的引用永远不会碰巧解析到这个标签页当前表里的另一个元素。
+//
+// 编号不跨进程保存,所以每个 daemon 进程从 [0, refStartRange) 里的随机起点开始计数(见 randomRefStart):
+// 若总从 e1 开始,重启前 AI 手里的 e5 会在新 daemon 的下一份快照之后指向另一个元素,而不是 STALE_REF。
+// 两个进程各签发至多约 10^4 个编号时,只有起点相差不到 2*10^4 才可能重叠,概率约 4*10^4/2^40 ≈ 4*10^-8;
+// 2^40 约 1.1*10^12,编号至多 13 位,引用仍然很短。
 type refSeq struct{ n atomic.Uint64 }
+
+// refStartRange 是起点的取值范围。
+const refStartRange = 1 << 40
+
+func randomRefStart() uint64 {
+	n, err := rand.Int(rand.Reader, big.NewInt(refStartRange))
+	if err != nil {
+		panic(fmt.Sprintf("page: crypto/rand 不可用: %v", err))
+	}
+	return n.Uint64()
+}
 
 func (s *refSeq) next() string { return "e" + strconv.FormatUint(s.n.Add(1), 10) }
 

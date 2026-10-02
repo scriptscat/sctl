@@ -187,7 +187,7 @@ const probeMethod = "Probe.run"
 
 // newTestManager 构造一个带测试动作 probe 的 Manager:它在目标标签页上发一条 probeMethod 并返回 tabId。
 func newTestManager(cdp CDP, clock Clock) *Manager {
-	m := NewManager(cdp, zap.NewNop())
+	m := newManager(cdp, zap.NewNop(), 0)
 	m.clock = clock
 	m.register("probe", func(ctx context.Context, t *Tab, input json.RawMessage) (any, error) {
 		if err := t.send(ctx, probeMethod, nil, nil); err != nil {

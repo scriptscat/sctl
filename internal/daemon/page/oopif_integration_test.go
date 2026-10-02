@@ -47,7 +47,7 @@ func TestCrossOriginIframesInChrome(t *testing.T) {
 	topHost, childHost := u.Host, "localhost:"+u.Port()
 
 	Convey("跨进程 iframe 在真 Chrome 上", t, func() {
-		m := page.NewManager(chrome, zap.NewNop())
+		m := page.NewManagerWithRefStart(chrome, zap.NewNop(), 0)
 		chrome.SetListener(m)
 		// oopif.html(127.0.0.1)嵌入 localhost 的 oopif-child.html,它再嵌入 127.0.0.1 的 oopif-nested.html:
 		// 每一层都与父 frame 跨站,都是独立进程的 iframe。

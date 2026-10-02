@@ -161,6 +161,11 @@ type Manager struct {
 
 // NewManager 构造页面自动化组件并注册全部动作。
 func NewManager(cdp CDP, log *zap.Logger) *Manager {
+	return newManager(cdp, log, randomRefStart())
+}
+
+// newManager 与 NewManager 相同,但由调用方指定引用编号的起点,让断言快照原文的测试不依赖随机数。
+func newManager(cdp CDP, log *zap.Logger, refStart uint64) *Manager {
 	m := &Manager{
 		cdp:     cdp,
 		log:     log,
@@ -169,6 +174,7 @@ func NewManager(cdp CDP, log *zap.Logger) *Manager {
 		events:  map[string][]eventHandler{},
 		slots:   map[tabKey]*slot{},
 	}
+	m.refSeq.n.Store(refStart)
 	m.addAttachHook(enableFocusEmulation)
 	m.addAttachHook(autoAttachFrames)
 	m.addAttachHook(enablePage)

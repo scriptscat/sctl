@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
 	. "github.com/smartystreets/goconvey/convey"
+	"go.uber.org/zap"
 
 	"github.com/scriptscat/sctl/internal/pkg/protocol/generated"
 )
@@ -78,7 +80,10 @@ func (p *fakePage) send(_ context.Context, cmd Command) (json.RawMessage, error)
 
 // newSnapshotManager 构造带测试动作 resolve 的 Manager:它在目标标签页上解析输入里的引用。
 func newSnapshotManager(cdp CDP) *Manager {
-	m := newTestManager(cdp, &fakeClock{})
+	return withResolve(newTestManager(cdp, &fakeClock{}))
+}
+
+func withResolve(m *Manager) *Manager {
 	m.register("resolve", func(ctx context.Context, t *Tab, input json.RawMessage) (any, error) {
 		var in struct {
 			Ref string `json:"ref"`
@@ -425,5 +430,37 @@ func TestSnapshotOversizedPage(t *testing.T) {
 			So(json.Unmarshal(raw, &res), ShouldBeNil)
 			So(res.Snapshot, ShouldEqual, "- navigation\n  - button \"Only me\" [ref=e1]")
 		})
+	})
+}
+
+func TestRefsDoNotSurviveDaemonRestart(t *testing.T) {
+	Convey("daemon 重启(新的 Manager)之后,重启前签发的引用返回 STALE_REF", t, func() {
+		snapshotOn := func() (*Manager, string) {
+			cdp := newFakeCDP()
+			cdp.setSend((&fakePage{mainButton: "Main"}).send)
+			m := NewManager(cdp, zap.NewNop())
+			m.clock = &fakeClock{}
+			withResolve(m)
+			snap, err := takeSnapshot(m, 3)
+			So(err, ShouldBeNil)
+			return m, snap
+		}
+		_, first := snapshotOn()
+		second, _ := snapshotOn()
+		oldRef := regexp.MustCompile(`\[ref=(e\d+)\]`).FindStringSubmatch(first)[1]
+
+		So(errorCode(resolve(second, 3, oldRef)), ShouldEqual, generated.ErrorCodeStaleRef)
+	})
+}
+
+func TestRandomRefStartStaysShort(t *testing.T) {
+	Convey("随机起点落在约定范围内,引用保持 eN 格式且不超过 13 位数字", t, func() {
+		for i := 0; i < 64; i++ {
+			s := randomRefStart()
+			So(s, ShouldBeLessThan, uint64(refStartRange))
+			var seq refSeq
+			seq.n.Store(s)
+			So(regexp.MustCompile(`^e\d{1,13}$`).MatchString(seq.next()), ShouldBeTrue)
+		}
 	})
 }

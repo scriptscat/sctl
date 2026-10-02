@@ -24,7 +24,7 @@ func startPage(t *testing.T, fixture string) (*page.Manager, int) {
 	t.Helper()
 	chrome := pagetest.Start(t)
 	base := pagetest.Serve(t, "testdata")
-	m := page.NewManager(chrome, zap.NewNop())
+	m := page.NewManagerWithRefStart(chrome, zap.NewNop(), 0)
 	chrome.SetListener(m)
 	tab := chrome.NewTab(t, base+"/"+fixture)
 	waitLoaded(t, m, tab)
