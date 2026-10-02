@@ -687,6 +687,22 @@ func TestCancelingWithTheInterruptSignalCause(t *testing.T) {
 	})
 }
 
+func TestCancelingAPageCommandWithTheInterruptSignalCause(t *testing.T) {
+	Convey("真实 Ctrl-C 取消页面命令:退出码 2,不漏出底层 HTTP 错误,也不声称动作已作废", t, func() {
+		arrived := stubDaemonHolding(t)
+		ctx, cancel := context.WithCancelCause(context.Background())
+		go func() {
+			<-arrived
+			cancel(errors.New("interrupt signal received"))
+		}()
+		code, _, _, err := runCLIContext(ctx, strings.NewReader(""), "page", "eval", "1", "--tab", "5")
+		cancel(nil)
+		So(code, ShouldEqual, exitVoided)
+		So(err, ShouldNotBeNil)
+		So(err.Error(), ShouldEqual, canceledUnconfirmed)
+	})
+}
+
 func TestWaitingLineAppearsOnlyOnceTheRequestEntersApproval(t *testing.T) {
 	Convey("L2 浏览器命令只在请求真正进入审批后提示等待批准", t, func() {
 		online := []control.BrowserInfo{{ID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Name: "chrome-a", Online: true}}

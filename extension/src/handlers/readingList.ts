@@ -2,9 +2,9 @@ import { HandlerError, type HandlerRegistry, type RpcHandler } from "@/backgroun
 import { requireApi } from "./api";
 import { listLimit, takePage } from "./list";
 
-// chrome.readingList 从 Chrome 120 起才有，Edge 是否提供尚未确认，而最低版本仍是 116（spec 设计决策 7）。
+// 最低版本的 Chrome 已经提供 chrome.readingList，但 Edge 等 Chromium 浏览器是否提供尚未确认，所以仍按需检测。
 function readingListApi(): typeof chrome.readingList {
-  return requireApi("readingList", " (needs Chrome 120 or later)");
+  return requireApi("readingList");
 }
 
 // 阅读列表只收 http/https 地址，别的地址 chrome 只会笼统地拒绝。

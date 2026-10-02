@@ -68,6 +68,19 @@ describe("reading list handlers", () => {
     }
   });
 
+  // manifest 的最低版本（Chrome 125）已经提供阅读列表：缺少它的只能是不提供这个 API 的 Chromium 浏览器，升级 Chrome 不是办法。
+  it("does not tell a browser without chrome.readingList to upgrade to a Chrome version below the extension's minimum", async () => {
+    vi.stubGlobal("chrome", {});
+
+    const outcome = await registry.dispatch("readingList.list", {});
+
+    expect(outcome).toEqual({
+      ok: false,
+      code: "UNSUPPORTED",
+      message: "this browser does not provide chrome.readingList",
+    });
+  });
+
   describe("readingList.list", () => {
     it("lists entries newest first with page-controlled titles untouched and reports whether more remain", async () => {
       readingList.query.mockImplementation(

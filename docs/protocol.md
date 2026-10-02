@@ -305,7 +305,8 @@ above 1000 is rejected with `INVALID_REQUEST`.
 
 Every method of a data domain answers `UNSUPPORTED`, naming the missing API, when the browser does not provide that
 domain's `chrome.*` namespace (`bookmarks`, `readingList`, `tabGroups`, `history`, `sessions`, `downloads`, `cookies`,
-`browsingData`, `management`); `chrome.readingList` in particular only exists from Chrome 120.
+`browsingData`, `management`). Chrome 125, the extension's minimum version, provides all of them; another Chromium
+browser may not.
 `readingList.add` answers `CONFLICT` for a URL that is already in the list, and its title defaults to the URL.
 `readingList.markRead` and `readingList.remove` are all-or-nothing: if any given URL is not in the list they
 answer `NOT_FOUND` and change nothing.

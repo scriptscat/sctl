@@ -806,33 +806,27 @@ describe("notifications to the daemon", () => {
 });
 
 describe("oversized results", () => {
-  it("answers PAYLOAD_TOO_LARGE instead of sending a frame above maxFrameBytes", async () => {
-    const h = harness();
+  // daemon 的页面命令按错误码认出被中转拒绝的大结果（无障碍树、整页截图），再提示用 --root 或 jpeg 缩小范围。
+  it("answers PAYLOAD_TOO_LARGE for a debugger.send result above maxFrameBytes, so page commands can suggest a narrower request", async () => {
+    const h = harness({ methods: ["debugger.send"] });
     await acceptSession(h.socket());
     await until(() => h.state().status === "connected");
-    h.setOutcome({ ok: true, result: { blob: "a".repeat(LIMITS.maxFrameBytes) } });
+    h.setOutcome({ ok: true, result: { result: { blob: "a".repeat(LIMITS.maxFrameBytes) } } });
     const socket = h.socket();
     const response = socket.nextSent();
 
-    socket.receive({ jsonrpc: "2.0", id: "big", method: "tabs.list", params: { input: {} } });
+    socket.receive({
+      jsonrpc: "2.0",
+      id: "big",
+      method: "debugger.send",
+      params: { input: { tabId: 5, method: "Accessibility.getFullAXTree" } },
+    });
 
     expect(await response).toMatchObject({
       id: "big",
       error: { code: -32000, data: { code: "PAYLOAD_TOO_LARGE" } },
     });
-  });
-
-  it("counts bytes rather than characters", async () => {
-    const h = harness();
-    await acceptSession(h.socket());
-    await until(() => h.state().status === "connected");
-    h.setOutcome({ ok: true, result: { blob: "汉".repeat(Math.ceil(LIMITS.maxFrameBytes / 3)) } });
-    const socket = h.socket();
-    const response = socket.nextSent();
-
-    socket.receive({ jsonrpc: "2.0", id: "big", method: "tabs.list", params: { input: {} } });
-
-    expect(await response).toMatchObject({ error: { data: { code: "PAYLOAD_TOO_LARGE" } } });
+    expect(socket.closedWith).toBeNull();
   });
 });
 

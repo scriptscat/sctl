@@ -439,28 +439,14 @@ export class Connection {
     this.send(attempt, { method, params: params as unknown as Record<string, unknown> });
   }
 
-  // 除业务结果（reply 按方法名先行限制）外的帧都从这里发出，所以在这里统一限制大小：daemon 收到超过
-  // maxFrameBytes 的帧会断开连接。
+  // 业务结果由 reply 换成 PAYLOAD_TOO_LARGE；其余帧（CDP 通知等）都从这里发出，超限的只能丢弃：
+  // daemon 收到超过 maxFrameBytes 的帧会断开连接。
   private send(attempt: Attempt, message: Omit<JsonRpcMessage, "jsonrpc">): void {
-    if (attempt !== this.attempt) {
-      return;
-    }
-    let frame = JSON.stringify({ jsonrpc: "2.0", ...message });
+    const frame = JSON.stringify({ jsonrpc: "2.0", ...message });
     // 每个 UTF-16 码元编码成最多 3 个字节，短于 maxFrameBytes/3 的帧必然不超限，只有大帧才付编码的开销。
     if (frame.length > LIMITS.maxFrameBytes / 3 && utf8.encode(frame).length > LIMITS.maxFrameBytes) {
-      if (message.id === undefined || message.result === undefined) {
-        console.warn(`dropping an oversized ${message.method ?? "response"} frame`);
-        return;
-      }
-      frame = JSON.stringify({
-        jsonrpc: "2.0",
-        id: message.id,
-        error: {
-          code: RPC_APPLICATION_ERROR,
-          message: `result exceeds the ${LIMITS.maxFrameBytes} byte frame limit`,
-          data: { code: "PAYLOAD_TOO_LARGE" },
-        },
-      });
+      console.warn(`dropping an oversized ${message.method ?? "response"} frame`);
+      return;
     }
     this.sendFrame(attempt, frame);
   }

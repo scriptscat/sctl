@@ -2,8 +2,8 @@ import { type ApprovalHandler, HandlerError, type RpcHandler } from "@/backgroun
 import type { RpcMethod } from "@/protocol/generated/protocol.generated";
 import type { ApprovalKind } from "@/shared/approvals";
 
-// 各数据领域依赖的 chrome.* 命名空间。类型声明总带着它们，运行时却可能没有（例如别的 Chromium 浏览器，或阅读列表之于
-// Chrome 120 以前）：每次调用时检测，缺少时整个领域回 UNSUPPORTED 并点名缺少的 API，而不是在 undefined 上崩成 INTERNAL_ERROR。
+// 各数据领域依赖的 chrome.* 命名空间。类型声明总带着它们，运行时却可能没有（例如别的 Chromium 浏览器）：每次调用时检测，
+// 缺少时整个领域回 UNSUPPORTED 并点名缺少的 API，而不是在 undefined 上崩成 INTERNAL_ERROR。
 export type ChromeNamespace =
   | "bookmarks"
   | "readingList"
@@ -15,10 +15,10 @@ export type ChromeNamespace =
   | "browsingData"
   | "management";
 
-export function requireApi<N extends ChromeNamespace>(namespace: N, hint = ""): (typeof chrome)[N] {
+export function requireApi<N extends ChromeNamespace>(namespace: N): (typeof chrome)[N] {
   const api = (chrome as Partial<typeof chrome>)[namespace];
   if (api === undefined) {
-    throw new HandlerError("UNSUPPORTED", `this browser does not provide chrome.${namespace}${hint}`);
+    throw new HandlerError("UNSUPPORTED", `this browser does not provide chrome.${namespace}`);
   }
   return api;
 }

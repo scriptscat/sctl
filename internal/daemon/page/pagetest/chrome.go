@@ -383,10 +383,13 @@ func (c *Chrome) Send(ctx context.Context, instanceID string, cmd page.Command) 
 	if err != nil {
 		return nil, err
 	}
-	// 扩展中转不发超过单帧上限的应答帧,改答 PAYLOAD_TOO_LARGE(extension/src/offscreen/connection.ts)。
-	// 直连 Chrome 没有这个上限,在这里照做,大页面的集成测试才与生产一致。
+	// 扩展中转不发超过单帧上限的应答帧,改答 PAYLOAD_TOO_LARGE(extension/src/offscreen/connection.ts 的 reply,
+	// 消息也与它一致)。直连 Chrome 没有这个上限,在这里照做,大页面的集成测试才与生产一致。
 	if limit := maxFrameBytes(); len(res)+relayEnvelopeBytes > limit {
-		return nil, &page.Error{Code: generated.ErrorCodePayloadTooLarge, Message: fmt.Sprintf("result exceeds the %d byte frame limit", limit)}
+		return nil, &page.Error{
+			Code:    generated.ErrorCodePayloadTooLarge,
+			Message: fmt.Sprintf("result of %s exceeds the %d-byte frame limit", generated.MethodDebuggerSend, limit),
+		}
 	}
 	return res, nil
 }

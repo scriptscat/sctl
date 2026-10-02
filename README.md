@@ -159,7 +159,8 @@ window, and `--activate` makes the tab active in its window first without focusi
 command on a tab attaches the debugger, which shows the debugging infobar until the tab has been idle for
 5 minutes or you run `sctl page detach`; while attached, the page behaves as if it were visible and focused.
 `--timeout` overrides the default 10s limit (30s for navigation and screenshots), and `-o json` prints the full result. A page command exits with 2
-when the debugger detaches while it runs (for example, the infobar was dismissed) and with 3 on other errors.
+when the debugger detaches while it runs (for example, the infobar was dismissed) or you press Ctrl-C, which stops
+waiting but does not undo what the page already did, and with 3 on other errors.
 
 While a JS dialog is open in a tab, every page command except `sctl page dialog` and `detach` fails with
 `DIALOG_OPEN` (exit 3), naming the dialog type and its text (page-controlled content). Dialogs are never handled

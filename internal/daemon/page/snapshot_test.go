@@ -288,7 +288,7 @@ type treePage struct {
 
 func (p *treePage) send(_ context.Context, cmd Command) (json.RawMessage, error) {
 	if p.tooLarge[cmd.Method] {
-		return nil, &Error{Code: generated.ErrorCodePayloadTooLarge, Message: "result exceeds the 4194304 byte frame limit"}
+		return nil, &Error{Code: generated.ErrorCodePayloadTooLarge, Message: "result of debugger.send exceeds the 4194304-byte frame limit"}
 	}
 	switch cmd.Method {
 	case "Accessibility.getFullAXTree", "Accessibility.queryAXTree":

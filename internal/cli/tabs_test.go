@@ -326,12 +326,14 @@ func stubDaemonHolding(t *testing.T) <-chan struct{} {
 	mux.HandleFunc(control.PathHealth, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	mux.HandleFunc(control.PathCall, func(_ http.ResponseWriter, r *http.Request) {
+	hold := func(_ http.ResponseWriter, r *http.Request) {
 		// 读完请求体服务端才会察觉客户端断开并取消 r.Context()。
 		_, _ = io.Copy(io.Discard, r.Body)
 		close(arrived)
 		<-r.Context().Done()
-	})
+	}
+	mux.HandleFunc(control.PathCall, hold)
+	mux.HandleFunc(control.PathPage, hold)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 

@@ -54,7 +54,7 @@ func TestScreenshotFailures(t *testing.T) {
 	Convey("扩展中转报告结果超过单帧上限时", t, func() {
 		m, cdp := newActionManager(&renderingPage{rendering: true})
 		cdp.setSend(captureFake(func(context.Context, Command) (json.RawMessage, error) {
-			return nil, &Error{Code: generated.ErrorCodePayloadTooLarge, Message: "result exceeds the 4194304 byte frame limit"}
+			return nil, &Error{Code: generated.ErrorCodePayloadTooLarge, Message: "result of debugger.send exceeds the 4194304-byte frame limit"}
 		}))
 		_, err := shoot(m, `{"full":true}`)
 		So(errorCode(err), ShouldEqual, generated.ErrorCodePayloadTooLarge)
