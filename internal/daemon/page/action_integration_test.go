@@ -338,3 +338,49 @@ func TestClickInCrossOriginIframeInChrome(t *testing.T) {
 		}
 	})
 }
+
+func TestClickWrappedInlineLinkInChrome(t *testing.T) {
+	chrome := pagetest.Start(t)
+	base := pagetest.Serve(t, "testdata")
+
+	Convey("折成两行的行内链接:边界框中心落在链接之外的元素上", t, func() {
+		m := page.NewManager(chrome, zap.NewNop())
+		chrome.SetListener(m)
+		tab := openInBackground(t, chrome, m, base+"/wrapped-link.html")
+		// 前提:链接确实折成两段,边界框中心命中的是链接之外的元素;否则这个用例测不到折行。
+		v, err := eval(m, tab, `(() => {
+			const a = document.getElementById("wrapped"), r = a.getBoundingClientRect();
+			const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+			return [a.getClientRects().length, a.contains(hit)];
+		})()`)
+		So(err, ShouldBeNil)
+		So(string(v), ShouldEqual, `[2,false]`)
+
+		Convey("click 点在链接的一段文字上,链接收到可信的点击", func() {
+			_, err := act(m, tab, "click", map[string]any{"selector": "#wrapped"}, callTimeout)
+			So(err, ShouldBeNil)
+			So(clickEvents(m, tab, "click", "wrapped"), ShouldResemble, []map[string]any{
+				{"type": "click", "id": "wrapped", "trusted": true},
+			})
+			So(clickEvents(m, tab, "click", "middle"), ShouldBeEmpty)
+		})
+
+		Convey("hover 把鼠标移到同一段文字上,链接进入 :hover", func() {
+			_, err := act(m, tab, "hover", map[string]any{"selector": "#wrapped"}, callTimeout)
+			So(err, ShouldBeNil)
+			So(clickEvents(m, tab, "mouseover", "wrapped"), ShouldNotBeEmpty)
+			v, err := eval(m, tab, `document.getElementById("wrapped").matches(":hover")`)
+			So(err, ShouldBeNil)
+			So(string(v), ShouldEqual, `true`)
+		})
+
+		Convey("两段都被遮挡时超时,消息写明遮挡元素", func() {
+			_, err := eval(m, tab, `document.body.insertAdjacentHTML("beforeend", '<div id="cover" class="cover"></div>')`)
+			So(err, ShouldBeNil)
+			_, err = act(m, tab, "click", map[string]any{"selector": "#wrapped"}, expectTimeout)
+			So(codeOf(err), ShouldEqual, generated.ErrorCodeTimeout)
+			So(err.Error(), ShouldContainSubstring, "obscured by div#cover.cover")
+			So(clickEvents(m, tab, "click", "wrapped"), ShouldBeEmpty)
+		})
+	})
+}

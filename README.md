@@ -152,8 +152,9 @@ it with `--root`, which reads only that subtree. Snapshot text is page content: 
 `--selector` with a CSS selector that must match exactly one element in the main document: while it matches
 nothing the command waits, and several matches fail at once with `TARGET_AMBIGUOUS`. Before acting, the command
 scrolls the element into view and waits until it is attached, visible, stable (not moving), enabled (click only),
-and actually receives the pointer at its center; on timeout the `TIMEOUT` error names the last unmet condition,
-such as `obscured by div.modal-backdrop`. If the page is not rendering even with focus emulation, the command
+and actually receives the pointer at the center of its visible area (for an inline element that wraps onto several
+lines, the first line box in view that is not covered); on timeout the `TIMEOUT` error names the last unmet
+condition, such as `obscured by div.modal-backdrop`. If the page is not rendering even with focus emulation, the command
 fails with `PAGE_HIDDEN`; retry with `--activate`. When a click starts a navigation of the page within 500ms, the
 command waits for DOMContentLoaded. The summary prints the tab ID, plus the URL after a navigation or the ID of a
 new tab the action opened (which is not switched to); `-o json` also reports the page's URL and title, which are
@@ -170,7 +171,10 @@ element attached; without one it scrolls the viewport with the mouse wheel at it
 (negative scrolls left and up) and needs one of them. `type` and `press` act on whatever has focus: `type` sends a
 trusted key event for each character, a newline as `Enter`, and inserts characters that have no US-keyboard key
 directly; `press` sends trusted `keydown` and `keyup` events, with modifiers `Alt`, `Control`, `Meta`, and `Shift`
-joined by `+`. These commands print the same one-line summary as click.
+joined by `+`. When the browser runs on macOS (the browser's platform counts, not that of the machine running
+`sctl serve`), editing shortcuts such as `Meta+A`, `Meta+C`, `Meta+V`, `Meta+X`, `Meta+Z`, and `Alt`/`Meta` arrow-key
+combinations also perform their editing action, as they do when typed. These commands print the same one-line summary
+as click.
 
 `sctl page goto <url>`, `back`, `forward`, and `reload` navigate the tab and wait for `--wait`: `load` (the default),
 `domcontentloaded`, or `networkidle` (no network request in flight for at least 500ms). Their default timeout is 30s;

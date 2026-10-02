@@ -49,6 +49,8 @@ type Tab struct {
 	dialog     *dialogState
 	// watchingNetwork 表示这次附加已开启 Network 域。只在标签页队列里读写。
 	watchingNetwork bool
+	// onMac 缓存 browserOnMac 的结果,nil 表示还没问过。只在标签页队列里读写。
+	onMac *bool
 }
 
 // ID 返回标签页 ID。

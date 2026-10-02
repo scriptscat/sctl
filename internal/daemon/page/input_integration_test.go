@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -201,6 +202,25 @@ func TestInputActionsInChrome(t *testing.T) {
 				So(codeOf(err), ShouldEqual, generated.ErrorCodeInvalidRequest)
 			}
 			So(keySequence(m, tab), ShouldBeEmpty)
+		})
+
+		Convey("press 全选快捷键选中输入框里的全部文字,随后 type 替换它们(macOS 上是 Meta+A,其余平台是 Control+A)", func() {
+			// headless Chrome 与测试进程在同一台机器上,浏览器所在平台就是 runtime.GOOS。
+			selectAll := "Control+A"
+			if runtime.GOOS == "darwin" {
+				selectAll = "Meta+A"
+			}
+			_, err := fill("name", "hello world")
+			So(err, ShouldBeNil)
+			focusOn(m, tab, "name")
+			_, err = act(m, tab, "press", map[string]any{"key": selectAll}, callTimeout)
+			So(err, ShouldBeNil)
+			v, err := eval(m, tab, `[document.getElementById("name").selectionStart, document.getElementById("name").selectionEnd]`)
+			So(err, ShouldBeNil)
+			So(string(v), ShouldEqual, `[0,11]`)
+			_, err = act(m, tab, "type", map[string]any{"text": "Typed!"}, callTimeout)
+			So(err, ShouldBeNil)
+			So(valueOf(m, tab, "name"), ShouldEqual, "Typed!")
 		})
 
 		Convey("select 按 value 或可见文本选择,触发 input 与 change", func() {

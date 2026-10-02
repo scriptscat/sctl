@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -150,6 +151,95 @@ func TestInputActionTargetLeavesMidAction(t *testing.T) {
 			_, err := doAction(m, action, c.input, time.Minute)
 			So(errorCode(err), ShouldEqual, generated.ErrorCodeNotFound)
 			So(err.Error(), ShouldContainSubstring, "#target")
+		}
+	})
+}
+
+// platformPage 是 navigator.platform 为 platform 的假页面。
+type platformPage struct {
+	renderingPage
+	platform string
+}
+
+func (p *platformPage) send(ctx context.Context, cmd Command) (json.RawMessage, error) {
+	if cmd.Method == "Runtime.evaluate" {
+		v, err := json.Marshal(p.platform)
+		if err != nil {
+			return nil, err
+		}
+		return json.RawMessage(`{"result":{"type":"string","value":` + string(v) + `}}`), nil
+	}
+	return p.renderingPage.send(ctx, cmd)
+}
+
+// keyDowns 返回发出的按下事件的 "key:commands" 序列,没有 commands 时只有 key。
+func keyDowns(f *fakeCDP) []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []string
+	for _, c := range f.sent {
+		if c.Method != "Input.dispatchKeyEvent" {
+			continue
+		}
+		var p struct {
+			Type     string   `json:"type"`
+			Key      string   `json:"key"`
+			Commands []string `json:"commands"`
+		}
+		So(json.Unmarshal(c.Params, &p), ShouldBeNil)
+		if p.Type == "keyUp" {
+			So(p.Commands, ShouldBeEmpty)
+			continue
+		}
+		entry := p.Key
+		if len(p.Commands) > 0 {
+			entry += ":" + strings.Join(p.Commands, ",")
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+func TestPressEditingCommandsOnMac(t *testing.T) {
+	Convey("浏览器在 macOS 上时,press 把编辑快捷键映射为按下主键时的编辑命令", t, func() {
+		cdp := newFakeCDP()
+		cdp.setSend((&platformPage{renderingPage: renderingPage{rendering: true}, platform: "MacIntel"}).send)
+		m := newTestManager(cdp, &fakeClock{})
+		for _, key := range []string{"Meta+A", "Meta+Shift+Z", "Alt+ArrowUp", "Shift+ArrowLeft", "Control+O", "Enter", "Shift+Tab", "x"} {
+			_, err := doAction(m, "press", `{"key":"`+key+`"}`, time.Minute)
+			So(err, ShouldBeNil)
+		}
+		So(keyDowns(cdp), ShouldResemble, []string{
+			"Meta", "A:selectAll",
+			"Meta", "Shift", "Z:redo",
+			"Alt", "ArrowUp:moveBackward,moveToBeginningOfParagraph",
+			"Shift", "ArrowLeft:moveLeftAndModifySelection",
+			// 插入文字的命令(Control+O 的 insertNewlineIgnoringFieldEditor、Enter 的 insertNewline)由按键自身完成,不重复发送。
+			"Control", "O:moveBackward",
+			"Enter",
+			"Shift", "Tab",
+			"x",
+		})
+		// 平台在一次附加内只向页面问一次。
+		evaluations := 0
+		for _, method := range cdp.methods(7) {
+			if method == "Runtime.evaluate" {
+				evaluations++
+			}
+		}
+		So(evaluations, ShouldEqual, 1)
+	})
+
+	Convey("浏览器不在 macOS 上时,同样的快捷键不带编辑命令(Chrome 自己处理)", t, func() {
+		for _, platform := range []string{"Win32", "Linux x86_64"} {
+			cdp := newFakeCDP()
+			cdp.setSend((&platformPage{renderingPage: renderingPage{rendering: true}, platform: platform}).send)
+			m := newTestManager(cdp, &fakeClock{})
+			for _, key := range []string{"Meta+A", "Control+A", "Shift+ArrowLeft"} {
+				_, err := doAction(m, "press", `{"key":"`+key+`"}`, time.Minute)
+				So(err, ShouldBeNil)
+			}
+			So(keyDowns(cdp), ShouldResemble, []string{"Meta", "A", "Control", "A", "Shift", "ArrowLeft"})
 		}
 	})
 }

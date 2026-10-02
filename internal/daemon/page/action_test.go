@@ -45,10 +45,13 @@ func (p *renderingPage) send(_ context.Context, cmd Command) (json.RawMessage, e
 		if err := json.Unmarshal(cmd.Params, &params); err != nil {
 			return nil, err
 		}
-		if strings.Contains(params.FunctionDeclaration, "requestAnimationFrame") {
+		switch params.FunctionDeclaration {
+		case stableFunction:
 			if !p.rendering {
 				return json.RawMessage(`{"result":{"type":"object","value":{"state":"noFrame"}}}`), nil
 			}
+			return json.RawMessage(`{"result":{"type":"object","value":{"state":"ok","box":[10,10,100,30]}}}`), nil
+		case hitPointFunction:
 			if p.obscuredBy != "" {
 				by, err := json.Marshal(p.obscuredBy)
 				if err != nil {
@@ -56,7 +59,7 @@ func (p *renderingPage) send(_ context.Context, cmd Command) (json.RawMessage, e
 				}
 				return json.RawMessage(`{"result":{"type":"object","value":{"state":"obscured","by":` + string(by) + `}}}`), nil
 			}
-			return json.RawMessage(`{"result":{"type":"object","value":{"state":"ok","fx":0.5,"fy":0.5}}}`), nil
+			return json.RawMessage(`{"result":{"type":"object","value":{"state":"ok","x":60,"y":25}}}`), nil
 		}
 		return json.RawMessage(`{"result":{"type":"object","value":{"state":"ok"}}}`), nil
 	}

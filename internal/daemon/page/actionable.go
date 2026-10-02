@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"go.uber.org/zap"
@@ -65,10 +66,9 @@ const stateFunction = `function (c) {
   return { state: "ok" };
 }`
 
-// positionFunction 在元素滚入视口后,隔一个动画帧测两次边界框判断位置稳定,再在元素可见部分的中心
-// 做命中测试(穿过 shadow root)。点以相对边界框的比例 fx/fy 返回:元素所在 frame 的坐标与会话视口
-// 坐标之间的换算由 DOM.getContentQuads 完成。
-const positionFunction = `async function (frameWait, hitTarget) {
+// stableFunction 在元素滚入视口后隔一个动画帧测两次边界框,判断位置稳定,返回稳定的边界框
+// (元素所在 frame 的视口坐标)。目标是文本节点时测量文本自身。
+const stableFunction = `async function (frameWait) {
   const el = this.nodeType === 1 ? this : this.parentElement;
   if (!this.isConnected || !el) return { state: "detached" };
   const frame = () => new Promise((resolve) => {
@@ -76,43 +76,73 @@ const positionFunction = `async function (frameWait, hitTarget) {
     requestAnimationFrame(() => { if (!done) { done = true; resolve(true); } });
     setTimeout(() => { if (!done) { done = true; resolve(false); } }, frameWait);
   });
-  const box = () => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; };
+  const range = this.nodeType === 1 ? null : document.createRange();
+  if (range) range.selectNodeContents(this);
+  const box = () => { const r = (range || el).getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; };
   if (!(await frame())) return { state: "noFrame" };
   const first = box();
   if (!(await frame())) return { state: "noFrame" };
-  const [left, top, width, height] = box();
-  if (first[0] !== left || first[1] !== top || first[2] !== width || first[3] !== height) return { state: "unstable" };
-  const x0 = Math.max(left, 0), y0 = Math.max(top, 0);
-  const x1 = Math.min(left + width, innerWidth), y1 = Math.min(top + height, innerHeight);
-  if (x1 <= x0 || y1 <= y0) return { state: "outside" };
-  const x = (x0 + x1) / 2, y = (y0 + y1) / 2;
-  const at = { fx: (x - left) / width, fy: (y - top) / height };
-  if (!hitTarget) return { state: "ok", ...at };
-  let hit = document.elementFromPoint(x, y);
-  while (hit && hit.shadowRoot) {
-    const inner = hit.shadowRoot.elementFromPoint(x, y);
-    if (!inner || inner === hit) break;
-    hit = inner;
+  const second = box();
+  if (first.some((v, i) => v !== second[i])) return { state: "unstable" };
+  return { state: "ok", box: second };
+}`
+
+// hitPointFunction 从 DOM.getContentQuads 给出的四边形(会话视口坐标;折行的行内元素每行一个)里
+// 依次取在视口内的那部分的中心,在元素所在 frame 里做命中测试(穿过 shadow root),返回第一个命中
+// 元素自身或其后代的点,坐标仍是会话视口坐标。四边形与 frame 坐标之间按全部四边形的外接矩形与
+// stableFunction 测得的边界框 box 对应换算:元素在同进程 iframe 里时两者相差 iframe 的位置。
+// 边界框与 box 不同说明元素又动了。全部被挡住时报告第一个可见区域上的遮挡元素。
+const hitPointFunction = `function (quads, box, hitTarget) {
+  const el = this.nodeType === 1 ? this : this.parentElement;
+  if (!this.isConnected || !el) return { state: "detached" };
+  const range = this.nodeType === 1 ? null : document.createRange();
+  if (range) range.selectNodeContents(this);
+  const r = (range || el).getBoundingClientRect();
+  if (r.left !== box[0] || r.top !== box[1] || r.width !== box[2] || r.height !== box[3]) return { state: "unstable" };
+  const xs = quads.flatMap((q) => [q[0], q[2], q[4], q[6]]), ys = quads.flatMap((q) => [q[1], q[3], q[5], q[7]]);
+  const qx = Math.min(...xs), qy = Math.min(...ys), qw = Math.max(...xs) - qx, qh = Math.max(...ys) - qy;
+  const sx = qw > 0 ? box[2] / qw : 1, sy = qh > 0 ? box[3] / qh : 1;
+  const toFrame = (x, y) => [box[0] + (x - qx) * sx, box[1] + (y - qy) * sy];
+  const toSession = (x, y) => ({ x: qx + (x - box[0]) / sx, y: qy + (y - box[1]) / sy });
+  let by;
+  for (const q of quads) {
+    const [x0, y0] = toFrame(Math.min(q[0], q[2], q[4], q[6]), Math.min(q[1], q[3], q[5], q[7]));
+    const [x1, y1] = toFrame(Math.max(q[0], q[2], q[4], q[6]), Math.max(q[1], q[3], q[5], q[7]));
+    const left = Math.max(x0, 0), top = Math.max(y0, 0), right = Math.min(x1, innerWidth), bottom = Math.min(y1, innerHeight);
+    if (right - left < 1 || bottom - top < 1) continue;
+    const x = (left + right) / 2, y = (top + bottom) / 2;
+    if (!hitTarget) return { state: "ok", ...toSession(x, y) };
+    let hit = document.elementFromPoint(x, y);
+    while (hit && hit.shadowRoot) {
+      const inner = hit.shadowRoot.elementFromPoint(x, y);
+      if (!inner || inner === hit) break;
+      hit = inner;
+    }
+    for (let n = hit; n; n = n.parentNode || n.host) {
+      if (n === el) return { state: "ok", ...toSession(x, y) };
+    }
+    if (by === undefined) {
+      by = "nothing";
+      if (hit) {
+        by = hit.localName + (hit.id ? "#" + hit.id : "");
+        for (const c of hit.classList) by += "." + c;
+      }
+    }
   }
-  for (let n = hit; n; n = n.parentNode || n.host) {
-    if (n === el) return { state: "ok", ...at };
-  }
-  let by = "nothing";
-  if (hit) {
-    by = hit.localName + (hit.id ? "#" + hit.id : "");
-    for (const c of hit.classList) by += "." + c;
-  }
-  return { state: "obscured", by };
+  return by === undefined ? { state: "outside" } : { state: "obscured", by };
 }`
 
 // maxObscurerLength 限制遮挡元素描述的长度:它来自页面的 id 与 class,可以任意长。
 const maxObscurerLength = 120
 
 type probeResult struct {
-	State string  `json:"state"`
-	By    string  `json:"by"`
-	FX    float64 `json:"fx"`
-	FY    float64 `json:"fy"`
+	State string `json:"state"`
+	By    string `json:"by"`
+	// Box 是 stableFunction 测得的边界框 [left, top, width, height]。
+	Box []float64 `json:"box"`
+	// X、Y 是 hitPointFunction 选出的点。
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
 }
 
 // errDetached 表示元素在等待期间离开了文档:引用就此失效,选择器可以重新查询。
@@ -195,26 +225,54 @@ func probeOnce(ctx context.Context, t *Tab, el element, c checks) (actionPoint, 
 	if !c.needsPoint() {
 		return actionPoint{}, "", nil
 	}
-	var pos probeResult
-	if err := callOn(ctx, t, el.sessionID, node.Object.ObjectID, positionFunction, &pos, frameWait.Milliseconds(), c.hitTarget); err != nil {
+	var stable probeResult
+	if err := callOn(ctx, t, el.sessionID, node.Object.ObjectID, stableFunction, &stable, frameWait.Milliseconds()); err != nil {
 		return actionPoint{}, "", err
 	}
+	if why, err := positionReason(stable); why != "" || err != nil {
+		return actionPoint{}, why, err
+	}
+	var res struct {
+		Quads [][]float64 `json:"quads"`
+	}
+	err = t.sendTo(ctx, el.sessionID, "DOM.getContentQuads", map[string]int{"backendNodeId": el.backendNodeID}, &res)
+	if err != nil {
+		if isCDPError(err) {
+			return actionPoint{}, "the element is not visible", nil
+		}
+		return actionPoint{}, "", err
+	}
+	quads := slices.DeleteFunc(res.Quads, func(q []float64) bool { return len(q) != 8 })
+	if len(quads) == 0 {
+		return actionPoint{}, "the element is not visible", nil
+	}
+	var pos probeResult
+	if err := callOn(ctx, t, el.sessionID, node.Object.ObjectID, hitPointFunction, &pos, quads, stable.Box, c.hitTarget); err != nil {
+		return actionPoint{}, "", err
+	}
+	if why, err := positionReason(pos); why != "" || err != nil {
+		return actionPoint{}, why, err
+	}
+	return actionPoint{sessionID: el.sessionID, x: pos.X, y: pos.Y}, "", nil
+}
+
+// positionReason 把 stableFunction 与 hitPointFunction 的结果转换为不满足的条件;why 与 err 都为空表示满足。
+func positionReason(pos probeResult) (string, error) {
 	switch pos.State {
 	case "ok":
+		return "", nil
 	case "noFrame":
-		return actionPoint{}, whyNoFrame, nil
+		return whyNoFrame, nil
 	case "unstable":
-		return actionPoint{}, "the element is not stable (it is still moving)", nil
+		return "the element is not stable (it is still moving)", nil
 	case "outside":
-		return actionPoint{}, "the element is outside the viewport", nil
+		return "the element is outside the viewport", nil
 	case "obscured":
-		return actionPoint{}, "the element does not receive pointer events at its click point: obscured by " + truncateRunes(pos.By, maxObscurerLength, "…"), nil
+		return "the element does not receive pointer events at its click point: obscured by " + truncateRunes(pos.By, maxObscurerLength, "…"), nil
 	case "detached":
-		return actionPoint{}, "", errDetached
-	default:
-		return actionPoint{}, "", fmt.Errorf("unexpected actionability state %q", pos.State)
+		return "", errDetached
 	}
-	return pointFromQuads(ctx, t, el, pos)
+	return "", fmt.Errorf("unexpected actionability state %q", pos.State)
 }
 
 func stateReason(state probeResult) (string, error) {
@@ -233,30 +291,6 @@ func stateReason(state probeResult) (string, error) {
 		return "the element is read-only", nil
 	}
 	return "", fmt.Errorf("unexpected actionability state %q", state.State)
-}
-
-// pointFromQuads 把元素边界框内的比例位置换算为会话视口坐标。元素在同进程 iframe 里时,它的
-// getBoundingClientRect 是 iframe 内的坐标,而 DOM.getContentQuads 给出会话视口里的坐标。
-func pointFromQuads(ctx context.Context, t *Tab, el element, pos probeResult) (actionPoint, string, error) {
-	var res struct {
-		Quads [][]float64 `json:"quads"`
-	}
-	err := t.sendTo(ctx, el.sessionID, "DOM.getContentQuads", map[string]int{"backendNodeId": el.backendNodeID}, &res)
-	if err != nil {
-		if isCDPError(err) {
-			return actionPoint{}, "the element is not visible", nil
-		}
-		return actionPoint{}, "", err
-	}
-	minX, minY, maxX, maxY, ok := quadBounds(res.Quads)
-	if !ok {
-		return actionPoint{}, "the element is not visible", nil
-	}
-	return actionPoint{
-		sessionID: el.sessionID,
-		x:         minX + pos.FX*(maxX-minX),
-		y:         minY + pos.FY*(maxY-minY),
-	}, "", nil
 }
 
 // quadBounds 返回全部四边形的外接矩形;一个元素折行时有多个四边形,外接矩形与 getBoundingClientRect 对应。

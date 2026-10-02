@@ -246,7 +246,8 @@ the page return `EVAL_ERROR`. Besides `value`, it returns `tabId`, the page's `u
 cross-origin iframe) or `selector` (a CSS selector that must match exactly one element in the main document; while
 it matches nothing the call waits, and several matches return `TARGET_AMBIGUOUS`). Before acting, they scroll the
 element into view and wait until it is attached, visible, stable, enabled (`page_click` only), and receives the
-pointer at its center; on timeout, `TIMEOUT` names the last unmet condition, such as `obscured by
+pointer at the center of its visible area (for an inline element that wraps onto several lines, the first line box
+in view that is not covered); on timeout, `TIMEOUT` names the last unmet condition, such as `obscured by
 div.modal-backdrop`. `PAGE_HIDDEN` means the tab is not rendering even with focus emulation; retry with
 `activate`. `page_click` sends trusted mouse events and takes optional `button` (`left`, `right`, `middle`),
 `count` (1-10), and `modifiers` (`Alt`, `Control`, `Meta`, `Shift`). When the click starts a navigation of the
@@ -265,7 +266,9 @@ files need the `multiple` attribute. `page_scroll` scrolls a target into view, o
 `dx` and `dy` pixels with the mouse wheel at its center; a target together with `dx`/`dy`, or neither, returns
 `INVALID_REQUEST`. `page_type` (`text`) and `page_press` (`key`, Playwright syntax such as `Enter`, `Control+A`,
 `Shift+Tab`, `Meta+V`) act on the focused element with trusted keyboard events; an unknown key returns
-`INVALID_REQUEST`. All of them return the same fields as `page_click`, `newTabId` included.
+`INVALID_REQUEST`. When the browser runs on macOS (the browser's platform counts, not the daemon's), editing
+shortcuts such as `Meta+A`, `Meta+C`, `Meta+V`, `Meta+X`, `Meta+Z`, and `Alt`/`Meta` arrow-key combinations also
+perform their editing action, as they do when typed. All of them return the same fields as `page_click`, `newTabId` included.
 
 `page_navigate` takes `action` (`goto`, `back`, `forward`, or `reload`), `url` (required for `goto`, not allowed for the
 others), and `wait` (`load` by default, `domcontentloaded`, or `networkidle`, meaning no network request in flight for

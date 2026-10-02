@@ -191,8 +191,18 @@ func (k keySpec) params(kind string, modifiers int) map[string]any {
 }
 
 // pressCombo 按下修饰键与主键,再按相反顺序松开,全部是可信的键盘事件。修饰键按下时事件的
-// modifiers 已含它自己,松开时不含。
+// modifiers 已含它自己,松开时不含。浏览器在 macOS 上时,主键的按下事件带上快捷键对应的编辑命令。
 func pressCombo(ctx context.Context, t *Tab, c combo) error {
+	var commands []string
+	if mapped := c.macCommands(); len(mapped) > 0 {
+		onMac, err := t.browserOnMac(ctx)
+		if err != nil {
+			return err
+		}
+		if onMac {
+			commands = mapped
+		}
+	}
 	send := func(k keySpec, kind string, mods int) error {
 		return t.send(ctx, "Input.dispatchKeyEvent", k.params(kind, mods), nil)
 	}
@@ -204,7 +214,11 @@ func pressCombo(ctx context.Context, t *Tab, c combo) error {
 		}
 	}
 	if c.key != nil {
-		if err := send(*c.key, "keyDown", mods); err != nil {
+		down := c.key.params("keyDown", mods)
+		if len(commands) > 0 {
+			down["commands"] = commands
+		}
+		if err := t.send(ctx, "Input.dispatchKeyEvent", down, nil); err != nil {
 			return err
 		}
 		if err := send(*c.key, "keyUp", mods); err != nil {
