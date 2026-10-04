@@ -12,7 +12,7 @@ export interface RuntimeLike {
   };
 }
 
-export type Target = "background" | "offscreen" | "popup";
+export type Target = "background" | "offscreen" | "popup" | "approval";
 
 function isTargeted(message: unknown, target: Target): message is { target: Target; type: string } {
   return typeof message === "object" && message !== null && (message as { target?: unknown }).target === target;

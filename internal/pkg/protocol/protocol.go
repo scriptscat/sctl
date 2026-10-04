@@ -18,13 +18,15 @@ type Protocol struct {
 	JSONRPCVersion string            `json:"jsonrpc"`
 	SchemaVersion  string            `json:"schemaVersion"`
 	Transport      Transport         `json:"transport"`
-	SessionMethods []string          `json:"sessionMethods"`
+	SessionMethods []SessionMethod   `json:"sessionMethods"`
 	Scopes         []string          `json:"scopes"`
 	Actions        map[string]Action `json:"methods"`
-	ErrorCodes     []ErrorCode       `json:"errorCodes"`
-	Crypto         Crypto            `json:"crypto"`
-	Limits         Limits            `json:"limits"`
-	PairingCode    PairingCode       `json:"pairingCode"`
+	// Types 是 protocol.json 的类型定义(JSON Schema 原文),供需要按方法参数派生 schema 的一方使用。
+	Types       map[string]json.RawMessage `json:"types"`
+	ErrorCodes  []ErrorCode                `json:"errorCodes"`
+	Crypto      Crypto                     `json:"crypto"`
+	Limits      Limits                     `json:"limits"`
+	PairingCode PairingCode                `json:"pairingCode"`
 }
 
 type Transport struct {
@@ -38,12 +40,35 @@ type Action struct {
 	Write    bool   `json:"-"`
 	Effect   string `json:"effect"`
 	Blocking string `json:"blocking,omitempty"`
+	Level    Level  `json:"level"`
 	Params   string `json:"params"`
 	Result   string `json:"result"`
 	Peer     Peer   `json:"peer"`
 	// MergeField 是结果中的数组字段名:多个浏览器同时在线时 daemon 按它合并各实例的列表;非列表方法为空。
 	MergeField string `json:"mergeField,omitempty"`
+	// Internal 标记只供 daemon 内部组件调用的方法(如原始 CDP 中转):它们能以用户登录态驱动任意页面,
+	// 所以既不经 /control/call 对外开放,也不注册为 MCP 工具。
+	Internal bool `json:"internal,omitempty"`
 }
+
+// Level 是方法的破坏级别。daemon 只执行 L1 的确认检查;L2 的人工审批由扩展侧完成,
+// daemon 只是等待它的结果(与 blocking 为 approval/disclosure 的方法同一套阻塞语义)。
+type Level string
+
+const (
+	// LevelDirect 直接执行。
+	LevelDirect Level = "L0"
+	// LevelConfirm 要求调用方在 input 里显式传 confirm: true,否则 daemon 在转发前拒绝。
+	LevelConfirm Level = "L1"
+	// LevelApproval 要求用户在浏览器里批准后才执行。
+	LevelApproval Level = "L2"
+)
+
+// BlockingNone 是 blocking 的取值之一:方法收到即执行,不等待人工决定。
+const BlockingNone = "none"
+
+// ConfirmParam 是 L1 方法参数里承载显式确认的字段名,值必须恰好是 true。
+const ConfirmParam = "confirm"
 
 // Peer 是协议定义的归属对端:方法由哪种扩展实现,错误码与握手常量由哪些扩展使用。
 type Peer string
@@ -52,6 +77,12 @@ const (
 	PeerScriptCat Peer = "scriptcat"
 	PeerBrowser   Peer = "browser"
 )
+
+// SessionMethod 是会话层方法或通知(不经 /control/call 转发);Peers 标明哪些对端的会话里会出现它。
+type SessionMethod struct {
+	Method string `json:"method"`
+	Peers  []Peer `json:"peers"`
+}
 
 type ErrorCode struct {
 	Code  string `json:"code"`

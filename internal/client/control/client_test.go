@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	. "github.com/smartystreets/goconvey/convey"
 )
@@ -118,7 +119,7 @@ func TestCallCarriesTargetBrowser(t *testing.T) {
 		c, bodies := captureCalls(t)
 
 		Convey("指定目标时请求体带 browser", func() {
-			res, err := c.Call(context.Background(), "tabs.open", "edge-fedc", json.RawMessage(`{"url":"https://example.com/"}`))
+			res, err := c.Call(context.Background(), "tabs.open", "edge-fedc", json.RawMessage(`{"url":"https://example.com/"}`), nil)
 			So(err, ShouldBeNil)
 			So(res.OK, ShouldBeTrue)
 			So(string(res.Result), ShouldEqual, `{"tabId":1}`)
@@ -128,12 +129,78 @@ func TestCallCarriesTargetBrowser(t *testing.T) {
 		})
 
 		Convey("不指定目标时请求体不带 browser 字段", func() {
-			_, err := c.Call(context.Background(), "scripts.list", "", nil)
+			_, err := c.Call(context.Background(), "scripts.list", "", nil, nil)
 			So(err, ShouldBeNil)
 			So(*bodies, ShouldHaveLength, 1)
 			_, has := (*bodies)[0]["browser"]
 			So(has, ShouldBeFalse)
 			So(string((*bodies)[0]["input"]), ShouldEqual, `{}`)
+		})
+	})
+}
+
+func TestCallReportsApprovalPending(t *testing.T) {
+	Convey("带 onPending 的调用请 daemon 报告审批开始,并在结论到达前回调", t, func() {
+		var body map[string]json.RawMessage
+		released := make(chan struct{})
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			_, _ = w.Write([]byte(`{"ok":false,"pending":true}` + "\n"))
+			w.(http.Flusher).Flush()
+			// 结论要等测试确认 onPending 已经被调用才写出,证明回调发生在结论之前。
+			select {
+			case <-released:
+			case <-time.After(3 * time.Second):
+			}
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"ids":["14"]}}` + "\n"))
+		}))
+		t.Cleanup(srv.Close)
+		c := &Client{http: srv.Client(), base: srv.URL, controlToken: "t"}
+
+		res, err := c.Call(context.Background(), "bookmarks.remove", "", json.RawMessage(`{"ids":["14"]}`), func() { close(released) })
+
+		So(err, ShouldBeNil)
+		So(string(body["reportPending"]), ShouldEqual, "true")
+		So(res.Pending, ShouldBeFalse)
+		So(res.OK, ShouldBeTrue)
+		So(string(res.Result), ShouldEqual, `{"ids":["14"]}`)
+	})
+
+	Convey("不带 onPending 的调用不请求 pending 行", t, func() {
+		c, bodies := captureCalls(t)
+		_, err := c.Call(context.Background(), "bookmarks.remove", "", json.RawMessage(`{"ids":["14"]}`), nil)
+		So(err, ShouldBeNil)
+		_, has := (*bodies)[0]["reportPending"]
+		So(has, ShouldBeFalse)
+	})
+}
+
+// serveCallBody 起一个模拟控制服务,对 /control/call 原样写出 body。
+func serveCallBody(t *testing.T, body string) *Client {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	return &Client{http: srv.Client(), base: srv.URL, controlToken: "t"}
+}
+
+func TestCallRejectsPendingLinesOutsideItsContract(t *testing.T) {
+	Convey("daemon 写出调用方没要的或重复的 pending 行时,Call 报错而不是当作结论或再次回调", t, func() {
+		Convey("没带 onPending 却收到 pending 行", func() {
+			c := serveCallBody(t, `{"ok":false,"pending":true}`+"\n"+`{"ok":true,"result":{}}`+"\n")
+			_, err := c.Call(context.Background(), "bookmarks.remove", "", json.RawMessage(`{"ids":["14"]}`), nil)
+			So(err, ShouldNotBeNil)
+			So(err.Error(), ShouldContainSubstring, "unrequested approval pending line")
+		})
+
+		Convey("同一次调用收到第二行 pending:onPending 至多被调用一次", func() {
+			c := serveCallBody(t, `{"ok":false,"pending":true}`+"\n"+`{"ok":false,"pending":true}`+"\n"+`{"ok":true,"result":{}}`+"\n")
+			calls := 0
+			_, err := c.Call(context.Background(), "bookmarks.remove", "", json.RawMessage(`{"ids":["14"]}`), func() { calls++ })
+			So(err, ShouldNotBeNil)
+			So(err.Error(), ShouldContainSubstring, "duplicate approval pending line")
+			So(calls, ShouldEqual, 1)
 		})
 	})
 }

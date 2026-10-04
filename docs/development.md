@@ -30,6 +30,12 @@ implementation detail. For a reported bug, follow the reproduction-first workflo
 [verification.md](./verification.md#reproduction-is-step-one-of-a-fix), then commit the smallest test that fails
 for the confirmed cause before changing production code.
 
+### Page automation tests
+
+Page automation (`internal/daemon/page`) is tested only against a fake `CDP` implementation, so `go test ./...`
+needs no browser. Behaviour that depends on a real Chrome is confirmed by one-off runtime verification (see
+[verification.md](./verification.md)), not by automated tests.
+
 ### Choose cases by behavior, not sample count
 
 Start with a representative normal case, then add cases only where the expected outcome or production branch is
@@ -93,7 +99,7 @@ Thin tests can still be valuable: protocol drift checks, exact exit-code or perm
 identity, serialization compatibility, security blocklists, and the only coverage of a real branch all protect
 stable contracts. Judge each test against its production path rather than by line count.
 
-Before deleting or consolidating a test, read the source it covers, search nearby package and integration tests
+Before deleting or consolidating a test, read the source it covers, search nearby package tests
 for the same contract, and name the regression signal that would be lost. A failing or slow test is not
 automatically low value: fix production regressions; update a genuinely changed contract; reproduce and remove
 the cause of flakes; and move misclassified integration work to the appropriate boundary. Do not weaken a valid
@@ -123,7 +129,7 @@ isolation with these flags, and what evidence makes a change count as
 
 | Trigger | What runs |
 |---|---|
-| Every PR (any target branch) | `lint` + native Linux/macOS/Windows `test` (`build`, `vet`, `-race`) + `extension` (lint, format check, type check, unit tests, build) + protocol generation and exact paired-ScriptCat drift |
+| Every PR (any target branch) | `lint` + Linux `test` (`build`, `vet`, `-race`) + `extension` (lint, format check, type check, unit tests, build) + protocol generation and exact paired-ScriptCat drift |
 | push to `main` / `release/**` | Same as above |
 | push tag `v*` | Reuses the full test gate first; only builds and publishes once it passes |
 
@@ -180,5 +186,5 @@ the adjacent checkout; override `SCRIPTCAT_DIR` when it lives elsewhere.
 
 `make protocol-check` verifies that all three generated sets are checked in and reproducible from the source.
 `go test ./internal/protocolgen` additionally pins the ScriptCat TypeScript to the bytes of the paired ScriptCat
-copy. The generator also validates the protocol definition before emitting code, so invalid method bindings,
-peer annotations, merge fields, unreferenced types, and unsupported schema shapes fail generation.
+copy. The generator also validates the protocol definition before emitting code, so invalid method or notification
+bindings, peer annotations, merge fields, unreferenced types, and unsupported schema shapes fail generation.

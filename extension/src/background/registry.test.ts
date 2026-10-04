@@ -32,6 +32,28 @@ describe("handler registry", () => {
     });
   });
 
+  it("refuses an L1 call without confirm: true before running its handler", async () => {
+    const removed: unknown[] = [];
+    const registry = new HandlerRegistry();
+    registry.register("history.remove", (params) => {
+      removed.push(params);
+      return Promise.resolve({ urls: params.urls });
+    });
+
+    // offscreen 的校验器只放行 confirm 为 true 或缺省，所以缺省是唯一能到达这里的未确认形态。
+    await expect(registry.dispatch("history.remove", { urls: ["https://a.example/"] })).resolves.toEqual({
+      ok: false,
+      code: "CONFIRMATION_REQUIRED",
+      message: expect.stringContaining("confirm") as string,
+    });
+    expect(removed).toEqual([]);
+
+    await expect(registry.dispatch("history.remove", { urls: ["https://a.example/"], confirm: true })).resolves.toEqual(
+      { ok: true, result: { urls: ["https://a.example/"] } },
+    );
+    expect(removed).toEqual([{ urls: ["https://a.example/"], confirm: true }]);
+  });
+
   it("refuses to register the same method twice", () => {
     const registry = new HandlerRegistry();
     registry.register("tabs.list", () => Promise.resolve({ contentTrust: "untrusted-page-content", tabs: [] }));

@@ -20,8 +20,9 @@ type definition struct {
 	SchemaVersion  string                     `json:"schemaVersion"`
 	JSONRPC        string                     `json:"jsonrpc"`
 	Transport      json.RawMessage            `json:"transport"`
-	SessionMethods []string                   `json:"sessionMethods"`
+	SessionMethods []sessionMethod            `json:"sessionMethods"`
 	Methods        map[string]method          `json:"methods"`
+	Notifications  map[string]notification    `json:"notifications"`
 	Types          map[string]json.RawMessage `json:"types"`
 	ErrorCodes     []errorCode                `json:"errorCodes"`
 	Crypto         json.RawMessage            `json:"crypto"`
@@ -32,13 +33,26 @@ type definition struct {
 }
 
 type method struct {
-	Params     string        `json:"params"`
-	Result     string        `json:"result"`
-	Scope      string        `json:"scope"`
-	Effect     string        `json:"effect"`
-	Blocking   string        `json:"blocking"`
-	Peer       protocol.Peer `json:"peer"`
-	MergeField string        `json:"mergeField"`
+	Params     string         `json:"params"`
+	Result     string         `json:"result"`
+	Scope      string         `json:"scope"`
+	Effect     string         `json:"effect"`
+	Blocking   string         `json:"blocking"`
+	Level      protocol.Level `json:"level"`
+	Peer       protocol.Peer  `json:"peer"`
+	MergeField string         `json:"mergeField"`
+	Internal   bool           `json:"internal"`
+}
+
+type sessionMethod struct {
+	Method string          `json:"method"`
+	Peers  []protocol.Peer `json:"peers"`
+}
+
+// notification 是扩展主动发给 daemon 的 JSON-RPC 通知:没有 id、没有应答,params 直接是其类型。
+type notification struct {
+	Params string        `json:"params"`
+	Peer   protocol.Peer `json:"peer"`
 }
 
 type errorCode struct {
@@ -51,7 +65,7 @@ type contextEntry struct {
 	Peers []protocol.Peer `json:"peers"`
 }
 
-// peerContract 是某一对端 TypeScript 输出所见的协议子集:只含该对端实现的方法、它们引用的类型,
+// peerContract 是某一对端 TypeScript 输出所见的协议子集:只含该对端实现的方法、发出的通知、它们引用的类型,
 // 以及标注了该对端的错误码与握手常量。
 type peerContract struct {
 	SchemaVersion  string
@@ -59,11 +73,14 @@ type peerContract struct {
 	Transport      json.RawMessage
 	SessionMethods []string
 	Methods        map[string]method
+	Notifications  map[string]notification
 	Types          map[string]json.RawMessage
 	ErrorCodes     []string
 	Crypto         json.RawMessage
 	Limits         json.RawMessage
 	PairingCode    json.RawMessage
+	// WithLevels 决定 RPC_METHODS 是否输出破坏级别:ScriptCat 的生成文件按字节固定,只有浏览器扩展输出它。
+	WithLevels bool
 }
 
 // Generate 从 schemaDir/protocol.json 生成代码:outDir 得到含全部定义的 Go 绑定与 ScriptCat 的 TypeScript,
@@ -120,12 +137,14 @@ func contractFor(def definition, peer protocol.Peer) (peerContract, error) {
 		SchemaVersion:  def.SchemaVersion,
 		JSONRPC:        def.JSONRPC,
 		Transport:      def.Transport,
-		SessionMethods: def.SessionMethods,
+		SessionMethods: []string{},
 		Methods:        map[string]method{},
+		Notifications:  map[string]notification{},
 		Types:          map[string]json.RawMessage{},
 		ErrorCodes:     []string{},
 		Limits:         def.Limits,
 		PairingCode:    def.PairingCode,
+		WithLevels:     peer == protocol.PeerBrowser,
 	}
 	for name, m := range def.Methods {
 		if m.Peer != peer {
@@ -134,6 +153,18 @@ func contractFor(def definition, peer protocol.Peer) (peerContract, error) {
 		contract.Methods[name] = m
 		contract.Types[m.Params] = def.Types[m.Params]
 		contract.Types[m.Result] = def.Types[m.Result]
+	}
+	for _, m := range def.SessionMethods {
+		if slices.Contains(m.Peers, peer) {
+			contract.SessionMethods = append(contract.SessionMethods, m.Method)
+		}
+	}
+	for name, n := range def.Notifications {
+		if n.Peer != peer {
+			continue
+		}
+		contract.Notifications[name] = n
+		contract.Types[n.Params] = def.Types[n.Params]
 	}
 	for _, code := range def.ErrorCodes {
 		if slices.Contains(code.Peers, peer) {
@@ -267,22 +298,56 @@ func validateDefinition(def definition) error {
 		default:
 			return fmt.Errorf("rpc %q has invalid blocking mode %q", name, method.Blocking)
 		}
+		if err := validateLevel(def, method); err != nil {
+			return fmt.Errorf("rpc %q: %w", name, err)
+		}
 		if method.MergeField != "" {
 			// 只有浏览器方法会有多个同时在线的目标,daemon 也只为它们合并。
 			if method.Peer != protocol.PeerBrowser {
 				return fmt.Errorf("rpc %q: mergeField is only meaningful for browser methods", name)
+			}
+			// 汇总调用并发发给每个实例;bridge 把 $/approvalPending 交给调用方的回调时假定只有一个目标在等人工决定。
+			if method.Blocking != protocol.BlockingNone {
+				return fmt.Errorf("rpc %q: a method that waits for a human cannot be merged across browsers", name)
 			}
 			if err := validateMergeField(def.Types[method.Result], method.MergeField); err != nil {
 				return fmt.Errorf("rpc %q: %w", name, err)
 			}
 		}
 	}
+	for name, n := range def.Notifications {
+		// 通知与方法共用 method 字段,同名会让接收方无法区分;$ 前缀留给会话层。
+		if _, taken := def.Methods[name]; taken || name == "" || name[0] == '$' {
+			return fmt.Errorf("notification %q collides with a method or the session namespace", name)
+		}
+		if err := validatePeers([]protocol.Peer{n.Peer}, fmt.Sprintf("notification %q", name)); err != nil {
+			return err
+		}
+		if _, ok := def.Types[n.Params]; !ok {
+			return fmt.Errorf("notification %q references unknown params type %q", name, n.Params)
+		}
+		referenced[n.Params] = true
+	}
 	for name, raw := range def.Types {
-		// 各对端的 TypeScript 只收录其方法引用的类型,未被引用的类型会从所有 TypeScript 输出中消失。
+		// 各对端的 TypeScript 只收录其方法与通知引用的类型,未被引用的类型会从所有 TypeScript 输出中消失。
 		if !referenced[name] {
-			return fmt.Errorf("type %q is not used by any rpc", name)
+			return fmt.Errorf("type %q is not used by any rpc or notification", name)
+		}
+		// 顶层类型要生成具名结构体;开放对象没有字段可生成,只能作为属性出现。
+		if isOpenObject(parseSchema(raw)) {
+			return fmt.Errorf("type %q: an open object is only supported as a property", name)
 		}
 		if err := validateCodegenSchema(raw, name); err != nil {
+			return err
+		}
+	}
+	sessionMethods := map[string]bool{}
+	for _, m := range def.SessionMethods {
+		if m.Method == "" || sessionMethods[m.Method] {
+			return fmt.Errorf("session method %q is empty or duplicated", m.Method)
+		}
+		sessionMethods[m.Method] = true
+		if err := validatePeers(m.Peers, fmt.Sprintf("session method %q", m.Method)); err != nil {
 			return err
 		}
 	}
@@ -307,10 +372,39 @@ func validateDefinition(def definition) error {
 	return nil
 }
 
+// validateLevel 要求每个方法标注合法的破坏级别。L2 与人工闸门(blocking 为 approval/disclosure)一一对应:
+// L2 的审批由扩展完成,daemon 只能靠 blocking 语义等待它。L1 的参数必须声明可选的 confirm: {const: true}:
+// 声明为必填时,缺少确认会先被扩展的参数校验拒成 INVALID_REQUEST,扩展侧的二次确认检查永远轮不到。
+func validateLevel(def definition, method method) error {
+	switch method.Level {
+	case protocol.LevelDirect, protocol.LevelConfirm, protocol.LevelApproval:
+	default:
+		return fmt.Errorf("invalid level %q", method.Level)
+	}
+	if (method.Level == protocol.LevelApproval) != (method.Blocking != "none") {
+		return fmt.Errorf("level %s does not match blocking mode %q: only human-gated methods are L2", method.Level, method.Blocking)
+	}
+	if method.Level != protocol.LevelConfirm {
+		return nil
+	}
+	params := parseSchema(def.Types[method.Params])
+	confirm, ok := params.Properties[protocol.ConfirmParam]
+	if !ok || string(parseSchema(confirm).Const) != "true" || requiredSet(params)[protocol.ConfirmParam] {
+		return fmt.Errorf("L1 params %s must declare an optional %q property with const true", method.Params, protocol.ConfirmParam)
+	}
+	return nil
+}
+
+// mergedHasMoreField 是列表结果里「还有未返回的条目」的布尔字段,daemon 汇总时对各实例取或。
+const mergedHasMoreField = "hasMore"
+
 // validateMergeField 要求合并字段是结果类型中必填的对象数组属性,daemon 才能无条件地拼接各实例的列表;
-// 合并时每一项都会加上来源浏览器的 browser 字段,项本身不能已有同名属性。
+// 合并时每一项都会加上来源浏览器的 browser 字段,项本身不能已有同名属性。结果若声明 hasMore,它必须是布尔值。
 func validateMergeField(result json.RawMessage, field string) error {
 	schema := parseSchema(result)
+	if hasMore, ok := schema.Properties[mergedHasMoreField]; ok && parseSchema(hasMore).Type != "boolean" {
+		return fmt.Errorf("%s must be a boolean for the merge to combine it", mergedHasMoreField)
+	}
 	property, ok := schema.Properties[field]
 	if !ok || !requiredSet(schema)[field] || parseSchema(property).Type != "array" {
 		return fmt.Errorf("mergeField %q is not a required array property of the result", field)
@@ -362,6 +456,12 @@ type schemaProperty struct {
 	Minimum              *float64                   `json:"minimum"`
 	MinItems             *int                       `json:"minItems"`
 	MaxItems             *int                       `json:"maxItems"`
+}
+
+// isOpenObject 判断 schema 是否是不约束成员的开放对象(如原样中转的 CDP params/result):
+// Go 侧保留原始字节,TypeScript 侧为 Record<string, unknown>。
+func isOpenObject(schema schemaProperty) bool {
+	return schema.Type == "object" && len(schema.Properties) == 0 && schema.AdditionalProperties != nil && *schema.AdditionalProperties
 }
 
 func parseSchema(raw json.RawMessage) schemaProperty {
@@ -420,9 +520,12 @@ func goType(raw json.RawMessage, optional bool) string {
 			typ = "[]" + goType(schema.Items, false)
 		}
 	case "object":
-		if len(schema.Properties) == 0 {
+		switch {
+		case isOpenObject(schema):
+			typ = "json.RawMessage"
+		case len(schema.Properties) == 0:
 			typ = "map[string]any"
-		} else {
+		default:
 			var b strings.Builder
 			b.WriteString("struct { ")
 			required := requiredSet(schema)
@@ -477,8 +580,6 @@ func sortedKeys[V any](values map[string]V) []string {
 
 func writeGo(path string, def definition) error {
 	var b bytes.Buffer
-	b.WriteString("// Code generated by protocolgen; DO NOT EDIT.\npackage generated\n\n")
-	fmt.Fprintf(&b, "const SchemaVersion = %q\nconst JSONRPCVersion = %q\n\n", def.SchemaVersion, def.JSONRPC)
 	for _, name := range sortedKeys(def.Types) {
 		schema := parseSchema(def.Types[name])
 		fmt.Fprintf(&b, "type %s struct {\n", name)
@@ -494,10 +595,20 @@ func writeGo(path string, def definition) error {
 		fmt.Fprintf(&b, "Method%s Method = %q\n", exportedName(name), name)
 	}
 	b.WriteString(")\n\n")
-	b.WriteString("type MethodMetadata struct { Params, Result, Scope, Effect, Blocking, Peer, MergeField string }\n\nvar Methods = map[string]MethodMetadata{\n")
+	b.WriteString("type MethodMetadata struct { Params, Result, Scope, Effect, Blocking, Level, Peer, MergeField string; Internal bool }\n\nvar Methods = map[string]MethodMetadata{\n")
 	for _, name := range sortedKeys(def.Methods) {
 		m := def.Methods[name]
-		fmt.Fprintf(&b, "%q: {Params:%q, Result:%q, Scope:%q, Effect:%q, Blocking:%q, Peer:%q, MergeField:%q},\n", name, m.Params, m.Result, m.Scope, m.Effect, m.Blocking, m.Peer, m.MergeField)
+		fmt.Fprintf(&b, "%q: {Params:%q, Result:%q, Scope:%q, Effect:%q, Blocking:%q, Level:%q, Peer:%q, MergeField:%q, Internal:%t},\n", name, m.Params, m.Result, m.Scope, m.Effect, m.Blocking, m.Level, m.Peer, m.MergeField, m.Internal)
+	}
+	b.WriteString("}\n\n")
+	b.WriteString("// Notification 是扩展发给 daemon 的通知方法名。\ntype Notification string\n\nconst (\n")
+	for _, name := range sortedKeys(def.Notifications) {
+		fmt.Fprintf(&b, "Notification%s Notification = %q\n", exportedName(name), name)
+	}
+	b.WriteString(")\n\ntype NotificationMetadata struct { Params, Peer string }\n\nvar Notifications = map[string]NotificationMetadata{\n")
+	for _, name := range sortedKeys(def.Notifications) {
+		n := def.Notifications[name]
+		fmt.Fprintf(&b, "%q: {Params:%q, Peer:%q},\n", name, n.Params, n.Peer)
 	}
 	b.WriteString("}\n\nconst (\n")
 	for _, code := range def.ErrorCodes {
@@ -509,7 +620,14 @@ func writeGo(path string, def definition) error {
 		fmt.Fprintf(&b, "CryptoContext%s = %q\n", exportedName(key), key)
 	}
 	b.WriteString(")\n")
-	formatted, err := format.Source(b.Bytes())
+	var header bytes.Buffer
+	header.WriteString("// Code generated by protocolgen; DO NOT EDIT.\npackage generated\n\n")
+	// 只有开放对象会用到 json.RawMessage;未使用的 import 会让生成代码编译失败。
+	if bytes.Contains(b.Bytes(), []byte("json.RawMessage")) {
+		header.WriteString("import \"encoding/json\"\n\n")
+	}
+	fmt.Fprintf(&header, "const SchemaVersion = %q\nconst JSONRPCVersion = %q\n\n", def.SchemaVersion, def.JSONRPC)
+	formatted, err := format.Source(append(header.Bytes(), b.Bytes()...))
 	if err != nil {
 		return err
 	}
@@ -541,6 +659,9 @@ func tsType(raw json.RawMessage) string {
 		}
 		return "Array<" + tsType(schema.Items) + ">"
 	case "object":
+		if isOpenObject(schema) {
+			return "Record<string, unknown>"
+		}
 		if len(schema.Properties) == 0 {
 			return "Record<string, never>"
 		}
@@ -597,9 +718,25 @@ func renderTS(def peerContract) []byte {
 	b.WriteString("export const RPC_METHODS = {\n")
 	for _, name := range sortedKeys(def.Methods) {
 		m := def.Methods[name]
-		fmt.Fprintf(&b, "  %s: {\n    params: %s,\n    result: %s,\n    scope: %s,\n    effect: %s,\n    blocking: %s,\n  },\n", strconv.Quote(name), strconv.Quote(m.Params), strconv.Quote(m.Result), strconv.Quote(m.Scope), strconv.Quote(m.Effect), strconv.Quote(m.Blocking))
+		fmt.Fprintf(&b, "  %s: {\n    params: %s,\n    result: %s,\n    scope: %s,\n    effect: %s,\n    blocking: %s,\n", strconv.Quote(name), strconv.Quote(m.Params), strconv.Quote(m.Result), strconv.Quote(m.Scope), strconv.Quote(m.Effect), strconv.Quote(m.Blocking))
+		if def.WithLevels {
+			fmt.Fprintf(&b, "    level: %s,\n", strconv.Quote(string(m.Level)))
+		}
+		b.WriteString("  },\n")
 	}
-	b.WriteString("} as const satisfies Record<\n  RpcMethod,\n  { params: string; result: string; scope: string; effect: string; blocking: string }\n>;\n")
+	levelType := ""
+	if def.WithLevels {
+		levelType = fmt.Sprintf("; level: %q | %q | %q", protocol.LevelDirect, protocol.LevelConfirm, protocol.LevelApproval)
+	}
+	fmt.Fprintf(&b, "} as const satisfies Record<\n  RpcMethod,\n  { params: string; result: string; scope: string; effect: string; blocking: string%s }\n>;\n", levelType)
+	// 没有通知的对端(ScriptCat)不输出这一段,其生成文件因此逐字节不变。
+	if len(def.Notifications) > 0 {
+		b.WriteString("export interface NotificationMap {\n")
+		for _, name := range sortedKeys(def.Notifications) {
+			fmt.Fprintf(&b, "  %s: %s;\n", strconv.Quote(name), def.Notifications[name].Params)
+		}
+		b.WriteString("}\nexport type NotificationMethod = keyof NotificationMap;\nexport type NotificationParams<N extends NotificationMethod> = NotificationMap[N];\n")
+	}
 	return b.Bytes()
 }
 
@@ -653,6 +790,13 @@ func renderTSValidators(def peerContract) []byte {
 		fmt.Fprintf(&b, "  %s: validate%s,\n", strconv.Quote(name), def.Methods[name].Result)
 	}
 	b.WriteString("} as const;\n")
+	if len(def.Notifications) > 0 {
+		b.WriteString("\nexport const NOTIFICATION_PARAM_VALIDATORS = {\n")
+		for _, name := range sortedKeys(def.Notifications) {
+			fmt.Fprintf(&b, "  %s: validate%s,\n", strconv.Quote(name), def.Notifications[name].Params)
+		}
+		b.WriteString("} as const;\n")
+	}
 	return b.Bytes()
 }
 

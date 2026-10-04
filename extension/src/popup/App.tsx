@@ -3,11 +3,13 @@ import {
   AlertCircle,
   ArrowLeft,
   Check,
+  ChevronRight,
   Loader2,
   Pencil,
   RefreshCw,
   Settings as SettingsIcon,
   ShieldAlert,
+  ShieldQuestion,
   Unplug,
   X,
 } from "lucide-react";
@@ -33,6 +35,7 @@ import { resolveLanguage, stringsFor, type Strings } from "@/i18n";
 import { normalizePairingCode } from "@/shared/pairing-code";
 import { parseAddress } from "@/shared/address";
 import { isValidName } from "@/shared/identity";
+import type { ApprovalView } from "@/shared/approvals";
 import type { PopupApi } from "@/shared/popup-api";
 import { createPopupApi } from "@/shared/popup-api";
 import type { ConnectionState } from "@/shared/state";
@@ -87,6 +90,7 @@ export function App({
   const [addressDraft, setAddressDraft] = useState("");
   const [addressInvalid, setAddressInvalid] = useState(false);
   const [forgetOpen, setForgetOpen] = useState(false);
+  const [pendingApprovals, setPendingApprovals] = useState(0);
 
   // 初次加载：连接状态、外观/语言设置、配对码草稿（会话存储，重开弹窗时恢复）。
   useEffect(() => {
@@ -122,9 +126,24 @@ export function App({
         setCodeDraftLoaded(true);
       }
     });
+    // 待审批数量与连接状态一样：广播可能先于回复到达，先到的广播更新。
+    let approvalsSeen = false;
+    const countPending = (view: ApprovalView) =>
+      setPendingApprovals(view.items.filter((item) => item.status === "pending").length);
+    api.getApprovals().then(
+      (view) => {
+        if (!cancelled && !approvalsSeen) countPending(view);
+      },
+      (error: unknown) => console.error("failed to read the approval queue", error),
+    );
+    const unsubscribeApprovals = api.subscribeApprovals((view) => {
+      approvalsSeen = true;
+      if (!cancelled) countPending(view);
+    });
     return () => {
       cancelled = true;
       unsubscribe();
+      unsubscribeApprovals();
     };
     // 只在挂载时执行一次：api/localStorage/sessionStorage 在一次弹窗生命周期内不会更换。
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -364,6 +383,29 @@ export function App({
       ) : (
         <main className="flex flex-col gap-3 px-4 pb-4">
           <Tether status={state.status} s={s} name={state.name} address={state.address} />
+
+          {state.status === "connected" && pendingApprovals > 0 && (
+            // 与 Note 的 warn 色调同一套混色；整行是一个按钮。「查看」用正文色：主色在琥珀底上不到 4.5:1。
+            <button
+              type="button"
+              onClick={() => {
+                api
+                  .focusApprovals()
+                  .catch((error: unknown) => console.error("failed to open the approval window", error));
+              }}
+              className="flex w-full items-center gap-2.5 rounded-lg border px-3 py-2 text-left text-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+              style={{
+                borderColor: "color-mix(in oklch, var(--warn), transparent 60%)",
+                background: "color-mix(in oklch, var(--warn), transparent 91%)",
+              }}
+            >
+              <ShieldQuestion className="size-4 shrink-0 text-[var(--warn)]" aria-hidden />
+              <span className="font-medium">{s.pendingApprovals(pendingApprovals)}</span>
+              <span className="-mx-1 text-muted-foreground">·</span>
+              <span className="font-medium">{s.viewApprovals}</span>
+              <ChevronRight className="ml-auto size-3.5 shrink-0" aria-hidden />
+            </button>
+          )}
 
           {showPairingForm && (
             <>

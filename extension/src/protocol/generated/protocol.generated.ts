@@ -13,19 +13,33 @@ export const SESSION_METHODS = [
   "$session.capabilities",
   "$session.ping",
   "$session.shutdown",
-  "$/cancelRequest"
+  "$/cancelRequest",
+  "$/approvalPending"
 ] as const;
 export const ERROR_CODES = [
   "INVALID_REQUEST",
   "METHOD_NOT_FOUND",
+  "USER_REJECTED",
   "OPERATION_EXPIRED",
   "CONFLICT",
   "NOT_FOUND",
+  "PAYLOAD_TOO_LARGE",
   "INTERNAL_ERROR",
   "NO_BROWSER_CONNECTED",
   "BROWSER_OFFLINE",
   "BROWSER_NOT_FOUND",
-  "BROWSER_AMBIGUOUS"
+  "BROWSER_AMBIGUOUS",
+  "CONFIRMATION_REQUIRED",
+  "UNSUPPORTED",
+  "STALE_REF",
+  "TIMEOUT",
+  "TARGET_AMBIGUOUS",
+  "PAGE_NOT_AUTOMATABLE",
+  "PAGE_HIDDEN",
+  "DEBUGGER_DETACHED",
+  "DIALOG_OPEN",
+  "EVAL_ERROR",
+  "NAVIGATION_FAILED"
 ] as const;
 export const CRYPTO = {
   "mac": "HMAC-SHA-256",
@@ -56,6 +70,349 @@ export const PAIRING_CODE = {
   "length": 8,
   "display": "XXXX-XXXX"
 } as const;
+export interface BookmarksAddParams {
+  folder?: string;
+  index?: number;
+  title?: string;
+  url: string;
+}
+export interface BookmarksAddResult {
+  id: string;
+}
+export interface BookmarksEditParams {
+  id: string;
+  title?: string;
+  url?: string;
+}
+export interface BookmarksEditResult {
+  id: string;
+}
+export interface BookmarksListParams {
+  folder?: string;
+  limit?: number;
+  recursive?: boolean;
+}
+export interface BookmarksListResult {
+  contentTrust: "untrusted-page-content";
+  hasMore: boolean;
+  nodes: Array<{ addedAt?: number; childCount?: number; id: string; index: number; parentId?: string; title: string; type: "bookmark" | "folder"; url?: string; }>;
+}
+export interface BookmarksMkdirParams {
+  folder?: string;
+  index?: number;
+  title: string;
+}
+export interface BookmarksMkdirResult {
+  id: string;
+}
+export interface BookmarksMoveParams {
+  folder: string;
+  ids: Array<string>;
+  index?: number;
+}
+export interface BookmarksMoveResult {
+  ids: Array<string>;
+}
+export interface BookmarksRemoveParams {
+  ids: Array<string>;
+}
+export interface BookmarksRemoveResult {
+  bookmarks: number;
+  folders: number;
+  ids: Array<string>;
+}
+export interface BookmarksSearchParams {
+  limit?: number;
+  query: string;
+}
+export interface BookmarksSearchResult {
+  contentTrust: "untrusted-page-content";
+  hasMore: boolean;
+  nodes: Array<{ addedAt?: number; childCount?: number; id: string; index: number; parentId?: string; path: Array<string>; title: string; type: "bookmark" | "folder"; url?: string; }>;
+}
+export interface BrowsingDataClearParams {
+  confirm?: true;
+  origins?: Array<string>;
+  since?: number;
+  types: Array<"cache" | "cacheStorage" | "cookies" | "downloads" | "fileSystems" | "formData" | "history" | "indexedDB" | "localStorage" | "serviceWorkers" | "webSQL">;
+}
+export interface BrowsingDataClearResult {
+  types: Array<string>;
+}
+export interface CookiesClearParams {
+  all?: true;
+  confirm?: true;
+  domain?: string;
+}
+export interface CookiesClearResult {
+  deleted: number;
+}
+export interface CookiesGetParams {
+  name: string;
+  url: string;
+}
+export interface CookiesGetResult {
+  contentTrust: "untrusted-page-content";
+  cookie: { domain: string; expires?: number; httpOnly: boolean; name: string; partitionTopLevelSite?: string; path: string; sameSite: "no_restriction" | "lax" | "strict" | "unspecified"; secure: boolean; session: boolean; value: string; };
+}
+export interface CookiesListParams {
+  domain?: string;
+  limit?: number;
+  name?: string;
+  url?: string;
+}
+export interface CookiesListResult {
+  contentTrust: "untrusted-page-content";
+  hasMore: boolean;
+  items: Array<{ domain: string; expires?: number; httpOnly: boolean; name: string; partitionTopLevelSite?: string; path: string; sameSite: "no_restriction" | "lax" | "strict" | "unspecified"; secure: boolean; session: boolean; value: string; }>;
+}
+export interface CookiesRemoveParams {
+  confirm?: true;
+  name: string;
+  url: string;
+}
+export interface CookiesRemoveResult {
+  deleted: number;
+}
+export interface CookiesSetParams {
+  domain?: string;
+  expires?: number;
+  httpOnly?: boolean;
+  name: string;
+  path?: string;
+  sameSite?: "no_restriction" | "lax" | "strict";
+  secure?: boolean;
+  url: string;
+  value: string;
+}
+export interface CookiesSetResult {
+  contentTrust: "untrusted-page-content";
+  cookie: { domain: string; expires?: number; httpOnly: boolean; name: string; partitionTopLevelSite?: string; path: string; sameSite: "no_restriction" | "lax" | "strict" | "unspecified"; secure: boolean; session: boolean; value: string; };
+}
+export interface DebuggerDetachParams {
+  tabId?: number;
+}
+export interface DebuggerDetachResult {
+  tabIds: Array<number>;
+}
+export interface DebuggerDetachedNotification {
+  reason: string;
+  tabId: number;
+}
+export interface DebuggerEventNotification {
+  method: string;
+  params?: Record<string, unknown>;
+  sessionId?: string;
+  tabId: number;
+}
+export interface DebuggerSendParams {
+  method: string;
+  params?: Record<string, unknown>;
+  sessionId?: string;
+  tabId: number;
+}
+export interface DebuggerSendResult {
+  result: Record<string, unknown>;
+}
+export interface DownloadsCancelParams {
+  confirm?: true;
+  id: number;
+}
+export interface DownloadsCancelResult {
+  id: number;
+}
+export interface DownloadsDeleteFileParams {
+  confirm?: true;
+  id: number;
+}
+export interface DownloadsDeleteFileResult {
+  id: number;
+}
+export interface DownloadsEraseParams {
+  confirm?: true;
+  ids: Array<number>;
+}
+export interface DownloadsEraseResult {
+  ids: Array<number>;
+}
+export interface DownloadsListParams {
+  limit?: number;
+  query?: string;
+  state?: "in_progress" | "complete" | "interrupted";
+}
+export interface DownloadsListResult {
+  contentTrust: "untrusted-page-content";
+  hasMore: boolean;
+  items: Array<{ bytesReceived: number; exists: boolean; filename: string; id: number; startTime: number; state: "in_progress" | "complete" | "interrupted"; totalBytes: number; url: string; }>;
+}
+export interface DownloadsPauseParams {
+  id: number;
+}
+export interface DownloadsPauseResult {
+  id: number;
+}
+export interface DownloadsResumeParams {
+  id: number;
+}
+export interface DownloadsResumeResult {
+  id: number;
+}
+export interface DownloadsShowParams {
+  id: number;
+}
+export interface DownloadsShowResult {
+  id: number;
+}
+export interface DownloadsStartParams {
+  filename?: string;
+  url: string;
+}
+export interface DownloadsStartResult {
+  id: number;
+}
+export interface ExtensionsDisableParams {
+  confirm?: true;
+  id: string;
+}
+export interface ExtensionsEnableParams {
+  id: string;
+}
+export type ExtensionsListParams = Record<string, never>;
+export interface ExtensionsListResult {
+  contentTrust: "untrusted-page-content";
+  items: Array<{ enabled: boolean; id: string; installType: string; mayDisable: boolean; name: string; type: string; version: string; }>;
+}
+export interface ExtensionsSetEnabledResult {
+  enabled: boolean;
+  id: string;
+}
+export interface ExtensionsUninstallParams {
+  id: string;
+}
+export interface ExtensionsUninstallResult {
+  contentTrust: "untrusted-page-content";
+  id: string;
+  name: string;
+}
+export interface HistoryClearParams {
+  confirm?: true;
+  endTime?: number;
+  startTime?: number;
+}
+export interface HistoryClearResult {
+  all: boolean;
+}
+export interface HistoryRemoveParams {
+  confirm?: true;
+  urls: Array<string>;
+}
+export interface HistoryRemoveResult {
+  urls: Array<string>;
+}
+export interface HistorySearchParams {
+  endTime?: number;
+  limit?: number;
+  startTime?: number;
+  text?: string;
+}
+export interface HistorySearchResult {
+  contentTrust: "untrusted-page-content";
+  hasMore: boolean;
+  items: Array<{ lastVisitTime: number; title: string; url: string; visitCount: number; }>;
+}
+export interface HistoryVisitsParams {
+  limit?: number;
+  url: string;
+}
+export interface HistoryVisitsResult {
+  hasMore: boolean;
+  visits: Array<{ transition: string; visitTime: number; }>;
+}
+export interface ReadingListAddParams {
+  title?: string;
+  url: string;
+}
+export interface ReadingListAddResult {
+  title: string;
+  url: string;
+}
+export interface ReadingListListParams {
+  limit?: number;
+  read?: boolean;
+}
+export interface ReadingListListResult {
+  contentTrust: "untrusted-page-content";
+  entries: Array<{ createdAt: number; read: boolean; title: string; updatedAt: number; url: string; }>;
+  hasMore: boolean;
+}
+export interface ReadingListMarkReadParams {
+  read?: boolean;
+  urls: Array<string>;
+}
+export interface ReadingListMarkReadResult {
+  read: boolean;
+  urls: Array<string>;
+}
+export interface ReadingListRemoveParams {
+  confirm?: true;
+  urls: Array<string>;
+}
+export interface ReadingListRemoveResult {
+  urls: Array<string>;
+}
+export interface RecentListParams {
+  limit?: number;
+}
+export interface RecentListResult {
+  contentTrust: "untrusted-page-content";
+  hasMore: boolean;
+  items: Array<{ closedTime: number; sessionId: string; tabCount?: number; title: string; type: "tab" | "window"; url: string; }>;
+}
+export interface RecentRestoreParams {
+  sessionId?: string;
+}
+export interface RecentRestoreResult {
+  tabId?: number;
+  windowId?: number;
+}
+export interface TabGroupsAddParams {
+  groupId: number;
+  tabIds: Array<number>;
+}
+export interface TabGroupsAddResult {
+  groupId: number;
+  tabIds: Array<number>;
+}
+export interface TabGroupsCreateParams {
+  color?: "grey" | "blue" | "red" | "yellow" | "green" | "pink" | "purple" | "cyan" | "orange";
+  tabIds: Array<number>;
+  title?: string;
+}
+export interface TabGroupsCreateResult {
+  groupId: number;
+}
+export interface TabGroupsEditParams {
+  collapsed?: boolean;
+  color?: "grey" | "blue" | "red" | "yellow" | "green" | "pink" | "purple" | "cyan" | "orange";
+  groupId: number;
+  title?: string;
+}
+export interface TabGroupsEditResult {
+  groupId: number;
+}
+export interface TabGroupsListParams {
+  windowId?: number;
+}
+export interface TabGroupsListResult {
+  contentTrust: "untrusted-page-content";
+  groups: Array<{ collapsed: boolean; color: "grey" | "blue" | "red" | "yellow" | "green" | "pink" | "purple" | "cyan" | "orange"; groupId: number; tabCount: number; title: string; windowId: number; }>;
+}
+export interface TabGroupsUngroupParams {
+  tabIds: Array<number>;
+}
+export interface TabGroupsUngroupResult {
+  tabIds: Array<number>;
+}
 export interface TabsActivateParams {
   tabId: number;
 }
@@ -69,12 +426,34 @@ export interface TabsCloseParams {
 export interface TabsCloseResult {
   tabIds: Array<number>;
 }
+export type TabsCurrentParams = Record<string, never>;
+export interface TabsCurrentResult {
+  tabId: number;
+  windowId: number;
+}
+export interface TabsDuplicateParams {
+  tabId: number;
+}
+export interface TabsIdsParams {
+  tabIds: Array<number>;
+}
+export interface TabsIdsResult {
+  tabIds: Array<number>;
+}
 export interface TabsListParams {
   windowId?: number;
 }
 export interface TabsListResult {
   contentTrust: "untrusted-page-content";
-  tabs: Array<{ active: boolean; pinned: boolean; tabId: number; title: string; url: string; windowId: number; }>;
+  tabs: Array<{ active: boolean; groupId: number; pinned: boolean; tabId: number; title: string; url: string; windowId: number; }>;
+}
+export interface TabsMoveParams {
+  index?: number;
+  tabIds: Array<number>;
+  windowId?: number;
+}
+export interface TabsMoveResult {
+  tabIds: Array<number>;
 }
 export interface TabsOpenParams {
   background?: boolean;
@@ -84,27 +463,450 @@ export interface TabsOpenParams {
 export interface TabsOpenResult {
   tabId: number;
 }
+export interface TabsReloadParams {
+  bypassCache?: boolean;
+  tabIds: Array<number>;
+}
+export interface WindowsCloseParams {
+  windowIds: Array<number>;
+}
+export interface WindowsCloseResult {
+  windowIds: Array<number>;
+}
+export interface WindowsFocusParams {
+  windowId: number;
+}
+export interface WindowsFocusResult {
+  windowId: number;
+}
 export type WindowsListParams = Record<string, never>;
 export interface WindowsListResult {
   windows: Array<{ focused: boolean; state: "normal" | "minimized" | "maximized" | "fullscreen" | "locked-fullscreen"; tabCount: number; windowId: number; }>;
 }
+export interface WindowsOpenParams {
+  state?: "normal" | "minimized" | "maximized" | "fullscreen";
+  urls?: Array<string>;
+}
+export interface WindowsOpenResult {
+  windowId: number;
+}
+export interface WindowsStateParams {
+  state: "normal" | "minimized" | "maximized" | "fullscreen";
+  windowId: number;
+}
+export interface WindowsStateResult {
+  state: "normal" | "minimized" | "maximized" | "fullscreen";
+  windowId: number;
+}
 export interface RpcMethodMap {
+  "bookmarks.add": { params: BookmarksAddParams; result: BookmarksAddResult };
+  "bookmarks.edit": { params: BookmarksEditParams; result: BookmarksEditResult };
+  "bookmarks.list": { params: BookmarksListParams; result: BookmarksListResult };
+  "bookmarks.mkdir": { params: BookmarksMkdirParams; result: BookmarksMkdirResult };
+  "bookmarks.move": { params: BookmarksMoveParams; result: BookmarksMoveResult };
+  "bookmarks.remove": { params: BookmarksRemoveParams; result: BookmarksRemoveResult };
+  "bookmarks.search": { params: BookmarksSearchParams; result: BookmarksSearchResult };
+  "browsingData.clear": { params: BrowsingDataClearParams; result: BrowsingDataClearResult };
+  "cookies.clear": { params: CookiesClearParams; result: CookiesClearResult };
+  "cookies.get": { params: CookiesGetParams; result: CookiesGetResult };
+  "cookies.list": { params: CookiesListParams; result: CookiesListResult };
+  "cookies.remove": { params: CookiesRemoveParams; result: CookiesRemoveResult };
+  "cookies.set": { params: CookiesSetParams; result: CookiesSetResult };
+  "debugger.detach": { params: DebuggerDetachParams; result: DebuggerDetachResult };
+  "debugger.send": { params: DebuggerSendParams; result: DebuggerSendResult };
+  "downloads.cancel": { params: DownloadsCancelParams; result: DownloadsCancelResult };
+  "downloads.deleteFile": { params: DownloadsDeleteFileParams; result: DownloadsDeleteFileResult };
+  "downloads.erase": { params: DownloadsEraseParams; result: DownloadsEraseResult };
+  "downloads.list": { params: DownloadsListParams; result: DownloadsListResult };
+  "downloads.pause": { params: DownloadsPauseParams; result: DownloadsPauseResult };
+  "downloads.resume": { params: DownloadsResumeParams; result: DownloadsResumeResult };
+  "downloads.show": { params: DownloadsShowParams; result: DownloadsShowResult };
+  "downloads.start": { params: DownloadsStartParams; result: DownloadsStartResult };
+  "extensions.disable": { params: ExtensionsDisableParams; result: ExtensionsSetEnabledResult };
+  "extensions.enable": { params: ExtensionsEnableParams; result: ExtensionsSetEnabledResult };
+  "extensions.list": { params: ExtensionsListParams; result: ExtensionsListResult };
+  "extensions.uninstall": { params: ExtensionsUninstallParams; result: ExtensionsUninstallResult };
+  "history.clear": { params: HistoryClearParams; result: HistoryClearResult };
+  "history.remove": { params: HistoryRemoveParams; result: HistoryRemoveResult };
+  "history.search": { params: HistorySearchParams; result: HistorySearchResult };
+  "history.visits": { params: HistoryVisitsParams; result: HistoryVisitsResult };
+  "readingList.add": { params: ReadingListAddParams; result: ReadingListAddResult };
+  "readingList.list": { params: ReadingListListParams; result: ReadingListListResult };
+  "readingList.markRead": { params: ReadingListMarkReadParams; result: ReadingListMarkReadResult };
+  "readingList.remove": { params: ReadingListRemoveParams; result: ReadingListRemoveResult };
+  "recent.list": { params: RecentListParams; result: RecentListResult };
+  "recent.restore": { params: RecentRestoreParams; result: RecentRestoreResult };
+  "tabGroups.add": { params: TabGroupsAddParams; result: TabGroupsAddResult };
+  "tabGroups.create": { params: TabGroupsCreateParams; result: TabGroupsCreateResult };
+  "tabGroups.edit": { params: TabGroupsEditParams; result: TabGroupsEditResult };
+  "tabGroups.list": { params: TabGroupsListParams; result: TabGroupsListResult };
+  "tabGroups.ungroup": { params: TabGroupsUngroupParams; result: TabGroupsUngroupResult };
   "tabs.activate": { params: TabsActivateParams; result: TabsActivateResult };
   "tabs.close": { params: TabsCloseParams; result: TabsCloseResult };
+  "tabs.current": { params: TabsCurrentParams; result: TabsCurrentResult };
+  "tabs.duplicate": { params: TabsDuplicateParams; result: TabsOpenResult };
   "tabs.list": { params: TabsListParams; result: TabsListResult };
+  "tabs.move": { params: TabsMoveParams; result: TabsMoveResult };
+  "tabs.mute": { params: TabsIdsParams; result: TabsIdsResult };
   "tabs.open": { params: TabsOpenParams; result: TabsOpenResult };
+  "tabs.pin": { params: TabsIdsParams; result: TabsIdsResult };
+  "tabs.reload": { params: TabsReloadParams; result: TabsIdsResult };
+  "tabs.select": { params: TabsActivateParams; result: TabsActivateResult };
+  "tabs.unmute": { params: TabsIdsParams; result: TabsIdsResult };
+  "tabs.unpin": { params: TabsIdsParams; result: TabsIdsResult };
+  "windows.close": { params: WindowsCloseParams; result: WindowsCloseResult };
+  "windows.focus": { params: WindowsFocusParams; result: WindowsFocusResult };
   "windows.list": { params: WindowsListParams; result: WindowsListResult };
+  "windows.open": { params: WindowsOpenParams; result: WindowsOpenResult };
+  "windows.state": { params: WindowsStateParams; result: WindowsStateResult };
 }
 export type RpcMethod = keyof RpcMethodMap;
 export type RpcParams<M extends RpcMethod> = RpcMethodMap[M]["params"];
 export type RpcResult<M extends RpcMethod> = RpcMethodMap[M]["result"];
 export const RPC_METHODS = {
+  "bookmarks.add": {
+    params: "BookmarksAddParams",
+    result: "BookmarksAddResult",
+    scope: "bookmarks:add",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "bookmarks.edit": {
+    params: "BookmarksEditParams",
+    result: "BookmarksEditResult",
+    scope: "bookmarks:edit",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "bookmarks.list": {
+    params: "BookmarksListParams",
+    result: "BookmarksListResult",
+    scope: "bookmarks:list",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "bookmarks.mkdir": {
+    params: "BookmarksMkdirParams",
+    result: "BookmarksMkdirResult",
+    scope: "bookmarks:mkdir",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "bookmarks.move": {
+    params: "BookmarksMoveParams",
+    result: "BookmarksMoveResult",
+    scope: "bookmarks:move",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "bookmarks.remove": {
+    params: "BookmarksRemoveParams",
+    result: "BookmarksRemoveResult",
+    scope: "bookmarks:remove",
+    effect: "write",
+    blocking: "approval",
+    level: "L2",
+  },
+  "bookmarks.search": {
+    params: "BookmarksSearchParams",
+    result: "BookmarksSearchResult",
+    scope: "bookmarks:search",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "browsingData.clear": {
+    params: "BrowsingDataClearParams",
+    result: "BrowsingDataClearResult",
+    scope: "browsingData:clear",
+    effect: "write",
+    blocking: "none",
+    level: "L1",
+  },
+  "cookies.clear": {
+    params: "CookiesClearParams",
+    result: "CookiesClearResult",
+    scope: "cookies:clear",
+    effect: "write",
+    blocking: "none",
+    level: "L1",
+  },
+  "cookies.get": {
+    params: "CookiesGetParams",
+    result: "CookiesGetResult",
+    scope: "cookies:get",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "cookies.list": {
+    params: "CookiesListParams",
+    result: "CookiesListResult",
+    scope: "cookies:list",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "cookies.remove": {
+    params: "CookiesRemoveParams",
+    result: "CookiesRemoveResult",
+    scope: "cookies:remove",
+    effect: "write",
+    blocking: "none",
+    level: "L1",
+  },
+  "cookies.set": {
+    params: "CookiesSetParams",
+    result: "CookiesSetResult",
+    scope: "cookies:set",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "debugger.detach": {
+    params: "DebuggerDetachParams",
+    result: "DebuggerDetachResult",
+    scope: "debugger:detach",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "debugger.send": {
+    params: "DebuggerSendParams",
+    result: "DebuggerSendResult",
+    scope: "debugger:send",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "downloads.cancel": {
+    params: "DownloadsCancelParams",
+    result: "DownloadsCancelResult",
+    scope: "downloads:cancel",
+    effect: "write",
+    blocking: "none",
+    level: "L1",
+  },
+  "downloads.deleteFile": {
+    params: "DownloadsDeleteFileParams",
+    result: "DownloadsDeleteFileResult",
+    scope: "downloads:deleteFile",
+    effect: "write",
+    blocking: "none",
+    level: "L1",
+  },
+  "downloads.erase": {
+    params: "DownloadsEraseParams",
+    result: "DownloadsEraseResult",
+    scope: "downloads:erase",
+    effect: "write",
+    blocking: "none",
+    level: "L1",
+  },
+  "downloads.list": {
+    params: "DownloadsListParams",
+    result: "DownloadsListResult",
+    scope: "downloads:list",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "downloads.pause": {
+    params: "DownloadsPauseParams",
+    result: "DownloadsPauseResult",
+    scope: "downloads:pause",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "downloads.resume": {
+    params: "DownloadsResumeParams",
+    result: "DownloadsResumeResult",
+    scope: "downloads:resume",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "downloads.show": {
+    params: "DownloadsShowParams",
+    result: "DownloadsShowResult",
+    scope: "downloads:show",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "downloads.start": {
+    params: "DownloadsStartParams",
+    result: "DownloadsStartResult",
+    scope: "downloads:start",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "extensions.disable": {
+    params: "ExtensionsDisableParams",
+    result: "ExtensionsSetEnabledResult",
+    scope: "extensions:disable",
+    effect: "write",
+    blocking: "none",
+    level: "L1",
+  },
+  "extensions.enable": {
+    params: "ExtensionsEnableParams",
+    result: "ExtensionsSetEnabledResult",
+    scope: "extensions:enable",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "extensions.list": {
+    params: "ExtensionsListParams",
+    result: "ExtensionsListResult",
+    scope: "extensions:list",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "extensions.uninstall": {
+    params: "ExtensionsUninstallParams",
+    result: "ExtensionsUninstallResult",
+    scope: "extensions:uninstall",
+    effect: "write",
+    blocking: "approval",
+    level: "L2",
+  },
+  "history.clear": {
+    params: "HistoryClearParams",
+    result: "HistoryClearResult",
+    scope: "history:clear",
+    effect: "write",
+    blocking: "none",
+    level: "L1",
+  },
+  "history.remove": {
+    params: "HistoryRemoveParams",
+    result: "HistoryRemoveResult",
+    scope: "history:remove",
+    effect: "write",
+    blocking: "none",
+    level: "L1",
+  },
+  "history.search": {
+    params: "HistorySearchParams",
+    result: "HistorySearchResult",
+    scope: "history:search",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "history.visits": {
+    params: "HistoryVisitsParams",
+    result: "HistoryVisitsResult",
+    scope: "history:visits",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "readingList.add": {
+    params: "ReadingListAddParams",
+    result: "ReadingListAddResult",
+    scope: "readingList:add",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "readingList.list": {
+    params: "ReadingListListParams",
+    result: "ReadingListListResult",
+    scope: "readingList:list",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "readingList.markRead": {
+    params: "ReadingListMarkReadParams",
+    result: "ReadingListMarkReadResult",
+    scope: "readingList:markRead",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "readingList.remove": {
+    params: "ReadingListRemoveParams",
+    result: "ReadingListRemoveResult",
+    scope: "readingList:remove",
+    effect: "write",
+    blocking: "none",
+    level: "L1",
+  },
+  "recent.list": {
+    params: "RecentListParams",
+    result: "RecentListResult",
+    scope: "recent:list",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "recent.restore": {
+    params: "RecentRestoreParams",
+    result: "RecentRestoreResult",
+    scope: "recent:restore",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "tabGroups.add": {
+    params: "TabGroupsAddParams",
+    result: "TabGroupsAddResult",
+    scope: "tabGroups:add",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "tabGroups.create": {
+    params: "TabGroupsCreateParams",
+    result: "TabGroupsCreateResult",
+    scope: "tabGroups:create",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "tabGroups.edit": {
+    params: "TabGroupsEditParams",
+    result: "TabGroupsEditResult",
+    scope: "tabGroups:edit",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "tabGroups.list": {
+    params: "TabGroupsListParams",
+    result: "TabGroupsListResult",
+    scope: "tabGroups:list",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "tabGroups.ungroup": {
+    params: "TabGroupsUngroupParams",
+    result: "TabGroupsUngroupResult",
+    scope: "tabGroups:ungroup",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
   "tabs.activate": {
     params: "TabsActivateParams",
     result: "TabsActivateResult",
     scope: "tabs:activate",
     effect: "write",
     blocking: "none",
+    level: "L0",
   },
   "tabs.close": {
     params: "TabsCloseParams",
@@ -112,6 +914,23 @@ export const RPC_METHODS = {
     scope: "tabs:close",
     effect: "write",
     blocking: "none",
+    level: "L0",
+  },
+  "tabs.current": {
+    params: "TabsCurrentParams",
+    result: "TabsCurrentResult",
+    scope: "tabs:current",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "tabs.duplicate": {
+    params: "TabsDuplicateParams",
+    result: "TabsOpenResult",
+    scope: "tabs:duplicate",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
   },
   "tabs.list": {
     params: "TabsListParams",
@@ -119,6 +938,23 @@ export const RPC_METHODS = {
     scope: "tabs:list",
     effect: "read",
     blocking: "none",
+    level: "L0",
+  },
+  "tabs.move": {
+    params: "TabsMoveParams",
+    result: "TabsMoveResult",
+    scope: "tabs:move",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "tabs.mute": {
+    params: "TabsIdsParams",
+    result: "TabsIdsResult",
+    scope: "tabs:mute",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
   },
   "tabs.open": {
     params: "TabsOpenParams",
@@ -126,6 +962,63 @@ export const RPC_METHODS = {
     scope: "tabs:open",
     effect: "write",
     blocking: "none",
+    level: "L0",
+  },
+  "tabs.pin": {
+    params: "TabsIdsParams",
+    result: "TabsIdsResult",
+    scope: "tabs:pin",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "tabs.reload": {
+    params: "TabsReloadParams",
+    result: "TabsIdsResult",
+    scope: "tabs:reload",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "tabs.select": {
+    params: "TabsActivateParams",
+    result: "TabsActivateResult",
+    scope: "tabs:select",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "tabs.unmute": {
+    params: "TabsIdsParams",
+    result: "TabsIdsResult",
+    scope: "tabs:unmute",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "tabs.unpin": {
+    params: "TabsIdsParams",
+    result: "TabsIdsResult",
+    scope: "tabs:unpin",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "windows.close": {
+    params: "WindowsCloseParams",
+    result: "WindowsCloseResult",
+    scope: "windows:close",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "windows.focus": {
+    params: "WindowsFocusParams",
+    result: "WindowsFocusResult",
+    scope: "windows:focus",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
   },
   "windows.list": {
     params: "WindowsListParams",
@@ -133,8 +1026,31 @@ export const RPC_METHODS = {
     scope: "windows:list",
     effect: "read",
     blocking: "none",
+    level: "L0",
+  },
+  "windows.open": {
+    params: "WindowsOpenParams",
+    result: "WindowsOpenResult",
+    scope: "windows:open",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "windows.state": {
+    params: "WindowsStateParams",
+    result: "WindowsStateResult",
+    scope: "windows:state",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
   },
 } as const satisfies Record<
   RpcMethod,
-  { params: string; result: string; scope: string; effect: string; blocking: string }
+  { params: string; result: string; scope: string; effect: string; blocking: string; level: "L0" | "L1" | "L2" }
 >;
+export interface NotificationMap {
+  "debugger.detached": DebuggerDetachedNotification;
+  "debugger.event": DebuggerEventNotification;
+}
+export type NotificationMethod = keyof NotificationMap;
+export type NotificationParams<N extends NotificationMethod> = NotificationMap[N];

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,10 @@ type pendingCall struct {
 	clientID string
 	method   string
 	respCh   chan Response
+	// approvalCh 收到值表示对端报告这个请求已进入人工审批;缓冲为 1 且至多投递一次,读循环永不阻塞在它上面。
+	approvalCh chan struct{}
+	// approvalSignaled 由 s.mu 保护,保证重复的 $/approvalPending 只投递一次。
+	approvalSignaled bool
 }
 
 // Call 按方法归属把一次 bridge action 转发给对端并阻塞等待应答:scripts.* 发给 ScriptCat,
@@ -67,7 +72,7 @@ func (s *Server) callConn(ctx context.Context, c *conn, req Request) (Response, 
 		return Response{}, &Error{Code: generated.ErrorCodeMethodNotFound, Message: "extension does not support " + req.Action}
 	}
 	requestID := uuid.NewString()
-	pc := &pendingCall{conn: c, clientID: req.ClientID, method: req.Action, respCh: make(chan Response, 1)}
+	pc := &pendingCall{conn: c, clientID: req.ClientID, method: req.Action, respCh: make(chan Response, 1), approvalCh: make(chan struct{}, 1)}
 	s.mu.Lock()
 	s.pending[requestID] = pc
 	s.mu.Unlock()
@@ -86,18 +91,49 @@ func (s *Server) callConn(ctx context.Context, c *conn, req Request) (Response, 
 	timer := time.NewTimer(s.writeDecisionTTL)
 	defer timer.Stop()
 
-	select {
-	case resp := <-pc.respCh:
-		return resp, nil
-	case <-ctx.Done():
-		s.cancelToExt(c, requestID)
-		return Response{}, ctx.Err()
-	case <-timer.C:
-		s.cancelToExt(c, requestID)
-		return Response{}, &Error{Code: CodeOperationExpired, Message: "operation expired"}
-	case <-c.closed:
-		return Response{}, ErrDisconnected
+	for {
+		select {
+		case resp := <-pc.respCh:
+			return resp, nil
+		case <-pc.approvalCh:
+			// 在调用方自己的 goroutine 里回调:它可以安全地写自己的响应,也不会拖住这条连接的读循环。
+			if req.OnPending != nil {
+				req.OnPending()
+			}
+		case <-ctx.Done():
+			s.cancelToExt(c, requestID)
+			return Response{}, ctx.Err()
+		case <-timer.C:
+			s.cancelToExt(c, requestID)
+			return Response{}, &Error{Code: CodeOperationExpired, Message: "operation expired"}
+		case <-c.closed:
+			return Response{}, ErrDisconnected
+		}
 	}
+}
+
+// handleApprovalPending 把对端「请求已进入审批」的通知交给等待它的调用方。与应答一样,只认发往的那条连接,
+// 其他对端不能冒名;未知或已结束的请求、重复的通知都被忽略。不等待人工决定的方法不会进入审批,对它们的通知
+// 也被忽略:汇总调用只用于这类方法(protocolgen 保证),它的各个 callConn 并发运行,回调在那里会被并发调用。
+// protocol.json 只把这条通知列给浏览器对端:ScriptCat 的闸门不报告审批开始,它发来的同名消息不算数。
+func (s *Server) handleApprovalPending(c *conn, message Message) {
+	if c.kind != protocol.PeerBrowser {
+		s.log.Debug("ignoring an approval pending notification from a non-browser peer")
+		return
+	}
+	var params approvalPendingParams
+	if err := json.Unmarshal(message.Params, &params); err != nil || params.ID == "" {
+		s.log.Debug("invalid approval pending notification", zap.Error(err))
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	pc := s.pending[params.ID]
+	if pc == nil || pc.conn != c || pc.approvalSignaled || s.proto.Actions[pc.method].Blocking == protocol.BlockingNone {
+		return
+	}
+	pc.approvalSignaled = true
+	pc.approvalCh <- struct{}{}
 }
 
 // cancelToExt sends a JSON-RPC cancellation notification for an in-flight request.
@@ -152,6 +188,9 @@ type browserRef struct {
 
 // mergedItemBrowserField 是汇总结果里每一项新增的来源浏览器字段。
 const mergedItemBrowserField = "browser"
+
+// mergedHasMoreField 是列表结果里「还有未返回的条目」的布尔字段:任一实例还有更多,汇总结果就还有更多。
+const mergedHasMoreField = "hasMore"
 
 // resolveBrowsers 在 daemon 侧解析浏览器调用的目标,只有这里知道哪些实例在线。
 // target 为空时按在线实例数选择:没有在线实例报 NO_BROWSER_CONNECTED;恰好一个就用它;
@@ -271,15 +310,16 @@ func (s *Server) callMerged(ctx context.Context, targets []browserTarget, req Re
 	return Response{OK: true, Result: merged}, nil
 }
 
-// mergeResults 以第一个结果为底,把各结果 mergeField 数组的每一项标上来源浏览器后拼接。
-// 各项保持原始 JSON,不经数值往返。结果已按方法 schema 校验过,mergeField 必是对象数组;
-// 解析失败说明协议定义与此处假设不符。
+// mergeResults 以第一个结果为底,把各结果 mergeField 数组的每一项标上来源浏览器后拼接,
+// 结果带 hasMore 时对各实例取或。各项保持原始 JSON,不经数值往返。结果已按方法 schema 校验过,
+// mergeField 必是对象数组、hasMore 必是布尔值(protocolgen 保证);解析失败说明协议定义与此处假设不符。
 func mergeResults(targets []browserTarget, responses []Response, mergeField string) (json.RawMessage, error) {
 	var base map[string]json.RawMessage
 	if err := json.Unmarshal(responses[0].Result, &base); err != nil {
 		return nil, fmt.Errorf("merge %s: %w", mergeField, err)
 	}
 	items := []map[string]json.RawMessage{}
+	hasMore, anyHasMore := false, false
 	for i, resp := range responses {
 		ref, err := json.Marshal(browserRef{ID: targets[i].id, Name: targets[i].name})
 		if err != nil {
@@ -297,6 +337,17 @@ func mergeResults(targets []browserTarget, responses []Response, mergeField stri
 			item[mergedItemBrowserField] = ref
 			items = append(items, item)
 		}
+		if raw, ok := fields[mergedHasMoreField]; ok {
+			var more bool
+			if err := json.Unmarshal(raw, &more); err != nil {
+				return nil, fmt.Errorf("merge %s: %w", mergedHasMoreField, err)
+			}
+			anyHasMore = true
+			hasMore = hasMore || more
+		}
+	}
+	if anyHasMore {
+		base[mergedHasMoreField] = json.RawMessage(strconv.FormatBool(hasMore))
 	}
 	raw, err := json.Marshal(items)
 	if err != nil {

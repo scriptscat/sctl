@@ -35,7 +35,7 @@ func browserPeer(id string) *authPeer {
 func browserCapabilities(name string) capabilitiesParams {
 	return capabilitiesParams{
 		SchemaVersion: "1.0.0",
-		Methods:       []string{"tabs.list", "tabs.open", "tabs.close", "tabs.activate", "windows.list"},
+		Methods:       []string{"tabs.list", "tabs.open", "tabs.close", "tabs.activate", "windows.list", "bookmarks.remove"},
 		Peer:          &capabilitiesPeer{Name: name, Product: "Chrome", ProductVersion: "129.0", ExtensionVersion: "0.1.0"},
 	}
 }

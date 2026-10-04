@@ -183,7 +183,7 @@ func TestGenerateKeepsScriptCatTypeScriptByteIdenticalWhenBrowserMethodsExist(t 
 		"validators.generated.ts": scriptCatValidatorsSHA256,
 	} {
 		content := readFile(t, filepath.Join(out, name))
-		for _, browserOnly := range []string{"tabs.list", "TabsListParams", "BROWSER_OFFLINE", "browserSessionExt"} {
+		for _, browserOnly := range []string{"tabs.list", "TabsListParams", "BROWSER_OFFLINE", "browserSessionExt", "CONFIRMATION_REQUIRED", "UNSUPPORTED", "level", "$/approvalPending", "debugger.", "Notification", "STALE_REF"} {
 			if strings.Contains(content, browserOnly) {
 				t.Errorf("ScriptCat %s contains browser-owned %q", name, browserOnly)
 			}
@@ -204,19 +204,26 @@ func TestGenerateWritesBrowserTypeScriptWithOnlyBrowserContract(t *testing.T) {
 	}
 	typescript := readFile(t, filepath.Join(browserOut, "protocol.generated.ts"))
 	for _, want := range []string{
-		`"tabs.list": { params: TabsListParams; result: TabsListResult };`,
+		`{ params: TabsListParams; result: TabsListResult };`,
 		`"windows.list": { params: WindowsListParams; result: WindowsListResult };`,
 		`"BROWSER_OFFLINE"`,
 		`"NOT_FOUND"`,
 		`"browserSessionExt": "sctl-browser-rpc-v1/ext"`,
 		`"pairKdfSalt": "scriptcat-rpc-v1/pair-salt"`,
 		`export const SCHEMA_VERSION = "1.0.0" as const;`,
+		`"USER_REJECTED"`,
+		`"PAYLOAD_TOO_LARGE"`,
+		`"CONFIRMATION_REQUIRED"`,
+		`"UNSUPPORTED"`,
+		"  \"$/cancelRequest\",\n  \"$/approvalPending\"\n",
+		"  \"tabs.close\": {\n    params: \"TabsCloseParams\",\n    result: \"TabsCloseResult\",\n    scope: \"tabs:close\",\n    effect: \"write\",\n    blocking: \"none\",\n    level: \"L0\",\n  },\n",
 	} {
 		if !strings.Contains(typescript, want) {
 			t.Errorf("browser TypeScript does not contain %q", want)
 		}
 	}
-	for _, unwanted := range []string{"scripts.list", "ScriptsListParams", `"USER_REJECTED"`, `"sessionExt"`, "unknown"} {
+	// 未解析的 schema 渲染为裸 unknown;开放对象声明的 Record<string, unknown> 是有意的,不在此列。
+	for _, unwanted := range []string{"scripts.list", "ScriptsListParams", `"sessionExt"`, ": unknown;", "<unknown>", "unknown[]"} {
 		if strings.Contains(typescript, unwanted) {
 			t.Errorf("browser TypeScript contains ScriptCat-only or unresolved %q", unwanted)
 		}
@@ -251,8 +258,14 @@ func TestGenerateGoBindingsCarryEveryPeer(t *testing.T) {
 	for _, want := range []string{
 		`MethodScriptsList `,
 		`MethodTabsList `,
-		`Peer: "browser", MergeField: "tabs"`,
-		`Peer: "scriptcat", MergeField: ""`,
+		`{Params: "TabsListParams", Result: "TabsListResult", Scope: "tabs:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "tabs", Internal: false}`,
+		`{Params: "ScriptUUIDParams", Result: "ScriptsDeleteResult", Scope: "scripts:delete:request", Effect: "write", Blocking: "approval", Level: "L2", Peer: "scriptcat", MergeField: "", Internal: false}`,
+		`{Params: "ScriptsSourceGetParams", Result: "ScriptSource", Scope: "scripts:source:read", Effect: "read", Blocking: "disclosure", Level: "L2", Peer: "scriptcat", MergeField: "", Internal: false}`,
+		`{Params: "ScriptsListParams", Result: "ScriptsListResult", Scope: "scripts:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "scriptcat", MergeField: "", Internal: false}`,
+		`ErrorCodeConfirmationRequired `,
+		`= "CONFIRMATION_REQUIRED"`,
+		`ErrorCodeUnsupported `,
+		`= "UNSUPPORTED"`,
 		`ErrorCodeInvalidRequest `,
 		`ErrorCodeBrowserOffline `,
 		`= "BROWSER_OFFLINE"`,
@@ -290,6 +303,10 @@ func TestGenerateRejectsInvalidPeerAnnotations(t *testing.T) {
 			items := resultProperty(def, "TabsListResult", "tabs")["items"].(map[string]any)
 			items["properties"].(map[string]any)["browser"] = map[string]any{"type": "string"}
 		},
+		"merge field on a method that waits for a human": func(def map[string]any) {
+			method(def, "tabs.list")["blocking"] = "approval"
+			method(def, "tabs.list")["level"] = "L2"
+		},
 		"merge field on a ScriptCat method": func(def map[string]any) {
 			method(def, "scripts.list")["mergeField"] = "scripts"
 		},
@@ -299,12 +316,69 @@ func TestGenerateRejectsInvalidPeerAnnotations(t *testing.T) {
 		"error code with unknown peer": func(def map[string]any) {
 			def["errorCodes"].([]any)[0].(map[string]any)["peers"] = []any{"firefox"}
 		},
+		"session method without peers": func(def map[string]any) {
+			def["sessionMethods"].([]any)[0].(map[string]any)["peers"] = []any{}
+		},
+		"session method with unknown peer": func(def map[string]any) {
+			def["sessionMethods"].([]any)[0].(map[string]any)["peers"] = []any{"firefox"}
+		},
 		"handshake context without peers": func(def map[string]any) {
 			context := def["crypto"].(map[string]any)["context"].(map[string]any)
 			context["sessionExt"].(map[string]any)["peers"] = []any{}
 		},
+		"method without level": func(def map[string]any) {
+			delete(method(def, "tabs.open"), "level")
+		},
+		"method with unknown level": func(def map[string]any) {
+			method(def, "tabs.open")["level"] = "L3"
+		},
+		"L1 method whose params lack confirm": func(def map[string]any) {
+			method(def, "tabs.close")["level"] = "L1"
+		},
+		"L1 method whose confirm is not the constant true": func(def map[string]any) {
+			method(def, "tabs.close")["level"] = "L1"
+			properties(def, "TabsCloseParams")["confirm"] = map[string]any{"type": "boolean"}
+		},
+		"L1 method that requires confirm in its params schema": func(def map[string]any) {
+			method(def, "tabs.close")["level"] = "L1"
+			properties(def, "TabsCloseParams")["confirm"] = map[string]any{"const": true}
+			params := def["types"].(map[string]any)["TabsCloseParams"].(map[string]any)
+			params["required"] = append(params["required"].([]any), "confirm")
+		},
+		"L1 method gated by a human approval": func(def map[string]any) {
+			method(def, "tabs.close")["level"] = "L1"
+			method(def, "tabs.close")["blocking"] = "approval"
+			properties(def, "TabsCloseParams")["confirm"] = map[string]any{"const": true}
+		},
+		"L2 method without a human gate": func(def map[string]any) {
+			method(def, "tabs.open")["level"] = "L2"
+		},
+		"human-gated method not marked L2": func(def map[string]any) {
+			method(def, "scripts.delete.request")["level"] = "L0"
+		},
+		"merge result whose hasMore is not a boolean": func(def map[string]any) {
+			properties(def, "TabsListResult")["hasMore"] = map[string]any{"type": "integer"}
+		},
 		"type that no method uses": func(def map[string]any) {
 			def["types"].(map[string]any)["Orphan"] = map[string]any{"type": "object", "properties": map[string]any{}}
+		},
+		"open object as a named type": func(def map[string]any) {
+			def["types"].(map[string]any)["DebuggerDetachedNotification"] = map[string]any{"type": "object", "additionalProperties": true}
+		},
+		"notification with unknown params type": func(def map[string]any) {
+			notification(def, "debugger.event")["params"] = "Missing"
+		},
+		"notification without peer": func(def map[string]any) {
+			delete(notification(def, "debugger.detached"), "peer")
+		},
+		"notification with unknown peer": func(def map[string]any) {
+			notification(def, "debugger.detached")["peer"] = "firefox"
+		},
+		"notification sharing a method name": func(def map[string]any) {
+			def["notifications"].(map[string]any)["tabs.list"] = map[string]any{"params": "DebuggerDetachedNotification", "peer": "browser"}
+		},
+		"notification in the session namespace": func(def map[string]any) {
+			def["notifications"].(map[string]any)["$debugger.event"] = map[string]any{"params": "DebuggerEventNotification", "peer": "browser"}
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -336,8 +410,16 @@ func TestGenerateRejectsInvalidPeerAnnotations(t *testing.T) {
 	}
 }
 
+func properties(def map[string]any, typeName string) map[string]any {
+	return def["types"].(map[string]any)[typeName].(map[string]any)["properties"].(map[string]any)
+}
+
 func resultProperty(def map[string]any, typeName, property string) map[string]any {
 	return def["types"].(map[string]any)[typeName].(map[string]any)["properties"].(map[string]any)[property].(map[string]any)
+}
+
+func notification(def map[string]any, name string) map[string]any {
+	return def["notifications"].(map[string]any)[name].(map[string]any)
 }
 
 func method(def map[string]any, name string) map[string]any {
@@ -351,4 +433,61 @@ func readFile(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(content)
+}
+
+func TestGenerateEmitsDebuggerRelayAndNotificationsOnlyForGoAndBrowser(t *testing.T) {
+	t.Parallel()
+
+	out := t.TempDir()
+	browserOut := t.TempDir()
+	if err := protocolgen.Generate(filepath.Join("..", "pkg", "protocol"), out, browserOut); err != nil {
+		t.Fatalf("generate protocol contracts: %v", err)
+	}
+	// gofmt 按最长字段对齐,折叠空白后断言,期望值才不随同一结构体的其他字段变化。
+	goSource := strings.Join(strings.Fields(readFile(t, filepath.Join(out, "protocol.generated.go"))), " ")
+	for _, want := range []string{
+		`import "encoding/json"`,
+		`MethodDebuggerSend `,
+		`MethodDebuggerDetach `,
+		`Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: true}`,
+		`Blocking: "none", Level: "L0", Peer: "browser", MergeField: "tabs", Internal: false}`,
+		`NotificationDebuggerEvent `,
+		`NotificationDebuggerDetached `,
+		`= "debugger.detached"`,
+		`"debugger.event": {Params: "DebuggerEventNotification", Peer: "browser"}`,
+		"type DebuggerEventNotification struct",
+		"SessionId *string `json:\"sessionId,omitempty\"`",
+		"Params json.RawMessage `json:\"params,omitempty\"`",
+		"Result json.RawMessage `json:\"result\"`",
+		`ErrorCodeStaleRef `,
+		`ErrorCodeNavigationFailed `,
+	} {
+		if !strings.Contains(goSource, want) {
+			t.Errorf("generated Go does not contain %q", want)
+		}
+	}
+
+	typescript := readFile(t, filepath.Join(browserOut, "protocol.generated.ts"))
+	for _, want := range []string{
+		`"debugger.send": { params: DebuggerSendParams; result: DebuggerSendResult };`,
+		"export interface DebuggerSendParams {\n  method: string;\n  params?: Record<string, unknown>;\n  sessionId?: string;\n  tabId: number;\n}",
+		"export interface DebuggerEventNotification {",
+		"export interface NotificationMap {\n  \"debugger.detached\": DebuggerDetachedNotification;\n  \"debugger.event\": DebuggerEventNotification;\n}",
+		"export type NotificationMethod = keyof NotificationMap;",
+		`"STALE_REF"`,
+		`"PAYLOAD_TOO_LARGE"`,
+	} {
+		if !strings.Contains(typescript, want) {
+			t.Errorf("browser TypeScript does not contain %q", want)
+		}
+	}
+	validators := readFile(t, filepath.Join(browserOut, "validators.generated.ts"))
+	for _, want := range []string{
+		`"debugger.event": validateDebuggerEventNotification,`,
+		`(value["params"] === undefined || ((isRecord(value["params"]))))`,
+	} {
+		if !strings.Contains(validators, want) {
+			t.Errorf("browser validators do not contain %q", want)
+		}
+	}
 }

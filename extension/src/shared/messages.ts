@@ -1,10 +1,29 @@
-import type { ERROR_CODES, RpcMethod } from "@/protocol/generated/protocol.generated";
+import type {
+  ERROR_CODES,
+  NotificationMethod,
+  NotificationParams,
+  RpcMethod,
+} from "@/protocol/generated/protocol.generated";
+import type { ApprovalMessage } from "./approvals";
 import type { ConnectionState } from "./state";
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
 // 业务方法处理结果；失败码必须是协议登记的领域错误码，由 offscreen 转成 JSON-RPC -32000 错误。
 export type RpcOutcome = { ok: true; result: unknown } | { ok: false; code: ErrorCode; message: string };
+
+// background 对一条业务请求的应答：L2 请求先答 deferred，审批得出结论后再以 settle 命令单独送回 offscreen。
+// 不能把这条 runtime 消息的应答一直挂到用户决定：MV3 的 service worker 随时可能被回收，挂着的应答随之丢失。
+export type RpcReply = RpcOutcome | { deferred: true };
+
+// 一条业务请求的来历。requestId 是 daemon 的 JSON-RPC 请求 id；clientId 是请求方自报的标签，未经验证；
+// connection 标识收到它的那条 WebSocket 连接，连接断开时据此作废它的请求；receivedAt 是 offscreen 收到的时间。
+export interface RpcContext {
+  requestId: string;
+  clientId: string | null;
+  connection: string;
+  receivedAt: number;
+}
 
 export type PairResult = { ok: true } | { ok: false; error: "invalid-code" };
 export type RenameResult = { ok: true } | { ok: false; error: "invalid-name" | "not-connected" | "name-taken" };
@@ -38,9 +57,13 @@ export type OffscreenEvent =
   | { target: "background"; type: "offscreenReady" }
   | { target: "background"; type: "paired"; key: string; name: string }
   | { target: "background"; type: "renamed"; name: string }
-  | { target: "background"; type: "rpc"; method: RpcMethod; input: unknown };
+  | { target: "background"; type: "rpc"; method: RpcMethod; input: unknown; context: RpcContext }
+  | { target: "background"; type: "rpcCancel"; requestId: string }
+  | { target: "background"; type: "disconnected"; connection: string }
+  // 已连接的会话结束（断开、忘记、换地址），依赖这条连接的调试器附加要随之释放。
+  | { target: "background"; type: "connectionClosed" };
 
-export type BackgroundMessage = PopupRequest | OffscreenEvent;
+export type BackgroundMessage = PopupRequest | OffscreenEvent | ApprovalMessage;
 
 export type OffscreenCommand =
   | { target: "offscreen"; type: "getState" }
@@ -48,7 +71,11 @@ export type OffscreenCommand =
   | { target: "offscreen"; type: "rename"; name: string }
   | { target: "offscreen"; type: "retryNow" }
   | { target: "offscreen"; type: "forget" }
-  | { target: "offscreen"; type: "setAddress"; address: string };
+  | { target: "offscreen"; type: "setAddress"; address: string }
+  | { target: "offscreen"; type: "settle"; requestId: string; outcome: RpcOutcome }
+  | {
+      [N in NotificationMethod]: { target: "offscreen"; type: "notify"; method: N; params: NotificationParams<N> };
+    }[NotificationMethod];
 
 export interface StateBroadcast {
   target: "popup";

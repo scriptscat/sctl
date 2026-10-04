@@ -7,13 +7,14 @@
     "frame": "json-text"
   },
   "sessionMethods": [
-    "$session.authenticate",
-    "$session.authenticated",
-    "$session.hello",
-    "$session.capabilities",
-    "$session.ping",
-    "$session.shutdown",
-    "$/cancelRequest"
+    { "method": "$session.authenticate", "peers": ["scriptcat", "browser"] },
+    { "method": "$session.authenticated", "peers": ["scriptcat", "browser"] },
+    { "method": "$session.hello", "peers": ["scriptcat", "browser"] },
+    { "method": "$session.capabilities", "peers": ["scriptcat", "browser"] },
+    { "method": "$session.ping", "peers": ["scriptcat", "browser"] },
+    { "method": "$session.shutdown", "peers": ["scriptcat", "browser"] },
+    { "method": "$/cancelRequest", "peers": ["scriptcat", "browser"] },
+    { "method": "$/approvalPending", "peers": ["browser"] }
   ],
   "methods": {
     "scripts.list": {
@@ -22,6 +23,7 @@
       "scope": "scripts:list",
       "effect": "read",
       "blocking": "none",
+      "level": "L0",
       "peer": "scriptcat"
     },
     "scripts.metadata.get": {
@@ -30,6 +32,7 @@
       "scope": "scripts:metadata:read",
       "effect": "read",
       "blocking": "none",
+      "level": "L0",
       "peer": "scriptcat"
     },
     "scripts.source.get": {
@@ -38,6 +41,7 @@
       "scope": "scripts:source:read",
       "effect": "read",
       "blocking": "disclosure",
+      "level": "L2",
       "peer": "scriptcat"
     },
     "scripts.source.grep": {
@@ -46,6 +50,7 @@
       "scope": "scripts:source:read",
       "effect": "read",
       "blocking": "disclosure",
+      "level": "L2",
       "peer": "scriptcat"
     },
     "scripts.install.request": {
@@ -54,6 +59,7 @@
       "scope": "scripts:install:request",
       "effect": "write",
       "blocking": "approval",
+      "level": "L2",
       "peer": "scriptcat"
     },
     "scripts.toggle.request": {
@@ -62,6 +68,7 @@
       "scope": "scripts:toggle:request",
       "effect": "write",
       "blocking": "approval",
+      "level": "L2",
       "peer": "scriptcat"
     },
     "scripts.delete.request": {
@@ -70,6 +77,7 @@
       "scope": "scripts:delete:request",
       "effect": "write",
       "blocking": "approval",
+      "level": "L2",
       "peer": "scriptcat"
     },
     "scripts.edit.request": {
@@ -78,6 +86,7 @@
       "scope": "scripts:edit:request",
       "effect": "write",
       "blocking": "approval",
+      "level": "L2",
       "peer": "scriptcat"
     },
     "tabs.list": {
@@ -86,6 +95,7 @@
       "scope": "tabs:list",
       "effect": "read",
       "blocking": "none",
+      "level": "L0",
       "peer": "browser",
       "mergeField": "tabs"
     },
@@ -95,6 +105,7 @@
       "scope": "tabs:open",
       "effect": "write",
       "blocking": "none",
+      "level": "L0",
       "peer": "browser"
     },
     "tabs.close": {
@@ -103,6 +114,7 @@
       "scope": "tabs:close",
       "effect": "write",
       "blocking": "none",
+      "level": "L0",
       "peer": "browser"
     },
     "tabs.activate": {
@@ -111,7 +123,28 @@
       "scope": "tabs:activate",
       "effect": "write",
       "blocking": "none",
+      "level": "L0",
       "peer": "browser"
+    },
+    "tabs.current": {
+      "params": "TabsCurrentParams",
+      "result": "TabsCurrentResult",
+      "scope": "tabs:current",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "internal": true
+    },
+    "tabs.select": {
+      "params": "TabsActivateParams",
+      "result": "TabsActivateResult",
+      "scope": "tabs:select",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "internal": true
     },
     "windows.list": {
       "params": "WindowsListParams",
@@ -119,8 +152,508 @@
       "scope": "windows:list",
       "effect": "read",
       "blocking": "none",
+      "level": "L0",
       "peer": "browser",
       "mergeField": "windows"
+    },
+    "tabs.move": {
+      "params": "TabsMoveParams",
+      "result": "TabsMoveResult",
+      "scope": "tabs:move",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "tabs.pin": {
+      "params": "TabsIdsParams",
+      "result": "TabsIdsResult",
+      "scope": "tabs:pin",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "tabs.unpin": {
+      "params": "TabsIdsParams",
+      "result": "TabsIdsResult",
+      "scope": "tabs:unpin",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "tabs.mute": {
+      "params": "TabsIdsParams",
+      "result": "TabsIdsResult",
+      "scope": "tabs:mute",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "tabs.unmute": {
+      "params": "TabsIdsParams",
+      "result": "TabsIdsResult",
+      "scope": "tabs:unmute",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "tabs.reload": {
+      "params": "TabsReloadParams",
+      "result": "TabsIdsResult",
+      "scope": "tabs:reload",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "tabs.duplicate": {
+      "params": "TabsDuplicateParams",
+      "result": "TabsOpenResult",
+      "scope": "tabs:duplicate",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "windows.open": {
+      "params": "WindowsOpenParams",
+      "result": "WindowsOpenResult",
+      "scope": "windows:open",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "windows.close": {
+      "params": "WindowsCloseParams",
+      "result": "WindowsCloseResult",
+      "scope": "windows:close",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "windows.focus": {
+      "params": "WindowsFocusParams",
+      "result": "WindowsFocusResult",
+      "scope": "windows:focus",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "windows.state": {
+      "params": "WindowsStateParams",
+      "result": "WindowsStateResult",
+      "scope": "windows:state",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "readingList.list": {
+      "params": "ReadingListListParams",
+      "result": "ReadingListListResult",
+      "scope": "readingList:list",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "mergeField": "entries"
+    },
+    "readingList.add": {
+      "params": "ReadingListAddParams",
+      "result": "ReadingListAddResult",
+      "scope": "readingList:add",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "readingList.markRead": {
+      "params": "ReadingListMarkReadParams",
+      "result": "ReadingListMarkReadResult",
+      "scope": "readingList:markRead",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "readingList.remove": {
+      "params": "ReadingListRemoveParams",
+      "result": "ReadingListRemoveResult",
+      "scope": "readingList:remove",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L1",
+      "peer": "browser"
+    },
+    "bookmarks.list": {
+      "params": "BookmarksListParams",
+      "result": "BookmarksListResult",
+      "scope": "bookmarks:list",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "mergeField": "nodes"
+    },
+    "bookmarks.search": {
+      "params": "BookmarksSearchParams",
+      "result": "BookmarksSearchResult",
+      "scope": "bookmarks:search",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "mergeField": "nodes"
+    },
+    "bookmarks.add": {
+      "params": "BookmarksAddParams",
+      "result": "BookmarksAddResult",
+      "scope": "bookmarks:add",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "bookmarks.mkdir": {
+      "params": "BookmarksMkdirParams",
+      "result": "BookmarksMkdirResult",
+      "scope": "bookmarks:mkdir",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "bookmarks.move": {
+      "params": "BookmarksMoveParams",
+      "result": "BookmarksMoveResult",
+      "scope": "bookmarks:move",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "bookmarks.edit": {
+      "params": "BookmarksEditParams",
+      "result": "BookmarksEditResult",
+      "scope": "bookmarks:edit",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "bookmarks.remove": {
+      "params": "BookmarksRemoveParams",
+      "result": "BookmarksRemoveResult",
+      "scope": "bookmarks:remove",
+      "effect": "write",
+      "blocking": "approval",
+      "level": "L2",
+      "peer": "browser"
+    },
+    "tabGroups.list": {
+      "params": "TabGroupsListParams",
+      "result": "TabGroupsListResult",
+      "scope": "tabGroups:list",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "mergeField": "groups"
+    },
+    "tabGroups.create": {
+      "params": "TabGroupsCreateParams",
+      "result": "TabGroupsCreateResult",
+      "scope": "tabGroups:create",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "tabGroups.add": {
+      "params": "TabGroupsAddParams",
+      "result": "TabGroupsAddResult",
+      "scope": "tabGroups:add",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "tabGroups.edit": {
+      "params": "TabGroupsEditParams",
+      "result": "TabGroupsEditResult",
+      "scope": "tabGroups:edit",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "tabGroups.ungroup": {
+      "params": "TabGroupsUngroupParams",
+      "result": "TabGroupsUngroupResult",
+      "scope": "tabGroups:ungroup",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "history.search": {
+      "params": "HistorySearchParams",
+      "result": "HistorySearchResult",
+      "scope": "history:search",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "mergeField": "items"
+    },
+    "history.visits": {
+      "params": "HistoryVisitsParams",
+      "result": "HistoryVisitsResult",
+      "scope": "history:visits",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "mergeField": "visits"
+    },
+    "history.remove": {
+      "params": "HistoryRemoveParams",
+      "result": "HistoryRemoveResult",
+      "scope": "history:remove",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L1",
+      "peer": "browser"
+    },
+    "history.clear": {
+      "params": "HistoryClearParams",
+      "result": "HistoryClearResult",
+      "scope": "history:clear",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L1",
+      "peer": "browser"
+    },
+    "browsingData.clear": {
+      "params": "BrowsingDataClearParams",
+      "result": "BrowsingDataClearResult",
+      "scope": "browsingData:clear",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L1",
+      "peer": "browser"
+    },
+    "recent.list": {
+      "params": "RecentListParams",
+      "result": "RecentListResult",
+      "scope": "recent:list",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "mergeField": "items"
+    },
+    "recent.restore": {
+      "params": "RecentRestoreParams",
+      "result": "RecentRestoreResult",
+      "scope": "recent:restore",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "downloads.list": {
+      "params": "DownloadsListParams",
+      "result": "DownloadsListResult",
+      "scope": "downloads:list",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "mergeField": "items"
+    },
+    "downloads.start": {
+      "params": "DownloadsStartParams",
+      "result": "DownloadsStartResult",
+      "scope": "downloads:start",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "downloads.pause": {
+      "params": "DownloadsPauseParams",
+      "result": "DownloadsPauseResult",
+      "scope": "downloads:pause",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "downloads.resume": {
+      "params": "DownloadsResumeParams",
+      "result": "DownloadsResumeResult",
+      "scope": "downloads:resume",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "downloads.show": {
+      "params": "DownloadsShowParams",
+      "result": "DownloadsShowResult",
+      "scope": "downloads:show",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "downloads.cancel": {
+      "params": "DownloadsCancelParams",
+      "result": "DownloadsCancelResult",
+      "scope": "downloads:cancel",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L1",
+      "peer": "browser"
+    },
+    "downloads.erase": {
+      "params": "DownloadsEraseParams",
+      "result": "DownloadsEraseResult",
+      "scope": "downloads:erase",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L1",
+      "peer": "browser"
+    },
+    "downloads.deleteFile": {
+      "params": "DownloadsDeleteFileParams",
+      "result": "DownloadsDeleteFileResult",
+      "scope": "downloads:deleteFile",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L1",
+      "peer": "browser"
+    },
+    "cookies.list": {
+      "params": "CookiesListParams",
+      "result": "CookiesListResult",
+      "scope": "cookies:list",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "mergeField": "items"
+    },
+    "cookies.get": {
+      "params": "CookiesGetParams",
+      "result": "CookiesGetResult",
+      "scope": "cookies:get",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "cookies.set": {
+      "params": "CookiesSetParams",
+      "result": "CookiesSetResult",
+      "scope": "cookies:set",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "cookies.remove": {
+      "params": "CookiesRemoveParams",
+      "result": "CookiesRemoveResult",
+      "scope": "cookies:remove",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L1",
+      "peer": "browser"
+    },
+    "cookies.clear": {
+      "params": "CookiesClearParams",
+      "result": "CookiesClearResult",
+      "scope": "cookies:clear",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L1",
+      "peer": "browser"
+    },
+    "extensions.list": {
+      "params": "ExtensionsListParams",
+      "result": "ExtensionsListResult",
+      "scope": "extensions:list",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "mergeField": "items"
+    },
+    "extensions.enable": {
+      "params": "ExtensionsEnableParams",
+      "result": "ExtensionsSetEnabledResult",
+      "scope": "extensions:enable",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser"
+    },
+    "extensions.disable": {
+      "params": "ExtensionsDisableParams",
+      "result": "ExtensionsSetEnabledResult",
+      "scope": "extensions:disable",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L1",
+      "peer": "browser"
+    },
+    "extensions.uninstall": {
+      "params": "ExtensionsUninstallParams",
+      "result": "ExtensionsUninstallResult",
+      "scope": "extensions:uninstall",
+      "effect": "write",
+      "blocking": "approval",
+      "level": "L2",
+      "peer": "browser"
+    },
+    "debugger.send": {
+      "params": "DebuggerSendParams",
+      "result": "DebuggerSendResult",
+      "scope": "debugger:send",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "internal": true
+    },
+    "debugger.detach": {
+      "params": "DebuggerDetachParams",
+      "result": "DebuggerDetachResult",
+      "scope": "debugger:detach",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "internal": true
+    }
+  },
+  "notifications": {
+    "debugger.event": {
+      "params": "DebuggerEventNotification",
+      "peer": "browser"
+    },
+    "debugger.detached": {
+      "params": "DebuggerDetachedNotification",
+      "peer": "browser"
     }
   },
   "types": {
@@ -640,6 +1173,9 @@
               "pinned": {
                 "type": "boolean"
               },
+              "groupId": {
+                "type": "integer"
+              },
               "title": {
                 "type": "string"
               },
@@ -652,6 +1188,7 @@
               "windowId",
               "active",
               "pinned",
+              "groupId",
               "title",
               "url"
             ],
@@ -696,6 +1233,246 @@
       },
       "required": [
         "tabId"
+      ],
+      "additionalProperties": false
+    },
+    "TabsMoveParams": {
+      "type": "object",
+      "properties": {
+        "tabIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "windowId": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "index": {
+          "type": "integer",
+          "minimum": -1
+        }
+      },
+      "required": [
+        "tabIds"
+      ],
+      "additionalProperties": false
+    },
+    "TabsMoveResult": {
+      "type": "object",
+      "properties": {
+        "tabIds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "required": [
+        "tabIds"
+      ],
+      "additionalProperties": false
+    },
+    "TabsIdsParams": {
+      "type": "object",
+      "properties": {
+        "tabIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "required": [
+        "tabIds"
+      ],
+      "additionalProperties": false
+    },
+    "TabsIdsResult": {
+      "type": "object",
+      "properties": {
+        "tabIds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "required": [
+        "tabIds"
+      ],
+      "additionalProperties": false
+    },
+    "TabsReloadParams": {
+      "type": "object",
+      "properties": {
+        "tabIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "bypassCache": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "tabIds"
+      ],
+      "additionalProperties": false
+    },
+    "TabsDuplicateParams": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "tabId"
+      ],
+      "additionalProperties": false
+    },
+    "WindowsOpenParams": {
+      "type": "object",
+      "properties": {
+        "urls": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "minimized",
+            "maximized",
+            "fullscreen"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "WindowsOpenResult": {
+      "type": "object",
+      "properties": {
+        "windowId": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "windowId"
+      ],
+      "additionalProperties": false
+    },
+    "WindowsCloseParams": {
+      "type": "object",
+      "properties": {
+        "windowIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "required": [
+        "windowIds"
+      ],
+      "additionalProperties": false
+    },
+    "WindowsCloseResult": {
+      "type": "object",
+      "properties": {
+        "windowIds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "required": [
+        "windowIds"
+      ],
+      "additionalProperties": false
+    },
+    "WindowsFocusParams": {
+      "type": "object",
+      "properties": {
+        "windowId": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "windowId"
+      ],
+      "additionalProperties": false
+    },
+    "WindowsFocusResult": {
+      "type": "object",
+      "properties": {
+        "windowId": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "windowId"
+      ],
+      "additionalProperties": false
+    },
+    "WindowsStateParams": {
+      "type": "object",
+      "properties": {
+        "windowId": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "minimized",
+            "maximized",
+            "fullscreen"
+          ]
+        }
+      },
+      "required": [
+        "windowId",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "WindowsStateResult": {
+      "type": "object",
+      "properties": {
+        "windowId": {
+          "type": "integer"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "minimized",
+            "maximized",
+            "fullscreen"
+          ]
+        }
+      },
+      "required": [
+        "windowId",
+        "state"
       ],
       "additionalProperties": false
     },
@@ -760,6 +1537,27 @@
       ],
       "additionalProperties": false
     },
+    "TabsCurrentParams": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "TabsCurrentResult": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer"
+        },
+        "windowId": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "tabId",
+        "windowId"
+      ],
+      "additionalProperties": false
+    },
     "WindowsListParams": {
       "type": "object",
       "properties": {},
@@ -806,22 +1604,1963 @@
         "windows"
       ],
       "additionalProperties": false
+    },
+    "ReadingListListParams": {
+      "type": "object",
+      "properties": {
+        "read": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "additionalProperties": false
+    },
+    "ReadingListListResult": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "read": {
+                "type": "boolean"
+              },
+              "createdAt": {
+                "type": "integer"
+              },
+              "updatedAt": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "url",
+              "title",
+              "read",
+              "createdAt",
+              "updatedAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "entries",
+        "hasMore",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "ReadingListAddParams": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "ReadingListAddResult": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "title"
+      ],
+      "additionalProperties": false
+    },
+    "ReadingListMarkReadParams": {
+      "type": "object",
+      "properties": {
+        "urls": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "read": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "urls"
+      ],
+      "additionalProperties": false
+    },
+    "ReadingListMarkReadResult": {
+      "type": "object",
+      "properties": {
+        "urls": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "read": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "urls",
+        "read"
+      ],
+      "additionalProperties": false
+    },
+    "ReadingListRemoveParams": {
+      "type": "object",
+      "properties": {
+        "urls": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "confirm": {
+          "const": true
+        }
+      },
+      "required": [
+        "urls"
+      ],
+      "additionalProperties": false
+    },
+    "ReadingListRemoveResult": {
+      "type": "object",
+      "properties": {
+        "urls": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "urls"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksListParams": {
+      "type": "object",
+      "properties": {
+        "folder": {
+          "type": "string"
+        },
+        "recursive": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "additionalProperties": false
+    },
+    "BookmarksListResult": {
+      "type": "object",
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "bookmark",
+                  "folder"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              },
+              "parentId": {
+                "type": "string"
+              },
+              "index": {
+                "type": "integer"
+              },
+              "addedAt": {
+                "type": "integer"
+              },
+              "childCount": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "title",
+              "index"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "nodes",
+        "hasMore",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksSearchParams": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksSearchResult": {
+      "type": "object",
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "bookmark",
+                  "folder"
+                ]
+              },
+              "title": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              },
+              "parentId": {
+                "type": "string"
+              },
+              "index": {
+                "type": "integer"
+              },
+              "addedAt": {
+                "type": "integer"
+              },
+              "childCount": {
+                "type": "integer"
+              },
+              "path": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "type",
+              "title",
+              "index",
+              "path"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "nodes",
+        "hasMore",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksAddParams": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "folder": {
+          "type": "string"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksAddResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksMkdirParams": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "folder": {
+          "type": "string"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksMkdirResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksMoveParams": {
+      "type": "object",
+      "properties": {
+        "ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "folder": {
+          "type": "string"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "ids",
+        "folder"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksMoveResult": {
+      "type": "object",
+      "properties": {
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "ids"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksEditParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksEditResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksRemoveParams": {
+      "type": "object",
+      "properties": {
+        "ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "ids"
+      ],
+      "additionalProperties": false
+    },
+    "BookmarksRemoveResult": {
+      "type": "object",
+      "properties": {
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "bookmarks": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "folders": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "ids",
+        "bookmarks",
+        "folders"
+      ],
+      "additionalProperties": false
+    },
+    "TabGroupsListParams": {
+      "type": "object",
+      "properties": {
+        "windowId": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "TabGroupsListResult": {
+      "type": "object",
+      "properties": {
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "groupId": {
+                "type": "integer"
+              },
+              "windowId": {
+                "type": "integer"
+              },
+              "title": {
+                "type": "string"
+              },
+              "color": {
+                "type": "string",
+                "enum": [
+                  "grey",
+                  "blue",
+                  "red",
+                  "yellow",
+                  "green",
+                  "pink",
+                  "purple",
+                  "cyan",
+                  "orange"
+                ]
+              },
+              "collapsed": {
+                "type": "boolean"
+              },
+              "tabCount": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "groupId",
+              "windowId",
+              "title",
+              "color",
+              "collapsed",
+              "tabCount"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "groups",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "TabGroupsCreateParams": {
+      "type": "object",
+      "properties": {
+        "tabIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "title": {
+          "type": "string"
+        },
+        "color": {
+          "type": "string",
+          "enum": [
+            "grey",
+            "blue",
+            "red",
+            "yellow",
+            "green",
+            "pink",
+            "purple",
+            "cyan",
+            "orange"
+          ]
+        }
+      },
+      "required": [
+        "tabIds"
+      ],
+      "additionalProperties": false
+    },
+    "TabGroupsCreateResult": {
+      "type": "object",
+      "properties": {
+        "groupId": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "groupId"
+      ],
+      "additionalProperties": false
+    },
+    "TabGroupsAddParams": {
+      "type": "object",
+      "properties": {
+        "groupId": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tabIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "required": [
+        "groupId",
+        "tabIds"
+      ],
+      "additionalProperties": false
+    },
+    "TabGroupsAddResult": {
+      "type": "object",
+      "properties": {
+        "groupId": {
+          "type": "integer"
+        },
+        "tabIds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "required": [
+        "groupId",
+        "tabIds"
+      ],
+      "additionalProperties": false
+    },
+    "TabGroupsEditParams": {
+      "type": "object",
+      "properties": {
+        "groupId": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "title": {
+          "type": "string"
+        },
+        "color": {
+          "type": "string",
+          "enum": [
+            "grey",
+            "blue",
+            "red",
+            "yellow",
+            "green",
+            "pink",
+            "purple",
+            "cyan",
+            "orange"
+          ]
+        },
+        "collapsed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "groupId"
+      ],
+      "additionalProperties": false
+    },
+    "TabGroupsEditResult": {
+      "type": "object",
+      "properties": {
+        "groupId": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "groupId"
+      ],
+      "additionalProperties": false
+    },
+    "TabGroupsUngroupParams": {
+      "type": "object",
+      "properties": {
+        "tabIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "required": [
+        "tabIds"
+      ],
+      "additionalProperties": false
+    },
+    "TabGroupsUngroupResult": {
+      "type": "object",
+      "properties": {
+        "tabIds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "required": [
+        "tabIds"
+      ],
+      "additionalProperties": false
+    },
+    "HistorySearchParams": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "startTime": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "endTime": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "additionalProperties": false
+    },
+    "HistorySearchResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "lastVisitTime": {
+                "type": "integer"
+              },
+              "visitCount": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "url",
+              "title",
+              "lastVisitTime",
+              "visitCount"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "items",
+        "hasMore",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "HistoryVisitsParams": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "HistoryVisitsResult": {
+      "type": "object",
+      "properties": {
+        "visits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "visitTime": {
+                "type": "integer"
+              },
+              "transition": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "visitTime",
+              "transition"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "hasMore": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "visits",
+        "hasMore"
+      ],
+      "additionalProperties": false
+    },
+    "HistoryRemoveParams": {
+      "type": "object",
+      "properties": {
+        "urls": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "confirm": {
+          "const": true
+        }
+      },
+      "required": [
+        "urls"
+      ],
+      "additionalProperties": false
+    },
+    "HistoryRemoveResult": {
+      "type": "object",
+      "properties": {
+        "urls": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "urls"
+      ],
+      "additionalProperties": false
+    },
+    "HistoryClearParams": {
+      "type": "object",
+      "properties": {
+        "startTime": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "endTime": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "confirm": {
+          "const": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "HistoryClearResult": {
+      "type": "object",
+      "properties": {
+        "all": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "all"
+      ],
+      "additionalProperties": false
+    },
+    "RecentListParams": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 25
+        }
+      },
+      "additionalProperties": false
+    },
+    "RecentListResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "sessionId": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": ["tab", "window"]
+              },
+              "closedTime": {
+                "type": "integer"
+              },
+              "title": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              },
+              "tabCount": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "sessionId",
+              "type",
+              "closedTime",
+              "title",
+              "url"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "items",
+        "hasMore",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "RecentRestoreParams": {
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "RecentRestoreResult": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer"
+        },
+        "windowId": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false
+    },
+    "DownloadsListParams": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": ["in_progress", "complete", "interrupted"]
+        },
+        "query": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "additionalProperties": false
+    },
+    "DownloadsListResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "url": {
+                "type": "string"
+              },
+              "filename": {
+                "type": "string"
+              },
+              "state": {
+                "type": "string",
+                "enum": ["in_progress", "complete", "interrupted"]
+              },
+              "bytesReceived": {
+                "type": "integer"
+              },
+              "totalBytes": {
+                "type": "integer"
+              },
+              "startTime": {
+                "type": "integer"
+              },
+              "exists": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "url",
+              "filename",
+              "state",
+              "bytesReceived",
+              "totalBytes",
+              "startTime",
+              "exists"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "items",
+        "hasMore",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsStartParams": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "filename": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsStartResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsPauseParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsPauseResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsResumeParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsResumeResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsShowParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsShowResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsCancelParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "confirm": {
+          "const": true
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsCancelResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsDeleteFileParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "confirm": {
+          "const": true
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsDeleteFileResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsEraseParams": {
+      "type": "object",
+      "properties": {
+        "ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "confirm": {
+          "const": true
+        }
+      },
+      "required": [
+        "ids"
+      ],
+      "additionalProperties": false
+    },
+    "DownloadsEraseResult": {
+      "type": "object",
+      "properties": {
+        "ids": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "required": [
+        "ids"
+      ],
+      "additionalProperties": false
+    },
+    "BrowsingDataClearParams": {
+      "type": "object",
+      "properties": {
+        "types": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "enum": [
+              "cache",
+              "cacheStorage",
+              "cookies",
+              "downloads",
+              "fileSystems",
+              "formData",
+              "history",
+              "indexedDB",
+              "localStorage",
+              "serviceWorkers",
+              "webSQL"
+            ]
+          }
+        },
+        "since": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "origins": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "confirm": {
+          "const": true
+        }
+      },
+      "required": [
+        "types"
+      ],
+      "additionalProperties": false
+    },
+    "BrowsingDataClearResult": {
+      "type": "object",
+      "properties": {
+        "types": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "types"
+      ],
+      "additionalProperties": false
+    },
+    "CookiesListParams": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "domain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "additionalProperties": false
+    },
+    "CookiesListResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              },
+              "domain": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "expires": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "secure": {
+                "type": "boolean"
+              },
+              "httpOnly": {
+                "type": "boolean"
+              },
+              "sameSite": {
+                "type": "string",
+                "enum": [
+                  "no_restriction",
+                  "lax",
+                  "strict",
+                  "unspecified"
+                ]
+              },
+              "session": {
+                "type": "boolean"
+              },
+              "partitionTopLevelSite": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "value",
+              "domain",
+              "path",
+              "secure",
+              "httpOnly",
+              "sameSite",
+              "session"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "hasMore": {
+          "type": "boolean"
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "items",
+        "hasMore",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "CookiesGetParams": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "url",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "CookiesGetResult": {
+      "type": "object",
+      "properties": {
+        "cookie": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            },
+            "domain": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "expires": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "secure": {
+              "type": "boolean"
+            },
+            "httpOnly": {
+              "type": "boolean"
+            },
+            "sameSite": {
+              "type": "string",
+              "enum": [
+                "no_restriction",
+                "lax",
+                "strict",
+                "unspecified"
+              ]
+            },
+            "session": {
+              "type": "boolean"
+            },
+            "partitionTopLevelSite": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "value",
+            "domain",
+            "path",
+            "secure",
+            "httpOnly",
+            "sameSite",
+            "session"
+          ],
+          "additionalProperties": false
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "cookie",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "CookiesSetParams": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "secure": {
+          "type": "boolean"
+        },
+        "httpOnly": {
+          "type": "boolean"
+        },
+        "sameSite": {
+          "type": "string",
+          "enum": [
+            "no_restriction",
+            "lax",
+            "strict"
+          ]
+        },
+        "expires": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "url",
+        "name",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "CookiesSetResult": {
+      "type": "object",
+      "properties": {
+        "cookie": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            },
+            "domain": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "expires": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "secure": {
+              "type": "boolean"
+            },
+            "httpOnly": {
+              "type": "boolean"
+            },
+            "sameSite": {
+              "type": "string",
+              "enum": [
+                "no_restriction",
+                "lax",
+                "strict",
+                "unspecified"
+              ]
+            },
+            "session": {
+              "type": "boolean"
+            },
+            "partitionTopLevelSite": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "value",
+            "domain",
+            "path",
+            "secure",
+            "httpOnly",
+            "sameSite",
+            "session"
+          ],
+          "additionalProperties": false
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "cookie",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "CookiesRemoveParams": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confirm": {
+          "const": true
+        }
+      },
+      "required": [
+        "url",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "CookiesRemoveResult": {
+      "type": "object",
+      "properties": {
+        "deleted": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "deleted"
+      ],
+      "additionalProperties": false
+    },
+    "CookiesClearParams": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string",
+          "minLength": 1
+        },
+        "all": {
+          "const": true
+        },
+        "confirm": {
+          "const": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "CookiesClearResult": {
+      "type": "object",
+      "properties": {
+        "deleted": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "deleted"
+      ],
+      "additionalProperties": false
+    },
+    "ExtensionsListParams": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "ExtensionsListResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "type": {
+                "type": "string"
+              },
+              "installType": {
+                "type": "string"
+              },
+              "mayDisable": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "version",
+              "enabled",
+              "type",
+              "installType",
+              "mayDisable"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "items",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "ExtensionsEnableParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "ExtensionsDisableParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confirm": {
+          "const": true
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "ExtensionsSetEnabledResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "enabled"
+      ],
+      "additionalProperties": false
+    },
+    "ExtensionsUninstallParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "ExtensionsUninstallResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "contentTrust": {
+          "const": "untrusted-page-content"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "contentTrust"
+      ],
+      "additionalProperties": false
+    },
+    "DebuggerSendParams": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "tabId",
+        "method"
+      ],
+      "additionalProperties": false
+    },
+    "DebuggerSendResult": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "additionalProperties": false
+    },
+    "DebuggerDetachParams": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "DebuggerDetachResult": {
+      "type": "object",
+      "properties": {
+        "tabIds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "required": [
+        "tabIds"
+      ],
+      "additionalProperties": false
+    },
+    "DebuggerEventNotification": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "tabId",
+        "method"
+      ],
+      "additionalProperties": false
+    },
+    "DebuggerDetachedNotification": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tabId",
+        "reason"
+      ],
+      "additionalProperties": false
     }
   },
   "errorCodes": [
     { "code": "INVALID_REQUEST", "peers": ["scriptcat", "browser"] },
     { "code": "METHOD_NOT_FOUND", "peers": ["scriptcat", "browser"] },
-    { "code": "USER_REJECTED", "peers": ["scriptcat"] },
+    { "code": "USER_REJECTED", "peers": ["scriptcat", "browser"] },
     { "code": "OPERATION_EXPIRED", "peers": ["scriptcat", "browser"] },
     { "code": "CONFLICT", "peers": ["scriptcat", "browser"] },
     { "code": "NOT_FOUND", "peers": ["scriptcat", "browser"] },
     { "code": "RATE_LIMITED", "peers": ["scriptcat"] },
-    { "code": "PAYLOAD_TOO_LARGE", "peers": ["scriptcat"] },
+    { "code": "PAYLOAD_TOO_LARGE", "peers": ["scriptcat", "browser"] },
     { "code": "INTERNAL_ERROR", "peers": ["scriptcat", "browser"] },
     { "code": "NO_BROWSER_CONNECTED", "peers": ["browser"] },
     { "code": "BROWSER_OFFLINE", "peers": ["browser"] },
     { "code": "BROWSER_NOT_FOUND", "peers": ["browser"] },
-    { "code": "BROWSER_AMBIGUOUS", "peers": ["browser"] }
+    { "code": "BROWSER_AMBIGUOUS", "peers": ["browser"] },
+    { "code": "CONFIRMATION_REQUIRED", "peers": ["browser"] },
+    { "code": "UNSUPPORTED", "peers": ["browser"] },
+    { "code": "STALE_REF", "peers": ["browser"] },
+    { "code": "TIMEOUT", "peers": ["browser"] },
+    { "code": "TARGET_AMBIGUOUS", "peers": ["browser"] },
+    { "code": "PAGE_NOT_AUTOMATABLE", "peers": ["browser"] },
+    { "code": "PAGE_HIDDEN", "peers": ["browser"] },
+    { "code": "DEBUGGER_DETACHED", "peers": ["browser"] },
+    { "code": "DIALOG_OPEN", "peers": ["browser"] },
+    { "code": "EVAL_ERROR", "peers": ["browser"] },
+    { "code": "NAVIGATION_FAILED", "peers": ["browser"] }
   ],
   "crypto": {
     "mac": "HMAC-SHA-256",

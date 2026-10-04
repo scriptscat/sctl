@@ -50,6 +50,8 @@ export default defineConfig({
         background: resolve(src, "background/index.ts"),
         popup: resolve(src, "popup/index.html"),
         offscreen: resolve(src, "offscreen/index.html"),
+        // 路径与 shared/approvals.ts 的 APPROVAL_PAGE 一致：service worker 按它打开审批窗口。
+        approval: resolve(src, "approval/index.html"),
       },
       output: {
         // manifest 按固定路径引用 service worker，其余入口保留内容哈希。

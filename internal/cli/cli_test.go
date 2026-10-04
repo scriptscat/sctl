@@ -664,3 +664,71 @@ func TestParseLinesFlag(t *testing.T) {
 		})
 	})
 }
+
+func TestCancelingWithTheInterruptSignalCause(t *testing.T) {
+	Convey("真实 Ctrl-C 的取消带 cause(signal.NotifyContext):阻塞命令仍以退出码 2 报告作废,不漏出底层 HTTP 错误", t, func() {
+		for _, args := range [][]string{
+			{"install", "https://example.com/x.user.js"},
+			{"bookmarks", "rm", "14", "--browser", "work"},
+			{"extensions", "uninstall", "abc", "--browser", "work"},
+		} {
+			arrived := stubDaemonHolding(t)
+			ctx, cancel := context.WithCancelCause(context.Background())
+			go func() {
+				<-arrived
+				cancel(errors.New("interrupt signal received"))
+			}()
+			code, _, _, err := runCLIContext(ctx, strings.NewReader(""), args...)
+			cancel(nil)
+			So(code, ShouldEqual, exitVoided)
+			So(err, ShouldNotBeNil)
+			So(err.Error(), ShouldEqual, canceledVoided)
+		}
+	})
+}
+
+func TestCancelingAPageCommandWithTheInterruptSignalCause(t *testing.T) {
+	Convey("真实 Ctrl-C 取消页面命令:退出码 2,不漏出底层 HTTP 错误,也不声称动作已作废", t, func() {
+		arrived := stubDaemonHolding(t)
+		ctx, cancel := context.WithCancelCause(context.Background())
+		go func() {
+			<-arrived
+			cancel(errors.New("interrupt signal received"))
+		}()
+		code, _, _, err := runCLIContext(ctx, strings.NewReader(""), "page", "eval", "1", "--tab", "5")
+		cancel(nil)
+		So(code, ShouldEqual, exitVoided)
+		So(err, ShouldNotBeNil)
+		So(err.Error(), ShouldEqual, canceledUnconfirmed)
+	})
+}
+
+func TestWaitingLineAppearsOnlyOnceTheRequestEntersApproval(t *testing.T) {
+	Convey("L2 浏览器命令只在请求真正进入审批后提示等待批准", t, func() {
+		online := []control.BrowserInfo{{ID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Name: "chrome-a", Online: true}}
+		commands := [][]string{
+			{"bookmarks", "rm", "999999"},
+			{"extensions", "uninstall", "oajcebdbjbmnnlgfmkhkhmkgbpggnbbn"},
+		}
+
+		Convey("审批前的校验失败(不打开审批窗口):直接报错,stderr 没有等待行", func() {
+			for _, args := range commands {
+				stubDaemonL2(t, online, control.CallResult{OK: false, Error: &control.CallError{Code: "INVALID_REQUEST", Message: "rejected before approval"}}, false)
+				code, _, errOut, err := runCLIResult(strings.NewReader(""), args...)
+				So(code, ShouldEqual, exitError)
+				So(err.Error(), ShouldContainSubstring, "rejected before approval")
+				So(errOut, ShouldNotContainSubstring, "waiting for approval")
+			}
+		})
+
+		Convey("请求进入审批后:stderr 有点名浏览器的等待行", func() {
+			for _, args := range commands {
+				req := stubDaemonL2(t, online, control.CallResult{OK: false, Error: &control.CallError{Code: "USER_REJECTED", Message: "rejected"}}, true)
+				code, _, errOut, _ := runCLIResult(strings.NewReader(""), args...)
+				So(req.ReportPending, ShouldBeTrue)
+				So(code, ShouldEqual, exitRejected)
+				So(errOut, ShouldContainSubstring, "waiting for approval in browser chrome-a")
+			}
+		})
+	})
+}

@@ -46,12 +46,32 @@ func TestLoadExposesMethodPeerAndListMergeField(t *testing.T) {
 		peer       Peer
 		mergeField string
 	}{
-		"scripts.list":  {PeerScriptCat, ""},
-		"tabs.list":     {PeerBrowser, "tabs"},
-		"windows.list":  {PeerBrowser, "windows"},
-		"tabs.open":     {PeerBrowser, ""},
-		"tabs.close":    {PeerBrowser, ""},
-		"tabs.activate": {PeerBrowser, ""},
+		"scripts.list":         {PeerScriptCat, ""},
+		"tabs.list":            {PeerBrowser, "tabs"},
+		"windows.list":         {PeerBrowser, "windows"},
+		"tabs.open":            {PeerBrowser, ""},
+		"tabs.close":           {PeerBrowser, ""},
+		"tabs.activate":        {PeerBrowser, ""},
+		"readingList.list":     {PeerBrowser, "entries"},
+		"readingList.add":      {PeerBrowser, ""},
+		"readingList.markRead": {PeerBrowser, ""},
+		"readingList.remove":   {PeerBrowser, ""},
+		"bookmarks.list":       {PeerBrowser, "nodes"},
+		"bookmarks.search":     {PeerBrowser, "nodes"},
+		"bookmarks.add":        {PeerBrowser, ""},
+		"bookmarks.mkdir":      {PeerBrowser, ""},
+		"bookmarks.move":       {PeerBrowser, ""},
+		"bookmarks.edit":       {PeerBrowser, ""},
+		"tabGroups.list":       {PeerBrowser, "groups"},
+		"tabGroups.create":     {PeerBrowser, ""},
+		"tabGroups.add":        {PeerBrowser, ""},
+		"tabGroups.edit":       {PeerBrowser, ""},
+		"tabGroups.ungroup":    {PeerBrowser, ""},
+		"history.search":       {PeerBrowser, "items"},
+		"history.visits":       {PeerBrowser, "visits"},
+		"history.remove":       {PeerBrowser, ""},
+		"history.clear":        {PeerBrowser, ""},
+		"browsingData.clear":   {PeerBrowser, ""},
 	} {
 		action, ok := p.Actions[name]
 		if !ok {
@@ -60,6 +80,61 @@ func TestLoadExposesMethodPeerAndListMergeField(t *testing.T) {
 		}
 		if action.Peer != want.peer || action.MergeField != want.mergeField {
 			t.Errorf("%s: peer=%q mergeField=%q, want peer=%q mergeField=%q", name, action.Peer, action.MergeField, want.peer, want.mergeField)
+		}
+	}
+}
+
+func TestLoadExposesEachMethodsDestructionLevel(t *testing.T) {
+	p, err := Load()
+	if err != nil {
+		t.Fatalf("load protocol: %v", err)
+	}
+	for name, want := range map[string]Level{
+		"scripts.list":           LevelDirect,
+		"scripts.source.get":     LevelApproval,
+		"scripts.delete.request": LevelApproval,
+		"tabs.list":              LevelDirect,
+		"tabs.close":             LevelDirect,
+		"windows.list":           LevelDirect,
+		"readingList.list":       LevelDirect,
+		"readingList.add":        LevelDirect,
+		"readingList.markRead":   LevelDirect,
+		"readingList.remove":     LevelConfirm,
+		"bookmarks.list":         LevelDirect,
+		"bookmarks.search":       LevelDirect,
+		"bookmarks.add":          LevelDirect,
+		"bookmarks.mkdir":        LevelDirect,
+		"bookmarks.move":         LevelDirect,
+		"bookmarks.edit":         LevelDirect,
+		"tabs.move":              LevelDirect,
+		"tabs.pin":               LevelDirect,
+		"tabs.unpin":             LevelDirect,
+		"tabs.mute":              LevelDirect,
+		"tabs.unmute":            LevelDirect,
+		"tabs.reload":            LevelDirect,
+		"tabs.duplicate":         LevelDirect,
+		"windows.open":           LevelDirect,
+		"windows.close":          LevelDirect,
+		"windows.focus":          LevelDirect,
+		"windows.state":          LevelDirect,
+		"tabGroups.list":         LevelDirect,
+		"tabGroups.create":       LevelDirect,
+		"tabGroups.add":          LevelDirect,
+		"tabGroups.edit":         LevelDirect,
+		"tabGroups.ungroup":      LevelDirect,
+		"history.search":         LevelDirect,
+		"history.visits":         LevelDirect,
+		"history.remove":         LevelConfirm,
+		"history.clear":          LevelConfirm,
+		"browsingData.clear":     LevelConfirm,
+	} {
+		action, ok := p.Actions[name]
+		if !ok {
+			t.Errorf("%s is not a protocol action", name)
+			continue
+		}
+		if got := action.Level; got != want {
+			t.Errorf("%s level = %q, want %q", name, got, want)
 		}
 	}
 }
@@ -99,5 +174,50 @@ func TestLoadListsBrowserTargetErrorCodes(t *testing.T) {
 		if want == "" || !codes[want] {
 			t.Errorf("error code %q is not listed in protocol.json errorCodes", want)
 		}
+	}
+}
+
+func TestLoadMarksDebuggerRelayAsInternalBrowserMethods(t *testing.T) {
+	p, err := Load()
+	if err != nil {
+		t.Fatalf("load protocol: %v", err)
+	}
+	for _, name := range []string{string(generated.MethodDebuggerSend), string(generated.MethodDebuggerDetach)} {
+		action, ok := p.Actions[name]
+		if !ok {
+			t.Errorf("%s is not a protocol action", name)
+			continue
+		}
+		if action.Peer != PeerBrowser || !action.Internal {
+			t.Errorf("%s: peer=%q internal=%v, want an internal browser method", name, action.Peer, action.Internal)
+		}
+	}
+	if p.Actions["tabs.list"].Internal {
+		t.Error("tabs.list is marked internal, but it is a public browser method")
+	}
+}
+
+func TestLoadListsPageAutomationErrorCodesForBrowser(t *testing.T) {
+	p, err := Load()
+	if err != nil {
+		t.Fatalf("load protocol: %v", err)
+	}
+	peers := map[string][]Peer{}
+	for _, code := range p.ErrorCodes {
+		peers[code.Code] = code.Peers
+	}
+	browserOnly := []string{
+		generated.ErrorCodeStaleRef, generated.ErrorCodeTimeout, generated.ErrorCodeTargetAmbiguous,
+		generated.ErrorCodePageNotAutomatable, generated.ErrorCodePageHidden,
+		generated.ErrorCodeDebuggerDetached, generated.ErrorCodeDialogOpen,
+		generated.ErrorCodeEvalError, generated.ErrorCodeNavigationFailed,
+	}
+	for _, code := range browserOnly {
+		if got := peers[code]; len(got) != 1 || got[0] != PeerBrowser {
+			t.Errorf("error code %q peers = %v, want [browser]", code, got)
+		}
+	}
+	if got := peers[generated.ErrorCodePayloadTooLarge]; len(got) != 2 || got[0] != PeerScriptCat || got[1] != PeerBrowser {
+		t.Errorf("PAYLOAD_TOO_LARGE peers = %v, want [scriptcat browser]", got)
 	}
 }

@@ -3,13 +3,14 @@ import { HandlerRegistry } from "@/background/registry";
 import {
   validateTabsActivateResult,
   validateTabsCloseResult,
+  validateTabsCurrentResult,
   validateTabsListResult,
   validateTabsOpenResult,
   validateWindowsListResult,
 } from "@/protocol/generated/validators.generated";
-import { registerHandlers } from "./index";
+import { registerAllHandlers } from "./handlers.fixture";
 
-// chrome.tabs / chrome.windows 都是 Promise 化的（manifest 要求 Chrome 116+），伪造对象直接返回/拒绝 Promise。
+// chrome.tabs / chrome.windows 都是 Promise 化的（manifest 要求 Chrome 125+），伪造对象直接返回/拒绝 Promise。
 // 具体函数类型直接抄自 chrome.tabs/chrome.windows 的 Promise 重载，而不是 typeof，避免 vi.fn 泛型解析到回调重载。
 type TabsQueryFn = (queryInfo: chrome.tabs.QueryInfo) => Promise<chrome.tabs.Tab[]>;
 type TabsGetFn = (tabId: number) => Promise<chrome.tabs.Tab>;
@@ -91,17 +92,108 @@ describe("browser method handlers", () => {
     chromeMock = createChromeMock();
     vi.stubGlobal("chrome", chromeMock);
     registry = new HandlerRegistry();
-    registerHandlers(registry);
+    registerAllHandlers(registry);
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it("declares capabilities for exactly the five browser methods", () => {
+  it("declares capabilities for exactly the tab, window, page-target helper, debugger, reading list, bookmark, tab management, history, browsing data, recently closed, downloads, cookies and extensions methods", () => {
     expect(new Set(registry.methods())).toEqual(
-      new Set(["tabs.list", "tabs.open", "tabs.close", "tabs.activate", "windows.list"]),
+      new Set([
+        "tabs.list",
+        "tabs.open",
+        "tabs.close",
+        "tabs.activate",
+        "tabs.current",
+        "tabs.select",
+        "windows.list",
+        "readingList.list",
+        "readingList.add",
+        "readingList.markRead",
+        "readingList.remove",
+        "bookmarks.list",
+        "bookmarks.search",
+        "bookmarks.add",
+        "bookmarks.mkdir",
+        "bookmarks.move",
+        "bookmarks.edit",
+        "bookmarks.remove",
+        "tabs.move",
+        "tabs.pin",
+        "tabs.unpin",
+        "tabs.mute",
+        "tabs.unmute",
+        "tabs.reload",
+        "tabs.duplicate",
+        "windows.open",
+        "windows.close",
+        "windows.focus",
+        "windows.state",
+        "tabGroups.list",
+        "tabGroups.create",
+        "tabGroups.add",
+        "tabGroups.edit",
+        "tabGroups.ungroup",
+        "history.search",
+        "history.visits",
+        "history.remove",
+        "history.clear",
+        "browsingData.clear",
+        "recent.list",
+        "recent.restore",
+        "downloads.list",
+        "downloads.start",
+        "downloads.pause",
+        "downloads.resume",
+        "downloads.cancel",
+        "downloads.erase",
+        "downloads.deleteFile",
+        "downloads.show",
+        "cookies.list",
+        "cookies.get",
+        "cookies.set",
+        "cookies.remove",
+        "cookies.clear",
+        "extensions.list",
+        "extensions.enable",
+        "extensions.disable",
+        "extensions.uninstall",
+        "debugger.send",
+        "debugger.detach",
+      ]),
     );
+  });
+
+  // 浏览器不提供某个领域的 API 时，这个领域的每个操作都回 UNSUPPORTED 并点名缺少的 API，而不是在 undefined 上崩成
+  // INTERNAL_ERROR。伪造的 chrome 只有 tabs 与 windows。
+  it("answers UNSUPPORTED naming the missing API for every method of a domain whose chrome namespace is absent", async () => {
+    const domains: Record<string, string> = {
+      bookmarks: "bookmarks",
+      tabGroups: "tabGroups",
+      history: "history",
+      browsingData: "browsingData",
+      recent: "sessions",
+      downloads: "downloads",
+      cookies: "cookies",
+      extensions: "management",
+    };
+    const checked: string[] = [];
+    for (const method of registry.methods()) {
+      const namespace = domains[method.split(".")[0]];
+      if (namespace === undefined) continue;
+      const outcome = registry.requiresApproval(method)
+        ? await registry.prepare(method, { ids: ["1"], id: "x" })
+        : await registry.dispatch(method, { confirm: true });
+      expect(outcome, method).toEqual({
+        ok: false,
+        code: "UNSUPPORTED",
+        message: expect.stringContaining(`chrome.${namespace}`) as unknown,
+      });
+      checked.push(method);
+    }
+    expect(checked).toHaveLength(36);
   });
 
   describe("tabs.list", () => {
@@ -111,6 +203,7 @@ describe("browser method handlers", () => {
         windowId: 1,
         active: true,
         pinned: true,
+        groupId: 4,
         title: "<script>alert(1)</script>",
         url: "https://example.com/a?b=1",
       });
@@ -129,6 +222,7 @@ describe("browser method handlers", () => {
               windowId: 1,
               active: true,
               pinned: true,
+              groupId: 4,
               title: "<script>alert(1)</script>",
               url: "https://example.com/a?b=1",
             },
@@ -138,6 +232,16 @@ describe("browser method handlers", () => {
       if (outcome.ok) {
         expect(validateTabsListResult(outcome.result)).toBe(true);
       }
+    });
+
+    it("reports groupId -1 for a tab that is in no group", async () => {
+      chromeMock.tabs.query.mockResolvedValue([
+        fakeTab({ id: 8, windowId: 1, title: "t", url: "https://e.x/", groupId: -1 }),
+      ]);
+
+      const outcome = await registry.dispatch("tabs.list", {});
+
+      expect(outcome).toMatchObject({ ok: true, result: { tabs: [{ tabId: 8, groupId: -1 }] } });
     });
 
     it("filters by window when a window filter is given", async () => {
@@ -249,6 +353,56 @@ describe("browser method handlers", () => {
       chromeMock.tabs.get.mockRejectedValue(new Error("No tab with id: 77."));
 
       const outcome = await registry.dispatch("tabs.activate", { tabId: 77 });
+
+      expect(outcome).toEqual({ ok: false, code: "NOT_FOUND", message: expect.stringContaining("77") as unknown });
+      expect(chromeMock.tabs.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("tabs.current", () => {
+    it("returns the active tab of the last-focused normal window", async () => {
+      chromeMock.windows.getLastFocused.mockResolvedValue(
+        fakeWindow({
+          id: 4,
+          tabs: [fakeTab({ id: 20, windowId: 4 }), fakeTab({ id: 21, windowId: 4, active: true })],
+        }),
+      );
+
+      const outcome = await registry.dispatch("tabs.current", {});
+
+      // 只看普通窗口：弹出窗口、开发者工具窗口不是用户正在浏览的页面。
+      expect(chromeMock.windows.getLastFocused).toHaveBeenCalledWith({ populate: true, windowTypes: ["normal"] });
+      expect(outcome).toEqual({ ok: true, result: { tabId: 21, windowId: 4 } });
+      if (outcome.ok) {
+        expect(validateTabsCurrentResult(outcome.result)).toBe(true);
+      }
+    });
+
+    it("returns NOT_FOUND when there is no normal window", async () => {
+      chromeMock.windows.getLastFocused.mockRejectedValue(new Error("No last-focused window"));
+
+      const outcome = await registry.dispatch("tabs.current", {});
+
+      expect(outcome).toEqual({ ok: false, code: "NOT_FOUND", message: expect.any(String) as unknown });
+    });
+  });
+
+  describe("tabs.select", () => {
+    it("activates the tab inside its window without focusing the window", async () => {
+      chromeMock.tabs.get.mockResolvedValue(fakeTab({ id: 11, windowId: 6 }));
+      chromeMock.tabs.update.mockResolvedValue(undefined);
+
+      const outcome = await registry.dispatch("tabs.select", { tabId: 11 });
+
+      expect(chromeMock.tabs.update).toHaveBeenCalledWith(11, { active: true });
+      expect(chromeMock.windows.update).not.toHaveBeenCalled();
+      expect(outcome).toEqual({ ok: true, result: { tabId: 11, windowId: 6 } });
+    });
+
+    it("returns NOT_FOUND when the tab does not exist", async () => {
+      chromeMock.tabs.get.mockRejectedValue(new Error("No tab with id: 77."));
+
+      const outcome = await registry.dispatch("tabs.select", { tabId: 77 });
 
       expect(outcome).toEqual({ ok: false, code: "NOT_FOUND", message: expect.stringContaining("77") as unknown });
       expect(chromeMock.tabs.update).not.toHaveBeenCalled();

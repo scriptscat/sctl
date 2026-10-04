@@ -1,3 +1,4 @@
+import type { NotificationMethod, NotificationParams, RpcMethod } from "@/protocol/generated/protocol.generated";
 import { DEFAULT_ADDRESS, parseAddress } from "@/shared/address";
 import { type ProductInfo, defaultName, isValidName, newInstanceId } from "@/shared/identity";
 import type {
@@ -6,9 +7,12 @@ import type {
   OffscreenCommand,
   PairResult,
   RenameResult,
+  RpcContext,
+  RpcReply,
   SetAddressResult,
 } from "@/shared/messages";
 import { normalizePairingCode } from "@/shared/pairing-code";
+import type { Approvals } from "./approvals";
 import type { HandlerRegistry } from "./registry";
 
 // chrome.storage.local 的最小子集：实例身份、名称、会话密钥与 daemon 地址都存在扩展本地存储里。
@@ -23,6 +27,8 @@ export interface BackgroundDeps {
   // 确保 offscreen 文档存在后把命令交给它，返回它的应答。
   offscreen(command: OffscreenCommand): Promise<unknown>;
   registry: HandlerRegistry;
+  approvals: Approvals;
+  onConnectionClosed(): Promise<void>;
   // 浏览器的完整版本号只能异步取得（navigator.userAgentData.getHighEntropyValues）。
   browser: Promise<BrowserInfo>;
   extensionVersion: string;
@@ -52,13 +58,31 @@ export class Background {
   handle(message: BackgroundMessage): Promise<unknown> {
     switch (message.type) {
       case "offscreenReady":
-        return this.config();
+        return this.offscreenReady();
       case "paired":
         return this.deps.storage.set({ key: message.key, name: message.name });
       case "renamed":
         return this.deps.storage.set({ name: message.name });
       case "rpc":
-        return this.deps.registry.dispatch(message.method, message.input);
+        return this.rpc(message.method, message.input, message.context);
+      case "rpcCancel":
+        return this.deps.approvals.cancel(message.requestId);
+      case "disconnected":
+        return this.deps.approvals.disconnected(message.connection);
+      case "approvalView":
+        return this.deps.approvals.view();
+      case "approvalDecide":
+        return this.deps.approvals.decide(message.id, message.decision);
+      case "approvalFinish":
+        return this.deps.approvals.finish(message.id, message.outcome);
+      case "approvalDismiss":
+        return this.deps.approvals.dismiss(message.id);
+      case "approvalCloseWindow":
+        return this.deps.approvals.closeWindow();
+      case "approvalFocus":
+        return this.deps.approvals.focus();
+      case "connectionClosed":
+        return this.deps.onConnectionClosed();
       case "getState":
         return this.deps.offscreen({ target: "offscreen", type: "getState" });
       case "pair":
@@ -72,6 +96,31 @@ export class Background {
       case "setAddress":
         return this.setAddress(message.address);
     }
+  }
+
+  // offscreen 文档是新启动的：之前那份文档里的连接已经不在，等待审批的请求都随之作废。
+  private async offscreenReady(): Promise<ConnectionConfig> {
+    await this.deps.approvals.disconnected();
+    return this.config();
+  }
+
+  // L2 请求先做完预校验：不通过直接应答；通过则进入审批队列，应答推迟到得出结论之后。
+  private async rpc(method: RpcMethod, input: unknown, context: RpcContext): Promise<RpcReply> {
+    const registry = this.deps.registry;
+    if (!registry.requiresApproval(method)) {
+      return registry.dispatch(method, input);
+    }
+    const prepared = await registry.prepare(method, input);
+    if (!prepared.ok) {
+      return prepared;
+    }
+    await this.deps.approvals.enqueue(context, prepared.request);
+    return { deferred: true };
+  }
+
+  // 扩展主动发给 daemon 的通知走 offscreen 里的 WebSocket；未连接时由 offscreen 丢弃。
+  async notify<N extends NotificationMethod>(method: N, params: NotificationParams<N>): Promise<void> {
+    await this.deps.offscreen({ target: "offscreen", type: "notify", method, params } as OffscreenCommand);
   }
 
   // 实例 ID 首次使用时生成并持久化；同一 service worker 生命周期内的并发调用共享同一次生成。

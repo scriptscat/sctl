@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { OffscreenCommand } from "@/shared/messages";
+import { ManualTimers } from "@/offscreen/connection.fixture";
+import type { BookmarkRemovalDetail } from "@/shared/approvals";
+import type { OffscreenCommand, RpcContext } from "@/shared/messages";
+import { Approvals } from "./approvals";
 import { Background, type StorageLike } from "./controller";
-import { HandlerRegistry } from "./registry";
+import { HandlerError, HandlerRegistry } from "./registry";
 
 class MemoryStorage implements StorageLike {
   readonly items = new Map<string, unknown>();
@@ -23,18 +26,76 @@ class MemoryStorage implements StorageLike {
   }
 }
 
+const detail: BookmarkRemovalDetail = {
+  summary: { items: 1, bookmarks: 1, folders: 0, containedBookmarks: 0, containedFolders: 0 },
+  items: [{ id: "14", type: "bookmark", title: "News", url: "https://news.example/", parentId: "1", path: ["Bar"] }],
+};
+
 function setup(storage = new MemoryStorage()) {
   const commands: OffscreenCommand[] = [];
+  const disconnects = { count: 0 };
   let reply: unknown = undefined;
   const registry = new HandlerRegistry();
   registry.register("windows.list", () => Promise.resolve({ windows: [] }));
+  registry.registerApproval("bookmarks.remove", {
+    prepare: (params) =>
+      params.ids.includes("999")
+        ? Promise.reject(new HandlerError("NOT_FOUND", "no bookmark 999"))
+        : Promise.resolve(detail),
+    execute: () => Promise.resolve({ ids: ["14"], bookmarks: 1, folders: 0 }),
+  });
+  registry.registerApproval("extensions.uninstall", {
+    prepare: (params) =>
+      Promise.resolve({
+        id: params.id,
+        name: "Tab Tidy",
+        version: "0.9.3",
+        description: "",
+        installType: "normal",
+        enabled: true,
+      }),
+    execute: () => Promise.reject(new Error("requires a user gesture")),
+    inWindow: true,
+  });
+  const offscreen = (command: OffscreenCommand) => {
+    commands.push(command);
+    return Promise.resolve(reply);
+  };
+  const windowsOpened: string[] = [];
+  const approvals = new Approvals({
+    storage: new MemoryStorage(),
+    timers: new ManualTimers(),
+    windows: {
+      create: (options) => {
+        windowsOpened.push(options.url);
+        return Promise.resolve({ id: 1 });
+      },
+      update: () => Promise.resolve({}),
+      remove: () => Promise.resolve(),
+    },
+    badge: {
+      setBadgeText: () => Promise.resolve(),
+      setBadgeBackgroundColor: () => Promise.resolve(),
+      setBadgeTextColor: () => Promise.resolve(),
+    },
+    pageUrl: "approval/index.html",
+    browserName: () => Promise.resolve("edge-1234"),
+    settle: async (requestId, outcome) => {
+      await offscreen({ target: "offscreen", type: "settle", requestId, outcome });
+    },
+    execute: (request) => registry.execute(request),
+    executesInWindow: (kind) => registry.executesInWindow(kind),
+    broadcast: () => undefined,
+  });
   const background = new Background({
     storage,
-    offscreen: (command) => {
-      commands.push(command);
-      return Promise.resolve(reply);
-    },
+    offscreen,
     registry,
+    approvals,
+    onConnectionClosed: () => {
+      disconnects.count++;
+      return Promise.resolve();
+    },
     browser: Promise.resolve({
       product: { brand: "Microsoft Edge", slug: "edge", product: "Edge" },
       version: "129.0.2792.65",
@@ -45,6 +106,8 @@ function setup(storage = new MemoryStorage()) {
     background,
     storage,
     commands,
+    windowsOpened,
+    disconnects,
     setReply: (next: unknown) => {
       reply = next;
     },
@@ -87,7 +150,7 @@ describe("instance identity and configuration", () => {
     await expect(background.handle({ target: "background", type: "offscreenReady" })).resolves.toMatchObject({
       key: "ab".repeat(32),
       address: "127.0.0.1:8643",
-      methods: ["windows.list"],
+      methods: ["windows.list", "bookmarks.remove", "extensions.uninstall"],
       product: "Edge",
       productVersion: "129.0.2792.65",
       extensionVersion: "0.1.0",
@@ -136,8 +199,116 @@ describe("persistence reported by the offscreen document", () => {
     const { background } = setup();
 
     await expect(
-      background.handle({ target: "background", type: "rpc", method: "windows.list", input: {} }),
+      background.handle({
+        target: "background",
+        type: "rpc",
+        method: "windows.list",
+        input: {},
+        context: context("r0"),
+      }),
     ).resolves.toEqual({ ok: true, result: { windows: [] } });
+  });
+});
+
+function context(requestId: string): RpcContext {
+  return { requestId, clientId: "sctl-cli", connection: "conn-1", receivedAt: 1_000_000 };
+}
+
+describe("requests that need approval", () => {
+  const remove = (requestId: string, ids = ["14"]) =>
+    ({
+      target: "background",
+      type: "rpc",
+      method: "bookmarks.remove",
+      input: { ids },
+      context: context(requestId),
+    }) as const;
+  const statuses = async (background: Background) =>
+    (
+      (await background.handle({ target: "background", type: "approvalView" })) as {
+        items: Array<{ id: string; status: string }>;
+      }
+    ).items.map((item) => [item.id, item.status]);
+
+  it("defers the answer, opens the approval window, and sends the result to the offscreen document once approved", async () => {
+    const { background, commands, windowsOpened } = setup();
+
+    await expect(background.handle(remove("r1"))).resolves.toEqual({ deferred: true });
+    expect(windowsOpened).toEqual(["approval/index.html"]);
+    expect(commands).toEqual([]);
+
+    await background.handle({ target: "background", type: "approvalDecide", id: "r1", decision: "approve" });
+
+    expect(commands).toEqual([
+      {
+        target: "offscreen",
+        type: "settle",
+        requestId: "r1",
+        outcome: { ok: true, result: { ids: ["14"], bookmarks: 1, folders: 0 } },
+      },
+    ]);
+  });
+
+  it("leaves an approved uninstall to the approval window and sends the outcome it reports to the offscreen document", async () => {
+    const { background, commands } = setup();
+    await background.handle({
+      target: "background",
+      type: "rpc",
+      method: "extensions.uninstall",
+      input: { id: "abc" },
+      context: context("u1"),
+    });
+
+    await expect(
+      background.handle({ target: "background", type: "approvalDecide", id: "u1", decision: "approve" }),
+    ).resolves.toEqual({ executeInWindow: true });
+    expect(commands).toEqual([]);
+
+    const outcome = {
+      ok: true,
+      result: { contentTrust: "untrusted-page-content", id: "abc", name: "Tab Tidy" },
+    } as const;
+    await background.handle({ target: "background", type: "approvalFinish", id: "u1", outcome });
+
+    expect(commands).toEqual([{ target: "offscreen", type: "settle", requestId: "u1", outcome }]);
+  });
+
+  it("answers a failed pre-check at once without queueing it", async () => {
+    const { background, windowsOpened } = setup();
+
+    await expect(background.handle(remove("r1", ["999"]))).resolves.toEqual({
+      ok: false,
+      code: "NOT_FOUND",
+      message: "no bookmark 999",
+    });
+    expect(windowsOpened).toEqual([]);
+    expect(await statuses(background)).toEqual([]);
+  });
+
+  it("voids a request the daemon cancelled, and every request of a lost connection or a restarted offscreen document", async () => {
+    const { background, commands } = setup();
+    await background.handle(remove("r1"));
+    await background.handle(remove("r2"));
+    await background.handle(remove("r3"));
+
+    await background.handle({ target: "background", type: "rpcCancel", requestId: "r1" });
+    await background.handle({ target: "background", type: "disconnected", connection: "conn-2" });
+    expect(await statuses(background)).toEqual([
+      ["r1", "cancelled"],
+      ["r2", "pending"],
+      ["r3", "pending"],
+    ]);
+
+    await background.handle({ target: "background", type: "disconnected", connection: "conn-1" });
+    await background.handle(remove("r4"));
+    await background.handle({ target: "background", type: "offscreenReady" });
+    expect(await statuses(background)).toEqual([
+      ["r1", "cancelled"],
+      ["r2", "voided"],
+      ["r3", "voided"],
+      ["r4", "voided"],
+    ]);
+    expect(commands).toEqual([]);
   });
 });
 
@@ -212,5 +383,30 @@ describe("popup requests", () => {
     await background.handle({ target: "background", type: "retryNow" });
 
     expect(commands).toEqual([{ target: "offscreen", type: "retryNow" }]);
+  });
+});
+
+describe("connection lifecycle and notifications", () => {
+  it("runs the connection-closed hook when the offscreen document reports a lost connection", async () => {
+    const { background, disconnects } = setup();
+
+    await background.handle({ target: "background", type: "connectionClosed" });
+
+    expect(disconnects.count).toBe(1);
+  });
+
+  it("forwards a notification to the offscreen document", async () => {
+    const { background, commands } = setup();
+
+    await background.notify("debugger.detached", { tabId: 5, reason: "canceled_by_user" });
+
+    expect(commands).toEqual([
+      {
+        target: "offscreen",
+        type: "notify",
+        method: "debugger.detached",
+        params: { tabId: 5, reason: "canceled_by_user" },
+      },
+    ]);
   });
 });

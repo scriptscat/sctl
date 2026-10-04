@@ -92,7 +92,8 @@ func schemaWithOptionalBrowser(baseSchema, browserDescription string) string {
 	return string(result)
 }
 
-// toolDefs 是全部 bridge action 的工具定义,顺序稳定,注册时按 protocol.json 是否定义该 action 过滤;
+// toolDefs 是一工具一方法的工具定义(ScriptCat 方法与第 1 期浏览器方法;之后的浏览器领域按领域合并在
+// domain.go 的 domainTools 里),顺序稳定,注册时按 protocol.json 是否定义该 action 过滤;
 // 浏览器方法的 browser 参数在注册时按 protocol.json 的 peer 加上,不写在这里。
 // browsers_list 特殊处理:它不是 bridge action,由 registerBrowsersListTool 单独注册。
 var toolDefs = []toolDef{

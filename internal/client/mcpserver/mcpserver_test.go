@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -31,9 +32,12 @@ type fakeCaller struct {
 	sawCtx        atomic.Bool           // Call 是否因 ctx 取消而返回
 	browsersList  []control.BrowserInfo // Browsers 的返回值
 	browsersErr   error
+	// entersApproval 为 true 时,带 onPending 的调用一进入就报告请求已进入审批(模拟浏览器的 $/approvalPending)。
+	entersApproval bool
+	pages          []control.PageRequest // 记录每次 Page 的请求
 }
 
-func (f *fakeCaller) Call(ctx context.Context, action, browser string, input json.RawMessage) (control.CallResult, error) {
+func (f *fakeCaller) Call(ctx context.Context, action, browser string, input json.RawMessage, onPending func()) (control.CallResult, error) {
 	f.mu.Lock()
 	f.actions = append(f.actions, action)
 	f.browserParams = append(f.browserParams, browser)
@@ -43,6 +47,9 @@ func (f *fakeCaller) Call(ctx context.Context, action, browser string, input jso
 	if f.entered != nil {
 		f.entered <- struct{}{}
 	}
+	if f.entersApproval && onPending != nil {
+		onPending()
+	}
 	if block != nil {
 		select {
 		case <-block:
@@ -51,6 +58,13 @@ func (f *fakeCaller) Call(ctx context.Context, action, browser string, input jso
 			return control.CallResult{}, ctx.Err()
 		}
 	}
+	return f.result, f.err
+}
+
+func (f *fakeCaller) Page(ctx context.Context, req control.PageRequest) (control.CallResult, error) {
+	f.mu.Lock()
+	f.pages = append(f.pages, req)
+	f.mu.Unlock()
 	return f.result, f.err
 }
 
@@ -88,16 +102,51 @@ func toolNames(res *mcp.ListToolsResult) []string {
 	return names
 }
 
+func TestEveryProtocolMethodIsReachableThroughExactlyOneTool(t *testing.T) {
+	Convey("protocol.json 的每个非内部方法恰好由一个 MCP 工具(逐方法工具或领域工具的一个 action)转发,内部方法不由任何工具转发", t, func() {
+		p := loadProto(t)
+		reach := map[string]int{}
+		for _, td := range toolDefs {
+			reach[td.action]++
+		}
+		for _, dt := range domainTools {
+			for _, da := range dt.actions {
+				reach[da.method]++
+			}
+		}
+		for name, action := range p.Actions {
+			want := 1
+			if action.Internal {
+				want = 0
+			}
+			So(fmt.Sprintf("%s: %d", name, reach[name]), ShouldEqual, fmt.Sprintf("%s: %d", name, want))
+		}
+		for name := range reach {
+			So(p.Actions, ShouldContainKey, name)
+		}
+	})
+}
+
 func TestToolsListExposesAllTools(t *testing.T) {
-	Convey("扁平信任:tools/list 暴露 protocol.json 定义的全部方法(工具)与特殊的 browsers_list", t, func() {
+	Convey("扁平信任:tools/list 暴露第 1 期的逐方法工具、按领域合并的工具与特殊的 browsers_list", t, func() {
 		p := loadProto(t)
 		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
 
 		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
 		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
 		So(err, ShouldBeNil)
-		// 每个 protocol 方法映射一个工具,加上 browsers_list (不是方法)。
-		So(len(res.Tools), ShouldEqual, len(p.Actions)+1)
+		legacy := 0
+		for _, td := range toolDefs {
+			if action, ok := p.Actions[td.action]; ok && !action.Internal {
+				legacy++
+			}
+		}
+		// 逐方法工具各映射一个方法,每个领域工具合并多个方法,再加上 page_* 页面工具与 browsers_list (不是方法);
+		// 内部方法(CDP 中转)不暴露。
+		So(len(res.Tools), ShouldEqual, legacy+len(domainTools)+len(pageTools)+1)
+		So(toolNames(res), ShouldContain, "reading_list")
+		So(toolNames(res), ShouldNotContain, "debugger_send")
+		So(toolNames(res), ShouldNotContain, "debugger_detach")
 		So(toolNames(res), ShouldContain, "scripts_list")
 		So(toolNames(res), ShouldContain, "scripts_delete_request")
 		So(toolNames(res), ShouldContain, "browsers_list")
@@ -106,6 +155,27 @@ func TestToolsListExposesAllTools(t *testing.T) {
 		So(toolNames(res), ShouldContain, "tabs_close")
 		So(toolNames(res), ShouldContain, "tabs_activate")
 		So(toolNames(res), ShouldContain, "windows_list")
+		So(toolNames(res), ShouldContain, "page_snapshot")
+		So(toolNames(res), ShouldContain, "page_eval")
+		So(toolNames(res), ShouldContain, "page_detach")
+	})
+}
+
+func TestToolsListOmitsInternalActions(t *testing.T) {
+	Convey("protocol.json 标记为 internal 的方法即使有工具定义也不注册为 MCP 工具", t, func() {
+		p := loadProto(t)
+		internal := *p
+		internal.Actions = maps.Clone(p.Actions)
+		action := internal.Actions["tabs.list"]
+		action.Internal = true
+		internal.Actions["tabs.list"] = action
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
+
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: &internal, Caller: caller}, nil)
+		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+		So(err, ShouldBeNil)
+		So(toolNames(res), ShouldNotContain, "tabs_list")
+		So(toolNames(res), ShouldContain, "tabs_open")
 	})
 }
 

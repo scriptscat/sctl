@@ -96,10 +96,32 @@ const FILL_PAIRS: Array<{ name: string; foreground: string; fill: string }> = [
   { name: "danger button hover fill", foreground: "bad-foreground", fill: "bad-hover" },
 ];
 
+// 提示框（Note、弹窗的待审批入口）的底色是 color-mix(in oklch, <色调>, transparent 91%)，即 9% 不透明的色调
+// 叠在页面背景上；审批窗口的撤销提示、防诱导提示和失败说明都是正文色或次要文字色写在这种底色上。
+const TINT_ALPHA = 0.09;
+
+function blend(tone: string, alpha: number, base: string): string {
+  const channel = (hex: string, i: number) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16);
+  const mixed = [0, 1, 2].map((i) => Math.round(channel(tone, i) * alpha + channel(base, i) * (1 - alpha)));
+  return `#${mixed.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+}
+
+const TEXT_ON_TINT_PAIRS: Array<{ name: string; text: string; tint: string }> = [
+  { name: "body text", text: "foreground", tint: "warn" },
+  { name: "muted text", text: "muted-foreground", tint: "warn" },
+  { name: "body text", text: "foreground", tint: "bad" },
+  { name: "muted text", text: "muted-foreground", tint: "bad" },
+];
+
 describe.each([
   ["light", light],
   ["dark", dark],
 ])("popup colour contrast (%s)", (_mode, vars) => {
+  it.each(TEXT_ON_TINT_PAIRS)("$name on the $tint notice tint is >= 4.5:1", ({ text, tint }) => {
+    const surface = blend(get(vars, tint), TINT_ALPHA, get(vars, "background"));
+    expect(contrastRatio(get(vars, text), surface)).toBeGreaterThanOrEqual(4.5);
+  });
+
   it.each(TEXT_ON_SURFACE_PAIRS)("$name on $surface is >= 4.5:1", ({ text, surface }) => {
     const ratio = contrastRatio(get(vars, text), get(vars, surface));
     expect(ratio).toBeGreaterThanOrEqual(4.5);

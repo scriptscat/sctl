@@ -10,6 +10,346 @@ function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[])
   return Object.keys(value).every((key) => allowedKeys.has(key));
 }
 
+export function validateBookmarksAddParams(value: unknown): value is Protocol.BookmarksAddParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["folder", "index", "title", "url"]) && (value["folder"] === undefined || (typeof value["folder"] === "string")) && (value["index"] === undefined || (typeof value["index"] === "number" && Number.isInteger(value["index"]) && value["index"] >= 0)) && (value["title"] === undefined || (typeof value["title"] === "string")) && typeof value["url"] === "string");
+}
+
+export function validateBookmarksAddResult(value: unknown): value is Protocol.BookmarksAddResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "string");
+}
+
+export function validateBookmarksEditParams(value: unknown): value is Protocol.BookmarksEditParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["id", "title", "url"]) && typeof value["id"] === "string" && (value["title"] === undefined || (typeof value["title"] === "string")) && (value["url"] === undefined || (typeof value["url"] === "string")));
+}
+
+export function validateBookmarksEditResult(value: unknown): value is Protocol.BookmarksEditResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "string");
+}
+
+export function validateBookmarksListParams(value: unknown): value is Protocol.BookmarksListParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["folder", "limit", "recursive"]) && (value["folder"] === undefined || (typeof value["folder"] === "string")) && (value["limit"] === undefined || (typeof value["limit"] === "number" && Number.isInteger(value["limit"]) && value["limit"] >= 1)) && (value["recursive"] === undefined || (typeof value["recursive"] === "boolean")));
+}
+
+export function validateBookmarksListResult(value: unknown): value is Protocol.BookmarksListResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "hasMore", "nodes"]) && value["contentTrust"] === "untrusted-page-content" && typeof value["hasMore"] === "boolean" && Array.isArray(value["nodes"]) && value["nodes"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["addedAt", "childCount", "id", "index", "parentId", "title", "type", "url"]) && (item["addedAt"] === undefined || (typeof item["addedAt"] === "number" && Number.isInteger(item["addedAt"]))) && (item["childCount"] === undefined || (typeof item["childCount"] === "number" && Number.isInteger(item["childCount"]))) && typeof item["id"] === "string" && typeof item["index"] === "number" && Number.isInteger(item["index"]) && (item["parentId"] === undefined || (typeof item["parentId"] === "string")) && typeof item["title"] === "string" && (item["type"] === "bookmark" || item["type"] === "folder") && (item["url"] === undefined || (typeof item["url"] === "string")))));
+}
+
+export function validateBookmarksMkdirParams(value: unknown): value is Protocol.BookmarksMkdirParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["folder", "index", "title"]) && (value["folder"] === undefined || (typeof value["folder"] === "string")) && (value["index"] === undefined || (typeof value["index"] === "number" && Number.isInteger(value["index"]) && value["index"] >= 0)) && typeof value["title"] === "string");
+}
+
+export function validateBookmarksMkdirResult(value: unknown): value is Protocol.BookmarksMkdirResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "string");
+}
+
+export function validateBookmarksMoveParams(value: unknown): value is Protocol.BookmarksMoveParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["folder", "ids", "index"]) && typeof value["folder"] === "string" && Array.isArray(value["ids"]) && value["ids"].length >= 1 && value["ids"].every((item) => typeof item === "string") && (value["index"] === undefined || (typeof value["index"] === "number" && Number.isInteger(value["index"]) && value["index"] >= 0)));
+}
+
+export function validateBookmarksMoveResult(value: unknown): value is Protocol.BookmarksMoveResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["ids"]) && Array.isArray(value["ids"]) && value["ids"].every((item) => typeof item === "string"));
+}
+
+export function validateBookmarksRemoveParams(value: unknown): value is Protocol.BookmarksRemoveParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["ids"]) && Array.isArray(value["ids"]) && value["ids"].length >= 1 && value["ids"].every((item) => typeof item === "string"));
+}
+
+export function validateBookmarksRemoveResult(value: unknown): value is Protocol.BookmarksRemoveResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["bookmarks", "folders", "ids"]) && typeof value["bookmarks"] === "number" && Number.isInteger(value["bookmarks"]) && value["bookmarks"] >= 0 && typeof value["folders"] === "number" && Number.isInteger(value["folders"]) && value["folders"] >= 0 && Array.isArray(value["ids"]) && value["ids"].every((item) => typeof item === "string"));
+}
+
+export function validateBookmarksSearchParams(value: unknown): value is Protocol.BookmarksSearchParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["limit", "query"]) && (value["limit"] === undefined || (typeof value["limit"] === "number" && Number.isInteger(value["limit"]) && value["limit"] >= 1)) && typeof value["query"] === "string");
+}
+
+export function validateBookmarksSearchResult(value: unknown): value is Protocol.BookmarksSearchResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "hasMore", "nodes"]) && value["contentTrust"] === "untrusted-page-content" && typeof value["hasMore"] === "boolean" && Array.isArray(value["nodes"]) && value["nodes"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["addedAt", "childCount", "id", "index", "parentId", "path", "title", "type", "url"]) && (item["addedAt"] === undefined || (typeof item["addedAt"] === "number" && Number.isInteger(item["addedAt"]))) && (item["childCount"] === undefined || (typeof item["childCount"] === "number" && Number.isInteger(item["childCount"]))) && typeof item["id"] === "string" && typeof item["index"] === "number" && Number.isInteger(item["index"]) && (item["parentId"] === undefined || (typeof item["parentId"] === "string")) && Array.isArray(item["path"]) && item["path"].every((item) => typeof item === "string") && typeof item["title"] === "string" && (item["type"] === "bookmark" || item["type"] === "folder") && (item["url"] === undefined || (typeof item["url"] === "string")))));
+}
+
+export function validateBrowsingDataClearParams(value: unknown): value is Protocol.BrowsingDataClearParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["confirm", "origins", "since", "types"]) && (value["confirm"] === undefined || (value["confirm"] === true)) && (value["origins"] === undefined || (Array.isArray(value["origins"]) && value["origins"].length >= 1 && value["origins"].every((item) => typeof item === "string"))) && (value["since"] === undefined || (typeof value["since"] === "number" && Number.isInteger(value["since"]) && value["since"] >= 0)) && Array.isArray(value["types"]) && value["types"].length >= 1 && value["types"].every((item) => (item === "cache" || item === "cacheStorage" || item === "cookies" || item === "downloads" || item === "fileSystems" || item === "formData" || item === "history" || item === "indexedDB" || item === "localStorage" || item === "serviceWorkers" || item === "webSQL")));
+}
+
+export function validateBrowsingDataClearResult(value: unknown): value is Protocol.BrowsingDataClearResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["types"]) && Array.isArray(value["types"]) && value["types"].every((item) => typeof item === "string"));
+}
+
+export function validateCookiesClearParams(value: unknown): value is Protocol.CookiesClearParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["all", "confirm", "domain"]) && (value["all"] === undefined || (value["all"] === true)) && (value["confirm"] === undefined || (value["confirm"] === true)) && (value["domain"] === undefined || (typeof value["domain"] === "string")));
+}
+
+export function validateCookiesClearResult(value: unknown): value is Protocol.CookiesClearResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["deleted"]) && typeof value["deleted"] === "number" && Number.isInteger(value["deleted"]) && value["deleted"] >= 0);
+}
+
+export function validateCookiesGetParams(value: unknown): value is Protocol.CookiesGetParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["name", "url"]) && typeof value["name"] === "string" && typeof value["url"] === "string");
+}
+
+export function validateCookiesGetResult(value: unknown): value is Protocol.CookiesGetResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "cookie"]) && value["contentTrust"] === "untrusted-page-content" && (isRecord(value["cookie"]) && hasOnlyKeys(value["cookie"], ["domain", "expires", "httpOnly", "name", "partitionTopLevelSite", "path", "sameSite", "secure", "session", "value"]) && typeof value["cookie"]["domain"] === "string" && (value["cookie"]["expires"] === undefined || (typeof value["cookie"]["expires"] === "number" && Number.isInteger(value["cookie"]["expires"]) && value["cookie"]["expires"] >= 0)) && typeof value["cookie"]["httpOnly"] === "boolean" && typeof value["cookie"]["name"] === "string" && (value["cookie"]["partitionTopLevelSite"] === undefined || (typeof value["cookie"]["partitionTopLevelSite"] === "string")) && typeof value["cookie"]["path"] === "string" && (value["cookie"]["sameSite"] === "no_restriction" || value["cookie"]["sameSite"] === "lax" || value["cookie"]["sameSite"] === "strict" || value["cookie"]["sameSite"] === "unspecified") && typeof value["cookie"]["secure"] === "boolean" && typeof value["cookie"]["session"] === "boolean" && typeof value["cookie"]["value"] === "string"));
+}
+
+export function validateCookiesListParams(value: unknown): value is Protocol.CookiesListParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["domain", "limit", "name", "url"]) && (value["domain"] === undefined || (typeof value["domain"] === "string")) && (value["limit"] === undefined || (typeof value["limit"] === "number" && Number.isInteger(value["limit"]) && value["limit"] >= 1)) && (value["name"] === undefined || (typeof value["name"] === "string")) && (value["url"] === undefined || (typeof value["url"] === "string")));
+}
+
+export function validateCookiesListResult(value: unknown): value is Protocol.CookiesListResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "hasMore", "items"]) && value["contentTrust"] === "untrusted-page-content" && typeof value["hasMore"] === "boolean" && Array.isArray(value["items"]) && value["items"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["domain", "expires", "httpOnly", "name", "partitionTopLevelSite", "path", "sameSite", "secure", "session", "value"]) && typeof item["domain"] === "string" && (item["expires"] === undefined || (typeof item["expires"] === "number" && Number.isInteger(item["expires"]) && item["expires"] >= 0)) && typeof item["httpOnly"] === "boolean" && typeof item["name"] === "string" && (item["partitionTopLevelSite"] === undefined || (typeof item["partitionTopLevelSite"] === "string")) && typeof item["path"] === "string" && (item["sameSite"] === "no_restriction" || item["sameSite"] === "lax" || item["sameSite"] === "strict" || item["sameSite"] === "unspecified") && typeof item["secure"] === "boolean" && typeof item["session"] === "boolean" && typeof item["value"] === "string")));
+}
+
+export function validateCookiesRemoveParams(value: unknown): value is Protocol.CookiesRemoveParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["confirm", "name", "url"]) && (value["confirm"] === undefined || (value["confirm"] === true)) && typeof value["name"] === "string" && typeof value["url"] === "string");
+}
+
+export function validateCookiesRemoveResult(value: unknown): value is Protocol.CookiesRemoveResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["deleted"]) && typeof value["deleted"] === "number" && Number.isInteger(value["deleted"]) && value["deleted"] >= 0);
+}
+
+export function validateCookiesSetParams(value: unknown): value is Protocol.CookiesSetParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["domain", "expires", "httpOnly", "name", "path", "sameSite", "secure", "url", "value"]) && (value["domain"] === undefined || (typeof value["domain"] === "string")) && (value["expires"] === undefined || (typeof value["expires"] === "number" && Number.isInteger(value["expires"]) && value["expires"] >= 0)) && (value["httpOnly"] === undefined || (typeof value["httpOnly"] === "boolean")) && typeof value["name"] === "string" && (value["path"] === undefined || (typeof value["path"] === "string")) && (value["sameSite"] === undefined || ((value["sameSite"] === "no_restriction" || value["sameSite"] === "lax" || value["sameSite"] === "strict"))) && (value["secure"] === undefined || (typeof value["secure"] === "boolean")) && typeof value["url"] === "string" && typeof value["value"] === "string");
+}
+
+export function validateCookiesSetResult(value: unknown): value is Protocol.CookiesSetResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "cookie"]) && value["contentTrust"] === "untrusted-page-content" && (isRecord(value["cookie"]) && hasOnlyKeys(value["cookie"], ["domain", "expires", "httpOnly", "name", "partitionTopLevelSite", "path", "sameSite", "secure", "session", "value"]) && typeof value["cookie"]["domain"] === "string" && (value["cookie"]["expires"] === undefined || (typeof value["cookie"]["expires"] === "number" && Number.isInteger(value["cookie"]["expires"]) && value["cookie"]["expires"] >= 0)) && typeof value["cookie"]["httpOnly"] === "boolean" && typeof value["cookie"]["name"] === "string" && (value["cookie"]["partitionTopLevelSite"] === undefined || (typeof value["cookie"]["partitionTopLevelSite"] === "string")) && typeof value["cookie"]["path"] === "string" && (value["cookie"]["sameSite"] === "no_restriction" || value["cookie"]["sameSite"] === "lax" || value["cookie"]["sameSite"] === "strict" || value["cookie"]["sameSite"] === "unspecified") && typeof value["cookie"]["secure"] === "boolean" && typeof value["cookie"]["session"] === "boolean" && typeof value["cookie"]["value"] === "string"));
+}
+
+export function validateDebuggerDetachParams(value: unknown): value is Protocol.DebuggerDetachParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["tabId"]) && (value["tabId"] === undefined || (typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0)));
+}
+
+export function validateDebuggerDetachResult(value: unknown): value is Protocol.DebuggerDetachResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["tabIds"]) && Array.isArray(value["tabIds"]) && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item)));
+}
+
+export function validateDebuggerDetachedNotification(value: unknown): value is Protocol.DebuggerDetachedNotification {
+  return (isRecord(value) && hasOnlyKeys(value, ["reason", "tabId"]) && typeof value["reason"] === "string" && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0);
+}
+
+export function validateDebuggerEventNotification(value: unknown): value is Protocol.DebuggerEventNotification {
+  return (isRecord(value) && hasOnlyKeys(value, ["method", "params", "sessionId", "tabId"]) && typeof value["method"] === "string" && (value["params"] === undefined || ((isRecord(value["params"])))) && (value["sessionId"] === undefined || (typeof value["sessionId"] === "string")) && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0);
+}
+
+export function validateDebuggerSendParams(value: unknown): value is Protocol.DebuggerSendParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["method", "params", "sessionId", "tabId"]) && typeof value["method"] === "string" && (value["params"] === undefined || ((isRecord(value["params"])))) && (value["sessionId"] === undefined || (typeof value["sessionId"] === "string")) && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0);
+}
+
+export function validateDebuggerSendResult(value: unknown): value is Protocol.DebuggerSendResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["result"]) && (isRecord(value["result"])));
+}
+
+export function validateDownloadsCancelParams(value: unknown): value is Protocol.DownloadsCancelParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["confirm", "id"]) && (value["confirm"] === undefined || (value["confirm"] === true)) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
+}
+
+export function validateDownloadsCancelResult(value: unknown): value is Protocol.DownloadsCancelResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
+}
+
+export function validateDownloadsDeleteFileParams(value: unknown): value is Protocol.DownloadsDeleteFileParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["confirm", "id"]) && (value["confirm"] === undefined || (value["confirm"] === true)) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
+}
+
+export function validateDownloadsDeleteFileResult(value: unknown): value is Protocol.DownloadsDeleteFileResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
+}
+
+export function validateDownloadsEraseParams(value: unknown): value is Protocol.DownloadsEraseParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["confirm", "ids"]) && (value["confirm"] === undefined || (value["confirm"] === true)) && Array.isArray(value["ids"]) && value["ids"].length >= 1 && value["ids"].every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0));
+}
+
+export function validateDownloadsEraseResult(value: unknown): value is Protocol.DownloadsEraseResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["ids"]) && Array.isArray(value["ids"]) && value["ids"].every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0));
+}
+
+export function validateDownloadsListParams(value: unknown): value is Protocol.DownloadsListParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["limit", "query", "state"]) && (value["limit"] === undefined || (typeof value["limit"] === "number" && Number.isInteger(value["limit"]) && value["limit"] >= 1)) && (value["query"] === undefined || (typeof value["query"] === "string")) && (value["state"] === undefined || ((value["state"] === "in_progress" || value["state"] === "complete" || value["state"] === "interrupted"))));
+}
+
+export function validateDownloadsListResult(value: unknown): value is Protocol.DownloadsListResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "hasMore", "items"]) && value["contentTrust"] === "untrusted-page-content" && typeof value["hasMore"] === "boolean" && Array.isArray(value["items"]) && value["items"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["bytesReceived", "exists", "filename", "id", "startTime", "state", "totalBytes", "url"]) && typeof item["bytesReceived"] === "number" && Number.isInteger(item["bytesReceived"]) && typeof item["exists"] === "boolean" && typeof item["filename"] === "string" && typeof item["id"] === "number" && Number.isInteger(item["id"]) && item["id"] >= 0 && typeof item["startTime"] === "number" && Number.isInteger(item["startTime"]) && (item["state"] === "in_progress" || item["state"] === "complete" || item["state"] === "interrupted") && typeof item["totalBytes"] === "number" && Number.isInteger(item["totalBytes"]) && typeof item["url"] === "string")));
+}
+
+export function validateDownloadsPauseParams(value: unknown): value is Protocol.DownloadsPauseParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
+}
+
+export function validateDownloadsPauseResult(value: unknown): value is Protocol.DownloadsPauseResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
+}
+
+export function validateDownloadsResumeParams(value: unknown): value is Protocol.DownloadsResumeParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
+}
+
+export function validateDownloadsResumeResult(value: unknown): value is Protocol.DownloadsResumeResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
+}
+
+export function validateDownloadsShowParams(value: unknown): value is Protocol.DownloadsShowParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
+}
+
+export function validateDownloadsShowResult(value: unknown): value is Protocol.DownloadsShowResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
+}
+
+export function validateDownloadsStartParams(value: unknown): value is Protocol.DownloadsStartParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["filename", "url"]) && (value["filename"] === undefined || (typeof value["filename"] === "string")) && typeof value["url"] === "string");
+}
+
+export function validateDownloadsStartResult(value: unknown): value is Protocol.DownloadsStartResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
+}
+
+export function validateExtensionsDisableParams(value: unknown): value is Protocol.ExtensionsDisableParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["confirm", "id"]) && (value["confirm"] === undefined || (value["confirm"] === true)) && typeof value["id"] === "string");
+}
+
+export function validateExtensionsEnableParams(value: unknown): value is Protocol.ExtensionsEnableParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "string");
+}
+
+export function validateExtensionsListParams(value: unknown): value is Protocol.ExtensionsListParams {
+  return (isRecord(value) && hasOnlyKeys(value, []));
+}
+
+export function validateExtensionsListResult(value: unknown): value is Protocol.ExtensionsListResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "items"]) && value["contentTrust"] === "untrusted-page-content" && Array.isArray(value["items"]) && value["items"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["enabled", "id", "installType", "mayDisable", "name", "type", "version"]) && typeof item["enabled"] === "boolean" && typeof item["id"] === "string" && typeof item["installType"] === "string" && typeof item["mayDisable"] === "boolean" && typeof item["name"] === "string" && typeof item["type"] === "string" && typeof item["version"] === "string")));
+}
+
+export function validateExtensionsSetEnabledResult(value: unknown): value is Protocol.ExtensionsSetEnabledResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["enabled", "id"]) && typeof value["enabled"] === "boolean" && typeof value["id"] === "string");
+}
+
+export function validateExtensionsUninstallParams(value: unknown): value is Protocol.ExtensionsUninstallParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "string");
+}
+
+export function validateExtensionsUninstallResult(value: unknown): value is Protocol.ExtensionsUninstallResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "id", "name"]) && value["contentTrust"] === "untrusted-page-content" && typeof value["id"] === "string" && typeof value["name"] === "string");
+}
+
+export function validateHistoryClearParams(value: unknown): value is Protocol.HistoryClearParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["confirm", "endTime", "startTime"]) && (value["confirm"] === undefined || (value["confirm"] === true)) && (value["endTime"] === undefined || (typeof value["endTime"] === "number" && Number.isInteger(value["endTime"]) && value["endTime"] >= 0)) && (value["startTime"] === undefined || (typeof value["startTime"] === "number" && Number.isInteger(value["startTime"]) && value["startTime"] >= 0)));
+}
+
+export function validateHistoryClearResult(value: unknown): value is Protocol.HistoryClearResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["all"]) && typeof value["all"] === "boolean");
+}
+
+export function validateHistoryRemoveParams(value: unknown): value is Protocol.HistoryRemoveParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["confirm", "urls"]) && (value["confirm"] === undefined || (value["confirm"] === true)) && Array.isArray(value["urls"]) && value["urls"].length >= 1 && value["urls"].every((item) => typeof item === "string"));
+}
+
+export function validateHistoryRemoveResult(value: unknown): value is Protocol.HistoryRemoveResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["urls"]) && Array.isArray(value["urls"]) && value["urls"].every((item) => typeof item === "string"));
+}
+
+export function validateHistorySearchParams(value: unknown): value is Protocol.HistorySearchParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["endTime", "limit", "startTime", "text"]) && (value["endTime"] === undefined || (typeof value["endTime"] === "number" && Number.isInteger(value["endTime"]) && value["endTime"] >= 0)) && (value["limit"] === undefined || (typeof value["limit"] === "number" && Number.isInteger(value["limit"]) && value["limit"] >= 1)) && (value["startTime"] === undefined || (typeof value["startTime"] === "number" && Number.isInteger(value["startTime"]) && value["startTime"] >= 0)) && (value["text"] === undefined || (typeof value["text"] === "string")));
+}
+
+export function validateHistorySearchResult(value: unknown): value is Protocol.HistorySearchResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "hasMore", "items"]) && value["contentTrust"] === "untrusted-page-content" && typeof value["hasMore"] === "boolean" && Array.isArray(value["items"]) && value["items"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["lastVisitTime", "title", "url", "visitCount"]) && typeof item["lastVisitTime"] === "number" && Number.isInteger(item["lastVisitTime"]) && typeof item["title"] === "string" && typeof item["url"] === "string" && typeof item["visitCount"] === "number" && Number.isInteger(item["visitCount"]))));
+}
+
+export function validateHistoryVisitsParams(value: unknown): value is Protocol.HistoryVisitsParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["limit", "url"]) && (value["limit"] === undefined || (typeof value["limit"] === "number" && Number.isInteger(value["limit"]) && value["limit"] >= 1)) && typeof value["url"] === "string");
+}
+
+export function validateHistoryVisitsResult(value: unknown): value is Protocol.HistoryVisitsResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["hasMore", "visits"]) && typeof value["hasMore"] === "boolean" && Array.isArray(value["visits"]) && value["visits"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["transition", "visitTime"]) && typeof item["transition"] === "string" && typeof item["visitTime"] === "number" && Number.isInteger(item["visitTime"]))));
+}
+
+export function validateReadingListAddParams(value: unknown): value is Protocol.ReadingListAddParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["title", "url"]) && (value["title"] === undefined || (typeof value["title"] === "string")) && typeof value["url"] === "string");
+}
+
+export function validateReadingListAddResult(value: unknown): value is Protocol.ReadingListAddResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["title", "url"]) && typeof value["title"] === "string" && typeof value["url"] === "string");
+}
+
+export function validateReadingListListParams(value: unknown): value is Protocol.ReadingListListParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["limit", "read"]) && (value["limit"] === undefined || (typeof value["limit"] === "number" && Number.isInteger(value["limit"]) && value["limit"] >= 1)) && (value["read"] === undefined || (typeof value["read"] === "boolean")));
+}
+
+export function validateReadingListListResult(value: unknown): value is Protocol.ReadingListListResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "entries", "hasMore"]) && value["contentTrust"] === "untrusted-page-content" && Array.isArray(value["entries"]) && value["entries"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["createdAt", "read", "title", "updatedAt", "url"]) && typeof item["createdAt"] === "number" && Number.isInteger(item["createdAt"]) && typeof item["read"] === "boolean" && typeof item["title"] === "string" && typeof item["updatedAt"] === "number" && Number.isInteger(item["updatedAt"]) && typeof item["url"] === "string")) && typeof value["hasMore"] === "boolean");
+}
+
+export function validateReadingListMarkReadParams(value: unknown): value is Protocol.ReadingListMarkReadParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["read", "urls"]) && (value["read"] === undefined || (typeof value["read"] === "boolean")) && Array.isArray(value["urls"]) && value["urls"].length >= 1 && value["urls"].every((item) => typeof item === "string"));
+}
+
+export function validateReadingListMarkReadResult(value: unknown): value is Protocol.ReadingListMarkReadResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["read", "urls"]) && typeof value["read"] === "boolean" && Array.isArray(value["urls"]) && value["urls"].every((item) => typeof item === "string"));
+}
+
+export function validateReadingListRemoveParams(value: unknown): value is Protocol.ReadingListRemoveParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["confirm", "urls"]) && (value["confirm"] === undefined || (value["confirm"] === true)) && Array.isArray(value["urls"]) && value["urls"].length >= 1 && value["urls"].every((item) => typeof item === "string"));
+}
+
+export function validateReadingListRemoveResult(value: unknown): value is Protocol.ReadingListRemoveResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["urls"]) && Array.isArray(value["urls"]) && value["urls"].every((item) => typeof item === "string"));
+}
+
+export function validateRecentListParams(value: unknown): value is Protocol.RecentListParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["limit"]) && (value["limit"] === undefined || (typeof value["limit"] === "number" && Number.isInteger(value["limit"]) && value["limit"] >= 1)));
+}
+
+export function validateRecentListResult(value: unknown): value is Protocol.RecentListResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "hasMore", "items"]) && value["contentTrust"] === "untrusted-page-content" && typeof value["hasMore"] === "boolean" && Array.isArray(value["items"]) && value["items"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["closedTime", "sessionId", "tabCount", "title", "type", "url"]) && typeof item["closedTime"] === "number" && Number.isInteger(item["closedTime"]) && typeof item["sessionId"] === "string" && (item["tabCount"] === undefined || (typeof item["tabCount"] === "number" && Number.isInteger(item["tabCount"]))) && typeof item["title"] === "string" && (item["type"] === "tab" || item["type"] === "window") && typeof item["url"] === "string")));
+}
+
+export function validateRecentRestoreParams(value: unknown): value is Protocol.RecentRestoreParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["sessionId"]) && (value["sessionId"] === undefined || (typeof value["sessionId"] === "string")));
+}
+
+export function validateRecentRestoreResult(value: unknown): value is Protocol.RecentRestoreResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["tabId", "windowId"]) && (value["tabId"] === undefined || (typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]))) && (value["windowId"] === undefined || (typeof value["windowId"] === "number" && Number.isInteger(value["windowId"]))));
+}
+
+export function validateTabGroupsAddParams(value: unknown): value is Protocol.TabGroupsAddParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["groupId", "tabIds"]) && typeof value["groupId"] === "number" && Number.isInteger(value["groupId"]) && value["groupId"] >= 0 && Array.isArray(value["tabIds"]) && value["tabIds"].length >= 1 && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0));
+}
+
+export function validateTabGroupsAddResult(value: unknown): value is Protocol.TabGroupsAddResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["groupId", "tabIds"]) && typeof value["groupId"] === "number" && Number.isInteger(value["groupId"]) && Array.isArray(value["tabIds"]) && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item)));
+}
+
+export function validateTabGroupsCreateParams(value: unknown): value is Protocol.TabGroupsCreateParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["color", "tabIds", "title"]) && (value["color"] === undefined || ((value["color"] === "grey" || value["color"] === "blue" || value["color"] === "red" || value["color"] === "yellow" || value["color"] === "green" || value["color"] === "pink" || value["color"] === "purple" || value["color"] === "cyan" || value["color"] === "orange"))) && Array.isArray(value["tabIds"]) && value["tabIds"].length >= 1 && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0) && (value["title"] === undefined || (typeof value["title"] === "string")));
+}
+
+export function validateTabGroupsCreateResult(value: unknown): value is Protocol.TabGroupsCreateResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["groupId"]) && typeof value["groupId"] === "number" && Number.isInteger(value["groupId"]));
+}
+
+export function validateTabGroupsEditParams(value: unknown): value is Protocol.TabGroupsEditParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["collapsed", "color", "groupId", "title"]) && (value["collapsed"] === undefined || (typeof value["collapsed"] === "boolean")) && (value["color"] === undefined || ((value["color"] === "grey" || value["color"] === "blue" || value["color"] === "red" || value["color"] === "yellow" || value["color"] === "green" || value["color"] === "pink" || value["color"] === "purple" || value["color"] === "cyan" || value["color"] === "orange"))) && typeof value["groupId"] === "number" && Number.isInteger(value["groupId"]) && value["groupId"] >= 0 && (value["title"] === undefined || (typeof value["title"] === "string")));
+}
+
+export function validateTabGroupsEditResult(value: unknown): value is Protocol.TabGroupsEditResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["groupId"]) && typeof value["groupId"] === "number" && Number.isInteger(value["groupId"]));
+}
+
+export function validateTabGroupsListParams(value: unknown): value is Protocol.TabGroupsListParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["windowId"]) && (value["windowId"] === undefined || (typeof value["windowId"] === "number" && Number.isInteger(value["windowId"]) && value["windowId"] >= 0)));
+}
+
+export function validateTabGroupsListResult(value: unknown): value is Protocol.TabGroupsListResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "groups"]) && value["contentTrust"] === "untrusted-page-content" && Array.isArray(value["groups"]) && value["groups"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["collapsed", "color", "groupId", "tabCount", "title", "windowId"]) && typeof item["collapsed"] === "boolean" && (item["color"] === "grey" || item["color"] === "blue" || item["color"] === "red" || item["color"] === "yellow" || item["color"] === "green" || item["color"] === "pink" || item["color"] === "purple" || item["color"] === "cyan" || item["color"] === "orange") && typeof item["groupId"] === "number" && Number.isInteger(item["groupId"]) && typeof item["tabCount"] === "number" && Number.isInteger(item["tabCount"]) && typeof item["title"] === "string" && typeof item["windowId"] === "number" && Number.isInteger(item["windowId"]))));
+}
+
+export function validateTabGroupsUngroupParams(value: unknown): value is Protocol.TabGroupsUngroupParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["tabIds"]) && Array.isArray(value["tabIds"]) && value["tabIds"].length >= 1 && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0));
+}
+
+export function validateTabGroupsUngroupResult(value: unknown): value is Protocol.TabGroupsUngroupResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["tabIds"]) && Array.isArray(value["tabIds"]) && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item)));
+}
+
 export function validateTabsActivateParams(value: unknown): value is Protocol.TabsActivateParams {
   return (isRecord(value) && hasOnlyKeys(value, ["tabId"]) && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0);
 }
@@ -26,12 +366,40 @@ export function validateTabsCloseResult(value: unknown): value is Protocol.TabsC
   return (isRecord(value) && hasOnlyKeys(value, ["tabIds"]) && Array.isArray(value["tabIds"]) && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item)));
 }
 
+export function validateTabsCurrentParams(value: unknown): value is Protocol.TabsCurrentParams {
+  return (isRecord(value) && hasOnlyKeys(value, []));
+}
+
+export function validateTabsCurrentResult(value: unknown): value is Protocol.TabsCurrentResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["tabId", "windowId"]) && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && typeof value["windowId"] === "number" && Number.isInteger(value["windowId"]));
+}
+
+export function validateTabsDuplicateParams(value: unknown): value is Protocol.TabsDuplicateParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["tabId"]) && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0);
+}
+
+export function validateTabsIdsParams(value: unknown): value is Protocol.TabsIdsParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["tabIds"]) && Array.isArray(value["tabIds"]) && value["tabIds"].length >= 1 && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0));
+}
+
+export function validateTabsIdsResult(value: unknown): value is Protocol.TabsIdsResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["tabIds"]) && Array.isArray(value["tabIds"]) && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item)));
+}
+
 export function validateTabsListParams(value: unknown): value is Protocol.TabsListParams {
   return (isRecord(value) && hasOnlyKeys(value, ["windowId"]) && (value["windowId"] === undefined || (typeof value["windowId"] === "number" && Number.isInteger(value["windowId"]) && value["windowId"] >= 0)));
 }
 
 export function validateTabsListResult(value: unknown): value is Protocol.TabsListResult {
-  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "tabs"]) && value["contentTrust"] === "untrusted-page-content" && Array.isArray(value["tabs"]) && value["tabs"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["active", "pinned", "tabId", "title", "url", "windowId"]) && typeof item["active"] === "boolean" && typeof item["pinned"] === "boolean" && typeof item["tabId"] === "number" && Number.isInteger(item["tabId"]) && typeof item["title"] === "string" && typeof item["url"] === "string" && typeof item["windowId"] === "number" && Number.isInteger(item["windowId"]))));
+  return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "tabs"]) && value["contentTrust"] === "untrusted-page-content" && Array.isArray(value["tabs"]) && value["tabs"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["active", "groupId", "pinned", "tabId", "title", "url", "windowId"]) && typeof item["active"] === "boolean" && typeof item["groupId"] === "number" && Number.isInteger(item["groupId"]) && typeof item["pinned"] === "boolean" && typeof item["tabId"] === "number" && Number.isInteger(item["tabId"]) && typeof item["title"] === "string" && typeof item["url"] === "string" && typeof item["windowId"] === "number" && Number.isInteger(item["windowId"]))));
+}
+
+export function validateTabsMoveParams(value: unknown): value is Protocol.TabsMoveParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["index", "tabIds", "windowId"]) && (value["index"] === undefined || (typeof value["index"] === "number" && Number.isInteger(value["index"]) && value["index"] >= -1)) && Array.isArray(value["tabIds"]) && value["tabIds"].length >= 1 && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0) && (value["windowId"] === undefined || (typeof value["windowId"] === "number" && Number.isInteger(value["windowId"]) && value["windowId"] >= 0)));
+}
+
+export function validateTabsMoveResult(value: unknown): value is Protocol.TabsMoveResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["tabIds"]) && Array.isArray(value["tabIds"]) && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item)));
 }
 
 export function validateTabsOpenParams(value: unknown): value is Protocol.TabsOpenParams {
@@ -42,6 +410,26 @@ export function validateTabsOpenResult(value: unknown): value is Protocol.TabsOp
   return (isRecord(value) && hasOnlyKeys(value, ["tabId"]) && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]));
 }
 
+export function validateTabsReloadParams(value: unknown): value is Protocol.TabsReloadParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["bypassCache", "tabIds"]) && (value["bypassCache"] === undefined || (typeof value["bypassCache"] === "boolean")) && Array.isArray(value["tabIds"]) && value["tabIds"].length >= 1 && value["tabIds"].every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0));
+}
+
+export function validateWindowsCloseParams(value: unknown): value is Protocol.WindowsCloseParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["windowIds"]) && Array.isArray(value["windowIds"]) && value["windowIds"].length >= 1 && value["windowIds"].every((item) => typeof item === "number" && Number.isInteger(item) && item >= 0));
+}
+
+export function validateWindowsCloseResult(value: unknown): value is Protocol.WindowsCloseResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["windowIds"]) && Array.isArray(value["windowIds"]) && value["windowIds"].every((item) => typeof item === "number" && Number.isInteger(item)));
+}
+
+export function validateWindowsFocusParams(value: unknown): value is Protocol.WindowsFocusParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["windowId"]) && typeof value["windowId"] === "number" && Number.isInteger(value["windowId"]) && value["windowId"] >= 0);
+}
+
+export function validateWindowsFocusResult(value: unknown): value is Protocol.WindowsFocusResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["windowId"]) && typeof value["windowId"] === "number" && Number.isInteger(value["windowId"]));
+}
+
 export function validateWindowsListParams(value: unknown): value is Protocol.WindowsListParams {
   return (isRecord(value) && hasOnlyKeys(value, []));
 }
@@ -50,18 +438,149 @@ export function validateWindowsListResult(value: unknown): value is Protocol.Win
   return (isRecord(value) && hasOnlyKeys(value, ["windows"]) && Array.isArray(value["windows"]) && value["windows"].every((item) => (isRecord(item) && hasOnlyKeys(item, ["focused", "state", "tabCount", "windowId"]) && typeof item["focused"] === "boolean" && (item["state"] === "normal" || item["state"] === "minimized" || item["state"] === "maximized" || item["state"] === "fullscreen" || item["state"] === "locked-fullscreen") && typeof item["tabCount"] === "number" && Number.isInteger(item["tabCount"]) && typeof item["windowId"] === "number" && Number.isInteger(item["windowId"]))));
 }
 
+export function validateWindowsOpenParams(value: unknown): value is Protocol.WindowsOpenParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["state", "urls"]) && (value["state"] === undefined || ((value["state"] === "normal" || value["state"] === "minimized" || value["state"] === "maximized" || value["state"] === "fullscreen"))) && (value["urls"] === undefined || (Array.isArray(value["urls"]) && value["urls"].every((item) => typeof item === "string"))));
+}
+
+export function validateWindowsOpenResult(value: unknown): value is Protocol.WindowsOpenResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["windowId"]) && typeof value["windowId"] === "number" && Number.isInteger(value["windowId"]));
+}
+
+export function validateWindowsStateParams(value: unknown): value is Protocol.WindowsStateParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["state", "windowId"]) && (value["state"] === "normal" || value["state"] === "minimized" || value["state"] === "maximized" || value["state"] === "fullscreen") && typeof value["windowId"] === "number" && Number.isInteger(value["windowId"]) && value["windowId"] >= 0);
+}
+
+export function validateWindowsStateResult(value: unknown): value is Protocol.WindowsStateResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["state", "windowId"]) && (value["state"] === "normal" || value["state"] === "minimized" || value["state"] === "maximized" || value["state"] === "fullscreen") && typeof value["windowId"] === "number" && Number.isInteger(value["windowId"]));
+}
+
 export const RPC_PARAM_VALIDATORS = {
+  "bookmarks.add": validateBookmarksAddParams,
+  "bookmarks.edit": validateBookmarksEditParams,
+  "bookmarks.list": validateBookmarksListParams,
+  "bookmarks.mkdir": validateBookmarksMkdirParams,
+  "bookmarks.move": validateBookmarksMoveParams,
+  "bookmarks.remove": validateBookmarksRemoveParams,
+  "bookmarks.search": validateBookmarksSearchParams,
+  "browsingData.clear": validateBrowsingDataClearParams,
+  "cookies.clear": validateCookiesClearParams,
+  "cookies.get": validateCookiesGetParams,
+  "cookies.list": validateCookiesListParams,
+  "cookies.remove": validateCookiesRemoveParams,
+  "cookies.set": validateCookiesSetParams,
+  "debugger.detach": validateDebuggerDetachParams,
+  "debugger.send": validateDebuggerSendParams,
+  "downloads.cancel": validateDownloadsCancelParams,
+  "downloads.deleteFile": validateDownloadsDeleteFileParams,
+  "downloads.erase": validateDownloadsEraseParams,
+  "downloads.list": validateDownloadsListParams,
+  "downloads.pause": validateDownloadsPauseParams,
+  "downloads.resume": validateDownloadsResumeParams,
+  "downloads.show": validateDownloadsShowParams,
+  "downloads.start": validateDownloadsStartParams,
+  "extensions.disable": validateExtensionsDisableParams,
+  "extensions.enable": validateExtensionsEnableParams,
+  "extensions.list": validateExtensionsListParams,
+  "extensions.uninstall": validateExtensionsUninstallParams,
+  "history.clear": validateHistoryClearParams,
+  "history.remove": validateHistoryRemoveParams,
+  "history.search": validateHistorySearchParams,
+  "history.visits": validateHistoryVisitsParams,
+  "readingList.add": validateReadingListAddParams,
+  "readingList.list": validateReadingListListParams,
+  "readingList.markRead": validateReadingListMarkReadParams,
+  "readingList.remove": validateReadingListRemoveParams,
+  "recent.list": validateRecentListParams,
+  "recent.restore": validateRecentRestoreParams,
+  "tabGroups.add": validateTabGroupsAddParams,
+  "tabGroups.create": validateTabGroupsCreateParams,
+  "tabGroups.edit": validateTabGroupsEditParams,
+  "tabGroups.list": validateTabGroupsListParams,
+  "tabGroups.ungroup": validateTabGroupsUngroupParams,
   "tabs.activate": validateTabsActivateParams,
   "tabs.close": validateTabsCloseParams,
+  "tabs.current": validateTabsCurrentParams,
+  "tabs.duplicate": validateTabsDuplicateParams,
   "tabs.list": validateTabsListParams,
+  "tabs.move": validateTabsMoveParams,
+  "tabs.mute": validateTabsIdsParams,
   "tabs.open": validateTabsOpenParams,
+  "tabs.pin": validateTabsIdsParams,
+  "tabs.reload": validateTabsReloadParams,
+  "tabs.select": validateTabsActivateParams,
+  "tabs.unmute": validateTabsIdsParams,
+  "tabs.unpin": validateTabsIdsParams,
+  "windows.close": validateWindowsCloseParams,
+  "windows.focus": validateWindowsFocusParams,
   "windows.list": validateWindowsListParams,
+  "windows.open": validateWindowsOpenParams,
+  "windows.state": validateWindowsStateParams,
 } as const;
 
 export const RPC_RESULT_VALIDATORS = {
+  "bookmarks.add": validateBookmarksAddResult,
+  "bookmarks.edit": validateBookmarksEditResult,
+  "bookmarks.list": validateBookmarksListResult,
+  "bookmarks.mkdir": validateBookmarksMkdirResult,
+  "bookmarks.move": validateBookmarksMoveResult,
+  "bookmarks.remove": validateBookmarksRemoveResult,
+  "bookmarks.search": validateBookmarksSearchResult,
+  "browsingData.clear": validateBrowsingDataClearResult,
+  "cookies.clear": validateCookiesClearResult,
+  "cookies.get": validateCookiesGetResult,
+  "cookies.list": validateCookiesListResult,
+  "cookies.remove": validateCookiesRemoveResult,
+  "cookies.set": validateCookiesSetResult,
+  "debugger.detach": validateDebuggerDetachResult,
+  "debugger.send": validateDebuggerSendResult,
+  "downloads.cancel": validateDownloadsCancelResult,
+  "downloads.deleteFile": validateDownloadsDeleteFileResult,
+  "downloads.erase": validateDownloadsEraseResult,
+  "downloads.list": validateDownloadsListResult,
+  "downloads.pause": validateDownloadsPauseResult,
+  "downloads.resume": validateDownloadsResumeResult,
+  "downloads.show": validateDownloadsShowResult,
+  "downloads.start": validateDownloadsStartResult,
+  "extensions.disable": validateExtensionsSetEnabledResult,
+  "extensions.enable": validateExtensionsSetEnabledResult,
+  "extensions.list": validateExtensionsListResult,
+  "extensions.uninstall": validateExtensionsUninstallResult,
+  "history.clear": validateHistoryClearResult,
+  "history.remove": validateHistoryRemoveResult,
+  "history.search": validateHistorySearchResult,
+  "history.visits": validateHistoryVisitsResult,
+  "readingList.add": validateReadingListAddResult,
+  "readingList.list": validateReadingListListResult,
+  "readingList.markRead": validateReadingListMarkReadResult,
+  "readingList.remove": validateReadingListRemoveResult,
+  "recent.list": validateRecentListResult,
+  "recent.restore": validateRecentRestoreResult,
+  "tabGroups.add": validateTabGroupsAddResult,
+  "tabGroups.create": validateTabGroupsCreateResult,
+  "tabGroups.edit": validateTabGroupsEditResult,
+  "tabGroups.list": validateTabGroupsListResult,
+  "tabGroups.ungroup": validateTabGroupsUngroupResult,
   "tabs.activate": validateTabsActivateResult,
   "tabs.close": validateTabsCloseResult,
+  "tabs.current": validateTabsCurrentResult,
+  "tabs.duplicate": validateTabsOpenResult,
   "tabs.list": validateTabsListResult,
+  "tabs.move": validateTabsMoveResult,
+  "tabs.mute": validateTabsIdsResult,
   "tabs.open": validateTabsOpenResult,
+  "tabs.pin": validateTabsIdsResult,
+  "tabs.reload": validateTabsIdsResult,
+  "tabs.select": validateTabsActivateResult,
+  "tabs.unmute": validateTabsIdsResult,
+  "tabs.unpin": validateTabsIdsResult,
+  "windows.close": validateWindowsCloseResult,
+  "windows.focus": validateWindowsFocusResult,
   "windows.list": validateWindowsListResult,
+  "windows.open": validateWindowsOpenResult,
+  "windows.state": validateWindowsStateResult,
+} as const;
+
+export const NOTIFICATION_PARAM_VALIDATORS = {
+  "debugger.detached": validateDebuggerDetachedNotification,
+  "debugger.event": validateDebuggerEventNotification,
 } as const;

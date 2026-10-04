@@ -30,15 +30,19 @@ type browserRef struct {
 	Name string `json:"name"`
 }
 
-// newTabsCmd 构造 `sctl tabs`:list/open/close/activate 四个子命令,均路由到浏览器方法
-// (docs/specs 第 1 期命令表)。
+// newTabsCmd 构造 `sctl tabs`:第 1 期的 list/open/close/activate,加上整理用的 move/pin/unpin/mute/unmute/
+// reload/duplicate,均路由到浏览器方法。
 func newTabsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "tabs",
 		Short: "Manage tabs on a paired sctl Browser instance",
 	}
 	addBrowserFlag(cmd)
-	cmd.AddCommand(newTabsListCmd(), newTabsOpenCmd(), newTabsCloseCmd(), newTabsActivateCmd())
+	cmd.AddCommand(newTabsListCmd(), newTabsOpenCmd(), newTabsCloseCmd(), newTabsActivateCmd(),
+		newTabsMoveCmd(),
+		newTabsSetCmd("pin", "Pin tabs", "tabs.pin"), newTabsSetCmd("unpin", "Unpin tabs", "tabs.unpin"),
+		newTabsSetCmd("mute", "Mute tabs", "tabs.mute"), newTabsSetCmd("unmute", "Unmute tabs", "tabs.unmute"),
+		newTabsReloadCmd(), newTabsDuplicateCmd())
 	return cmd
 }
 
@@ -108,7 +112,7 @@ func newTabsCloseCmd() *cobra.Command {
 				if outputFormat == outputJSON {
 					return printResultJSON(result)
 				}
-				return printClosedTabsTable(result)
+				return printTabIDsTable(result)
 			})
 		},
 	}
@@ -230,7 +234,7 @@ func printTabIDTable(result json.RawMessage) error {
 	return tw.Flush()
 }
 
-func printClosedTabsTable(result json.RawMessage) error {
+func printTabIDsTable(result json.RawMessage) error {
 	var payload struct {
 		TabIds []int `json:"tabIds"`
 	}

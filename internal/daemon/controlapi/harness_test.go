@@ -21,6 +21,7 @@ import (
 	"github.com/scriptscat/sctl/internal/client/control"
 	"github.com/scriptscat/sctl/internal/daemon/auth"
 	"github.com/scriptscat/sctl/internal/daemon/bridge"
+	"github.com/scriptscat/sctl/internal/daemon/page"
 	"github.com/scriptscat/sctl/internal/daemon/store"
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
 	"github.com/scriptscat/sctl/internal/pkg/protocolschema"
@@ -93,7 +94,9 @@ func startTestServer(t *testing.T) *testHarness {
 	So(protocolschema.ValidateWireFrame([]byte(`{"jsonrpc":"2.0","id":"warm-up","method":"$session.ping","params":{}}`)), ShouldBeNil)
 
 	mux := http.NewServeMux()
-	New(srv, testControlToken, zap.NewNop()).Register(mux)
+	pages := page.NewManager(page.NewBridgeCDP(srv), zap.NewNop())
+	srv.SetBrowserListener(pages)
+	New(srv, pages, testControlToken, zap.NewNop()).Register(mux)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	So(err, ShouldBeNil)
@@ -168,6 +171,14 @@ func (e *extClient) writeResult(id string, result any) {
 	So(wsjson.Write(ctx, e.ws, bridge.Message{JSONRPC: "2.0", ID: id, Result: raw}), ShouldBeNil)
 }
 
+// writeError 以应用错误(-32000,领域码放在 data.code)应答请求 id。
+func (e *extClient) writeError(id, code, message string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	frame := map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32000, "message": message, "data": map[string]any{"code": code}}}
+	So(wsjson.Write(ctx, e.ws, frame), ShouldBeNil)
+}
+
 // doSessionHandshake 以给定长期密钥完成会话握手,并消费 hello。
 func (h *testHarness) doSessionHandshake(key []byte) *extClient {
 	e := dial(h.url)
@@ -199,7 +210,12 @@ func (h *testHarness) doSessionHandshake(key []byte) *extClient {
 }
 
 // browserMethods 是浏览器实例在能力声明里给出的方法。
-var browserMethods = []string{"tabs.list", "tabs.open", "tabs.close", "tabs.activate", "windows.list"}
+var browserMethods = []string{
+	"tabs.list", "tabs.open", "tabs.close", "tabs.activate", "tabs.current", "tabs.select", "windows.list",
+	"readingList.list", "readingList.add", "readingList.markRead", "readingList.remove", "bookmarks.remove",
+	"extensions.disable", "extensions.uninstall",
+	"debugger.send", "debugger.detach",
+}
 
 // pairedBrowser 在登记表里放一个已配对实例并返回其密钥;不连接。
 func (h *testHarness) pairedBrowser(id, name string) []byte {

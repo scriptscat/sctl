@@ -26,6 +26,7 @@ const (
 	PathStatus        = "/control/status"
 	PathBrowsers      = "/control/browsers"
 	PathBrowserForget = "/control/browsers/forget"
+	PathPage          = "/control/page"
 )
 
 // 控制 API 请求头。
@@ -46,6 +47,21 @@ type CallRequest struct {
 	// Browser 是浏览器方法的可选目标:实例名称或实例 ID 前缀,由 daemon 解析(docs/protocol.md §3.1)。
 	Browser string          `json:"browser,omitempty"`
 	Input   json.RawMessage `json:"input"`
+	// ReportPending 请 daemon 在对端报告请求进入人工审批时先写出一行 CallResult{Pending: true},
+	// 结论随后另起一行。不带时响应体只有结论一行。
+	ReportPending bool `json:"reportPending,omitempty"`
+}
+
+// PageRequest 是 /control/page 的请求体:在一个浏览器标签页上执行一次页面动作,响应体是 CallResult。
+// TabID 为 nil 时由 daemon 在命令开始时取该浏览器最后获得焦点窗口的激活标签页;Activate 先让目标成为
+// 窗口内的激活标签页(不聚焦窗口);TimeoutMs 为 0 时使用动作的默认超时。Input 是动作自己的参数。
+type PageRequest struct {
+	Action    string          `json:"action"`
+	Browser   string          `json:"browser,omitempty"`
+	TabID     *int            `json:"tabId,omitempty"`
+	Activate  bool            `json:"activate,omitempty"`
+	TimeoutMs int             `json:"timeoutMs,omitempty"`
+	Input     json.RawMessage `json:"input,omitempty"`
 }
 
 // CallResult 是 /control/call 的响应体,映射桥接的 JSON-RPC result/error。
@@ -55,6 +71,8 @@ type CallResult struct {
 	OK     bool            `json:"ok"`
 	Result json.RawMessage `json:"result,omitempty"`
 	Error  *CallError      `json:"error,omitempty"`
+	// Pending 只出现在 ReportPending 请求的中间行上:请求已进入浏览器里的人工审批,这一行不是结论。
+	Pending bool `json:"pending,omitempty"`
 }
 
 // CallError 是失败调用的结构化错误(code 取桥接 protocol.json errorCodes)。

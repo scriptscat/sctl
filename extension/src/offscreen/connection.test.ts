@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LIMITS } from "@/protocol/generated/protocol.generated";
+import { LIMITS, type NotificationParams } from "@/protocol/generated/protocol.generated";
 import {
   INSTANCE_ID,
   PAIRING_CODE,
@@ -513,6 +513,47 @@ describe("business requests", () => {
     expect(h.dispatched).toEqual([]);
   });
 
+  // 返回一个 tabs.list 结果，使 id 为 id 的应答帧按 UTF-8 恰好 frameBytes 字节；pad 是填充标题的字符。
+  function resultOfFrameSize(id: string, frameBytes: number, pad: string) {
+    const encoder = new TextEncoder();
+    const result = (title: string) => ({
+      contentTrust: "untrusted-page-content",
+      tabs: [{ tabId: 1, windowId: 1, active: true, pinned: false, title, url: "https://a.test/" }],
+    });
+    const base = encoder.encode(JSON.stringify({ jsonrpc: "2.0", id, result: result("") })).length;
+    const padBytes = encoder.encode(pad).length;
+    const count = Math.ceil((frameBytes - base) / padBytes);
+    return { result: result(pad.repeat(count)), bytes: base + count * padBytes };
+  }
+
+  it("sends a result whose frame is exactly the daemon's frame limit", async () => {
+    const h = await connected();
+    const { result, bytes } = resultOfFrameSize("r6", LIMITS.maxFrameBytes, "a");
+    expect(bytes).toBe(LIMITS.maxFrameBytes);
+    h.setOutcome({ ok: true, result });
+    const socket = h.socket();
+    const response = socket.nextSent();
+    socket.receive({ jsonrpc: "2.0", id: "r6", method: "tabs.list", params: { input: {} } });
+
+    expect(await response).toEqual({ jsonrpc: "2.0", id: "r6", result });
+  });
+
+  it("answers PAYLOAD_TOO_LARGE instead of a result whose UTF-8 frame exceeds the daemon's frame limit", async () => {
+    const h = await connected();
+    // 多字节字符让帧的 UTF-8 字节数超限而字符数不超限，按字符数判断的实现会把超限帧发出去。
+    const { result, bytes } = resultOfFrameSize("r5", LIMITS.maxFrameBytes + 1, "é");
+    expect(bytes).toBeGreaterThan(LIMITS.maxFrameBytes);
+    expect(JSON.stringify(result).length).toBeLessThan(LIMITS.maxFrameBytes);
+    h.setOutcome({ ok: true, result });
+    const socket = h.socket();
+    const response = socket.nextSent();
+    socket.receive({ jsonrpc: "2.0", id: "r5", method: "tabs.list", params: { input: {} } });
+
+    const answer = await response;
+    expect(answer.result).toBeUndefined();
+    expect(answer).toMatchObject({ id: "r5", error: { code: -32000, data: { code: "PAYLOAD_TOO_LARGE" } } });
+  });
+
   it("answers daemon pings", async () => {
     const h = await connected();
     const socket = h.socket();
@@ -520,5 +561,300 @@ describe("business requests", () => {
     socket.receive({ jsonrpc: "2.0", id: "p1", method: "$session.ping", params: {} });
 
     expect(await response).toEqual({ jsonrpc: "2.0", id: "p1", result: {} });
+  });
+});
+
+describe("approval requests", () => {
+  const removal = (id: string) => ({
+    jsonrpc: "2.0" as const,
+    id,
+    method: "bookmarks.remove",
+    params: { clientId: "mcp:claude", input: { ids: ["14"] } },
+  });
+
+  async function connected() {
+    const h = harness({ methods: ["tabs.list", "bookmarks.remove"] });
+    await acceptSession(h.socket());
+    await until(() => h.state().status === "connected");
+    h.setOutcome({ deferred: true });
+    return h;
+  }
+
+  it("passes the request id, the self-reported client label, the connection and the arrival time to the background", async () => {
+    const h = await connected();
+    const socket = h.socket();
+    socket.receive(removal("r1"));
+    socket.receive({ jsonrpc: "2.0", id: "r2", method: "bookmarks.remove", params: { input: { ids: ["14"] } } });
+    await until(() => h.contexts.length === 2);
+
+    expect(h.contexts).toEqual([
+      {
+        requestId: "r1",
+        clientId: "mcp:claude",
+        connection: expect.any(String) as unknown,
+        receivedAt: h.timers.now(),
+      },
+      { requestId: "r2", clientId: null, connection: h.contexts[0].connection, receivedAt: h.timers.now() },
+    ]);
+  });
+
+  it("tells the daemon once the request has entered approval, so the requester can say it is waiting", async () => {
+    const h = await connected();
+    const socket = h.socket();
+    const notice = socket.nextSent();
+    socket.receive(removal("r1"));
+
+    expect(await notice).toEqual({ jsonrpc: "2.0", method: "$/approvalPending", params: { id: "r1" } });
+  });
+
+  it("does not announce approval for a request its pre-approval checks answered at once", async () => {
+    const h = await connected();
+    h.setOutcome({ ok: false, code: "NOT_FOUND", message: "no bookmark 999999" });
+    const socket = h.socket();
+    const before = socket.sent.length;
+    const answer = socket.nextSent();
+    socket.receive(removal("r1"));
+
+    expect(await answer).toEqual({
+      jsonrpc: "2.0",
+      id: "r1",
+      error: { code: -32000, message: "no bookmark 999999", data: { code: "NOT_FOUND" } },
+    });
+    await drainMicrotasks();
+    expect(socket.sent).toHaveLength(before + 1);
+  });
+
+  it("holds the answer to a request awaiting approval until the background settles it, and answers it once", async () => {
+    const h = await connected();
+    const socket = h.socket();
+    socket.receive(removal("r1"));
+    await until(() => h.contexts.length === 1);
+    await drainMicrotasks();
+    const before = socket.sent.length;
+
+    const answer = socket.nextSent();
+    h.connection.settle("r1", { ok: false, code: "USER_REJECTED", message: "rejected in the approval window" });
+    expect(await answer).toEqual({
+      jsonrpc: "2.0",
+      id: "r1",
+      error: { code: -32000, message: "rejected in the approval window", data: { code: "USER_REJECTED" } },
+    });
+    expect(socket.sent).toHaveLength(before + 1);
+
+    h.connection.settle("r1", { ok: true, result: { ids: ["14"], bookmarks: 1, folders: 0 } });
+    h.connection.settle("unknown", { ok: true, result: { ids: ["14"], bookmarks: 1, folders: 0 } });
+    expect(socket.sent).toHaveLength(before + 1);
+  });
+
+  it("forwards the daemon's cancellation of a request awaiting approval and never answers it afterwards", async () => {
+    const h = await connected();
+    const socket = h.socket();
+    socket.receive(removal("r1"));
+    await until(() => h.contexts.length === 1);
+    await drainMicrotasks();
+    const before = socket.sent.length;
+
+    socket.receive({ jsonrpc: "2.0", method: "$/cancelRequest", params: { id: "r1" } });
+    await until(() => h.cancelled.length === 1);
+    h.connection.settle("r1", { ok: true, result: { ids: ["14"], bookmarks: 1, folders: 0 } });
+
+    expect(h.cancelled).toEqual(["r1"]);
+    expect(socket.sent).toHaveLength(before);
+  });
+
+  it("forwards a cancellation that arrives while the background is still preparing the request", async () => {
+    const h = await connected();
+    let answer: (reply: { deferred: true }) => void = () => {};
+    h.setOutcome(new Promise((resolve) => (answer = resolve)));
+    const socket = h.socket();
+    socket.receive(removal("r1"));
+    await until(() => h.contexts.length === 1);
+
+    socket.receive({ jsonrpc: "2.0", method: "$/cancelRequest", params: { id: "r1" } });
+    await drainMicrotasks();
+    expect(h.cancelled).toEqual([]);
+
+    answer({ deferred: true });
+    await until(() => h.cancelled.length === 1);
+    expect(h.cancelled).toEqual(["r1"]);
+    expect(socket.sent.filter((m) => m.method === "$/approvalPending")).toEqual([]);
+  });
+
+  it("drops the answer to a request cancelled before the background answered it", async () => {
+    const h = await connected();
+    let answer: (reply: { ok: false; code: "NOT_FOUND"; message: string }) => void = () => {};
+    h.setOutcome(new Promise((resolve) => (answer = resolve)));
+    const socket = h.socket();
+    socket.receive(removal("r1"));
+    await until(() => h.contexts.length === 1);
+    socket.receive({ jsonrpc: "2.0", method: "$/cancelRequest", params: { id: "r1" } });
+    await drainMicrotasks();
+    const before = socket.sent.length;
+
+    answer({ ok: false, code: "NOT_FOUND", message: "no bookmark 14" });
+    await drainMicrotasks();
+
+    expect(socket.sent).toHaveLength(before);
+    expect(h.cancelled).toEqual([]);
+  });
+
+  it("reports a dropped connection to the background and does not answer its requests on the next connection", async () => {
+    const h = await connected();
+    const first = h.socket();
+    first.receive(removal("r1"));
+    await until(() => h.contexts.length === 1);
+    await drainMicrotasks();
+
+    first.drop(1006);
+    await until(() => h.disconnects.length === 1);
+    expect(h.disconnects).toEqual([h.contexts[0].connection]);
+
+    h.timers.advance(1000);
+    await acceptSession(h.socket());
+    await until(() => h.state().status === "connected");
+    const second = h.socket();
+    const before = second.sent.length;
+    h.connection.settle("r1", { ok: true, result: { ids: ["14"], bookmarks: 1, folders: 0 } });
+    expect(second.sent).toHaveLength(before);
+
+    second.receive(removal("r2"));
+    await until(() => h.contexts.length === 2);
+    expect(h.contexts[1].connection).not.toBe(h.contexts[0].connection);
+  });
+
+  it("reports the connection as lost when the user resets it", async () => {
+    const h = await connected();
+    h.socket().receive(removal("r1"));
+    await until(() => h.contexts.length === 1);
+
+    h.connection.forget();
+
+    expect(h.disconnects).toEqual([h.contexts[0].connection]);
+  });
+});
+
+describe("approval requests racing a dropped connection", () => {
+  it("reports the lost connection again when a request enters the approval queue after its connection dropped", async () => {
+    const h = harness({ methods: ["tabs.list", "bookmarks.remove"] });
+    await acceptSession(h.socket());
+    await until(() => h.state().status === "connected");
+    let answer: (reply: { deferred: true }) => void = () => {};
+    h.setOutcome(new Promise((resolve) => (answer = resolve)));
+    h.socket().receive({ jsonrpc: "2.0", id: "r1", method: "bookmarks.remove", params: { input: { ids: ["14"] } } });
+    await until(() => h.contexts.length === 1);
+
+    h.socket().drop(1006);
+    await until(() => h.disconnects.length === 1);
+    answer({ deferred: true });
+    await until(() => h.disconnects.length === 2);
+
+    expect(h.disconnects).toEqual([h.contexts[0].connection, h.contexts[0].connection]);
+  });
+});
+
+describe("notifications to the daemon", () => {
+  async function connected() {
+    const h = harness();
+    await acceptSession(h.socket());
+    await until(() => h.state().status === "connected");
+    return h;
+  }
+
+  it("sends a valid notification as a JSON-RPC frame without an id, with the notification itself as params", async () => {
+    const h = await connected();
+    const frame = h.socket().nextSent();
+
+    h.connection.notify("debugger.detached", { tabId: 5, reason: "canceled_by_user" });
+
+    expect(await frame).toEqual({
+      jsonrpc: "2.0",
+      method: "debugger.detached",
+      params: { tabId: 5, reason: "canceled_by_user" },
+    });
+  });
+
+  it("drops notifications silently while not connected", () => {
+    const h = harness();
+
+    h.connection.notify("debugger.detached", { tabId: 5, reason: "x" });
+
+    expect(h.sockets.flatMap((s) => s.sent)).toEqual([]);
+  });
+
+  it("drops a schema-invalid notification instead of sending a frame the daemon would disconnect over", async () => {
+    const h = await connected();
+    const before = h.socket().sent.length;
+
+    h.connection.notify("debugger.detached", { tabId: "5" } as unknown as NotificationParams<"debugger.detached">);
+
+    expect(h.socket().sent).toHaveLength(before);
+  });
+
+  it("drops an oversized notification instead of breaking the connection", async () => {
+    const h = await connected();
+    const before = h.socket().sent.length;
+
+    h.connection.notify("debugger.event", {
+      tabId: 5,
+      method: "X",
+      params: { blob: "a".repeat(LIMITS.maxFrameBytes) },
+    });
+
+    expect(h.socket().sent).toHaveLength(before);
+    expect(h.socket().closedWith).toBeNull();
+  });
+});
+
+describe("oversized results", () => {
+  // daemon 的页面命令按错误码认出被中转拒绝的大结果（无障碍树、整页截图），再提示用 --root 或 jpeg 缩小范围。
+  it("answers PAYLOAD_TOO_LARGE for a debugger.send result above maxFrameBytes, so page commands can suggest a narrower request", async () => {
+    const h = harness({ methods: ["debugger.send"] });
+    await acceptSession(h.socket());
+    await until(() => h.state().status === "connected");
+    h.setOutcome({ ok: true, result: { result: { blob: "a".repeat(LIMITS.maxFrameBytes) } } });
+    const socket = h.socket();
+    const response = socket.nextSent();
+
+    socket.receive({
+      jsonrpc: "2.0",
+      id: "big",
+      method: "debugger.send",
+      params: { input: { tabId: 5, method: "Accessibility.getFullAXTree" } },
+    });
+
+    expect(await response).toMatchObject({
+      id: "big",
+      error: { code: -32000, data: { code: "PAYLOAD_TOO_LARGE" } },
+    });
+    expect(socket.closedWith).toBeNull();
+  });
+});
+
+describe("connection loss", () => {
+  it("reports a lost session so debugger attachments can be released", async () => {
+    const h = harness();
+    await acceptSession(h.socket());
+    await until(() => h.state().status === "connected");
+
+    h.socket().drop(1006);
+
+    expect(h.sessionEnds.count).toBe(1);
+  });
+
+  it("reports it when the connection is closed on purpose", async () => {
+    const h = harness();
+    await acceptSession(h.socket());
+    await until(() => h.state().status === "connected");
+
+    h.connection.forget();
+
+    expect(h.sessionEnds.count).toBe(1);
+  });
+
+  it("does not report a handshake that never reached connected", () => {
+    const h = harness();
+    h.socket().drop(1006);
+
+    expect(h.sessionEnds.count).toBe(0);
   });
 });

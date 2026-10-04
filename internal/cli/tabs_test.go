@@ -38,6 +38,29 @@ func TestTabsList(t *testing.T) {
 			So(out, ShouldNotContainSubstring, "BROWSER")
 		})
 
+		Convey("结果项带 groupId 时表格与没有它时逐字节相同,-o json 保留 groupId", func() {
+			withGroup := `{"contentTrust":"untrusted-page-content","tabs":[
+				{"tabId":1,"windowId":10,"active":true,"pinned":false,"groupId":5,"title":"Example","url":"https://example.com"},
+				{"tabId":2,"windowId":10,"active":false,"pinned":false,"groupId":-1,"title":"Other","url":"https://other.example"}
+			]}`
+			withoutGroup := `{"contentTrust":"untrusted-page-content","tabs":[
+				{"tabId":1,"windowId":10,"active":true,"pinned":false,"title":"Example","url":"https://example.com"},
+				{"tabId":2,"windowId":10,"active":false,"pinned":false,"title":"Other","url":"https://other.example"}
+			]}`
+			stubDaemon(t, control.CallResult{OK: true, Result: []byte(withoutGroup)})
+			_, want := runCLI("tabs", "list")
+			stubDaemon(t, control.CallResult{OK: true, Result: []byte(withGroup)})
+			code, got := runCLI("tabs", "list")
+			So(code, ShouldEqual, exitOK)
+			So(got, ShouldEqual, want)
+			So(got, ShouldNotContainSubstring, "GROUP")
+
+			stubDaemon(t, control.CallResult{OK: true, Result: []byte(withGroup)})
+			_, out := runCLI("tabs", "list", "-o", "json")
+			So(out, ShouldContainSubstring, `"groupId": 5`)
+			So(out, ShouldContainSubstring, `"groupId": -1`)
+		})
+
 		Convey("网页控制的标题与 URL 里的控制字符以转义形式打印,不会把终端控制序列或换行写进表格", func() {
 			hostile := `{"contentTrust":"untrusted-page-content","tabs":[
 				{"tabId":1,"windowId":10,"active":true,"pinned":false,"title":"\u001b]0;pwned\u0007Evil\nFAKE ROW\u202e","url":"https://example.com/\u001b[2J"}
@@ -303,12 +326,14 @@ func stubDaemonHolding(t *testing.T) <-chan struct{} {
 	mux.HandleFunc(control.PathHealth, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	mux.HandleFunc(control.PathCall, func(_ http.ResponseWriter, r *http.Request) {
+	hold := func(_ http.ResponseWriter, r *http.Request) {
 		// 读完请求体服务端才会察觉客户端断开并取消 r.Context()。
 		_, _ = io.Copy(io.Discard, r.Body)
 		close(arrived)
 		<-r.Context().Done()
-	})
+	}
+	mux.HandleFunc(control.PathCall, hold)
+	mux.HandleFunc(control.PathPage, hold)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 

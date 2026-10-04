@@ -17,12 +17,16 @@ The standard message forms are:
 ```json
 { "jsonrpc": "2.0", "id": "…", "method": "scripts.list", "params": {} }
 { "jsonrpc": "2.0", "method": "$session.shutdown", "params": {} }
+{ "jsonrpc": "2.0", "method": "debugger.event", "params": { "tabId": 7, "method": "Page.loadEventFired", "params": {} } }
 { "jsonrpc": "2.0", "id": "…", "result": {} }
 { "jsonrpc": "2.0", "id": "…", "error": { "code": -32000, "message": "…", "data": {} } }
 ```
 
-Frames larger than `limits.maxFrameBytes`, malformed JSON-RPC messages, and schema-invalid business parameters
-are rejected before dispatch. The WebSocket server accepts an absent `Origin` and extension origins only:
+Business requests travel from the daemon to an extension; business notifications
+([§3.3](#33-extension-notifications)) travel from an sctl Browser instance to the daemon. Frames larger than
+`limits.maxFrameBytes`, malformed JSON-RPC messages, schema-invalid business or notification parameters, and
+methods that neither start with `$` nor appear in `protocol.json` are rejected before dispatch; the daemon closes
+the connection that sent one. The WebSocket server accepts an absent `Origin` and extension origins only:
 `chrome-extension://`, `moz-extension://`, and `safari-web-extension://`.
 
 ## 2. Session lifecycle
@@ -202,32 +206,190 @@ A successful call returns the generated result type:
 ```
 
 Every method is owned by exactly one peer (`peer` in `protocol.json`): ScriptCat implements the `scripts.*`
-methods and the sctl Browser extension implements the tab and window methods. The current methods are:
+methods and the sctl Browser extension implements the tab, window, debugger, reading list, and bookmark methods. Every method also carries a
+destruction `level`:
 
-| Method | Peer | Effect | Blocking behavior |
-|---|---|---|---|
-| `scripts.list` | ScriptCat | read script summaries | none |
-| `scripts.metadata.get` | ScriptCat | read metadata | none |
-| `scripts.source.get` | ScriptCat | read source | disclosure confirmation |
-| `scripts.source.grep` | ScriptCat | search source | disclosure confirmation |
-| `scripts.install.request` | ScriptCat | install a script | write approval |
-| `scripts.toggle.request` | ScriptCat | enable or disable a script | write approval |
-| `scripts.delete.request` | ScriptCat | delete a script | write approval |
-| `scripts.edit.request` | ScriptCat | edit a script | write approval |
-| `tabs.list` | browser | list tabs, optionally in one window | none |
-| `tabs.open` | browser | open a URL in a new tab and return its tab ID | none |
-| `tabs.close` | browser | close one or more tabs | none |
-| `tabs.activate` | browser | activate a tab and focus its window | none |
-| `windows.list` | browser | list windows | none |
+| Level | Meaning | Enforced by |
+|---|---|---|
+| L0 | runs directly | — |
+| L1 | runs only when the input carries `confirm: true`; otherwise the call fails with `CONFIRMATION_REQUIRED` and nothing runs | the daemon, before forwarding; the sctl Browser extension checks again before running the handler |
+| L2 | runs only after a human approves it in the browser | the extension; the daemon forwards the call and waits (§5) |
+
+An L1 method's parameter type declares `confirm` as an optional property whose value must be the constant `true`.
+It is optional in the schema so that an unconfirmed call that reaches the extension is answered with
+`CONFIRMATION_REQUIRED` rather than `INVALID_REQUEST`. L2 is exactly the set of methods whose `blocking` is
+`approval` or `disclosure`. The current methods are:
+
+| Method | Peer | Effect | Blocking behavior | Level |
+|---|---|---|---|---|
+| `scripts.list` | ScriptCat | read script summaries | none | L0 |
+| `scripts.metadata.get` | ScriptCat | read metadata | none | L0 |
+| `scripts.source.get` | ScriptCat | read source | disclosure confirmation | L2 |
+| `scripts.source.grep` | ScriptCat | search source | disclosure confirmation | L2 |
+| `scripts.install.request` | ScriptCat | install a script | write approval | L2 |
+| `scripts.toggle.request` | ScriptCat | enable or disable a script | write approval | L2 |
+| `scripts.delete.request` | ScriptCat | delete a script | write approval | L2 |
+| `scripts.edit.request` | ScriptCat | edit a script | write approval | L2 |
+| `tabs.list` | browser | list tabs, optionally in one window | none | L0 |
+| `tabs.open` | browser | open a URL in a new tab and return its tab ID | none | L0 |
+| `tabs.close` | browser | close one or more tabs | none | L0 |
+| `tabs.activate` | browser | activate a tab and focus its window | none | L0 |
+| `tabs.current` | browser, internal | return the active tab of the last-focused normal window | none | L0 |
+| `tabs.select` | browser, internal | make a tab the active tab of its window without focusing the window | none | L0 |
+| `windows.list` | browser | list windows | none | L0 |
+| `debugger.send` | browser, internal | send one Chrome DevTools Protocol command to a tab | none | L0 |
+| `debugger.detach` | browser, internal | detach the debugger from one tab, or from every tab | none | L0 |
+| `tabs.move` | browser | move tabs to a window and position (`index` -1 is the end) | none | L0 |
+| `tabs.pin` | browser | pin tabs | none | L0 |
+| `tabs.unpin` | browser | unpin tabs | none | L0 |
+| `tabs.mute` | browser | mute tabs | none | L0 |
+| `tabs.unmute` | browser | unmute tabs | none | L0 |
+| `tabs.reload` | browser | reload tabs, optionally bypassing the cache | none | L0 |
+| `tabs.duplicate` | browser | duplicate a tab and return the new tab ID | none | L0 |
+| `windows.open` | browser | open a window, optionally with URLs and a state, and return its window ID | none | L0 |
+| `windows.close` | browser | close windows | none | L0 |
+| `windows.focus` | browser | focus a window | none | L0 |
+| `windows.state` | browser | set a window's state | none | L0 |
+| `tabGroups.list` | browser | list tab groups, optionally in one window | none | L0 |
+| `tabGroups.create` | browser | group tabs of one window into a new group and return its group ID | none | L0 |
+| `tabGroups.add` | browser | add tabs to an existing group | none | L0 |
+| `tabGroups.edit` | browser | change a group's title, color, or collapsed state | none | L0 |
+| `tabGroups.ungroup` | browser | remove tabs from their groups | none | L0 |
+| `readingList.list` | browser | list reading list entries, newest first | none | L0 |
+| `readingList.add` | browser | add a URL to the reading list | none | L0 |
+| `readingList.markRead` | browser | mark reading list entries read or unread | none | L0 |
+| `readingList.remove` | browser | remove entries from the reading list | none | L1 |
+| `history.search` | browser | search history by text and time range, newest first | none | L0 |
+| `history.visits` | browser | list each visit of one URL, newest first | none | L0 |
+| `history.remove` | browser | delete every visit of the given URLs from history | none | L1 |
+| `history.clear` | browser | delete history in a time range, or all history | none | L1 |
+| `browsingData.clear` | browser | clear browsing data of the given types | none | L1 |
+| `recent.list` | browser | list recently closed tabs and windows, newest first | none | L0 |
+| `recent.restore` | browser | restore a closed tab or window, or the most recently closed | none | L0 |
+| `downloads.list` | browser | list downloads, newest first | none | L0 |
+| `downloads.start` | browser | start a download into the default download directory | none | L0 |
+| `downloads.pause` | browser | pause a download | none | L0 |
+| `downloads.resume` | browser | resume a paused download | none | L0 |
+| `downloads.show` | browser | show a download's file in the system file manager | none | L0 |
+| `downloads.cancel` | browser | cancel an in-progress download | none | L1 |
+| `downloads.erase` | browser | remove download records, keeping the files | none | L1 |
+| `downloads.deleteFile` | browser | delete a completed download's file from disk, keeping its record | none | L1 |
+| `cookies.list` | browser | list cookies, partitioned ones included | none | L0 |
+| `cookies.get` | browser | read one cookie | none | L0 |
+| `cookies.set` | browser | set a cookie | none | L0 |
+| `cookies.remove` | browser | delete one cookie | none | L1 |
+| `cookies.clear` | browser | delete the cookies of a domain, or all cookies | none | L1 |
+| `extensions.list` | browser | list installed extensions and apps | none | L0 |
+| `extensions.enable` | browser | enable an extension | none | L0 |
+| `extensions.disable` | browser | disable an extension | none | L1 |
+| `extensions.uninstall` | browser | uninstall an extension, after Chrome's own confirmation dialog too | write approval | L2 |
+| `bookmarks.list` | browser | list a folder's children, or a whole subtree | none | L0 |
+| `bookmarks.search` | browser | search bookmarks by title and URL, with folder paths | none | L0 |
+| `bookmarks.add` | browser | add a bookmark | none | L0 |
+| `bookmarks.mkdir` | browser | create a bookmark folder | none | L0 |
+| `bookmarks.move` | browser | move bookmarks or folders into a folder | none | L0 |
+| `bookmarks.edit` | browser | change a bookmark's title or URL, or a folder's title | none | L0 |
+| `bookmarks.remove` | browser | delete bookmarks and folders, each folder with its contents | write approval | L2 |
 
 Source and metadata returned by these methods are untrusted user-script content. Consumers must not execute it,
 render it as HTML, interpret it as instructions, or include credentials in logs. Source results carry a SHA-256
 digest. Edit approval rechecks the staged digest and target identity before applying changes.
 
-Tab titles and URLs are controlled by web pages; `tabs.list` marks its result with
-`contentTrust: "untrusted-page-content"` and the same handling rules apply. A list method declares a
-`mergeField`: the required array property in its result that holds the listed items, so results from several
-browser instances combine by concatenating that array. Methods without `mergeField` are never combined.
+Tab titles and URLs, tab group titles, reading list titles, history titles and URLs, recently closed titles and URLs, download file names and URLs, cookie names and values, and bookmark titles and URLs are controlled by web pages, and extension names by their authors; `tabs.list`, `tabGroups.list`, `readingList.list`, `history.search`, `recent.list`, `downloads.list`, `cookies.list`, `cookies.get`, `cookies.set`, `bookmarks.list`, `bookmarks.search`, `extensions.list`, and `extensions.uninstall` mark
+their results with `contentTrust: "untrusted-page-content"` and the same handling rules apply. A list method
+declares a `mergeField`: the required array property in its result that holds the listed items, so results from
+several browser instances combine by concatenating that array. A list result may also declare a boolean `hasMore`,
+meaning the instance has items it did not return. Methods without `mergeField` are never combined. A list method
+whose parameters declare `limit` returns at most that many items per instance: 100 when it is omitted, and a value
+above 1000 is rejected with `INVALID_REQUEST`.
+
+Every method of a data domain answers `UNSUPPORTED`, naming the missing API, when the browser does not provide that
+domain's `chrome.*` namespace (`bookmarks`, `readingList`, `tabGroups`, `history`, `sessions`, `downloads`, `cookies`,
+`browsingData`, `management`). Chrome 125, the extension's minimum version, provides all of them; another Chromium
+browser may not.
+`readingList.add` answers `CONFLICT` for a URL that is already in the list, and its title defaults to the URL.
+`readingList.markRead` and `readingList.remove` are all-or-nothing: if any given URL is not in the list they
+answer `NOT_FOUND` and change nothing.
+
+The tab and window management methods (`tabs.move`, `tabs.pin`, `tabs.unpin`, `tabs.mute`, `tabs.unmute`,
+`tabs.reload`, `tabs.duplicate`, `windows.open`, `windows.close`, `windows.focus`, `windows.state`) are L0 and are
+all-or-nothing for several IDs: every tab or window is checked first, and an unknown one answers `NOT_FOUND` with
+nothing changed. `tabs.move` without `index` (or with `-1`) moves to the end of the window and answers `NOT_FOUND`
+for an unknown target `windowId`. A window `state` other than `normal`, `minimized`, `maximized`, or `fullscreen`
+answers `INVALID_REQUEST`, as does an `index` below -1.
+
+The tab group methods (`tabGroups.*`) are L0 and need the `tabGroups` permission. `tabs.list` items carry `groupId`
+(`-1` when the tab is in no group). `tabGroups.list` marks its result `contentTrust: "untrusted-page-content"`
+because group titles are page- or user-controlled. `tabGroups.create` requires every tab in the same window and
+answers `INVALID_REQUEST` otherwise; a `color` other than `grey`, `blue`, `red`, `yellow`, `green`, `pink`, `purple`,
+`cyan`, or `orange` answers `INVALID_REQUEST`, as does a `tabGroups.edit` that changes nothing. An unknown tab or group
+answers `NOT_FOUND` and changes nothing (all-or-nothing). When `tabGroups.ungroup` removes a group's last tab, the
+browser deletes the group.
+
+History times are integer milliseconds since the epoch (`startTime`, `endTime`, `lastVisitTime`, `visitTime`); a `startTime` after `endTime`
+answers `INVALID_REQUEST`. `history.search` without a time range searches all history (`startTime` 0), returns items newest first
+with URL, title, last visit time and visit count, and applies `limit` and `hasMore`; `history.visits` lists the visits of one URL
+the same way, with the transition type. `history.remove` and `history.clear` are L1 and need the `history` permission:
+`history.remove` takes valid URLs only (`INVALID_REQUEST` and nothing deleted otherwise, unknown URLs are ignored), and `history.clear`
+deletes all history when neither time is given, otherwise the range with an open start at 0 and an open end at now.
+
+`browsingData.clear` is L1 and needs the `browsingData` permission. `types` is a non-empty list drawn from `cache`, `cacheStorage`,
+`cookies`, `downloads`, `fileSystems`, `formData`, `history`, `indexedDB`, `localStorage`, `serviceWorkers`, and `webSQL`; passwords are
+excluded and any other value answers `INVALID_REQUEST`. `since` (milliseconds) defaults to 0, all time. `origins` (bare http or https
+origins) limits the clearing to those origins and is only valid when every type is one of `cache`, `cacheStorage`, `cookies`,
+`fileSystems`, `indexedDB`, `localStorage`, `serviceWorkers`, `webSQL`, the types `chrome.browsingData` can filter by origin;
+combining it with `downloads`, `formData`, or `history` answers `INVALID_REQUEST` and nothing is cleared.
+
+`recent.list` returns at most 25 items (Chrome's retention limit; `limit` is 1 to 25, default 25), newest first, each with session ID, `type` (`tab` or `window`), `closedTime` (milliseconds; Chrome reports seconds and the extension converts), title and URL, and `tabCount` for windows, and reports `hasMore`. `recent.restore` reopens the session with the given `sessionId`, or the most recently closed one when none is given, and returns `tabId` or `windowId`; an unknown session answers `NOT_FOUND`.
+
+The download methods (`downloads.*`) need the `downloads` permission and identify a download by its integer ID; an unknown ID
+answers `NOT_FOUND`. `downloads.list` returns downloads newest first (by start time), each with ID, URL, local file path
+(`filename`), `state` (`in_progress`, `complete`, `interrupted`), `bytesReceived`, `totalBytes` (`-1` when unknown), `startTime`
+(milliseconds) and `exists` (whether the file is still on disk); it accepts `state`, `query` and `limit` and reports `hasMore`.
+`downloads.start` saves into the browser's default download directory with `conflictAction` `uniquify` and no save-as dialog, so an
+existing file is never overwritten; an optional `filename` must be relative and free of `..` segments, and an absolute path
+(including a leading backslash or a drive letter) or a `..` segment answers `INVALID_REQUEST` without starting anything. Chrome's own
+refusal of `pause`, `resume`, `cancel` or `start` (for example pausing a finished download) is surfaced as `INVALID_REQUEST`. `downloads.cancel`,
+`downloads.erase` and `downloads.deleteFile` are L1. `downloads.erase` takes several IDs, is all-or-nothing, and removes only the records.
+`downloads.deleteFile` removes only the file of a `complete` download and keeps the record; any other state answers `INVALID_REQUEST`.
+
+The cookie methods (`cookies.*`) need the `cookies` permission and the host permission `<all_urls>`. `cookies.list` calls
+`chrome.cookies.getAll` with `partitionKey: {}`: without it Chrome omits partitioned (CHIPS) cookies, and the empty key returns
+all of them (verified on a real browser). Each item has name, value (returned unmasked), domain, path, `expires` (milliseconds; absent
+for a session cookie), `secure`, `httpOnly`, `sameSite` (`no_restriction`, `lax`, `strict`, `unspecified`), `session`, and
+`partitionTopLevelSite` for a partitioned cookie; it accepts `url` or `domain` (mutually exclusive, else `INVALID_REQUEST`; `domain`
+includes subdomains), `name` and `limit`, and reports `hasMore`. `cookies.get` answers `NOT_FOUND` when no cookie matches, and prefers
+a non-partitioned cookie over a partitioned one of the same name. `cookies.set` without `expires` creates a session cookie; a cookie
+Chrome refuses to store answers `INVALID_REQUEST` carrying Chrome's reason. `cookies.remove` and `cookies.clear` are L1: `remove`
+deletes the one cookie `cookies.get` would return for the same `url` and `name` and answers `NOT_FOUND` when nothing matches, `clear` takes exactly one of `domain` (with subdomains) and `all: true` (else
+`INVALID_REQUEST`), and both return `deleted`, the number of cookies removed; partitioned cookies are removed with their own
+partition key.
+
+The extension methods (`extensions.*`) need the `management` permission. `extensions.list` returns every installed
+extension and app with its ID, name, version, `enabled`, `type`, `installType` (as `chrome.management` reports it:
+`normal`, `development`, `sideload`, `admin` or `other`) and `mayDisable`. `extensions.enable` and `extensions.disable`
+return the ID and the new `enabled` state; a refusal from Chrome answers `INVALID_REQUEST` carrying Chrome's reason.
+`extensions.disable` is L1 and `extensions.uninstall` is L2. Neither accepts the sctl Browser extension's own ID or an
+extension installed by enterprise policy (`installType` `admin` or `mayDisable` false); both answer `INVALID_REQUEST`.
+Disabling ScriptCat is allowed and disconnects it from the daemon. An unknown ID answers `NOT_FOUND`, and
+`extensions.uninstall` runs all of these checks before asking for approval. Its result is the uninstalled extension's
+ID and name; how the approval continues into Chrome's own dialog is in [§5](#5-cancellation-and-approval).
+
+Bookmark IDs are the browser's own. An unknown ID answers `NOT_FOUND`. `bookmarks.list` returns a folder's direct
+children (the root's children, the built-in top-level folders, when no folder is given) and applies `limit`; with
+`recursive` it returns the whole subtree as a flat depth-first list linked by `parentId`, ignores `limit`, and is
+bounded only by the frame limit. `bookmarks.search` adds `path`, the titles of the enclosing folders from the
+outermost down. The root and the built-in top-level folders cannot be moved or edited, a URL cannot be set on a
+folder, and a folder cannot move into itself or its own descendant; each answers `INVALID_REQUEST`, as does an
+`index` past the end of the target folder. `bookmarks.move` is all-or-nothing: every check runs before the first
+node moves. `bookmarks.remove` takes at most 500 IDs and checks all of them before asking for approval: an unknown ID
+answers `NOT_FOUND`, and more than 500 IDs, the root, or a built-in top-level folder answers `INVALID_REQUEST`. An
+ID inside another listed folder is deleted with that folder and counted once. Its result lists the deleted IDs and
+the number of bookmarks and folders deleted, contents included.
+
+A browser method's result must fit in one frame of at most `limits.maxFrameBytes` UTF-8 bytes, because the daemon
+drops a connection that sends a larger frame. When the serialized response would exceed it, the sctl Browser
+extension answers `PAYLOAD_TOO_LARGE` instead of sending the result.
 
 `scripts.source.get` accepts an optional `maxBytes` budget for a whole-file response. When the UTF-8 source is
 larger, the extension returns `PAYLOAD_TOO_LARGE` before placing the source in a WebSocket frame; callers should
@@ -262,11 +424,67 @@ item gains a `browser` object naming its source: `{"id": "<instance ID>", "name"
 instance that answers `NOT_FOUND` — for example, it has no window with the requested ID — contributes no items;
 the call fails with `NOT_FOUND` only when every instance answers it. Any other failing instance fails the whole
 call; partial results are never returned. A call routed to a single instance returns that instance's result
-unchanged.
+unchanged. If any combined result carries `hasMore`, the combined result's `hasMore` is `true` when at least one
+instance answered `true`.
 
 A target on a `scripts.*` call is rejected with `INVALID_REQUEST`; otherwise `scripts.*` routing and its errors do
 not depend on browser instances. If the target connection closes while a call is in flight — for a combined
 call, any of its instances — the call is voided and the requester receives `OPERATION_EXPIRED`, as for ScriptCat.
+
+### 3.2 Internal methods
+
+A method marked `internal` in `protocol.json` is reserved for components inside the daemon. `/control/call`
+answers it with `INVALID_REQUEST` exactly as for an unknown method, and `sctl mcp` registers no tool for it,
+so a control-token holder cannot send it directly. The `debugger.*` methods are internal because they relay raw
+Chrome DevTools Protocol (CDP) traffic with the user's signed-in browser state. `tabs.current` and `tabs.select`
+are internal because they exist only to serve the daemon's page automation, which reaches callers through
+`/control/page` instead.
+
+`debugger.send` input is `{tabId, sessionId?, method, params?}`: `method` and `params` are the CDP command, sent to
+the tab's top-level debugger session, or to the child session `sessionId` — the `sessionId` of a CDP
+`Target.attachedToTarget` event, used for out-of-process iframes. Its result is `{result}`, the CDP command's
+result object unchanged. `debugger.send` answers `PAGE_NOT_AUTOMATABLE` with Chrome's reason when Chrome refuses to
+attach, `NOT_FOUND` for an unknown tab, `INVALID_REQUEST` with CDP's message when the CDP command itself fails, and
+`DEBUGGER_DETACHED` when the debugger detaches while the command runs. `debugger.detach` input is `{tabId?}`: with
+`tabId` it detaches that tab, without it every tab the instance has attached; its result `{tabIds}` lists the tabs it
+detached. CDP params and results are
+open objects: the schema checks only that they are JSON objects, and the frame limit still applies.
+
+`tabs.current` input is `{}`; its result `{tabId, windowId}` is the active tab of the last-focused window of type
+`normal`. The daemon asks for it once when a page command names no tab: the last-focused window stays the user's
+browser window while they type in a terminal, when no browser window has focus at all. It answers `NOT_FOUND`
+when no normal window is open. `tabs.select` input is `{tabId}`; it makes that tab the active tab of its window
+without focusing the window, unlike `tabs.activate`, and answers `NOT_FOUND` for an unknown tab. Its result is
+`{tabId, windowId}`.
+
+The daemon drives the debugger lifecycle. A page command on a tab the daemon has not attached sends
+`Emulation.setFocusEmulationEnabled {enabled: true}` through `debugger.send` first; that first send makes the
+extension attach. The daemon then treats the tab as attached until it sends `debugger.detach` — after 5 minutes
+without a page command on the tab, or on `page detach` — or until the extension reports `debugger.detached` for
+it, or the instance disconnects. Page commands on the same tab run one at a time in arrival order. A
+`debugger.detached` notification for a tab, or the instance disconnecting, fails the command running on that tab
+with `DEBUGGER_DETACHED`, and the next page command attaches again. The extension keeps a fallback of its own: a tab
+with no `debugger.send` for 10 minutes is detached and reported as `debugger.detached` with reason `idle_timeout`, so
+the infobar does not stay up if the daemon stops driving it, and when its connection to the daemon closes it detaches
+every tab without notifying. `debugger.detach` for a tab whose attach is still in flight waits for that attach and
+then detaches it. The extension records its attached tabs in `chrome.storage.session`, because Chrome keeps a
+debugger attached when the MV3 service worker restarts: after a restart it keeps driving the recorded tabs that are
+still attached, and reports each one that no longer is as `debugger.detached` with reason `target_closed`.
+
+### 3.3 Extension notifications
+
+An sctl Browser instance sends notifications to the daemon. They are the only business messages in that
+direction. A notification has no `id` and no response, and its `params` is the notification's type directly —
+there is no `input` wrapper or `clientId`:
+
+| Notification | Params | Sent when |
+|---|---|---|
+| `debugger.event` | `{tabId, sessionId?, method, params?}` | the debugger attached to `tabId` receives a CDP event; `sessionId` names the child session that produced it |
+| `debugger.detached` | `{tabId, reason}` | Chrome detaches the debugger from `tabId` (`chrome.debugger.onDetach`), where `reason` is Chrome's detach reason, such as `target_closed` or `canceled_by_user`; or the extension's 10-minute fallback detaches it, with reason `idle_timeout`; or, after a service-worker restart, a tab it had attached is no longer attached, with reason `target_closed` |
+
+The daemon validates a notification against its schema like any other frame; a notification that carries an
+`id` or fails its schema is an invalid frame. Notifications with these names from ScriptCat are valid frames
+that the daemon drops without affecting the ScriptCat connection.
 
 ## 4. Errors
 
@@ -300,6 +518,31 @@ These codes are reserved for browser target selection failures ([§3.1](#31-rout
 | `BROWSER_NOT_FOUND` | the target matches no paired browser instance; `/control/browsers/forget` returns it too when the name or ID matches none |
 | `BROWSER_AMBIGUOUS` | the target instance-ID prefix matches more than one paired instance, or a method without `mergeField` was called without a target while several instances are online |
 
+These codes are browser-only too:
+
+| Code | Meaning |
+|---|---|
+| `CONFIRMATION_REQUIRED` | an L1 method was called without `confirm: true` in its input ([§3](#3-business-rpc)); nothing was executed |
+| `UNSUPPORTED` | the browser does not provide the API the method needs; the message names the missing API |
+
+These codes are reserved for page automation on a browser instance:
+
+| Code | Meaning |
+|---|---|
+| `STALE_REF` | an element reference is no longer valid, or belongs to another tab's snapshot |
+| `TIMEOUT` | an automatic wait or an explicit wait condition did not hold in time |
+| `TARGET_AMBIGUOUS` | a selector matches more than one element |
+| `PAGE_NOT_AUTOMATABLE` | Chrome refuses to attach the debugger to the page, for example a `chrome://` page or another extension's page |
+| `PAGE_HIDDEN` | the operation cannot complete on a background tab even with focus emulation |
+| `DEBUGGER_DETACHED` | the debugger detached while a page command was running |
+| `DIALOG_OPEN` | an unhandled JavaScript dialog blocks the page |
+| `EVAL_ERROR` | an evaluated expression threw in the page |
+| `NAVIGATION_FAILED` | a navigation failed with a network error |
+
+`USER_REJECTED` and `PAYLOAD_TOO_LARGE` are registered for both peers. For the browser, `USER_REJECTED` is
+reserved for a rejected L2 approval (including an uninstall cancelled in Chrome's own dialog, §5) and `PAYLOAD_TOO_LARGE` answers a result that would exceed the frame limit
+([§3](#3-business-rpc)); page automation also returns it when a snapshot or screenshot exceeds its size limit.
+
 ## 5. Cancellation and approval
 
 Write and source-disclosure requests remain pending until the user decides. If the requester disconnects,
@@ -318,22 +561,70 @@ and effective once, so a cancelled operation cannot later execute. A late respon
 The extension persists pending approval state because an MV3 service worker can sleep; the decision event sends
 the JSON-RPC response through the offscreen WebSocket owner.
 
+The sctl Browser extension gates its L2 methods the same way, in its own approval window:
+
+1. The offscreen document receives the request and hands it, with its request `id`, `params.clientId`, and the
+   connection it arrived on, to the service worker. The service worker runs the method's checks first; a failing
+   check is answered at once and opens no window.
+2. Otherwise the request joins the approval queue, persisted in `chrome.storage.session`, and the service worker
+   tells the offscreen document that the answer is deferred. The answer is not held open on that message, because
+   the service worker can be stopped while the user decides. The offscreen document then tells the daemon that the
+   request is waiting for a human, on the connection the request arrived on:
+
+   ```json
+   { "jsonrpc": "2.0", "method": "$/approvalPending", "params": { "id": "<original request id>" } }
+   ```
+
+   A request that fails its checks in step 1, or that the daemon cancelled before it was queued, gets no such
+   notification. The daemon passes it to the waiting requester at most once, and ignores it for an unknown request,
+   one sent on another connection or by a ScriptCat connection, or a method that does not wait for a human. Requesters tell the user they are waiting only after it arrives: the CLI prints
+   its waiting line and `sctl mcp` starts sending progress then. Only the sctl Browser extension sends it
+   (`sessionMethods` lists it for the browser peer alone); for ScriptCat's gates, which send nothing similar,
+   requesters say they are waiting as soon as they call.
+3. The user's decision reaches the offscreen document as a separate command carrying the request `id`, and the
+   offscreen document sends it as the JSON-RPC response on the connection the request arrived on. Approval
+   re-checks the target against what the window showed and answers `CONFLICT`, changing nothing, if it differs.
+   Rejection, or closing the window while requests are queued, answers `USER_REJECTED`.
+4. The extension expires a request itself shortly before `limits.writeDecisionTtlMs` after it arrived and answers
+   `OPERATION_EXPIRED`, so the window can tell a timeout from a cancellation. `$/cancelRequest` for a queued request
+   voids it without a response. When the connection closes, every request queued from it is voided, and the daemon
+   answers the requester `OPERATION_EXPIRED` (§3.1).
+5. `extensions.uninstall` is carried out by the approval window, not the service worker: Chrome refuses
+   `chrome.management.uninstall` without a user gesture (verified on a real browser). Approving marks the request as
+   executing, and the window, still handling the click, checks the extension is installed (`NOT_FOUND` otherwise,
+   nothing done) and calls the uninstall, which opens Chrome's own confirmation dialog. Confirming there answers the
+   result; cancelling answers `USER_REJECTED`. The window reports the outcome to the service worker, which answers as
+   in step 3; the request stays executing across a service worker restart. While Chrome's dialog is open the deadline
+   keeps running: a `$/cancelRequest`, the deadline, or a closed connection voids the request for the requester
+   (`OPERATION_EXPIRED`) without withdrawing the dialog, whose outcome the window still shows. Closing the approval
+   window while the dialog is open rejects the other queued requests as usual but leaves the uninstall executing: the
+   window can no longer report the dialog's outcome, so the service worker learns a confirmed uninstall from
+   `chrome.management.onUninstalled` and answers the result; a dialog cancelled after the window closed cannot be
+   observed, and the request is answered `OPERATION_EXPIRED` at its deadline.
+
 ## 6. Generation and conformance
 
-`protocol.json` annotates ownership: each method has one `peer` (`scriptcat` or `browser`), and each
-`errorCodes` entry and each `crypto.context` entry lists the `peers` that use it. The `browser*` context strings
-are reserved for browser-instance handshakes, so a MAC computed for one peer kind never verifies as the other; the
-pairing KDF strings are shared. The generator emits one set of bindings per peer:
+`protocol.json` annotates ownership: each method and each entry of `notifications` has one `peer` (`scriptcat`
+or `browser`), and each `sessionMethods` entry, each `errorCodes` entry and each `crypto.context` entry lists the
+`peers` that use it. The `browser*` context strings are reserved for browser-instance handshakes, so a MAC computed
+for one peer kind never verifies as the other; the pairing KDF strings are shared. A notification's name may not
+start with `$` or reuse a method name, because both travel in the JSON-RPC `method` field. `internal` on a method is
+daemon-side metadata and does not reach the TypeScript output. The generator emits one set of bindings per peer:
 
 | Output | Contents |
 |---|---|
-| `internal/pkg/protocol/generated/protocol.generated.go` | every method, type, error code, and context key, for the daemon and CLI |
-| `internal/pkg/protocol/generated/*.ts` | ScriptCat's methods, the types they reference, and the codes and contexts listing `scriptcat` |
-| `extension/src/protocol/generated/*.ts` | the same selection for `browser` |
+| `internal/pkg/protocol/generated/protocol.generated.go` | every method, notification, type, error code, and context key, for the daemon and CLI |
+| `internal/pkg/protocol/generated/*.ts` | ScriptCat's methods, the types they reference, and the session methods, codes and contexts listing `scriptcat` |
+| `extension/src/protocol/generated/*.ts` | the same selection for `browser`, plus each method's `level` in `RPC_METHODS`, its notifications and the types they reference |
 
 The ScriptCat TypeScript must stay byte-identical to the copy in the paired ScriptCat revision, because ScriptCat
 declares every generated method as a capability and its conformance test compares the method and error-code
 lists exactly. Adding browser-owned definitions therefore never changes ScriptCat's files or `schemaVersion`.
+
+The generator rejects a method whose `level` is missing or not `L0`/`L1`/`L2`, an L2 method without a human gate
+(`blocking` is `none`) or a human-gated method that is not L2, an L1 method whose parameters do not declare the
+optional `confirm: {"const": true}`, a `mergeField` on a method that waits for a human, and a list result whose
+`hasMore` is not a boolean. The ScriptCat TypeScript does not carry `level`, so it stays byte-identical.
 
 Run `make protocol-generate` after editing `protocol.json`, and `make protocol-sync-scriptcat` to update the
 adjacent ScriptCat checkout. `make protocol-check` regenerates all artifacts and fails if the checked-in output
