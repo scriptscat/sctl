@@ -39,14 +39,16 @@ type evalResult struct {
 	Value json.RawMessage `json:"value"`
 }
 
-// remoteObject 是 CDP Runtime.RemoteObject 中 eval 用到的字段。
+// remoteObject 是 CDP Runtime.RemoteObject 中 eval 与控制台记录用到的字段。
 type remoteObject struct {
 	Type                string          `json:"type"`
 	Subtype             string          `json:"subtype"`
+	ClassName           string          `json:"className"`
 	Value               json.RawMessage `json:"value"`
 	UnserializableValue string          `json:"unserializableValue"`
 	Description         string          `json:"description"`
 	ObjectID            string          `json:"objectId"`
+	Preview             *objectPreview  `json:"preview"`
 }
 
 type exceptionDetails struct {

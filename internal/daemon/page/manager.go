@@ -52,6 +52,59 @@ type Tab struct {
 	watchingNetwork bool
 	// onMac 缓存 browserOnMac 的结果,nil 表示还没问过。只在标签页队列里读写。
 	onMac *bool
+	// attachedAt 是这次附加开始的时间;Chrome 在附加时回放的记录早于它。
+	attachedAt time.Time
+	location   *pageLocation
+	// console 是这次附加期间的控制台记录,随 Tab 作废,所以每条断开路径都清空它。
+	console *recordBuffer[consoleRecord]
+
+	// life 在标签页断开(或附加失败)时结束,后台任务以它为界:分离之后发出的命令会让扩展悄悄重新附加。
+	life    context.Context
+	endLife context.CancelFunc
+	// bgMu 保护 bgClosed 与 bg.Add:closeBackground 之后不再开始新的后台任务。
+	bgMu     sync.Mutex
+	bgClosed bool
+	bg       sync.WaitGroup
+}
+
+func (m *Manager) newTab(instanceID string, tabID int) *Tab {
+	life, endLife := context.WithCancel(context.Background())
+	return &Tab{
+		m: m, instanceID: instanceID, id: tabID,
+		refs: newRefTable(), frames: newFrameSessions(), nav: newNavWatch(), net: newNetWatch(), dialog: &dialogState{},
+		attachedAt: time.Now(), location: &pageLocation{}, console: newRecordBuffer[consoleRecord](debugBufferSize),
+		life: life, endLife: endLife,
+	}
+}
+
+// background 在标签页的生命期内执行 f,标签页已经断开时返回 false 且不执行。
+func (t *Tab) background(f func()) bool {
+	t.bgMu.Lock()
+	defer t.bgMu.Unlock()
+	if t.bgClosed {
+		return false
+	}
+	t.bg.Add(1)
+	go func() {
+		defer t.bg.Done()
+		f()
+	}()
+	return true
+}
+
+// endBackground 结束标签页的生命期:正在执行的后台任务的命令随之取消,之后不再开始新的。
+func (t *Tab) endBackground() {
+	t.bgMu.Lock()
+	defer t.bgMu.Unlock()
+	t.bgClosed = true
+	t.endLife()
+}
+
+// closeBackground 与 endBackground 相同,并等正在执行的后台任务结束。daemon 自己断开调试器之前调用它,
+// 后台任务就不会在断开之后再发出命令。
+func (t *Tab) closeBackground() {
+	t.endBackground()
+	t.bg.Wait()
 }
 
 // ID 返回标签页 ID。
@@ -174,6 +227,8 @@ type Manager struct {
 	hooks   []attachHook
 	events  map[string][]eventHandler
 	refSeq  refSeq
+	// childSetupTimeout 限定子会话准备的每一步(开启记录、放行);测试缩短它。
+	childSetupTimeout time.Duration
 
 	mu    sync.Mutex
 	slots map[tabKey]*slot
@@ -193,22 +248,32 @@ func newManager(cdp CDP, log *zap.Logger, refStart uint64) *Manager {
 		actions: map[string]action{},
 		events:  map[string][]eventHandler{},
 		slots:   map[tabKey]*slot{},
+
+		childSetupTimeout: cleanupTimeout,
 	}
 	m.refSeq.n.Store(refStart)
 	m.addAttachHook(enableFocusEmulation)
 	m.addAttachHook(autoAttachFrames)
 	m.addAttachHook(enablePage)
+	m.addAttachHook(readPageLocation)
+	m.addAttachHook(enableConsole)
 	m.addEventHandler("Page.javascriptDialogOpening", onDialogOpening)
 	m.addEventHandler("Page.javascriptDialogClosed", onDialogClosed)
 	m.addEventHandler("Page.frameNavigated", onFrameNavigated)
 	m.addEventHandler("Page.frameDetached", onFrameDetached)
 	m.addEventHandler("Target.attachedToTarget", onTargetAttached)
+	m.addEventHandler("Target.attachedToTarget", onChildSessionAttached)
 	m.addEventHandler("Target.detachedFromTarget", onTargetDetached)
 	for method, h := range navigationEvents {
 		m.addEventHandler(method, h)
 	}
 	for method, h := range networkEvents {
 		m.addEventHandler(method, h)
+	}
+	for _, events := range []map[string]eventHandler{consoleEvents, locationEvents} {
+		for method, h := range events {
+			m.addEventHandler(method, h)
+		}
 	}
 	m.register("eval", runEval)
 	m.register("snapshot", runSnapshot)
@@ -225,6 +290,8 @@ func newManager(cdp CDP, log *zap.Logger, refStart uint64) *Manager {
 	m.addAction("navigate", action{tab: runNavigate, timeout: navigationTimeout})
 	m.register("wait", runWait)
 	m.registerBrowser("detach", m.detach)
+	m.addAction("debug.console", action{tab: runDebugConsole, dialogSafe: true})
+	m.addAction("debug.clear", action{tab: runDebugClear, dialogSafe: true})
 	return m
 }
 
@@ -433,6 +500,11 @@ func (m *Manager) stopIdle(s *slot) {
 // clearTab 作废标签页的附加状态并以 cause 取消其正在执行的命令。调用方持有 m.mu。
 func (m *Manager) clearTab(key tabKey, s *slot, cause error) {
 	m.stopIdle(s)
+	for _, t := range []*Tab{s.tab, s.attaching} {
+		if t != nil {
+			t.endBackground()
+		}
+	}
 	s.tab = nil
 	s.attaching = nil
 	if s.cancel != nil {
@@ -449,7 +521,7 @@ func (m *Manager) attach(ctx context.Context, s *slot, instanceID string, tabID 
 	if t != nil {
 		return t, nil
 	}
-	t = &Tab{m: m, instanceID: instanceID, id: tabID, refs: newRefTable(), frames: newFrameSessions(), nav: newNavWatch(), net: newNetWatch(), dialog: &dialogState{}}
+	t = m.newTab(instanceID, tabID)
 	m.mu.Lock()
 	s.attaching = t
 	m.mu.Unlock()
@@ -458,7 +530,7 @@ func (m *Manager) attach(ctx context.Context, s *slot, instanceID string, tabID 
 			m.mu.Lock()
 			s.attaching = nil
 			m.mu.Unlock()
-			m.abandonAttach(instanceID, tabID, err)
+			m.abandonAttach(t, err)
 			return nil, err
 		}
 	}
@@ -473,18 +545,19 @@ func (m *Manager) attach(ctx context.Context, s *slot, instanceID string, tabID 
 	m.mu.Unlock()
 	if ended {
 		cause := context.Cause(ctx)
-		m.abandonAttach(instanceID, tabID, cause)
+		m.abandonAttach(t, cause)
 		return nil, cause
 	}
 	return t, nil
 }
 
 // abandonAttach 在附加钩子失败后断开标签页:扩展可能已经附加,daemon 不记录它就不会再为它计时断开。
-func (m *Manager) abandonAttach(instanceID string, tabID int, cause error) {
+func (m *Manager) abandonAttach(t *Tab, cause error) {
+	t.closeBackground()
 	ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
 	defer cancel()
-	if _, err := m.cdp.Detach(ctx, instanceID, &tabID); err != nil {
-		m.log.Debug("failed to detach after a failed attach setup", zap.Int("tabId", tabID), zap.NamedError("setupError", cause), zap.Error(err))
+	if _, err := m.cdp.Detach(ctx, t.instanceID, &t.id); err != nil {
+		m.log.Debug("failed to detach after a failed attach setup", zap.Int("tabId", t.id), zap.NamedError("setupError", cause), zap.Error(err))
 	}
 }
 
@@ -499,13 +572,15 @@ func (m *Manager) idleExpired(key tabKey, armed *slot, seq uint64) {
 	}
 	defer m.release(key, s)
 	m.mu.Lock()
-	expired := s == armed && s.idleSeq == seq && s.tab != nil
+	t := s.tab
+	expired := s == armed && s.idleSeq == seq && t != nil
 	if expired {
 		s.tab = nil
 		s.idle = nil
 	}
 	m.mu.Unlock()
 	if expired {
+		t.closeBackground()
 		if _, err := m.cdp.Detach(ctx, key.instanceID, &key.tabID); err != nil {
 			m.log.Warn("failed to detach an idle tab", zap.String("instanceId", key.instanceID), zap.Int("tabId", key.tabID), zap.Error(err))
 		}
@@ -613,11 +688,13 @@ func (m *Manager) detach(ctx context.Context, instanceID string, req Request) (a
 		if req.TabID != nil {
 			return nil, invalidRequest("give either a tab or all, not both")
 		}
+		m.closeInstanceBackground(instanceID)
 		tabIDs, err := m.cdp.Detach(ctx, instanceID, nil)
+		// 后台任务已经结束,即使断开失败也不能再把这些标签页当作已附加:新出现的 iframe 不会再被放行。
+		m.clearInstance(instanceID, detachedError("page detach --all detached the debugger while the command was running"))
 		if err != nil {
 			return nil, err
 		}
-		m.clearInstance(instanceID, detachedError("page detach --all detached the debugger while the command was running"))
 		return detachResult{TabIDs: nonNil(tabIDs)}, nil
 	}
 	tabID, err := m.targetTab(ctx, instanceID, req.TabID)
@@ -626,16 +703,43 @@ func (m *Manager) detach(ctx context.Context, instanceID string, req Request) (a
 	}
 	key := tabKey{instanceID, tabID}
 	return m.onTab(ctx, key, true, func(ctx context.Context, s *slot) (any, error) {
-		tabIDs, err := m.cdp.Detach(ctx, instanceID, &tabID)
-		if err != nil {
-			return nil, err
+		m.mu.Lock()
+		t := s.tab
+		m.mu.Unlock()
+		if t != nil {
+			t.closeBackground()
 		}
+		tabIDs, err := m.cdp.Detach(ctx, instanceID, &tabID)
+		// 后台任务已经结束,即使断开失败也不能再把标签页当作已附加:新出现的 iframe 不会再被放行。
 		m.mu.Lock()
 		m.stopIdle(s)
 		s.tab = nil
 		m.mu.Unlock()
+		if err != nil {
+			return nil, err
+		}
 		return detachResult{TabID: &tabID, TabIDs: nonNil(tabIDs)}, nil
 	})
+}
+
+// closeInstanceBackground 结束一个浏览器实例上全部标签页的后台任务,并等它们结束。
+func (m *Manager) closeInstanceBackground(instanceID string) {
+	var tabs []*Tab
+	m.mu.Lock()
+	for key, s := range m.slots {
+		if key.instanceID != instanceID {
+			continue
+		}
+		for _, t := range []*Tab{s.tab, s.attaching} {
+			if t != nil {
+				tabs = append(tabs, t)
+			}
+		}
+	}
+	m.mu.Unlock()
+	for _, t := range tabs {
+		t.closeBackground()
+	}
 }
 
 func nonNil(ids []int) []int {
