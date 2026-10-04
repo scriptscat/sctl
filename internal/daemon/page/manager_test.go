@@ -32,6 +32,7 @@ type fakeCDP struct {
 	selected    []int
 	sent        []sentCommand
 	detaches    [][]int // 每次 Detach 的目标;nil 表示全部
+	records     []recordCall
 	attached    map[int]bool
 	// send 为 nil 时每条命令都成功返回 {}。
 	send func(ctx context.Context, cmd Command) (json.RawMessage, error)
@@ -88,6 +89,18 @@ func (f *fakeCDP) markAttached(tabID int) {
 	f.mu.Lock()
 	f.attached[tabID] = true
 	f.mu.Unlock()
+}
+
+type recordCall struct {
+	tabID int
+	on    bool
+}
+
+func (f *fakeCDP) Record(ctx context.Context, instanceID string, tabID int, on bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.records = append(f.records, recordCall{tabID: tabID, on: on})
+	return nil
 }
 
 func (f *fakeCDP) Detach(ctx context.Context, instanceID string, tabID *int) ([]int, error) {

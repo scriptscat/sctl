@@ -58,4 +58,7 @@ type CDP interface {
 	// Detach 断开一个标签页(tabID 非 nil)或实例上全部已附加标签页的调试器,返回实际断开的标签页。
 	// 断开由调用方发起,不再产生 debugger.detached 通知。
 	Detach(ctx context.Context, instanceID string, tabID *int) ([]int, error)
+	// Record 让扩展对一个标签页开始(on 为 true)或停止录制:录制期间扩展不做兜底空闲断开,停止后重新计时。
+	// 开始录制要求标签页已附加,否则返回 DEBUGGER_DETACHED;停止一个未附加的标签页什么都不做。
+	Record(ctx context.Context, instanceID string, tabID int, on bool) error
 }

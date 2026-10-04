@@ -130,6 +130,14 @@ export function validateDebuggerEventNotification(value: unknown): value is Prot
   return (isRecord(value) && hasOnlyKeys(value, ["method", "params", "sessionId", "tabId"]) && typeof value["method"] === "string" && (value["params"] === undefined || ((isRecord(value["params"])))) && (value["sessionId"] === undefined || (typeof value["sessionId"] === "string")) && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0);
 }
 
+export function validateDebuggerRecordParams(value: unknown): value is Protocol.DebuggerRecordParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["recording", "tabId"]) && typeof value["recording"] === "boolean" && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0);
+}
+
+export function validateDebuggerRecordResult(value: unknown): value is Protocol.DebuggerRecordResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["recording"]) && typeof value["recording"] === "boolean");
+}
+
 export function validateDebuggerSendParams(value: unknown): value is Protocol.DebuggerSendParams {
   return (isRecord(value) && hasOnlyKeys(value, ["method", "params", "sessionId", "tabId"]) && typeof value["method"] === "string" && (value["params"] === undefined || ((isRecord(value["params"])))) && (value["sessionId"] === undefined || (typeof value["sessionId"] === "string")) && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0);
 }
@@ -469,6 +477,7 @@ export const RPC_PARAM_VALIDATORS = {
   "cookies.remove": validateCookiesRemoveParams,
   "cookies.set": validateCookiesSetParams,
   "debugger.detach": validateDebuggerDetachParams,
+  "debugger.record": validateDebuggerRecordParams,
   "debugger.send": validateDebuggerSendParams,
   "downloads.cancel": validateDownloadsCancelParams,
   "downloads.deleteFile": validateDownloadsDeleteFileParams,
@@ -532,6 +541,7 @@ export const RPC_RESULT_VALIDATORS = {
   "cookies.remove": validateCookiesRemoveResult,
   "cookies.set": validateCookiesSetResult,
   "debugger.detach": validateDebuggerDetachResult,
+  "debugger.record": validateDebuggerRecordResult,
   "debugger.send": validateDebuggerSendResult,
   "downloads.cancel": validateDownloadsCancelResult,
   "downloads.deleteFile": validateDownloadsDeleteFileResult,

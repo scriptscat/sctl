@@ -223,6 +223,15 @@ type DebuggerEventNotification struct {
 	TabId     int             `json:"tabId"`
 }
 
+type DebuggerRecordParams struct {
+	Recording bool `json:"recording"`
+	TabId     int  `json:"tabId"`
+}
+
+type DebuggerRecordResult struct {
+	Recording bool `json:"recording"`
+}
+
 type DebuggerSendParams struct {
 	Method    string          `json:"method"`
 	Params    json.RawMessage `json:"params,omitempty"`
@@ -802,6 +811,7 @@ const (
 	MethodCookiesRemove         Method = "cookies.remove"
 	MethodCookiesSet            Method = "cookies.set"
 	MethodDebuggerDetach        Method = "debugger.detach"
+	MethodDebuggerRecord        Method = "debugger.record"
 	MethodDebuggerSend          Method = "debugger.send"
 	MethodDownloadsCancel       Method = "downloads.cancel"
 	MethodDownloadsDeleteFile   Method = "downloads.deleteFile"
@@ -878,6 +888,7 @@ var Methods = map[string]MethodMetadata{
 	"cookies.remove":          {Params: "CookiesRemoveParams", Result: "CookiesRemoveResult", Scope: "cookies:remove", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: "", Internal: false},
 	"cookies.set":             {Params: "CookiesSetParams", Result: "CookiesSetResult", Scope: "cookies:set", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: false},
 	"debugger.detach":         {Params: "DebuggerDetachParams", Result: "DebuggerDetachResult", Scope: "debugger:detach", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: true},
+	"debugger.record":         {Params: "DebuggerRecordParams", Result: "DebuggerRecordResult", Scope: "debugger:record", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: true},
 	"debugger.send":           {Params: "DebuggerSendParams", Result: "DebuggerSendResult", Scope: "debugger:send", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: true},
 	"downloads.cancel":        {Params: "DownloadsCancelParams", Result: "DownloadsCancelResult", Scope: "downloads:cancel", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: "", Internal: false},
 	"downloads.deleteFile":    {Params: "DownloadsDeleteFileParams", Result: "DownloadsDeleteFileResult", Scope: "downloads:deleteFile", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: "", Internal: false},

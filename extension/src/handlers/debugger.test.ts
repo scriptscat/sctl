@@ -17,7 +17,7 @@ interface DebuggerMock {
 }
 
 // 模拟 chrome.storage.session:service worker 重启后仍在,浏览器重启后清空。
-function memoryStore(): AttachedTabsStorage & { tabIds: () => unknown } {
+function memoryStore(): AttachedTabsStorage & { tabIds: () => unknown; recordingTabIds: () => unknown } {
   const items: Record<string, unknown> = {};
   return {
     get: (keys) => Promise.resolve(Object.fromEntries(keys.filter((k) => k in items).map((k) => [k, items[k]]))),
@@ -26,6 +26,7 @@ function memoryStore(): AttachedTabsStorage & { tabIds: () => unknown } {
       return Promise.resolve();
     },
     tabIds: () => items.debuggerTabs,
+    recordingTabIds: () => items.debuggerRecording,
   };
 }
 
@@ -314,6 +315,103 @@ describe("debugger relay", () => {
       await registry.dispatch("debugger.detach", { tabId: 5 });
 
       expect(store.tabIds()).toEqual([]);
+    });
+  });
+
+  describe("recording", () => {
+    const IDLE = 10 * 60_000;
+
+    it("does not detach a recording tab when the idle backstop elapses", async () => {
+      await registry.dispatch("debugger.send", { tabId: 5, method: "A" });
+      expect(await registry.dispatch("debugger.record", { tabId: 5, recording: true })).toEqual({
+        ok: true,
+        result: { recording: true },
+      });
+
+      await vi.advanceTimersByTimeAsync(3 * IDLE);
+      await registry.dispatch("debugger.send", { tabId: 5, method: "B" });
+      await vi.advanceTimersByTimeAsync(3 * IDLE);
+
+      expect(dbg.detach).not.toHaveBeenCalled();
+      expect(notices).toEqual([]);
+    });
+
+    it("re-arms the backstop when recording stops, then detaches after 10 minutes", async () => {
+      await registry.dispatch("debugger.send", { tabId: 5, method: "A" });
+      await registry.dispatch("debugger.record", { tabId: 5, recording: true });
+      await vi.advanceTimersByTimeAsync(2 * IDLE);
+
+      expect(await registry.dispatch("debugger.record", { tabId: 5, recording: false })).toEqual({
+        ok: true,
+        result: { recording: false },
+      });
+      await vi.advanceTimersByTimeAsync(IDLE - 1);
+      expect(dbg.detach).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(dbg.detach).toHaveBeenCalledWith({ tabId: 5 });
+      expect(notices).toEqual([{ method: "debugger.detached", params: { tabId: 5, reason: "idle_timeout" } }]);
+    });
+
+    it("answers DEBUGGER_DETACHED when starting to record a tab that is not attached", async () => {
+      expect(await registry.dispatch("debugger.record", { tabId: 5, recording: true })).toMatchObject({
+        ok: false,
+        code: "DEBUGGER_DETACHED",
+      });
+      expect(store.recordingTabIds()).toBeUndefined();
+    });
+
+    it("succeeds without effect when stopping a tab that is not attached", async () => {
+      expect(await registry.dispatch("debugger.record", { tabId: 5, recording: false })).toEqual({
+        ok: true,
+        result: { recording: false },
+      });
+      expect(dbg.attach).not.toHaveBeenCalled();
+    });
+
+    it("keeps a tab recording across a service worker restart", async () => {
+      await registry.dispatch("debugger.send", { tabId: 5, method: "A" });
+      await registry.dispatch("debugger.record", { tabId: 5, recording: true });
+      expect(store.recordingTabIds()).toEqual([5]);
+      dbg.getTargets.mockResolvedValue([{ type: "page", id: "T5", tabId: 5, attached: true, title: "", url: "" }]);
+
+      new DebuggerRelay(() => undefined, store);
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(3 * IDLE);
+
+      expect(dbg.detach).not.toHaveBeenCalled();
+    });
+
+    it("drops recording of a tab that is gone after a service worker restart", async () => {
+      await registry.dispatch("debugger.send", { tabId: 5, method: "A" });
+      await registry.dispatch("debugger.record", { tabId: 5, recording: true });
+      dbg.getTargets.mockResolvedValue([]);
+
+      new DebuggerRelay(() => undefined, store);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(store.recordingTabIds()).toEqual([]);
+    });
+
+    it("clears the recording state when the tab is detached by the daemon", async () => {
+      await registry.dispatch("debugger.send", { tabId: 5, method: "A" });
+      await registry.dispatch("debugger.record", { tabId: 5, recording: true });
+
+      await registry.dispatch("debugger.detach", { tabId: 5 });
+
+      expect(store.recordingTabIds()).toEqual([]);
+      await registry.dispatch("debugger.send", { tabId: 5, method: "B" });
+      await vi.advanceTimersByTimeAsync(IDLE);
+      expect(dbg.detach).toHaveBeenCalledTimes(2);
+    });
+
+    it("clears the recording state when Chrome detaches the tab", async () => {
+      await registry.dispatch("debugger.send", { tabId: 5, method: "A" });
+      await registry.dispatch("debugger.record", { tabId: 5, recording: true });
+
+      relay.onDetach({ tabId: 5 }, "canceled_by_user");
+
+      expect(store.recordingTabIds()).toEqual([]);
     });
   });
 

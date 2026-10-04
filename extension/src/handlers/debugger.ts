@@ -15,11 +15,14 @@ export type NotifyFn = <N extends NotificationMethod>(method: N, params: Notific
 export type AttachedTabsStorage = Pick<StorageLike, "get" | "set">;
 
 const ATTACHED_TABS_KEY = "debuggerTabs";
+// 守护进程正在录制的标签页，同样要活过 service worker 重启，否则重启后兜底计时会把录制中的标签页断开。
+const RECORDING_TABS_KEY = "debuggerRecording";
 
 // 按标签页维护 chrome.debugger 附加状态：发送命令时按需附加，把事件和被动分离转成通知，并在空闲、连接断开时释放。
 export class DebuggerRelay {
-  // 已附加（或正在附加）的标签页 → 空闲计时器。
-  private readonly idle = new Map<number, ReturnType<typeof setTimeout>>();
+  // 已附加（或正在附加）的标签页 → 空闲计时器；录制中的标签页没有计时器（undefined），不会被兜底断开。
+  private readonly idle = new Map<number, ReturnType<typeof setTimeout> | undefined>();
+  private readonly recording = new Set<number>();
   private readonly attaching = new Map<number, Promise<void>>();
   // 恢复重启前的附加记录；恢复完成前到达的事件排在它之后处理，保持原有顺序。
   private readonly restored: Promise<void>;
@@ -68,6 +71,28 @@ export class DebuggerRelay {
       params.tabId === undefined ? [...this.idle.keys()] : this.idle.has(params.tabId) ? [params.tabId] : [];
     await Promise.all(tabIds.map((tabId) => this.release(tabId)));
     return { tabIds };
+  };
+
+  // 守护进程开始或停止录制一个标签页：录制期间免除兜底空闲断开，停止后重新计时。
+  // 停止一个没附加的标签页是空操作；开始录制要求标签页已附加（守护进程总是先附加），否则按分离处理。
+  readonly record: RpcHandler<"debugger.record"> = async (params) => {
+    await this.restored;
+    // 与 detach 一样等附加结束再判断，避免把刚附加完的标签页当成没附加。
+    await Promise.allSettled([this.attaching.get(params.tabId)].filter((p) => p !== undefined));
+    if (!this.idle.has(params.tabId)) {
+      if (params.recording) {
+        throw new HandlerError("DEBUGGER_DETACHED", `the debugger is not attached to tab ${params.tabId}`);
+      }
+      return { recording: false };
+    }
+    if (params.recording) {
+      this.recording.add(params.tabId);
+    } else {
+      this.recording.delete(params.tabId);
+    }
+    this.armIdle(params.tabId);
+    this.persist();
+    return { recording: params.recording };
   };
 
   // 连接断开后没有人能再驱动这些标签页，全部释放；此时也无法通知守护进程。
@@ -131,8 +156,11 @@ export class DebuggerRelay {
 
   // 重启前附加的标签页仍附加着就接着管理（重新开始兜底计时）；已经不在的告诉 daemon，它可能还当它附加着。
   private async restore(): Promise<void> {
-    const stored = (await this.storage.get([ATTACHED_TABS_KEY]))[ATTACHED_TABS_KEY];
+    const items = await this.storage.get([ATTACHED_TABS_KEY, RECORDING_TABS_KEY]);
+    const stored = items[ATTACHED_TABS_KEY];
     const saved = Array.isArray(stored) ? (stored as number[]) : [];
+    const storedRecording = items[RECORDING_TABS_KEY];
+    const wasRecording = new Set(Array.isArray(storedRecording) ? (storedRecording as number[]) : []);
     if (saved.length === 0) {
       return;
     }
@@ -140,6 +168,9 @@ export class DebuggerRelay {
     const gone: number[] = [];
     for (const tabId of saved) {
       if (attached.has(tabId)) {
+        if (wasRecording.has(tabId)) {
+          this.recording.add(tabId);
+        }
         this.armIdle(tabId);
       } else {
         gone.push(tabId);
@@ -154,13 +185,19 @@ export class DebuggerRelay {
   }
 
   private persist(): void {
-    this.storage.set({ [ATTACHED_TABS_KEY]: [...this.idle.keys()] }).catch((error: unknown) => {
-      console.error("failed to save the attached tabs", error);
-    });
+    this.storage
+      .set({ [ATTACHED_TABS_KEY]: [...this.idle.keys()], [RECORDING_TABS_KEY]: [...this.recording] })
+      .catch((error: unknown) => {
+        console.error("failed to save the attached tabs", error);
+      });
   }
 
   private armIdle(tabId: number): void {
     clearTimeout(this.idle.get(tabId));
+    if (this.recording.has(tabId)) {
+      this.idle.set(tabId, undefined);
+      return;
+    }
     this.idle.set(
       tabId,
       setTimeout(() => {
@@ -172,6 +209,7 @@ export class DebuggerRelay {
   private forget(tabId: number): void {
     clearTimeout(this.idle.get(tabId));
     this.idle.delete(tabId);
+    this.recording.delete(tabId);
     this.persist();
   }
 

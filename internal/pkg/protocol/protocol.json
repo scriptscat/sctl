@@ -644,6 +644,16 @@
       "level": "L0",
       "peer": "browser",
       "internal": true
+    },
+    "debugger.record": {
+      "params": "DebuggerRecordParams",
+      "result": "DebuggerRecordResult",
+      "scope": "debugger:record",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "internal": true
     }
   },
   "notifications": {
@@ -3491,6 +3501,35 @@
       },
       "required": [
         "tabIds"
+      ],
+      "additionalProperties": false
+    },
+    "DebuggerRecordParams": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "recording": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "tabId",
+        "recording"
+      ],
+      "additionalProperties": false
+    },
+    "DebuggerRecordResult": {
+      "type": "object",
+      "properties": {
+        "recording": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "recording"
       ],
       "additionalProperties": false
     },

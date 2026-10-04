@@ -205,6 +205,13 @@ export interface DebuggerEventNotification {
   sessionId?: string;
   tabId: number;
 }
+export interface DebuggerRecordParams {
+  recording: boolean;
+  tabId: number;
+}
+export interface DebuggerRecordResult {
+  recording: boolean;
+}
 export interface DebuggerSendParams {
   method: string;
   params?: Record<string, unknown>;
@@ -513,6 +520,7 @@ export interface RpcMethodMap {
   "cookies.remove": { params: CookiesRemoveParams; result: CookiesRemoveResult };
   "cookies.set": { params: CookiesSetParams; result: CookiesSetResult };
   "debugger.detach": { params: DebuggerDetachParams; result: DebuggerDetachResult };
+  "debugger.record": { params: DebuggerRecordParams; result: DebuggerRecordResult };
   "debugger.send": { params: DebuggerSendParams; result: DebuggerSendResult };
   "downloads.cancel": { params: DownloadsCancelParams; result: DownloadsCancelResult };
   "downloads.deleteFile": { params: DownloadsDeleteFileParams; result: DownloadsDeleteFileResult };
@@ -672,6 +680,14 @@ export const RPC_METHODS = {
     params: "DebuggerDetachParams",
     result: "DebuggerDetachResult",
     scope: "debugger:detach",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "debugger.record": {
+    params: "DebuggerRecordParams",
+    result: "DebuggerRecordResult",
+    scope: "debugger:record",
     effect: "write",
     blocking: "none",
     level: "L0",

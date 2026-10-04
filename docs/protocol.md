@@ -239,6 +239,7 @@ It is optional in the schema so that an unconfirmed call that reaches the extens
 | `windows.list` | browser | list windows | none | L0 |
 | `debugger.send` | browser, internal | send one Chrome DevTools Protocol command to a tab | none | L0 |
 | `debugger.detach` | browser, internal | detach the debugger from one tab, or from every tab | none | L0 |
+| `debugger.record` | browser, internal | mark a tab as recording, exempting it from the extension's idle fallback, or clear the mark | none | L0 |
 | `tabs.move` | browser | move tabs to a window and position (`index` -1 is the end) | none | L0 |
 | `tabs.pin` | browser | pin tabs | none | L0 |
 | `tabs.unpin` | browser | unpin tabs | none | L0 |
@@ -447,7 +448,10 @@ result object unchanged. `debugger.send` answers `PAGE_NOT_AUTOMATABLE` with Chr
 attach, `NOT_FOUND` for an unknown tab, `INVALID_REQUEST` with CDP's message when the CDP command itself fails, and
 `DEBUGGER_DETACHED` when the debugger detaches while the command runs. `debugger.detach` input is `{tabId?}`: with
 `tabId` it detaches that tab, without it every tab the instance has attached; its result `{tabIds}` lists the tabs it
-detached. CDP params and results are
+detached. `debugger.record` input is `{tabId, recording}` and its result `{recording}` echoes the state now in
+force: a recording tab is exempt from the extension's 10-minute idle fallback below, and stopping re-arms the fallback
+from that moment. Starting to record a tab that is not attached answers `DEBUGGER_DETACHED` (the daemon always
+attaches first); stopping one that is not attached succeeds and does nothing. CDP params and results are
 open objects: the schema checks only that they are JSON objects, and the frame limit still applies.
 
 `tabs.current` input is `{}`; its result `{tabId, windowId}` is the active tab of the last-focused window of type
@@ -467,9 +471,10 @@ with `DEBUGGER_DETACHED`, and the next page command attaches again. The extensio
 with no `debugger.send` for 10 minutes is detached and reported as `debugger.detached` with reason `idle_timeout`, so
 the infobar does not stay up if the daemon stops driving it, and when its connection to the daemon closes it detaches
 every tab without notifying. `debugger.detach` for a tab whose attach is still in flight waits for that attach and
-then detaches it. The extension records its attached tabs in `chrome.storage.session`, because Chrome keeps a
+then detaches it. The extension records its attached tabs, and which of them are recording, in `chrome.storage.session`, because Chrome keeps a
 debugger attached when the MV3 service worker restarts: after a restart it keeps driving the recorded tabs that are
-still attached, and reports each one that no longer is as `debugger.detached` with reason `target_closed`.
+still attached, and reports each one that no longer is as `debugger.detached` with reason `target_closed`. A tab that is still attached
+keeps its recording state across the restart; any detach of a tab clears it.
 
 ### 3.3 Extension notifications
 

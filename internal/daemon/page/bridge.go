@@ -78,6 +78,10 @@ func (b bridgeCDP) Detach(ctx context.Context, instanceID string, tabID *int) ([
 	return res.TabIds, nil
 }
 
+func (b bridgeCDP) Record(ctx context.Context, instanceID string, tabID int, on bool) error {
+	return b.call(ctx, instanceID, generated.MethodDebuggerRecord, generated.DebuggerRecordParams{TabId: tabID, Recording: on}, nil)
+}
+
 // call 调用实例上的一个浏览器方法。结果已由 bridge 按方法 schema 校验过,解码失败说明生成类型与 schema 不一致。
 func (b bridgeCDP) call(ctx context.Context, instanceID string, method generated.Method, input, result any) error {
 	raw, err := json.Marshal(input)
