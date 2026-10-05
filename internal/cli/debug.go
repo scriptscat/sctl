@@ -484,6 +484,15 @@ type bodyView struct {
 	Unavailable   string  `json:"unavailable"`
 }
 
+// returnedBytes 是返回的体的字节数,base64 按解码后计。
+func (b bodyView) returnedBytes() int {
+	s := *b.Body
+	if !b.Base64Encoded {
+		return len(s)
+	}
+	return len(s)/4*3 - (len(s) - len(strings.TrimRight(s, "=")))
+}
+
 // timingPhases 是详情里各阶段耗时的字段与显示名,按发生先后。
 var timingPhases = [][2]string{
 	{"queueMs", "queue"}, {"dnsMs", "dns"}, {"connectMs", "connect"}, {"sslMs", "ssl"},
@@ -567,7 +576,8 @@ func printBody(w io.Writer, title string, b *bodyView) {
 	var size string
 	switch {
 	case b.Truncated:
-		size = fmt.Sprintf("first %d of %d bytes", 1<<20, b.Size)
+		// 扩展按字符截断文本,返回的可以少于 1 MiB。
+		size = fmt.Sprintf("first %d of %d bytes", b.returnedBytes(), b.Size)
 	default:
 		size = fmt.Sprintf("%d bytes", b.Size)
 	}

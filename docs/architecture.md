@@ -62,8 +62,9 @@ because the daemon is the only process that outlives a single command. When the 
 tab is described in [protocol.md](./protocol.md#32-internal-methods).
 
 The same component keeps the debug records of each attached tab (`sctl debug`, `debug_*`). Every attach creates a
-fresh per-tab state (`page.Tab`) that holds two ring buffers, at most 1000 console records and 1000 network requests;
-attach hooks enable the `Runtime`, `Log`, and `Network` domains on the tab's top-level session (`Network` with a small
+fresh per-tab state (`page.Tab`) that holds two ring buffers, at most 1000 console records and 1000 network requests,
+each also capped at 32 MiB of record content (a record is page-controlled and can approach one 4 MiB frame) with the
+oldest dropped first; attach hooks enable the `Runtime`, `Log`, and `Network` domains on the tab's top-level session (`Network` with a small
 `maxPostDataSize`, so a large request body cannot push an event over the frame limit), and the CDP events the
 extension relays are converted into records in the bridge read loop. Request and response bodies are not buffered:
 `debug request` reads them on demand through `debugger.body`, which cuts them to 1 MiB in the extension. Cross-process

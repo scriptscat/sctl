@@ -287,7 +287,8 @@ func (t *Tab) fetchBody(ctx context.Context, sessionID, requestID string, part B
 	if b.Unavailable != "" {
 		reason, ok := bodyReasons[b.Unavailable]
 		if !ok {
-			reason = "Chrome kept no body (" + b.Unavailable + ")"
+			// bridge 已按 protocol.json 的枚举校验过回答,不认识的代码说明 bodyReasons 与 schema 不一致。
+			return nil, fmt.Errorf("page: no reason for the %s unavailable code %q", generated.MethodDebuggerBody, b.Unavailable)
 		}
 		return unavailable(reason), nil
 	}

@@ -76,8 +76,8 @@ func (m *Manager) newTab(instanceID string, tabID int) *Tab {
 	return &Tab{
 		m: m, instanceID: instanceID, id: tabID,
 		refs: newRefTable(), frames: newFrameSessions(), nav: newNavWatch(), net: newNetWatch(), dialog: &dialogState{},
-		attachedAt: time.Now(), location: &pageLocation{}, console: newRecordBuffer[consoleRecord](debugBufferSize),
-		network: newNetworkLog(),
+		attachedAt: time.Now(), location: &pageLocation{}, console: newRecordBuffer[consoleRecord](debugBufferSize, m.recordBudget, consoleRecord.size),
+		network: newNetworkLog(m.recordBudget),
 		life:    life, endLife: endLife,
 	}
 }
@@ -239,6 +239,8 @@ type Manager struct {
 	refSeq  refSeq
 	// childSetupTimeout 限定子会话准备的每一步(开启记录、放行);测试缩短它。
 	childSetupTimeout time.Duration
+	// recordBudget 是每个标签页每种调试记录的字节数上限;测试缩小它。
+	recordBudget int
 
 	mu    sync.Mutex
 	slots map[tabKey]*slot
@@ -260,6 +262,7 @@ func newManager(cdp CDP, log *zap.Logger, refStart uint64) *Manager {
 		slots:   map[tabKey]*slot{},
 
 		childSetupTimeout: cleanupTimeout,
+		recordBudget:      debugBufferBytes,
 	}
 	m.refSeq.n.Store(refStart)
 	m.addAttachHook(enableFocusEmulation)

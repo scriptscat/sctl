@@ -30,6 +30,8 @@ func ns(recs []numbered) []int {
 
 func all(numbered) bool { return true }
 
+func noSize(numbered) int { return 0 }
+
 func mustCursor(s string) cursor {
 	c, err := parseCursor(s)
 	So(err, ShouldBeNil)
@@ -38,7 +40,7 @@ func mustCursor(s string) cursor {
 
 func TestRecordBuffer(t *testing.T) {
 	Convey("调试记录的环形缓存", t, func() {
-		b := newRecordBuffer[numbered](3)
+		b := newRecordBuffer[numbered](3, 1<<20, noSize)
 
 		Convey("记录按先后得到递增的序号,按先后返回", func() {
 			fillBuffer(b, 1, 2)
@@ -129,7 +131,7 @@ func TestRecordBuffer(t *testing.T) {
 		})
 
 		Convey("另一个缓存(重新附加、daemon 重启)签发的游标标记 cursorReset", func() {
-			other := newRecordBuffer[numbered](3)
+			other := newRecordBuffer[numbered](3, 1<<20, noSize)
 			fillBuffer(other, 1, 3)
 			foreign := other.query(cursor{}, 10, all).Next
 			fillBuffer(b, 1, 1)
@@ -143,6 +145,74 @@ func TestRecordBuffer(t *testing.T) {
 				_, err := parseCursor(bad)
 				So(errorCode(err), ShouldEqual, generated.ErrorCodeInvalidRequest)
 			}
+		})
+	})
+}
+
+func TestRecordBufferByteBudget(t *testing.T) {
+	Convey("调试记录的缓存还按字节数限额:超出时丢弃最旧的", t, func() {
+		b := newRecordBuffer[numbered](3, 10, func(r numbered) int { return r.N })
+
+		Convey("新记录让总字节数超出限额时丢弃最旧的,计入 dropped", func() {
+			fillBuffer(b, 4, 4)
+			fillBuffer(b, 4, 4)
+			fillBuffer(b, 4, 4)
+			page := b.query(cursor{}, 10, all)
+			So(page.Records, ShouldResemble, []numbered{{Seq: 2, N: 4}, {Seq: 3, N: 4}})
+			So(page.Dropped, ShouldEqual, 1)
+			So(b.stats(), ShouldResemble, bufferStats{Records: 2, Dropped: 1})
+		})
+
+		Convey("单条就超过限额的记录本身保留,之前的全部丢弃", func() {
+			fillBuffer(b, 3, 3)
+			fillBuffer(b, 25, 25)
+			So(ns(b.query(cursor{}, 10, all).Records), ShouldResemble, []int{25})
+			fillBuffer(b, 1, 1)
+			So(ns(b.query(cursor{}, 10, all).Records), ShouldResemble, []int{1})
+			So(b.stats().Dropped, ShouldEqual, 2)
+		})
+
+		Convey("条数与字节数的丢弃交替发生时,序号查找与续查照常", func() {
+			fillBuffer(b, 1, 1)
+			fillBuffer(b, 1, 1)
+			fillBuffer(b, 1, 1)
+			fillBuffer(b, 1, 1)
+			fillBuffer(b, 9, 9)
+			page := b.query(cursor{}, 10, all)
+			So(page.Records, ShouldResemble, []numbered{{Seq: 4, N: 1}, {Seq: 5, N: 9}})
+			for seq, n := range map[uint64]int{4: 1, 5: 9} {
+				rec, ok := b.get(seq)
+				So(ok, ShouldBeTrue)
+				So(rec.N, ShouldEqual, n)
+			}
+			_, ok := b.get(3)
+			So(ok, ShouldBeFalse)
+			fillBuffer(b, 2, 2)
+			So(ns(b.query(mustCursor(page.Next), 10, all).Records), ShouldResemble, []int{2})
+		})
+
+		Convey("记录在存入之后变大时重新计算,超出限额同样丢弃最旧的并交回它们", func() {
+			p := newRecordBuffer[*numbered](3, 10, func(r *numbered) int { return r.N })
+			var recs []*numbered
+			for range 3 {
+				p.add(func(seq uint64) *numbered {
+					r := &numbered{Seq: seq, N: 3}
+					recs = append(recs, r)
+					return r
+				})
+			}
+			recs[2].N = 6
+			evicted := p.resize(3)
+			So(evicted, ShouldResemble, []*numbered{recs[0]})
+			So(p.stats(), ShouldResemble, bufferStats{Records: 2, Dropped: 1})
+		})
+
+		Convey("清空之后重新计算字节数", func() {
+			fillBuffer(b, 9, 9)
+			b.clear()
+			fillBuffer(b, 5, 5)
+			fillBuffer(b, 5, 5)
+			So(ns(b.query(cursor{}, 10, all).Records), ShouldResemble, []int{5, 5})
 		})
 	})
 }

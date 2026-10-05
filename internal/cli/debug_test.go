@@ -228,7 +228,17 @@ func TestDebugRequest(t *testing.T) {
 			code, out := runCLI("debug", "request", "2", "--body")
 			So(code, ShouldEqual, exitOK)
 			So(string(stub.last.Input), ShouldEqualJSON, `{"id":2,"body":true}`)
-			So(out, ShouldContainSubstring, "Response body (first 1048576 of 5242880 bytes):\nhello\n")
+			So(out, ShouldContainSubstring, "Response body (first 5 of 5242880 bytes):\nhello\n")
+
+			// 文本按字符截断,返回的字节数可以少于 1 MiB;写出的是实际返回的字节数。
+			text := strings.Repeat("中", (1<<20)/3)
+			stubPageDaemon(t, details(map[string]any{"body": text, "size": 5242880, "truncated": true}))
+			_, out = runCLI("debug", "request", "2", "--body")
+			So(out, ShouldContainSubstring, "Response body (first 1048575 of 5242880 bytes):\n")
+
+			stubPageDaemon(t, details(map[string]any{"body": "AAEC", "base64Encoded": true, "size": 5242880, "truncated": true}))
+			_, out = runCLI("debug", "request", "2", "--body")
+			So(out, ShouldContainSubstring, "Response body (first 3 of 5242880 bytes, base64):\nAAEC\n")
 
 			stubPageDaemon(t, details(map[string]any{"body": "AAEC", "base64Encoded": true, "size": 3}))
 			_, out = runCLI("debug", "request", "2", "--body")

@@ -84,6 +84,23 @@ type networkEntry struct {
 	remoteAddress                  string
 }
 
+// size 是这一跳自己带来的字节数,计入缓存的上限。页面与 frame 的 URL 与其他记录共用同一个字符串,不计。
+func (e *networkEntry) size() int {
+	n := len(e.requestID) + len(e.rec.Method) + len(e.rec.URL) + len(e.rec.StatusText) + len(e.rec.Error) + len(e.remoteAddress)
+	for _, headers := range []map[string]string{e.requestHeaders, e.requestExtra, e.responseHeaders, e.responseExtra} {
+		n += headerBytes(headers)
+	}
+	return n
+}
+
+func headerBytes(headers map[string]string) int {
+	n := 0
+	for name, value := range headers {
+		n += len(name) + len(value)
+	}
+	return n
+}
+
 // finish 结束一跳:ts 是结束时刻,size 是传输的字节数。
 func (e *networkEntry) finish(state string, ts, size float64) {
 	e.rec.State = state
@@ -114,6 +131,7 @@ func (e *networkEntry) applyResponse(sessionID string, r cdpResponse) {
 func roundMs(ms float64) float64 { return math.Round(ms*1000) / 1000 }
 
 // maxPendingExtra 限制等待请求开始的 ExtraInfo 条数:附加之前开始的请求的 ExtraInfo 永远等不到它的请求。
+// 它们的头同样受缓存的字节数上限约束。
 const maxPendingExtra = debugBufferSize
 
 // networkLog 是一次附加期间的网络记录。事件在 bridge 读循环里更新记录,查询在标签页队列里读取,所以用自己的锁;
@@ -128,11 +146,15 @@ type networkLog struct {
 	pending map[string]*pendingExtra
 	order   []pendingKey
 	gen     uint64
+	// budget 是缓存的字节数上限,pendingBytes 是 pending 里的头的字节数。
+	budget       int
+	pendingBytes int
 }
 
 type pendingExtra struct {
 	gen               uint64
 	request, response []map[string]string
+	bytes             int
 }
 
 type pendingKey struct {
@@ -140,8 +162,11 @@ type pendingKey struct {
 	gen       uint64
 }
 
-func newNetworkLog() *networkLog {
-	return &networkLog{buf: newRecordBuffer[*networkEntry](debugBufferSize), hops: map[string][]*networkEntry{}, pending: map[string]*pendingExtra{}}
+func newNetworkLog(budget int) *networkLog {
+	return &networkLog{
+		buf: newRecordBuffer(debugBufferSize, budget, (*networkEntry).size), hops: map[string][]*networkEntry{}, pending: map[string]*pendingExtra{},
+		budget: budget,
+	}
 }
 
 func (l *networkLog) clear() {
@@ -151,6 +176,7 @@ func (l *networkLog) clear() {
 	clear(l.hops)
 	clear(l.pending)
 	l.order = nil
+	l.pendingBytes = 0
 }
 
 func (l *networkLog) stats() bufferStats {
@@ -174,6 +200,24 @@ func (l *networkLog) update(requestID string, f func(e *networkEntry)) {
 	defer l.mu.Unlock()
 	if e := l.current(requestID); e != nil {
 		f(e)
+		l.resized(e)
+	}
+}
+
+// resized 在一跳存入缓存之后又带来内容(响应、头)时重新计入缓存的字节数上限。调用方持有 l.mu。
+func (l *networkLog) resized(e *networkEntry) {
+	l.forget(l.buf.resize(e.rec.ID))
+}
+
+// forget 忘掉被缓存丢弃的各跳:之后它们的事件不再更新任何记录。调用方持有 l.mu。
+func (l *networkLog) forget(evicted []*networkEntry) {
+	for _, gone := range evicted {
+		hops := slices.DeleteFunc(l.hops[gone.requestID], func(h *networkEntry) bool { return h == gone })
+		if len(hops) == 0 {
+			delete(l.hops, gone.requestID)
+		} else {
+			l.hops[gone.requestID] = hops
+		}
 	}
 }
 
@@ -183,28 +227,22 @@ func (l *networkLog) add(e *networkEntry) {
 		if len(p.request) > 0 {
 			e.requestExtra, e.hasRequestExtra = p.request[0], true
 			p.request = p.request[1:]
+			l.unpend(p, e.requestExtra)
 		}
 		if len(p.response) > 0 {
 			e.responseExtra, e.hasResponseExtra = p.response[0], true
 			p.response = p.response[1:]
+			l.unpend(p, e.responseExtra)
 		}
 		if len(p.request) == 0 && len(p.response) == 0 {
 			delete(l.pending, e.requestID)
 		}
 	}
-	evicted, ok := l.buf.add(func(seq uint64) *networkEntry {
+	l.hops[e.requestID] = append(l.hops[e.requestID], e)
+	l.forget(l.buf.add(func(seq uint64) *networkEntry {
 		e.rec.ID = seq
 		return e
-	})
-	if ok {
-		hops := slices.DeleteFunc(l.hops[evicted.requestID], func(h *networkEntry) bool { return h == evicted })
-		if len(hops) == 0 {
-			delete(l.hops, evicted.requestID)
-		} else {
-			l.hops[evicted.requestID] = hops
-		}
-	}
-	l.hops[e.requestID] = append(l.hops[e.requestID], e)
+	}))
 }
 
 // extra 把 ExtraInfo 的头交给 requestId 还没有它的最早一跳(各跳的 ExtraInfo 按先后到达);还没有这样的一跳时
@@ -215,10 +253,12 @@ func (l *networkLog) extra(requestID string, response bool, headers map[string]s
 	for _, e := range l.hops[requestID] {
 		if response && !e.hasResponseExtra {
 			e.responseExtra, e.hasResponseExtra = headers, true
+			l.resized(e)
 			return
 		}
 		if !response && !e.hasRequestExtra {
 			e.requestExtra, e.hasRequestExtra = headers, true
+			l.resized(e)
 			return
 		}
 	}
@@ -228,19 +268,30 @@ func (l *networkLog) extra(requestID string, response bool, headers map[string]s
 		p = &pendingExtra{gen: l.gen}
 		l.pending[requestID] = p
 		l.order = append(l.order, pendingKey{requestID, l.gen})
-		for len(l.order) > maxPendingExtra {
-			oldest := l.order[0]
-			l.order = l.order[1:]
-			if q := l.pending[oldest.requestID]; q != nil && q.gen == oldest.gen {
-				delete(l.pending, oldest.requestID)
-			}
-		}
 	}
 	if response {
 		p.response = append(p.response, headers)
 	} else {
 		p.request = append(p.request, headers)
 	}
+	n := headerBytes(headers)
+	p.bytes += n
+	l.pendingBytes += n
+	for len(l.order) > maxPendingExtra || l.pendingBytes > l.budget {
+		oldest := l.order[0]
+		l.order = l.order[1:]
+		if q := l.pending[oldest.requestID]; q != nil && q.gen == oldest.gen {
+			delete(l.pending, oldest.requestID)
+			l.pendingBytes -= q.bytes
+		}
+	}
+}
+
+// unpend 记下 p 里的一组头已交给它的那一跳。调用方持有 l.mu。
+func (l *networkLog) unpend(p *pendingExtra, headers map[string]string) {
+	n := headerBytes(headers)
+	p.bytes -= n
+	l.pendingBytes -= n
 }
 
 // query 按先后返回符合 match 的记录的副本。
@@ -438,6 +489,7 @@ func onRequestWillBeSent(t *Tab, sessionID string, params json.RawMessage) {
 		prev.applyResponse(sessionID, *ev.RedirectResponse)
 		prev.finish(requestRedirected, ev.Timestamp, ev.RedirectResponse.EncodedDataLength)
 		e.rec.RedirectedFrom = prev.rec.ID
+		l.resized(prev)
 	}
 	l.add(e)
 }

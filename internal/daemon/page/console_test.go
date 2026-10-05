@@ -624,3 +624,62 @@ func TestChildSessionSetup(t *testing.T) {
 		})
 	})
 }
+
+func TestDebugRecordByteBudget(t *testing.T) {
+	Convey("每个标签页的调试记录还按字节数限额:网页给出的大记录挤出最旧的,daemon 的内存不随记录内容无界增长", t, func() {
+		m, _, _, _ := newDebugManager()
+		m.recordBudget = 64 << 10
+		_, err := debugConsole(m, 3, `{}`)
+		So(err, ShouldBeNil)
+		long := "https://app.test/" + strings.Repeat("a", 30<<10)
+
+		Convey("控制台记录按它带来的文本、URL 与调用栈计", func() {
+			for i := range 3 {
+				call := consoleCall("log", 0, str(fmt.Sprint(i)))
+				call["stackTrace"] = map[string]any{"callFrames": []map[string]any{
+					{"functionName": "f", "scriptId": "9", "url": long, "lineNumber": 0, "columnNumber": 0},
+				}}
+				emit(m, 3, "", "Runtime.consoleAPICalled", call)
+			}
+			v, err := debugConsole(m, 3, `{}`)
+			So(err, ShouldBeNil)
+			So(texts(v), ShouldResemble, []string{"1", "2"})
+			So(v.Dropped, ShouldEqual, 1)
+		})
+
+		Convey("网络记录在之后的事件带来更多的头时重新计算", func() {
+			emit(m, 3, "", "Network.requestWillBeSent", sent("R0", "GET", long, "Fetch", 0))
+			emit(m, 3, "", "Network.requestWillBeSent", sent("R1", "GET", "https://app.test/small", "Fetch", 0))
+			v, err := debugNetwork(m, 3, `{}`)
+			So(err, ShouldBeNil)
+			So(v.Records, ShouldHaveLength, 2)
+			emit(m, 3, "", "Network.responseReceivedExtraInfo", map[string]any{
+				"requestId": "R1", "headers": map[string]string{"X-Big": strings.Repeat("b", 40<<10)},
+			})
+			v, err = debugNetwork(m, 3, `{}`)
+			So(err, ShouldBeNil)
+			So(urls(v), ShouldResemble, []string{"https://app.test/small"})
+			So(v.Dropped, ShouldEqual, 1)
+			_, err = debugRequest(m, 3, `{"id":1}`)
+			So(errorCode(err), ShouldEqual, generated.ErrorCodeNotFound)
+		})
+
+		Convey("先于请求开始到达、还在等它的网络栈头同样计入,超出时丢弃最早的", func() {
+			big := strings.Repeat("b", 40<<10)
+			for _, id := range []string{"A", "B"} {
+				emit(m, 3, "", "Network.requestWillBeSentExtraInfo", map[string]any{
+					"requestId": id, "headers": map[string]string{"X-Big": big},
+				})
+			}
+			for _, id := range []string{"A", "B"} {
+				emit(m, 3, "", "Network.requestWillBeSent", sent(id, "GET", "https://app.test/"+id, "Fetch", 0))
+			}
+			a, err := debugRequest(m, 3, `{"id":1}`)
+			So(err, ShouldBeNil)
+			So(a.RequestHeaders, ShouldResemble, map[string]string{"Accept": "*/*"})
+			b, err := debugRequest(m, 3, `{"id":2}`)
+			So(err, ShouldBeNil)
+			So(b.RequestHeaders, ShouldResemble, map[string]string{"X-Big": big})
+		})
+	})
+}

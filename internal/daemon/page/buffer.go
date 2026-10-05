@@ -12,27 +12,37 @@ import (
 // debugBufferSize 是每个标签页每种调试记录的条数上限(spec 设计决策 5),满了丢弃最旧的。
 const debugBufferSize = 1000
 
+// debugBufferBytes 是每个标签页每种调试记录的字节数上限,超出时同样丢弃最旧的。记录的内容由网页控制,单条可以
+// 接近一个协议帧(4 MiB,例如超长的 URL 或 sourceURL),只限条数时一个标签页的缓存可以占用数 GB。
+const debugBufferBytes = 32 << 20
+
 // recordBuffer 是一种调试记录的环形缓存,每次附加新建一个(随 Tab 作废)。记录按到达先后得到递增的序号,
 // 游标由缓存的 ID 与序号组成:清空或换了缓存(重新附加、daemon 重启)之后旧游标不再属于它。
 // 事件在 bridge 读循环里写入,查询在标签页队列里读取,所以用自己的锁。
 type recordBuffer[T any] struct {
-	mu       sync.Mutex
-	capacity int
-	id       uint64
+	mu sync.Mutex
+	// budget 是 size 计算的字节数上限;最新的一条即使单独超出也保留。
+	budget int
+	size   func(T) int
+	id     uint64
 	// last 是最新一条记录的序号,0 表示自创建或清空以来还没有记录。
-	last    uint64
+	last uint64
+	// items 是定长的环:从 start 起的 n 条是缓存里的记录,从最旧到最新。
 	items   []buffered[T]
 	start   int
+	n       int
+	bytes   int
 	dropped uint64
 }
 
 type buffered[T any] struct {
-	seq uint64
-	rec T
+	seq  uint64
+	rec  T
+	size int
 }
 
-func newRecordBuffer[T any](capacity int) *recordBuffer[T] {
-	return &recordBuffer[T]{capacity: capacity, id: randomBufferID(), items: make([]buffered[T], 0, capacity)}
+func newRecordBuffer[T any](capacity, budget int, size func(T) int) *recordBuffer[T] {
+	return &recordBuffer[T]{budget: budget, size: size, id: randomBufferID(), items: make([]buffered[T], capacity)}
 }
 
 // randomBufferID 让不同的缓存(包括 daemon 重启前签发的游标)几乎不可能撞上同一个 ID。
@@ -44,40 +54,84 @@ func randomBufferID() uint64 {
 	return binary.BigEndian.Uint64(b[:])
 }
 
-// add 追加一条记录;build 收到分配给它的序号。缓存已满时丢弃最旧的一条,并返回它(ok 为 true)。
-func (b *recordBuffer[T]) add(build func(seq uint64) T) (evicted T, ok bool) {
+// add 追加一条记录;build 收到分配给它的序号。缓存满了或超出字节数上限时丢弃最旧的,并按先后返回它们。
+func (b *recordBuffer[T]) add(build func(seq uint64) T) []T {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.last++
-	entry := buffered[T]{seq: b.last, rec: build(b.last)}
-	if len(b.items) < b.capacity {
-		b.items = append(b.items, entry)
-		return evicted, false
+	var evicted []T
+	if b.n == len(b.items) {
+		evicted = append(evicted, b.evictOldest())
 	}
-	evicted = b.items[b.start].rec
-	b.items[b.start] = entry
-	b.start = (b.start + 1) % b.capacity
-	b.dropped++
-	return evicted, true
+	b.last++
+	rec := build(b.last)
+	entry := buffered[T]{seq: b.last, rec: rec, size: b.size(rec)}
+	b.items[(b.start+b.n)%len(b.items)] = entry
+	b.n++
+	b.bytes += entry.size
+	return append(evicted, b.trim()...)
 }
 
-// get 返回序号为 seq 的记录;它不在缓存里(还没有、已被丢弃或已清空)时 ok 为 false。
+// resize 在序号为 seq 的记录存入之后变大(或变小)时重新计算它的字节数,超出上限时丢弃最旧的并返回它们。
+// 记录已不在缓存里时什么都不做。
+func (b *recordBuffer[T]) resize(seq uint64) []T {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	i, ok := b.index(seq)
+	if !ok {
+		return nil
+	}
+	size := b.size(b.items[i].rec)
+	b.bytes += size - b.items[i].size
+	b.items[i].size = size
+	return b.trim()
+}
+
+// trim 在超出字节数上限时丢弃最旧的记录,至少保留最新的一条。调用方持有 b.mu。
+func (b *recordBuffer[T]) trim() []T {
+	var evicted []T
+	for b.bytes > b.budget && b.n > 1 {
+		evicted = append(evicted, b.evictOldest())
+	}
+	return evicted
+}
+
+// evictOldest 丢弃最旧的一条并清掉它的槽位,不让环继续引用它的内容。调用方持有 b.mu。
+func (b *recordBuffer[T]) evictOldest() T {
+	entry := b.items[b.start]
+	b.items[b.start] = buffered[T]{}
+	b.start = (b.start + 1) % len(b.items)
+	b.n--
+	b.bytes -= entry.size
+	b.dropped++
+	return entry.rec
+}
+
+// index 返回序号为 seq 的记录在环里的位置;它不在缓存里(还没有、已被丢弃或已清空)时 ok 为 false。
+// 缓存里的序号从最旧到最新连续。调用方持有 b.mu。
+func (b *recordBuffer[T]) index(seq uint64) (int, bool) {
+	oldest := b.last - uint64(b.n) + 1
+	if b.n == 0 || seq < oldest || seq > b.last {
+		return 0, false
+	}
+	return (b.start + int(seq-oldest)) % len(b.items), true
+}
+
+// get 返回序号为 seq 的记录;它不在缓存里时 ok 为 false。
 func (b *recordBuffer[T]) get(seq uint64) (rec T, ok bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	// 缓存里的序号从最旧到最新连续。
-	oldest := b.last - uint64(len(b.items)) + 1
-	if len(b.items) == 0 || seq < oldest || seq > b.last {
+	i, ok := b.index(seq)
+	if !ok {
 		return rec, false
 	}
-	return b.items[(b.start+int(seq-oldest))%len(b.items)].rec, true
+	return b.items[i].rec, true
 }
 
 // stats 返回缓存里的条数与被丢弃的条数。
 func (b *recordBuffer[T]) stats() bufferStats {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return bufferStats{Records: len(b.items), Dropped: b.dropped}
+	return bufferStats{Records: b.n, Dropped: b.dropped}
 }
 
 // bufferStats 是 debug status 里一种缓存的条数与丢弃数。
@@ -92,8 +146,8 @@ func (b *recordBuffer[T]) clear() {
 	defer b.mu.Unlock()
 	b.id = randomBufferID()
 	b.last = 0
-	b.items = b.items[:0]
-	b.start = 0
+	clear(b.items)
+	b.start, b.n, b.bytes = 0, 0, 0
 	b.dropped = 0
 }
 
@@ -121,7 +175,7 @@ func (b *recordBuffer[T]) query(after cursor, limit int, match func(T) bool) buf
 		}
 	}
 	next, returned := b.last, from
-	for i := range b.items {
+	for i := range b.n {
 		entry := b.items[(b.start+i)%len(b.items)]
 		if entry.seq <= from || !match(entry.rec) {
 			continue

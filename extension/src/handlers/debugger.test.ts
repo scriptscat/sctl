@@ -6,7 +6,7 @@ import {
   validateDebuggerSendResult,
 } from "@/protocol/generated/validators.generated";
 import type { NotificationMethod, NotificationParams } from "@/protocol/generated/protocol.generated";
-import { BODY_LIMIT_BYTES, DebuggerRelay, type AttachedTabsStorage } from "./debugger";
+import { DebuggerRelay, type AttachedTabsStorage } from "./debugger";
 import { registerHandlers } from "./index";
 
 type Notice = { [N in NotificationMethod]: { method: N; params: NotificationParams<N> } }[NotificationMethod];
@@ -175,10 +175,6 @@ describe("debugger relay", () => {
       }
       return outcome;
     }
-
-    it("truncates at 1 MiB", () => {
-      expect(BODY_LIMIT_BYTES).toBe(MiB);
-    });
 
     it("reads the request body with Network.getRequestPostData on the named session", async () => {
       await attached();

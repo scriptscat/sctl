@@ -9,8 +9,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"go.uber.org/zap"
 )
 
 const (
@@ -44,6 +42,15 @@ type consoleRecord struct {
 	FrameURL  string       `json:"frameUrl,omitempty"`
 	PageURL   string       `json:"pageUrl"`
 	Stack     []stackFrame `json:"stack,omitempty"`
+}
+
+// size 是这条记录自己带来的字节数,计入缓存的上限。页面与 frame 的 URL 与其他记录共用同一个字符串,不计。
+func (r consoleRecord) size() int {
+	n := len(r.Text) + len(r.URL) + len(r.Source) + len(r.Level)
+	for _, f := range r.Stack {
+		n += len(f.Function) + len(f.URL)
+	}
+	return n
 }
 
 // stackFrame 是异常调用栈的一帧,Line 与 Column 从 1 开始。
@@ -240,8 +247,7 @@ var consoleEvents = map[string]eventHandler{
 
 func onConsoleAPICalled(t *Tab, sessionID string, params json.RawMessage) {
 	var ev consoleAPICalledEvent
-	if err := json.Unmarshal(params, &ev); err != nil {
-		t.m.log.Debug("ignoring a malformed Runtime.consoleAPICalled event", zap.Int("tabId", t.id), zap.Error(err))
+	if !decodeEvent(t, "Runtime.consoleAPICalled", params, &ev) {
 		return
 	}
 	rec := consoleRecord{Source: sourceConsole, Level: consoleAPILevel(ev.Type), Time: cdpTime(ev.Timestamp)}
@@ -255,8 +261,7 @@ func onConsoleAPICalled(t *Tab, sessionID string, params json.RawMessage) {
 
 func onExceptionThrown(t *Tab, sessionID string, params json.RawMessage) {
 	var ev exceptionThrownEvent
-	if err := json.Unmarshal(params, &ev); err != nil {
-		t.m.log.Debug("ignoring a malformed Runtime.exceptionThrown event", zap.Int("tabId", t.id), zap.Error(err))
+	if !decodeEvent(t, "Runtime.exceptionThrown", params, &ev) {
 		return
 	}
 	d := ev.ExceptionDetails
@@ -285,8 +290,7 @@ func onExceptionThrown(t *Tab, sessionID string, params json.RawMessage) {
 
 func onLogEntry(t *Tab, sessionID string, params json.RawMessage) {
 	var ev logEntryEvent
-	if err := json.Unmarshal(params, &ev); err != nil {
-		t.m.log.Debug("ignoring a malformed Log.entryAdded event", zap.Int("tabId", t.id), zap.Error(err))
+	if !decodeEvent(t, "Log.entryAdded", params, &ev) {
 		return
 	}
 	e := ev.Entry
@@ -331,21 +335,6 @@ func consoleAPILevel(kind string) string {
 	default:
 		return "info"
 	}
-}
-
-// cutRunes 把 s 截到至多 n 个字符,返回是否截断。不切开多字节字符。
-func cutRunes(s string, n int) (string, bool) {
-	if len(s) <= n {
-		return s, false
-	}
-	count := 0
-	for i := range s {
-		if count == n {
-			return s[:i], true
-		}
-		count++
-	}
-	return s, false
 }
 
 // exceptionLine 是异常对象的一行说明:Error 的 description 带着调用栈,调用栈另记在 Stack 里。

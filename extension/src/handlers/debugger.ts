@@ -9,7 +9,7 @@ const IDLE_REASON = "idle_timeout";
 
 // 请求体与响应体回传前截断到的字节数（文本按 UTF-8 计）。截断必须在这里做：Chrome 只能一次取回整个体，
 // 超过一个 4 MiB 协议帧的体经 debugger.send 原样回传时一个字节也拿不到。
-export const BODY_LIMIT_BYTES = 1024 * 1024;
+const BODY_LIMIT_BYTES = 1024 * 1024;
 
 type BodyResult = RpcResult<"debugger.body">;
 type Unavailable = NonNullable<BodyResult["unavailable"]>;
@@ -273,7 +273,7 @@ export class DebuggerRelay {
 
 // truncateBody 把体截到 BODY_LIMIT_BYTES：base64 按解码后的字节截，再重新编码；文本按 UTF-8 字节截，
 // 不切开一个字符。size 是截断前的字节数。
-export function truncateBody(body: string, base64Encoded: boolean): BodyResult {
+function truncateBody(body: string, base64Encoded: boolean): BodyResult {
   if (base64Encoded) {
     const padding = body.endsWith("==") ? 2 : body.endsWith("=") ? 1 : 0;
     const size = (body.length / 4) * 3 - padding;
