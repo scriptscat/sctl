@@ -237,7 +237,8 @@ describe("debugger relay", () => {
         result: { body: string; base64Encoded: boolean; size: number; truncated: boolean };
       };
       expect(outcome.result).toMatchObject({ base64Encoded: true, size: MiB + 7, truncated: true });
-      expect(Buffer.from(outcome.result.body, "base64")).toEqual(Buffer.from(bytes.subarray(0, MiB)));
+      // 比较 base64 原文而不是解码后的 Buffer：toEqual 逐元素比较 1 MiB 的 Buffer 要 1.3 s，满载时会超时。
+      expect(outcome.result.body).toBe(Buffer.from(bytes.subarray(0, MiB)).toString("base64"));
     });
 
     it("returns a binary body under 1 MiB whole with its decoded size", async () => {
