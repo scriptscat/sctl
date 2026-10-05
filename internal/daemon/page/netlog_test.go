@@ -203,13 +203,15 @@ func TestNetworkIdleUnchangedByRecording(t *testing.T) {
 		}
 		So(count, ShouldEqual, 1)
 
-		Convey("等待开始之后的请求照常要结束才算空闲", func() {
+		Convey("第一个等网络空闲的动作开始跟踪之后开始的请求,照常要结束才算空闲", func() {
+			// 请求在下一次等待之前开始:等待开始时它就在进行中。若等待先检查、请求后到,那一刻确实空闲,
+			// 等待立即返回是正确的,测不到这条规则。
+			emit(m, 3, "", "Network.requestWillBeSent", sent("late", "GET", "https://app.test/late", "Fetch", 10))
 			done := make(chan error, 1)
 			go func() {
 				_, err := m.Do(context.Background(), Request{Action: "wait", TabID: tabRef(3), Timeout: 3 * time.Second, Input: json.RawMessage(`{"load":"networkidle"}`)})
 				done <- err
 			}()
-			emit(m, 3, "", "Network.requestWillBeSent", sent("late", "GET", "https://app.test/late", "Fetch", 10))
 			select {
 			case err := <-done:
 				t.Fatalf("networkidle returned %v while a request was in flight", err)
