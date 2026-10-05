@@ -160,6 +160,9 @@ func TestToolsListExposesAllTools(t *testing.T) {
 		So(toolNames(res), ShouldContain, "page_detach")
 		So(toolNames(res), ShouldContain, "debug_console")
 		So(toolNames(res), ShouldContain, "debug_clear")
+		So(toolNames(res), ShouldContain, "debug_start")
+		So(toolNames(res), ShouldContain, "debug_stop")
+		So(toolNames(res), ShouldContain, "debug_status")
 	})
 }
 

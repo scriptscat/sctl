@@ -139,6 +139,8 @@ troubleshooting.
 | `sctl page screenshot [-f FILE] [--full \| <ref> \| --selector <css>] [--format png\|jpeg] [--quality N]` | Save a screenshot of the viewport, the whole page, or one element to a file, and print the path. |
 | `sctl page eval <expression> [<ref>]` / `sctl page detach [--all]` | Evaluate JavaScript in a tab's page (with a ref, the expression is a function like `el => el.textContent` that receives the element), or detach the debugger from a tab or from every tab. |
 | `sctl page dialog accept [--text T] \| dismiss` | Accept or dismiss the JS dialog (alert, confirm, prompt, beforeunload) open in a tab; `--text` is the prompt input. |
+| `sctl debug start` / `sctl debug stop [--all]` | Start recording a tab, which keeps the debugger attached, or stop recording one tab or every tab. |
+| `sctl debug status` | List the tabs sctl has attached, with their recording state, time left, and record counts. |
 | `sctl debug console [--level L] [--source S] [--text T] [--after CURSOR] [--limit N]` | List a tab's console messages, uncaught exceptions, and browser messages, oldest first. |
 | `sctl debug network [--url S] [--method M] [--status 404\|4xx] [--type T] [--failed] [--after CURSOR] [--limit N]` | List a tab's network requests, oldest first. |
 | `sctl debug request <ID> [--body]` | Show one request's headers, request body, timing, and, with `--body`, response body. |
@@ -244,6 +246,15 @@ counts them); they are cleared when
 the debugger detaches (idle for 5 minutes, `sctl page detach`, the tab closing, the browser disconnecting, the daemon
 exiting, or the infobar being dismissed) and by `sctl debug clear`, which keeps the debugger attached. Debug commands
 still run while a JS dialog is open.
+
+To record while you reproduce a problem, run `sctl debug start` first: the tab is attached if needed and then stays
+attached — so the infobar stays shown — instead of detaching after 5 idle minutes. Recording ends with
+`sctl debug stop [--all]`, which keeps the records and lets the usual 5-minute idle detach resume, when the debugger
+detaches for any of the reasons above, or on its own after 60 minutes without a debug command on the tab: every
+`sctl debug` command on the tab restarts the 60 minutes, while page commands and `sctl debug status` do not.
+`sctl debug status [--tab N]` lists the tabs sctl has attached in the browser without attaching any: whether each
+records and how long until that ends, when the debugger attached, and how many console records and requests are kept
+and dropped.
 
 `sctl debug console` lists console messages (source `console`), uncaught exceptions and unhandled promise rejections
 (`exception`, with the first five stack frames in `-o json`), and Chrome's own messages such as CSP violations and failed

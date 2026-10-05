@@ -126,6 +126,8 @@ Chrome DevTools Protocol 驱动页面时,Chrome 会在浏览器顶部显示"sctl
 | `sctl page screenshot [-f FILE] [--full \| <ref> \| --selector <css>] [--format png\|jpeg] [--quality N]` | 把视口、整页或某个元素截图存成文件,并输出文件路径。 |
 | `sctl page eval <expression> [<ref>]` / `sctl page detach [--all]` | 在标签页的页面里执行 JavaScript(给了引用时表达式写成函数,如 `el => el.textContent`,元素作为参数传入),或断开一个标签页或全部标签页的调试器。 |
 | `sctl page dialog accept [--text T] \| dismiss` | 接受或取消标签页里打开的 JS 弹框(alert、confirm、prompt、beforeunload);`--text` 是 prompt 的输入内容。 |
+| `sctl debug start` / `sctl debug stop [--all]` | 开始录制标签页(调试器保持附加),或停止一个或全部标签页的录制。 |
+| `sctl debug status` | 列出 sctl 附加的标签页,以及录制状态、剩余时间和记录条数。 |
 | `sctl debug console [--level L] [--source S] [--text T] [--after CURSOR] [--limit N]` | 按时间先后列出标签页的控制台消息、未捕获的异常与浏览器消息。 |
 | `sctl debug network [--url S] [--method M] [--status 404\|4xx] [--type T] [--failed] [--after CURSOR] [--limit N]` | 按开始先后列出标签页的网络请求。 |
 | `sctl debug request <ID> [--body]` | 显示一个请求的请求头、请求体、各阶段耗时,加 `--body` 时一并给出响应体。 |
@@ -196,6 +198,12 @@ ScriptCat 中批准、拒绝或关闭确认流程；浏览器控制命令按设�
 记录在导航后保留,存在 daemon 内存里,每个标签页最多 1000 条控制台记录和 1000 个网络请求,满了丢弃最旧的(`-o json` 的 `dropped` 报告丢弃数);
 调试器断开(空闲 5 分钟、`sctl page detach`、标签页关闭、浏览器断开、daemon 退出或关掉提示条)时清空,`sctl debug clear` 也会清空,但不断开调试器。
 标签页上有打开的 JS 弹框时 debug 命令照常执行。
+
+要在复现问题时持续记录,先执行 `sctl debug start`:必要时附加标签页,之后调试器一直保持附加——提示条也一直显示——不再空闲 5 分钟断开。
+录制在以下情况结束:`sctl debug stop [--all]`(记录保留,恢复 5 分钟空闲断开)、调试器因上述任一原因断开、
+或连续 60 分钟没有对该标签页的 debug 命令(每条 `sctl debug` 命令都重新计时,页面命令和 `sctl debug status` 不算)。
+`sctl debug status [--tab N]` 列出这个浏览器里 sctl 附加的标签页,不附加任何标签页:是否在录制及还剩多久结束、调试器附加的时间、
+控制台记录和网络请求各有多少条、各丢弃了多少条。
 
 `sctl debug console` 按时间先后列出控制台消息(来源 `console`)、未捕获的异常与未处理的 Promise 拒绝(`exception`,`-o json` 里带调用栈的前 5 帧),
 以及 Chrome 自己的消息,如 CSP 违规和资源加载失败(`browser`),以表格输出序号、本地时间、级别、来源、位置与文本。

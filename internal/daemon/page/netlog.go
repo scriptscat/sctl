@@ -153,6 +153,12 @@ func (l *networkLog) clear() {
 	l.order = nil
 }
 
+func (l *networkLog) stats() bufferStats {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.stats()
+}
+
 // current 返回 requestId 的最后一跳;不是附加之后开始的请求(或已被丢弃)时为 nil。调用方持有 l.mu。
 func (l *networkLog) current(requestID string) *networkEntry {
 	hops := l.hops[requestID]

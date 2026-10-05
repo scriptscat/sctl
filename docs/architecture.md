@@ -71,6 +71,12 @@ the per-tab state, every path that detaches the debugger — idle detach, `page 
 the browser instance going away, a failed attach — drops them, and before the daemon itself detaches a tab it ends and
 waits for that tab's background tasks so none of them re-attaches it. Debug records never leave the daemon's memory.
 
+Recording (`debug start`/`stop`/`status`) is also per-tab state. A recording tab gets no idle-detach timer after its
+commands; instead a 60-minute timer, restarted by every debug command on the tab, ends the recording through the tab's
+queue and re-arms the idle timer, with a sequence number discarding a timer that fired late. The daemon tells the
+extension through `debugger.record` so its own idle fallback leaves the tab alone too. Because recording lives in the
+per-tab state, every detach path ends it.
+
 ## Directory layout
 
 `internal/` is grouped by **process role**: `daemon/` is the guard side (`sctl serve`), `client/` is the
@@ -92,7 +98,7 @@ internal/cli/               # subcommand definitions; spans both sides, hence to
   tabs.go windows.go        #   sctl tabs list|open|close|activate, sctl windows list
   page*.go                  #   sctl page snapshot|click|hover|fill|type|press|select|upload|scroll|goto|back|forward|
                             #   reload|wait|screenshot|eval|dialog|detach (reach /control/page through dispatchPage)
-  debug.go                  #   sctl debug console|clear (also through dispatchPage)
+  debug.go                  #   sctl debug start|stop|status|console|network|request|clear (also through dispatchPage)
   resource.go               #   the optional scripts|script|sc resource word shared by those verbs
   dispatch.go               #   action forwarding and bridge error → exit code mapping
 

@@ -59,6 +59,8 @@ type Tab struct {
 	console *recordBuffer[consoleRecord]
 	// network 是这次附加期间的网络记录,同样随 Tab 作废。
 	network *networkLog
+	// rec 是这次附加的录制状态,由 m.mu 保护。它随 Tab 作废,所以每条断开路径都结束录制。
+	rec recording
 
 	// life 在标签页断开(或附加失败)时结束,后台任务以它为界:分离之后发出的命令会让扩展悄悄重新附加。
 	life    context.Context
@@ -178,14 +180,17 @@ type action struct {
 	timeout time.Duration
 	// dialogSafe 表示动作在 JS 弹框打开时仍可执行(只有处理弹框本身),它不会被弹框拒绝或中断。
 	dialogSafe bool
+	// debug 表示 debug 命令:它为录制中的标签页重新开始 60 分钟的自动结束计时(spec 设计决策 4)。
+	debug bool
 }
 
 // attachHook 在标签页每次附加后、第一个动作执行前按注册顺序运行,为这次附加准备页面状态。
 type attachHook func(ctx context.Context, t *Tab) error
 
-// Clock 提供空闲断开计时;测试注入假时钟。
+// Clock 提供空闲断开与录制自动结束的计时;测试注入假时钟。
 type Clock interface {
 	AfterFunc(d time.Duration, f func()) Timer
+	Now() time.Time
 }
 
 // Timer 是 Clock.AfterFunc 返回的计时器。
@@ -196,6 +201,8 @@ type Timer interface {
 type realClock struct{}
 
 func (realClock) AfterFunc(d time.Duration, f func()) Timer { return time.AfterFunc(d, f) }
+
+func (realClock) Now() time.Time { return time.Now() }
 
 type tabKey struct {
 	instanceID string
@@ -294,15 +301,23 @@ func newManager(cdp CDP, log *zap.Logger, refStart uint64) *Manager {
 	m.addAction("navigate", action{tab: runNavigate, timeout: navigationTimeout})
 	m.register("wait", runWait)
 	m.registerBrowser("detach", m.detach)
-	m.addAction("debug.console", action{tab: runDebugConsole, dialogSafe: true})
-	m.addAction("debug.clear", action{tab: runDebugClear, dialogSafe: true})
-	m.addAction("debug.network", action{tab: runDebugNetwork, dialogSafe: true})
-	m.addAction("debug.request", action{tab: runDebugRequest, dialogSafe: true})
+	m.registerDebug("debug.console", runDebugConsole)
+	m.registerDebug("debug.clear", runDebugClear)
+	m.registerDebug("debug.network", runDebugNetwork)
+	m.registerDebug("debug.request", runDebugRequest)
+	m.registerDebug("debug.start", runDebugStart)
+	m.registerBrowser("debug.stop", m.debugStop)
+	m.registerBrowser("debug.status", m.debugStatus)
 	return m
 }
 
 func (m *Manager) register(name string, h handler) {
 	m.addAction(name, action{tab: h})
+}
+
+// registerDebug 注册一个 debug 命令:它不操作页面,所以在 JS 弹框打开时照常执行(spec §目标选择)。
+func (m *Manager) registerDebug(name string, h handler) {
+	m.addAction(name, action{tab: h, dialogSafe: true, debug: true})
 }
 
 func (m *Manager) registerBrowser(name string, h browserHandler) {
@@ -388,6 +403,13 @@ func (m *Manager) dispatch(ctx context.Context, a action, req Request) (any, err
 		if err != nil {
 			return nil, err
 		}
+		if a.debug {
+			m.mu.Lock()
+			if t.rec.on {
+				m.armRecording(t)
+			}
+			m.mu.Unlock()
+		}
 		if d := t.dialog.current(); d != nil && !a.dialogSafe {
 			return nil, dialogOpenError(tabID, *d)
 		}
@@ -465,11 +487,11 @@ func (m *Manager) acquire(ctx context.Context, key tabKey) (*slot, error) {
 	}
 }
 
-// finish 结束一条命令:标签页仍附加时重新开始空闲计时,然后放出 turn。
+// finish 结束一条命令:标签页仍附加且不在录制时重新开始空闲计时,然后放出 turn。
 func (m *Manager) finish(key tabKey, s *slot) {
 	m.mu.Lock()
 	s.cancel = nil
-	if s.tab != nil {
+	if s.tab != nil && !s.tab.rec.on {
 		s.idleSeq++
 		seq := s.idleSeq
 		s.idle = m.clock.AfterFunc(idleTimeout, func() { m.idleExpired(key, s, seq) })
@@ -503,15 +525,23 @@ func (m *Manager) stopIdle(s *slot) {
 	}
 }
 
+// dropTab 忘记标签页的附加:停止它的空闲计时与录制。扩展在断开时自行清除录制标记。调用方持有 m.mu。
+func (m *Manager) dropTab(s *slot) {
+	m.stopIdle(s)
+	if s.tab != nil {
+		m.endRecording(s.tab)
+	}
+	s.tab = nil
+}
+
 // clearTab 作废标签页的附加状态并以 cause 取消其正在执行的命令。调用方持有 m.mu。
 func (m *Manager) clearTab(key tabKey, s *slot, cause error) {
-	m.stopIdle(s)
 	for _, t := range []*Tab{s.tab, s.attaching} {
 		if t != nil {
 			t.endBackground()
 		}
 	}
-	s.tab = nil
+	m.dropTab(s)
 	s.attaching = nil
 	if s.cancel != nil {
 		s.cancel(cause)
@@ -581,8 +611,7 @@ func (m *Manager) idleExpired(key tabKey, armed *slot, seq uint64) {
 	t := s.tab
 	expired := s == armed && s.idleSeq == seq && t != nil
 	if expired {
-		s.tab = nil
-		s.idle = nil
+		m.dropTab(s)
 	}
 	m.mu.Unlock()
 	if expired {
@@ -670,12 +699,13 @@ func detachedError(message string) *Error {
 	return &Error{Code: generated.ErrorCodeDebuggerDetached, Message: message}
 }
 
-// detachInput 是 page detach 的输入:all 断开这个浏览器里的全部标签页。
+// detachInput 是 page detach 与 debug stop 的输入:all 作用于这个浏览器里的全部标签页。
 type detachInput struct {
 	All bool `json:"all"`
 }
 
-// detachResult 是 page detach 的结果:TabID 是单标签页模式下的目标,TabIDs 是实际断开的标签页。
+// detachResult 是 page detach 与 debug stop 的结果:TabID 是单标签页模式下的目标,TabIDs 是实际断开
+// (或停止录制)的标签页。
 type detachResult struct {
 	TabID  *int  `json:"tabId,omitempty"`
 	TabIDs []int `json:"tabIds"`
@@ -718,8 +748,7 @@ func (m *Manager) detach(ctx context.Context, instanceID string, req Request) (a
 		tabIDs, err := m.cdp.Detach(ctx, instanceID, &tabID)
 		// 后台任务已经结束,即使断开失败也不能再把标签页当作已附加:新出现的 iframe 不会再被放行。
 		m.mu.Lock()
-		m.stopIdle(s)
-		s.tab = nil
+		m.dropTab(s)
 		m.mu.Unlock()
 		if err != nil {
 			return nil, err

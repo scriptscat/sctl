@@ -199,6 +199,13 @@ func (t *fakeTimer) Stop() bool {
 	return pending
 }
 
+// Now 从 baseTime 起按 Advance 走动。
+func (c *fakeClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return baseTime.Add(c.now)
+}
+
 func (c *fakeClock) Advance(d time.Duration) {
 	c.mu.Lock()
 	c.now += d

@@ -478,7 +478,10 @@ The daemon drives the debugger lifecycle. A page command on a tab the daemon has
 `Emulation.setFocusEmulationEnabled {enabled: true}` through `debugger.send` first; that first send makes the
 extension attach. The daemon then treats the tab as attached until it sends `debugger.detach` — after 5 minutes
 without a page command on the tab, or on `page detach` — or until the extension reports `debugger.detached` for
-it, or the instance disconnects. Page commands on the same tab run one at a time in arrival order. A
+it, or the instance disconnects. `debug start` sends `debugger.record {recording: true}` after attaching, and the
+daemon then does not detach the tab for idleness; `debug stop`, or 60 minutes without a debug command on the tab,
+sends `debugger.record {recording: false}` and restarts the 5-minute idle timer. A detach ends recording on both sides
+without a `debugger.record`. Page commands on the same tab run one at a time in arrival order. A
 `debugger.detached` notification for a tab, or the instance disconnecting, fails the command running on that tab
 with `DEBUGGER_DETACHED`, and the next page command attaches again. The extension keeps a fallback of its own: a tab
 with no `debugger.send` or `debugger.body` for 10 minutes is detached and reported as `debugger.detached` with reason `idle_timeout`, so

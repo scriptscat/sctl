@@ -73,6 +73,19 @@ func (b *recordBuffer[T]) get(seq uint64) (rec T, ok bool) {
 	return b.items[(b.start+int(seq-oldest))%len(b.items)].rec, true
 }
 
+// stats 返回缓存里的条数与被丢弃的条数。
+func (b *recordBuffer[T]) stats() bufferStats {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return bufferStats{Records: len(b.items), Dropped: b.dropped}
+}
+
+// bufferStats 是 debug status 里一种缓存的条数与丢弃数。
+type bufferStats struct {
+	Records int    `json:"records"`
+	Dropped uint64 `json:"dropped"`
+}
+
 // clear 清空缓存并换一个 ID,之前签发的游标随之失效。
 func (b *recordBuffer[T]) clear() {
 	b.mu.Lock()

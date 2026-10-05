@@ -382,7 +382,7 @@ most 15 seconds for the browser to return the image; if it does not (a tab that 
 emulation, such as a minimized window or a frozen tab), the tool returns `PAGE_HIDDEN` rather than a blank image, and
 retrying with `activate` may help.
 
-The debug tools `debug_console`, `debug_network`, `debug_request`, and `debug_clear` read what sctl records for a tab while the debugger is attached to
+The debug tools `debug_start`, `debug_stop`, `debug_status`, `debug_console`, `debug_network`, `debug_request`, and `debug_clear` record and read what sctl records for a tab while the debugger is attached to
 it, whichever tool attached it. They take `browser`, `tabId`, and `timeoutMs` like the page tools, but not `activate`,
 and they still run while a JS dialog is open. A call on a tab that is not attached attaches it (the infobar appears)
 and returns what Chrome replays of the current document: its recent console messages and exceptions, and its CSP
@@ -393,6 +393,15 @@ tab closing, the browser disconnecting, the daemon exiting, or the infobar being
 keeps the debugger attached. Every debug result reports `tabId`, `attachedAt` (the time the debugger attached; replayed
 records are older), `recording`, and `dropped` (records dropped from the full buffer), and is marked
 `contentTrust: "untrusted-page-content"`.
+
+`debug_start` starts recording a tab so its records survive while a problem is reproduced: the tab is attached if
+needed and then stays attached, so Chrome's infobar stays shown the whole time, instead of detaching after 5 idle
+minutes. Recording ends with `debug_stop` (`all` stops every recording tab of the browser; the records are kept and
+the 5-minute idle detach resumes), when the debugger detaches for any reason above, or on its own after 60 minutes
+without a debug tool call on the tab: every debug call on the tab restarts the 60 minutes, while page tools and
+`debug_status` do not. `debug_status` lists the tabs sctl has attached in the browser, without attaching any, each with
+`tabId`, `attachedAt`, `recording`, `remainingMs` (while recording), and `console` and `network` counts of kept
+`records` and `dropped` ones; `debug_start` returns the tab's entry in the same shape.
 
 `debug_console` lists console messages (`source` `console`), uncaught exceptions and unhandled promise rejections
 (`exception`, with the first five stack frames in `stack`), and Chrome's own messages such as CSP violations and failed

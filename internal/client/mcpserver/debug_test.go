@@ -109,6 +109,59 @@ func TestDebugTools(t *testing.T) {
 			So(request.Description, ShouldContainSubstring, "untrusted")
 		})
 
+		Convey("debug_start、debug_stop、debug_status 以对应动作转发;debug_stop 的 all 作为动作输入", func() {
+			for _, c := range []struct {
+				tool, action string
+				args         map[string]any
+				input        string
+				tabID        bool
+			}{
+				{"debug_start", "debug.start", map[string]any{"tabId": 9}, `{}`, true},
+				{"debug_stop", "debug.stop", map[string]any{"tabId": 9}, `{}`, true},
+				{"debug_stop", "debug.stop", map[string]any{"all": true}, `{"all":true}`, false},
+				{"debug_status", "debug.status", map[string]any{"tabId": 9}, `{}`, true},
+				{"debug_status", "debug.status", map[string]any{"browser": "work"}, `{}`, false},
+			} {
+				caller.pages = nil
+				_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: c.tool, Arguments: c.args})
+				So(err, ShouldBeNil)
+				So(caller.pages, ShouldHaveLength, 1)
+				So(caller.pages[0].Action, ShouldEqual, c.action)
+				So(string(caller.pages[0].Input), ShouldEqualJSON, c.input)
+				if c.tabID {
+					So(*caller.pages[0].TabID, ShouldEqual, 9)
+				} else {
+					So(caller.pages[0].TabID, ShouldBeNil)
+				}
+			}
+		})
+
+		Convey("录制工具的参数不符合 schema 时不转发", func() {
+			for _, c := range []struct {
+				tool string
+				args map[string]any
+			}{
+				{"debug_start", map[string]any{"activate": true}},
+				{"debug_start", map[string]any{"all": true}},
+				{"debug_stop", map[string]any{"all": "yes"}},
+				{"debug_status", map[string]any{"all": true}},
+			} {
+				_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: c.tool, Arguments: c.args})
+				So(err, ShouldNotBeNil)
+			}
+			So(caller.pages, ShouldBeEmpty)
+		})
+
+		Convey("录制工具的描述写明提示条一直显示与 60 分钟自动结束", func() {
+			start := byName["debug_start"]
+			So(start, ShouldNotBeNil)
+			So(start.Description, ShouldContainSubstring, "infobar")
+			So(start.Description, ShouldContainSubstring, "60 minutes")
+			So(byName["debug_stop"], ShouldNotBeNil)
+			So(byName["debug_status"], ShouldNotBeNil)
+			So(byName["debug_status"].Description, ShouldContainSubstring, "remainingMs")
+		})
+
 		Convey("描述是静态文本,写明缓存上限、游标与不可信内容", func() {
 			console := byName["debug_console"]
 			So(console, ShouldNotBeNil)

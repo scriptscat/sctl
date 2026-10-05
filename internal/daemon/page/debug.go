@@ -29,7 +29,10 @@ type debugResult struct {
 }
 
 func (t *Tab) debugResult(dropped uint64) debugResult {
-	return debugResult{ContentTrust: contentTrustPage, TabID: t.id, AttachedAt: t.attachedAt, Dropped: dropped}
+	t.m.mu.Lock()
+	recording := t.rec.on
+	t.m.mu.Unlock()
+	return debugResult{ContentTrust: contentTrustPage, TabID: t.id, AttachedAt: t.attachedAt, Recording: recording, Dropped: dropped}
 }
 
 // debugList 是列表查询的结果:共同字段、按先后排列的记录与续查信息。

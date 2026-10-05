@@ -263,3 +263,120 @@ func TestDebugRequest(t *testing.T) {
 		})
 	})
 }
+
+func TestDebugStart(t *testing.T) {
+	Convey("sctl debug start 开始录制,摘要写明 tabId 与 60 分钟自动结束", t, func() {
+		t.Setenv("SCTL_BROWSER", "")
+		result := control.CallResult{OK: true, Result: json.RawMessage(`{"tabId":5,"attachedAt":"2026-10-04T10:00:00Z","recording":true,"remainingMs":3600000,"console":{"records":0,"dropped":0},"network":{"records":0,"dropped":0}}`)}
+
+		Convey("请求不带输入,--tab 作为目标", func() {
+			stub := stubPageDaemon(t, result)
+			code, out := runCLI("debug", "start", "--tab", "5")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "tab 5 is recording: the debugger stays attached until sctl debug stop, or 60 minutes without a debug command\n")
+			So(stub.last.Action, ShouldEqual, "debug.start")
+			So(*stub.last.TabID, ShouldEqual, 5)
+			So(string(stub.last.Input), ShouldEqual, `{}`)
+		})
+
+		Convey("无法附加的页面退出码 3", func() {
+			stubPageDaemon(t, pageError("PAGE_NOT_AUTOMATABLE", "cannot attach to chrome:// pages"))
+			code, _ := runCLI("debug", "start")
+			So(code, ShouldEqual, exitError)
+		})
+
+		Convey("多余的参数退出码 3,不发请求", func() {
+			stub := stubPageDaemon(t, result)
+			code, _ := runCLI("debug", "start", "extra")
+			So(code, ShouldEqual, exitError)
+			So(stub.calls, ShouldEqual, 0)
+		})
+	})
+}
+
+func TestDebugStop(t *testing.T) {
+	Convey("sctl debug stop", t, func() {
+		t.Setenv("SCTL_BROWSER", "")
+
+		Convey("结束一个标签页的录制:摘要写明 tabId", func() {
+			stub := stubPageDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"tabId":5,"tabIds":[5]}`)})
+			code, out := runCLI("debug", "stop", "--tab", "5")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "tab 5 stopped recording\n")
+			So(stub.last.Action, ShouldEqual, "debug.stop")
+			So(*stub.last.TabID, ShouldEqual, 5)
+			So(string(stub.last.Input), ShouldEqual, `{}`)
+		})
+
+		Convey("目标不在录制时也成功", func() {
+			stubPageDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"tabId":5,"tabIds":[]}`)})
+			code, out := runCLI("debug", "stop")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "tab 5 was not recording\n")
+		})
+
+		Convey("--all 结束全部录制", func() {
+			stub := stubPageDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"tabIds":[5,6]}`)})
+			code, out := runCLI("debug", "stop", "--all")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "tabs 5, 6 stopped recording\n")
+			So(string(stub.last.Input), ShouldEqual, `{"all":true}`)
+		})
+
+		Convey("--all 时没有录制中的标签页", func() {
+			stubPageDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"tabIds":[]}`)})
+			code, out := runCLI("debug", "stop", "--all")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "no tab was recording\n")
+		})
+
+		Convey("--all 与 --tab 不能同时给:退出码 3,不发请求", func() {
+			stub := stubPageDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"tabIds":[]}`)})
+			code, _ := runCLI("debug", "stop", "--all", "--tab", "5")
+			So(code, ShouldEqual, exitError)
+			So(stub.calls, ShouldEqual, 0)
+		})
+	})
+}
+
+func TestDebugStatus(t *testing.T) {
+	Convey("sctl debug status", t, func() {
+		t.Setenv("SCTL_BROWSER", "")
+		at := time.Date(2026, 10, 4, 10, 0, 0, 0, time.UTC)
+		raw, err := json.Marshal(map[string]any{"tabs": []map[string]any{
+			{"tabId": 5, "attachedAt": at, "recording": true, "remainingMs": 2_430_400, "console": map[string]any{"records": 3, "dropped": 0}, "network": map[string]any{"records": 1000, "dropped": 12}},
+			{"tabId": 6, "attachedAt": at.Add(time.Minute), "recording": false, "console": map[string]any{"records": 0, "dropped": 0}, "network": map[string]any{"records": 2, "dropped": 0}},
+		}})
+		So(err, ShouldBeNil)
+		result := control.CallResult{OK: true, Result: raw}
+
+		Convey("默认输出表格:标签页、录制状态、剩余时间、附加时间、各缓存条数与丢弃数;请求不带输入", func() {
+			stub := stubPageDaemon(t, result)
+			code, out := runCLI("debug", "status")
+			So(code, ShouldEqual, exitOK)
+			lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+			So(lines, ShouldHaveLength, 3)
+			So(strings.Fields(lines[0]), ShouldResemble, []string{"TAB", "RECORDING", "REMAINING", "ATTACHED", "CONSOLE", "NETWORK"})
+			So(strings.Fields(lines[1]), ShouldResemble, []string{"5", "yes", "40m30s", at.Local().Format("15:04:05"), "3", "1000", "(12", "dropped)"})
+			So(strings.Fields(lines[2]), ShouldResemble, []string{"6", "no", "-", at.Add(time.Minute).Local().Format("15:04:05"), "0", "2"})
+			So(stub.last.Action, ShouldEqual, "debug.status")
+			So(stub.last.TabID, ShouldBeNil)
+			So(string(stub.last.Input), ShouldEqual, `{}`)
+		})
+
+		Convey("--tab 原样转发;没有被附加的标签页时写明", func() {
+			stub := stubPageDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(`{"tabs":[]}`)})
+			code, out := runCLI("debug", "status", "--tab", "9")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldEqual, "no tab is attached\n")
+			So(*stub.last.TabID, ShouldEqual, 9)
+		})
+
+		Convey("-o json 输出完整结果", func() {
+			stubPageDaemon(t, result)
+			code, out := runCLI("debug", "status", "-o", "json")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldContainSubstring, `"remainingMs": 2430400`)
+		})
+	})
+}
