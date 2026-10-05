@@ -42,6 +42,44 @@ type Command struct {
 	Params    json.RawMessage
 }
 
+// BodyPart 选择取回请求体还是响应体。
+type BodyPart string
+
+const (
+	BodyPartRequest  BodyPart = "request"
+	BodyPartResponse BodyPart = "response"
+)
+
+// BodyQuery 是向扩展取一个请求的请求体或响应体;SessionID 非空时向标签页下的子会话(跨进程 iframe)取。
+type BodyQuery struct {
+	TabID     int
+	SessionID string
+	RequestID string
+	Part      BodyPart
+}
+
+// Chrome 不再保留一个体的原因(protocol.json 的 DebuggerBodyResult.unavailable)。
+const (
+	// BodyNavigated:页面已导航离开,之前所有请求的体都被丢弃。
+	BodyNavigated = "navigated"
+	// BodyNoData:请求进行中、失败、没有体,或页面没有读取 fetch 的响应体。
+	BodyNoData = "noData"
+	// BodyEvicted:超出 Chrome 的缓冲(单个资源约 20 MB),或被后来的响应挤出。
+	BodyEvicted = "evicted"
+	// BodyNoPostData:请求没有请求体。
+	BodyNoPostData = "noPostData"
+)
+
+// Body 是扩展取回的体,已在浏览器里截断到 1 MiB。Base64 表示 Text 是 base64 编码的二进制;Size 是截断前的字节数。
+// Unavailable 非空时 Chrome 已不再保留它,其余字段为零值。
+type Body struct {
+	Text        string
+	Base64      bool
+	Size        int
+	Truncated   bool
+	Unavailable string
+}
+
 // CDP 是页面自动化对浏览器实例的全部依赖。失败以 *Error 报告领域错误;ctx 结束时返回 ctx 的错误。
 type CDP interface {
 	// ResolveBrowser 按目标选择规则(docs/protocol.md §3.1)把名称或实例 ID 前缀解析为在线实例 ID。
@@ -61,4 +99,7 @@ type CDP interface {
 	// Record 让扩展对一个标签页开始(on 为 true)或停止录制:录制期间扩展不做兜底空闲断开,停止后重新计时。
 	// 开始录制要求标签页已附加,否则返回 DEBUGGER_DETACHED;停止一个未附加的标签页什么都不做。
 	Record(ctx context.Context, instanceID string, tabID int, on bool) error
+	// Body 让扩展取回一个请求的请求体或响应体,截断到 1 MiB 后回传。Chrome 不再保留它时返回带 Unavailable 的 Body
+	// 而不是错误;标签页未附加时返回 DEBUGGER_DETACHED,不附加它。
+	Body(ctx context.Context, instanceID string, q BodyQuery) (Body, error)
 }

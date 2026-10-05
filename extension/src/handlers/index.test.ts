@@ -163,6 +163,7 @@ describe("browser method handlers", () => {
         "debugger.send",
         "debugger.detach",
         "debugger.record",
+        "debugger.body",
       ]),
     );
   });

@@ -98,7 +98,7 @@ func tabList(ids ...int) string {
 }
 
 // answerAttach 应答附加后的准备命令,顺序与附加钩子一致:焦点模拟,开启 iframe 自动附加(扁平会话,新 iframe
-// 启动时暂停),开启 Page 域(JS 弹框与文档替换事件),读取主文档 URL,然后开启控制台与浏览器消息。
+// 启动时暂停),开启 Page 域(JS 弹框与文档替换事件),读取主文档 URL,然后开启控制台与浏览器消息,最后开启网络记录。
 func (e *extClient) answerAttach(tabID int) {
 	req := e.debuggerSend(tabID, "Emulation.setFocusEmulationEnabled")
 	e.writeResult(req.ID, json.RawMessage(`{"result":{}}`))
@@ -113,7 +113,7 @@ func (e *extClient) answerAttach(tabID int) {
 	e.writeResult(req.ID, json.RawMessage(`{"result":{}}`))
 	req = e.debuggerSend(tabID, "Page.getFrameTree")
 	e.writeResult(req.ID, json.RawMessage(`{"result":{"frameTree":{"frame":{"id":"main","url":"https://example.test/"}}}}`))
-	for _, method := range []string{"Runtime.enable", "Log.enable"} {
+	for _, method := range []string{"Runtime.enable", "Log.enable", "Network.enable"} {
 		req = e.debuggerSend(tabID, method)
 		e.writeResult(req.ID, json.RawMessage(`{"result":{}}`))
 	}

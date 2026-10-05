@@ -203,6 +203,21 @@ type CookiesSetResult struct {
 	} `json:"cookie"`
 }
 
+type DebuggerBodyParams struct {
+	Part      string  `json:"part"`
+	RequestId string  `json:"requestId"`
+	SessionId *string `json:"sessionId,omitempty"`
+	TabId     int     `json:"tabId"`
+}
+
+type DebuggerBodyResult struct {
+	Base64Encoded *bool   `json:"base64Encoded,omitempty"`
+	Body          *string `json:"body,omitempty"`
+	Size          *int    `json:"size,omitempty"`
+	Truncated     *bool   `json:"truncated,omitempty"`
+	Unavailable   *string `json:"unavailable,omitempty"`
+}
+
 type DebuggerDetachParams struct {
 	TabId *int `json:"tabId,omitempty"`
 }
@@ -810,6 +825,7 @@ const (
 	MethodCookiesList           Method = "cookies.list"
 	MethodCookiesRemove         Method = "cookies.remove"
 	MethodCookiesSet            Method = "cookies.set"
+	MethodDebuggerBody          Method = "debugger.body"
 	MethodDebuggerDetach        Method = "debugger.detach"
 	MethodDebuggerRecord        Method = "debugger.record"
 	MethodDebuggerSend          Method = "debugger.send"
@@ -887,6 +903,7 @@ var Methods = map[string]MethodMetadata{
 	"cookies.list":            {Params: "CookiesListParams", Result: "CookiesListResult", Scope: "cookies:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "items", Internal: false},
 	"cookies.remove":          {Params: "CookiesRemoveParams", Result: "CookiesRemoveResult", Scope: "cookies:remove", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: "", Internal: false},
 	"cookies.set":             {Params: "CookiesSetParams", Result: "CookiesSetResult", Scope: "cookies:set", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: false},
+	"debugger.body":           {Params: "DebuggerBodyParams", Result: "DebuggerBodyResult", Scope: "debugger:body", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: true},
 	"debugger.detach":         {Params: "DebuggerDetachParams", Result: "DebuggerDetachResult", Scope: "debugger:detach", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: true},
 	"debugger.record":         {Params: "DebuggerRecordParams", Result: "DebuggerRecordResult", Scope: "debugger:record", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: true},
 	"debugger.send":           {Params: "DebuggerSendParams", Result: "DebuggerSendResult", Scope: "debugger:send", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: true},

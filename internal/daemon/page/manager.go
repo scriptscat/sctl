@@ -48,7 +48,7 @@ type Tab struct {
 	nav        *navWatch
 	net        *netWatch
 	dialog     *dialogState
-	// watchingNetwork 表示这次附加已开启 Network 域。只在标签页队列里读写。
+	// watchingNetwork 表示这次附加里 networkidle 已开始跟踪进行中的请求。只在标签页队列里读写。
 	watchingNetwork bool
 	// onMac 缓存 browserOnMac 的结果,nil 表示还没问过。只在标签页队列里读写。
 	onMac *bool
@@ -57,6 +57,8 @@ type Tab struct {
 	location   *pageLocation
 	// console 是这次附加期间的控制台记录,随 Tab 作废,所以每条断开路径都清空它。
 	console *recordBuffer[consoleRecord]
+	// network 是这次附加期间的网络记录,同样随 Tab 作废。
+	network *networkLog
 
 	// life 在标签页断开(或附加失败)时结束,后台任务以它为界:分离之后发出的命令会让扩展悄悄重新附加。
 	life    context.Context
@@ -73,7 +75,8 @@ func (m *Manager) newTab(instanceID string, tabID int) *Tab {
 		m: m, instanceID: instanceID, id: tabID,
 		refs: newRefTable(), frames: newFrameSessions(), nav: newNavWatch(), net: newNetWatch(), dialog: &dialogState{},
 		attachedAt: time.Now(), location: &pageLocation{}, console: newRecordBuffer[consoleRecord](debugBufferSize),
-		life: life, endLife: endLife,
+		network: newNetworkLog(),
+		life:    life, endLife: endLife,
 	}
 }
 
@@ -257,6 +260,7 @@ func newManager(cdp CDP, log *zap.Logger, refStart uint64) *Manager {
 	m.addAttachHook(enablePage)
 	m.addAttachHook(readPageLocation)
 	m.addAttachHook(enableConsole)
+	m.addAttachHook(enableNetwork)
 	m.addEventHandler("Page.javascriptDialogOpening", onDialogOpening)
 	m.addEventHandler("Page.javascriptDialogClosed", onDialogClosed)
 	m.addEventHandler("Page.frameNavigated", onFrameNavigated)
@@ -270,7 +274,7 @@ func newManager(cdp CDP, log *zap.Logger, refStart uint64) *Manager {
 	for method, h := range networkEvents {
 		m.addEventHandler(method, h)
 	}
-	for _, events := range []map[string]eventHandler{consoleEvents, locationEvents} {
+	for _, events := range []map[string]eventHandler{consoleEvents, locationEvents, networkRecordEvents} {
 		for method, h := range events {
 			m.addEventHandler(method, h)
 		}
@@ -292,6 +296,8 @@ func newManager(cdp CDP, log *zap.Logger, refStart uint64) *Manager {
 	m.registerBrowser("detach", m.detach)
 	m.addAction("debug.console", action{tab: runDebugConsole, dialogSafe: true})
 	m.addAction("debug.clear", action{tab: runDebugClear, dialogSafe: true})
+	m.addAction("debug.network", action{tab: runDebugNetwork, dialogSafe: true})
+	m.addAction("debug.request", action{tab: runDebugRequest, dialogSafe: true})
 	return m
 }
 

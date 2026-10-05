@@ -114,6 +114,14 @@ export function validateCookiesSetResult(value: unknown): value is Protocol.Cook
   return (isRecord(value) && hasOnlyKeys(value, ["contentTrust", "cookie"]) && value["contentTrust"] === "untrusted-page-content" && (isRecord(value["cookie"]) && hasOnlyKeys(value["cookie"], ["domain", "expires", "httpOnly", "name", "partitionTopLevelSite", "path", "sameSite", "secure", "session", "value"]) && typeof value["cookie"]["domain"] === "string" && (value["cookie"]["expires"] === undefined || (typeof value["cookie"]["expires"] === "number" && Number.isInteger(value["cookie"]["expires"]) && value["cookie"]["expires"] >= 0)) && typeof value["cookie"]["httpOnly"] === "boolean" && typeof value["cookie"]["name"] === "string" && (value["cookie"]["partitionTopLevelSite"] === undefined || (typeof value["cookie"]["partitionTopLevelSite"] === "string")) && typeof value["cookie"]["path"] === "string" && (value["cookie"]["sameSite"] === "no_restriction" || value["cookie"]["sameSite"] === "lax" || value["cookie"]["sameSite"] === "strict" || value["cookie"]["sameSite"] === "unspecified") && typeof value["cookie"]["secure"] === "boolean" && typeof value["cookie"]["session"] === "boolean" && typeof value["cookie"]["value"] === "string"));
 }
 
+export function validateDebuggerBodyParams(value: unknown): value is Protocol.DebuggerBodyParams {
+  return (isRecord(value) && hasOnlyKeys(value, ["part", "requestId", "sessionId", "tabId"]) && (value["part"] === "request" || value["part"] === "response") && typeof value["requestId"] === "string" && (value["sessionId"] === undefined || (typeof value["sessionId"] === "string")) && typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0);
+}
+
+export function validateDebuggerBodyResult(value: unknown): value is Protocol.DebuggerBodyResult {
+  return (isRecord(value) && hasOnlyKeys(value, ["base64Encoded", "body", "size", "truncated", "unavailable"]) && (value["base64Encoded"] === undefined || (typeof value["base64Encoded"] === "boolean")) && (value["body"] === undefined || (typeof value["body"] === "string")) && (value["size"] === undefined || (typeof value["size"] === "number" && Number.isInteger(value["size"]) && value["size"] >= 0)) && (value["truncated"] === undefined || (typeof value["truncated"] === "boolean")) && (value["unavailable"] === undefined || ((value["unavailable"] === "navigated" || value["unavailable"] === "noData" || value["unavailable"] === "evicted" || value["unavailable"] === "noPostData"))));
+}
+
 export function validateDebuggerDetachParams(value: unknown): value is Protocol.DebuggerDetachParams {
   return (isRecord(value) && hasOnlyKeys(value, ["tabId"]) && (value["tabId"] === undefined || (typeof value["tabId"] === "number" && Number.isInteger(value["tabId"]) && value["tabId"] >= 0)));
 }
@@ -476,6 +484,7 @@ export const RPC_PARAM_VALIDATORS = {
   "cookies.list": validateCookiesListParams,
   "cookies.remove": validateCookiesRemoveParams,
   "cookies.set": validateCookiesSetParams,
+  "debugger.body": validateDebuggerBodyParams,
   "debugger.detach": validateDebuggerDetachParams,
   "debugger.record": validateDebuggerRecordParams,
   "debugger.send": validateDebuggerSendParams,
@@ -540,6 +549,7 @@ export const RPC_RESULT_VALIDATORS = {
   "cookies.list": validateCookiesListResult,
   "cookies.remove": validateCookiesRemoveResult,
   "cookies.set": validateCookiesSetResult,
+  "debugger.body": validateDebuggerBodyResult,
   "debugger.detach": validateDebuggerDetachResult,
   "debugger.record": validateDebuggerRecordResult,
   "debugger.send": validateDebuggerSendResult,

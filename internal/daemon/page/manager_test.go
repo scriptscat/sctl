@@ -33,7 +33,10 @@ type fakeCDP struct {
 	sent        []sentCommand
 	detaches    [][]int // 每次 Detach 的目标;nil 表示全部
 	records     []recordCall
-	attached    map[int]bool
+	bodies      []BodyQuery
+	// body 为 nil 时取体返回空文本。
+	body     func(q BodyQuery) (Body, error)
+	attached map[int]bool
 	// send 为 nil 时每条命令都成功返回 {}。
 	send func(ctx context.Context, cmd Command) (json.RawMessage, error)
 }
@@ -101,6 +104,23 @@ func (f *fakeCDP) Record(ctx context.Context, instanceID string, tabID int, on b
 	defer f.mu.Unlock()
 	f.records = append(f.records, recordCall{tabID: tabID, on: on})
 	return nil
+}
+
+func (f *fakeCDP) Body(ctx context.Context, instanceID string, q BodyQuery) (Body, error) {
+	f.mu.Lock()
+	f.bodies = append(f.bodies, q)
+	body := f.body
+	f.mu.Unlock()
+	if body == nil {
+		return Body{}, nil
+	}
+	return body(q)
+}
+
+func (f *fakeCDP) bodyCalls() []BodyQuery {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.bodies)
 }
 
 func (f *fakeCDP) Detach(ctx context.Context, instanceID string, tabID *int) ([]int, error) {
@@ -196,7 +216,7 @@ func (c *fakeClock) Advance(d time.Duration) {
 }
 
 // attachSequence 是附加钩子在标签页顶层会话上依次发出的命令。
-var attachSequence = []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", "Page.getFrameTree", "Runtime.enable", "Log.enable"}
+var attachSequence = []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", "Page.getFrameTree", "Runtime.enable", "Log.enable", "Network.enable"}
 
 // probeMethod 是测试动作发出的 CDP 命令,与附加钩子发出的命令区分开。
 const probeMethod = "Probe.run"

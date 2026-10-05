@@ -528,17 +528,17 @@ func TestChildSessionSetup(t *testing.T) {
 			}
 		})
 
-		Convey("新 iframe 的子会话先开启记录、Page 域与嵌套 iframe 的自动附加,最后放行", func() {
+		Convey("新 iframe 的子会话先开启网络、控制台记录、Page 域与嵌套 iframe 的自动附加,最后放行", func() {
 			attach("S1", "F1", "iframe")
 			So(eventually(resumed("S1")), ShouldBeTrue)
-			So(pg.sentTo("S1"), ShouldResemble, []string{"Runtime.enable", "Log.enable", "Page.enable", "Target.setAutoAttach", "Runtime.runIfWaitingForDebugger"})
+			So(pg.sentTo("S1"), ShouldResemble, []string{"Network.enable", "Runtime.enable", "Log.enable", "Page.enable", "Target.setAutoAttach", "Runtime.runIfWaitingForDebugger"})
 		})
 
-		Convey("开启记录失败时也放行", func() {
+		Convey("开启记录失败时也放行;网络记录已开启的不受影响", func() {
 			pg.setFail("S1", "Runtime.enable", &Error{Code: generated.ErrorCodeInvalidRequest, Message: "Session with given id not found."})
 			attach("S1", "F1", "iframe")
 			So(eventually(resumed("S1")), ShouldBeTrue)
-			So(pg.sentTo("S1"), ShouldResemble, []string{"Runtime.enable", "Runtime.runIfWaitingForDebugger"})
+			So(pg.sentTo("S1"), ShouldResemble, []string{"Network.enable", "Runtime.enable", "Runtime.runIfWaitingForDebugger"})
 		})
 
 		Convey("开启记录超时时也放行", func() {

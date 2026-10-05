@@ -59,6 +59,56 @@ func TestDebugTools(t *testing.T) {
 			So(caller.pages, ShouldBeEmpty)
 		})
 
+		Convey("debug_network 把筛选、游标与条数作为动作输入", func() {
+			_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "debug_network", Arguments: map[string]any{
+				"url": "/api", "method": "POST", "status": "4xx", "type": "fetch", "failed": true, "after": "00000000000000ab.2", "limit": 5, "tabId": 9,
+			}})
+			So(err, ShouldBeNil)
+			req := caller.pages[0]
+			So(req.Action, ShouldEqual, "debug.network")
+			So(*req.TabID, ShouldEqual, 9)
+			So(string(req.Input), ShouldEqualJSON, `{"url":"/api","method":"POST","status":"4xx","type":"fetch","failed":true,"after":"00000000000000ab.2","limit":5}`)
+		})
+
+		Convey("debug_request 以 debug.request 动作转发 id 与 body", func() {
+			_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "debug_request", Arguments: map[string]any{"id": 2, "body": true, "browser": "work"}})
+			So(err, ShouldBeNil)
+			req := caller.pages[0]
+			So(req.Action, ShouldEqual, "debug.request")
+			So(req.Browser, ShouldEqual, "work")
+			So(string(req.Input), ShouldEqualJSON, `{"id":2,"body":true}`)
+		})
+
+		Convey("网络工具的参数不符合 schema 时不转发", func() {
+			for _, c := range []struct {
+				tool string
+				args map[string]any
+			}{
+				{"debug_network", map[string]any{"status": "6xx"}},
+				{"debug_network", map[string]any{"status": "abc"}},
+				{"debug_network", map[string]any{"type": "ws"}},
+				{"debug_network", map[string]any{"failed": "yes"}},
+				{"debug_network", map[string]any{"activate": true}},
+				{"debug_request", map[string]any{}},
+				{"debug_request", map[string]any{"id": 0}},
+				{"debug_request", map[string]any{"id": 1, "activate": true}},
+			} {
+				_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: c.tool, Arguments: c.args})
+				So(err, ShouldNotBeNil)
+			}
+			So(caller.pages, ShouldBeEmpty)
+		})
+
+		Convey("网络工具的描述写明头与体不打码、1 MiB 截断与不可信内容", func() {
+			So(byName["debug_network"], ShouldNotBeNil)
+			So(byName["debug_network"].Description, ShouldContainSubstring, "redirectedFrom")
+			request := byName["debug_request"]
+			So(request, ShouldNotBeNil)
+			So(request.Description, ShouldContainSubstring, "not masked")
+			So(request.Description, ShouldContainSubstring, "1 MiB")
+			So(request.Description, ShouldContainSubstring, "untrusted")
+		})
+
 		Convey("描述是静态文本,写明缓存上限、游标与不可信内容", func() {
 			console := byName["debug_console"]
 			So(console, ShouldNotBeNil)

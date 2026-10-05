@@ -114,3 +114,152 @@ func TestDebugClear(t *testing.T) {
 		So(string(stub.last.Input), ShouldEqual, `{}`)
 	})
 }
+
+func TestDebugNetwork(t *testing.T) {
+	Convey("sctl debug network", t, func() {
+		t.Setenv("SCTL_BROWSER", "")
+		at := time.Date(2026, 10, 4, 10, 0, 0, 0, time.UTC)
+		result := func(hasMore bool) control.CallResult {
+			raw, err := json.Marshal(map[string]any{
+				"contentTrust": "untrusted-page-content", "tabId": 5, "attachedAt": at, "recording": false, "dropped": 0,
+				"records": []map[string]any{
+					{"id": 1, "method": "GET", "url": "https://app.test/", "type": "document", "state": "redirected", "status": 302, "startTime": at, "durationMs": 12.5, "transferSize": 90, "fromCache": false, "pageUrl": "https://app.test/"},
+					{"id": 2, "method": "POST", "url": "https://app.test/api\x1b[2J", "type": "fetch", "state": "finished", "status": 200, "startTime": at.Add(time.Second), "durationMs": 40, "transferSize": 512, "fromCache": false, "redirectedFrom": 1, "pageUrl": "https://app.test/"},
+					{"id": 3, "method": "GET", "url": "https://app.test/a.png", "type": "image", "state": "finished", "status": 200, "startTime": at.Add(time.Second), "durationMs": 1, "fromCache": true, "pageUrl": "https://app.test/"},
+					{"id": 4, "method": "GET", "url": "https://cdn.test/x.js", "type": "script", "state": "failed", "startTime": at.Add(time.Second), "error": "net::ERR_NAME_NOT_RESOLVED", "fromCache": false, "pageUrl": "https://app.test/"},
+					{"id": 5, "method": "GET", "url": "https://app.test/poll", "type": "xhr", "state": "pending", "startTime": at.Add(time.Second), "fromCache": false, "pageUrl": "https://app.test/"},
+				},
+				"next": "00000000000000ab.5", "hasMore": hasMore, "cursorReset": false,
+			})
+			So(err, ShouldBeNil)
+			return control.CallResult{OK: true, Result: raw}
+		}
+		local := func(d time.Duration) string { return at.Add(d).Local().Format("15:04:05.000") }
+
+		Convey("默认输出表格:ID、时间、方法、状态、类型、大小、耗时与 URL;进行中、失败与缓存写明;请求不带筛选", func() {
+			stub := stubPageDaemon(t, result(false))
+			code, out, errOut := runCLICapture("debug", "network")
+			So(code, ShouldEqual, exitOK)
+			lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+			So(lines, ShouldHaveLength, 6)
+			So(strings.Fields(lines[0]), ShouldResemble, []string{"ID", "TIME", "METHOD", "STATUS", "TYPE", "SIZE", "DURATION", "URL"})
+			So(strings.Fields(lines[1]), ShouldResemble, []string{"1", local(0), "GET", "302", "document", "90", "12.5ms", "https://app.test/"})
+			So(strings.Fields(lines[2]), ShouldResemble, []string{"2", local(time.Second), "POST", "200", "fetch", "512", "40ms", `https://app.test/api\x1b[2J`})
+			So(strings.Fields(lines[3]), ShouldResemble, []string{"3", local(time.Second), "GET", "200", "image", "(cache)", "1ms", "https://app.test/a.png"})
+			So(strings.Fields(lines[4]), ShouldResemble, []string{"4", local(time.Second), "GET", "failed:net::ERR_NAME_NOT_RESOLVED", "script", "-", "-", "https://cdn.test/x.js"})
+			So(strings.Fields(lines[5]), ShouldResemble, []string{"5", local(time.Second), "GET", "pending", "xhr", "-", "-", "https://app.test/poll"})
+			So(errOut, ShouldBeEmpty)
+			So(stub.last.Action, ShouldEqual, "debug.network")
+			So(string(stub.last.Input), ShouldEqual, `{"limit":100}`)
+		})
+
+		Convey("筛选、游标与条数原样转发", func() {
+			stub := stubPageDaemon(t, result(false))
+			code, _ := runCLI("debug", "network", "--url", "/api", "--method", "post", "--status", "4xx", "--type", "fetch", "--failed",
+				"--after", "00000000000000ab.2", "--limit", "5", "--tab", "9")
+			So(code, ShouldEqual, exitOK)
+			So(string(stub.last.Input), ShouldEqualJSON, `{"url":"/api","method":"post","status":"4xx","type":"fetch","failed":true,"after":"00000000000000ab.2","limit":5}`)
+			So(*stub.last.TabID, ShouldEqual, 9)
+		})
+
+		Convey("还有更多记录时 stderr 提示续查;-o json 输出完整结果", func() {
+			stubPageDaemon(t, result(true))
+			_, _, errOut := runCLICapture("debug", "network")
+			So(errOut, ShouldContainSubstring, "--after 00000000000000ab.5")
+			code, out := runCLI("debug", "network", "-o", "json")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldContainSubstring, `"redirectedFrom": 1`)
+		})
+
+		Convey("多余的参数与越界的 --limit 退出码 3,不发请求", func() {
+			stub := stubPageDaemon(t, result(false))
+			for _, args := range [][]string{{"debug", "network", "extra"}, {"debug", "network", "--limit", "0"}} {
+				code, _ := runCLI(args...)
+				So(code, ShouldEqual, exitError)
+			}
+			So(stub.calls, ShouldEqual, 0)
+		})
+	})
+}
+
+func TestDebugRequest(t *testing.T) {
+	Convey("sctl debug request", t, func() {
+		t.Setenv("SCTL_BROWSER", "")
+		at := time.Date(2026, 10, 4, 10, 0, 0, 0, time.UTC)
+		details := func(responseBody map[string]any) control.CallResult {
+			v := map[string]any{
+				"contentTrust": "untrusted-page-content", "tabId": 5, "attachedAt": at, "recording": false, "dropped": 0,
+				"id": 2, "method": "POST", "url": "https://app.test/api/login", "type": "fetch", "state": "finished", "status": 200, "statusText": "OK",
+				"startTime": at, "durationMs": 40, "transferSize": 512, "fromCache": false, "redirectedFrom": 1, "pageUrl": "https://app.test/",
+				"requestHeaders":  map[string]string{"Cookie": "sid=secret", "Authorization": "Bearer t0ken"},
+				"requestBody":     map[string]any{"body": "{\"user\":\"a\"}\nline2\x1b[2J", "size": 20},
+				"responseHeaders": map[string]string{"Content-Type": "text/plain"},
+				"timing":          map[string]float64{"dnsMs": 3, "waitMs": 18},
+				"remoteAddress":   "[2001:db8::1]:443",
+			}
+			if responseBody != nil {
+				v["responseBody"] = responseBody
+			}
+			raw, err := json.Marshal(v)
+			So(err, ShouldBeNil)
+			return control.CallResult{OK: true, Result: raw}
+		}
+
+		Convey("默认输出可读的摘要、头与体:头按名字排序、未打码,体里的控制字符转义但保留换行;请求带 ID", func() {
+			stub := stubPageDaemon(t, details(nil))
+			code, out, errOut := runCLICapture("debug", "request", "2")
+			So(code, ShouldEqual, exitOK)
+			So(errOut, ShouldBeEmpty)
+			So(out, ShouldStartWith, "POST https://app.test/api/login\n")
+			So(out, ShouldContainSubstring, "Status: 200 OK\n")
+			So(out, ShouldContainSubstring, "Redirected from: 1\n")
+			So(out, ShouldContainSubstring, "Remote address: [2001:db8::1]:443\n")
+			So(out, ShouldContainSubstring, "Timing: dns 3ms, wait 18ms\n")
+			So(out, ShouldContainSubstring, "Request headers:\n  Authorization: Bearer t0ken\n  Cookie: sid=secret\n")
+			So(out, ShouldContainSubstring, "Request body (20 bytes):\n{\"user\":\"a\"}\nline2\\x1b[2J\n")
+			So(out, ShouldContainSubstring, "Response headers:\n  Content-Type: text/plain\n")
+			So(out, ShouldNotContainSubstring, "Response body")
+			So(stub.last.Action, ShouldEqual, "debug.request")
+			So(string(stub.last.Input), ShouldEqual, `{"id":2}`)
+		})
+
+		Convey("--body 一并请求响应体;截断、base64 与不可用都写明", func() {
+			stub := stubPageDaemon(t, details(map[string]any{"body": "hello", "size": 5242880, "truncated": true}))
+			code, out := runCLI("debug", "request", "2", "--body")
+			So(code, ShouldEqual, exitOK)
+			So(string(stub.last.Input), ShouldEqualJSON, `{"id":2,"body":true}`)
+			So(out, ShouldContainSubstring, "Response body (first 1048576 of 5242880 bytes):\nhello\n")
+
+			stubPageDaemon(t, details(map[string]any{"body": "AAEC", "base64Encoded": true, "size": 3}))
+			_, out = runCLI("debug", "request", "2", "--body")
+			So(out, ShouldContainSubstring, "Response body (3 bytes, base64):\nAAEC\n")
+
+			stubPageDaemon(t, details(map[string]any{"body": nil, "unavailable": "the page navigated away"}))
+			code, out = runCLI("debug", "request", "2", "--body")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldContainSubstring, "Response body: unavailable: the page navigated away\n")
+		})
+
+		Convey("-o json 输出完整结果", func() {
+			stubPageDaemon(t, details(nil))
+			_, out := runCLI("debug", "request", "2", "-o", "json")
+			So(out, ShouldContainSubstring, `"Cookie": "sid=secret"`)
+		})
+
+		Convey("ID 不是正整数或个数不对时退出码 3,不发请求", func() {
+			stub := stubPageDaemon(t, details(nil))
+			for _, args := range [][]string{{"debug", "request"}, {"debug", "request", "x"}, {"debug", "request", "0"}, {"debug", "request", "1", "2"}} {
+				code, _ := runCLI(args...)
+				So(code, ShouldEqual, exitError)
+			}
+			So(stub.calls, ShouldEqual, 0)
+		})
+
+		Convey("daemon 的 NOT_FOUND 退出码 3", func() {
+			stubPageDaemon(t, pageError("NOT_FOUND", "no request 99 in the records of tab 5"))
+			code, _, _, err := runCLIResult(strings.NewReader(""), "debug", "request", "99")
+			So(code, ShouldEqual, exitError)
+			So(err.Error(), ShouldContainSubstring, "no request 99")
+		})
+	})
+}

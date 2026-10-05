@@ -4,9 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/scriptscat/sctl/internal/pkg/protocol/generated"
 )
 
 // 调试查询的条数上限(spec §查询):默认 100,最多 1000。
@@ -117,5 +121,172 @@ func runDebugClear(_ context.Context, t *Tab, input json.RawMessage) (any, error
 		return nil, err
 	}
 	t.console.clear()
+	t.network.clear()
 	return t.debugResult(0), nil
+}
+
+type networkQuery struct {
+	pageQuery
+	URL    string `json:"url"`
+	Method string `json:"method"`
+	Status string `json:"status"`
+	Type   string `json:"type"`
+	Failed bool   `json:"failed"`
+}
+
+// statusFilter 是 --status:具体的状态码(404),或一个状态类(4xx)。
+var statusFilter = regexp.MustCompile(`^[1-5](xx|[0-9]{2})$`)
+
+// match 返回筛选条件:URL 按子串匹配,方法不区分大小写,--failed 只要网络层面失败的请求(不含 4xx/5xx 响应)。
+func (q networkQuery) match() (func(*networkRecord) bool, error) {
+	if q.Status != "" && !statusFilter.MatchString(q.Status) {
+		return nil, invalidRequest(fmt.Sprintf("invalid status %q: use a status code such as 404, or a class such as 4xx", q.Status))
+	}
+	if q.Type != "" && !slices.Contains(networkTypes, q.Type) {
+		return nil, invalidRequest(fmt.Sprintf("unknown type %q: use one of %s", q.Type, strings.Join(networkTypes, ", ")))
+	}
+	return func(r *networkRecord) bool {
+		return (q.URL == "" || strings.Contains(r.URL, q.URL)) &&
+			(q.Method == "" || strings.EqualFold(r.Method, q.Method)) &&
+			(q.Status == "" || matchStatus(q.Status, r.Status)) &&
+			(q.Type == "" || r.Type == q.Type) &&
+			(!q.Failed || r.State == requestFailed)
+	}, nil
+}
+
+func matchStatus(filter string, status int) bool {
+	if status == 0 {
+		return false
+	}
+	code := strconv.Itoa(status)
+	if strings.HasSuffix(filter, "xx") {
+		return code[:1] == filter[:1]
+	}
+	return code == filter
+}
+
+func runDebugNetwork(_ context.Context, t *Tab, input json.RawMessage) (any, error) {
+	var q networkQuery
+	if err := decodeInput(input, &q); err != nil {
+		return nil, err
+	}
+	match, err := q.match()
+	if err != nil {
+		return nil, err
+	}
+	after, limit, err := q.parse()
+	if err != nil {
+		return nil, err
+	}
+	return newDebugList(t, t.network.query(after, limit, match)), nil
+}
+
+type requestQuery struct {
+	ID   *int64 `json:"id"`
+	Body bool   `json:"body"`
+}
+
+// requestDetails 是 debug request 的结果:共同字段、摘要与详情。头与体原样给出,不打码(spec 设计决策 2)。
+type requestDetails struct {
+	debugResult
+	networkRecord
+	RequestHeaders  map[string]string `json:"requestHeaders"`
+	RequestBody     *bodyContent      `json:"requestBody,omitempty"`
+	ResponseHeaders map[string]string `json:"responseHeaders,omitempty"`
+	ResponseBody    *bodyContent      `json:"responseBody,omitempty"`
+	Timing          *requestTiming    `json:"timing,omitempty"`
+	RemoteAddress   string            `json:"remoteAddress,omitempty"`
+}
+
+// bodyContent 是请求体或响应体:Body 为 null 时 Unavailable 写明原因。
+type bodyContent struct {
+	Body          *string `json:"body"`
+	Base64Encoded bool    `json:"base64Encoded,omitempty"`
+	Size          *int    `json:"size,omitempty"`
+	Truncated     bool    `json:"truncated,omitempty"`
+	Unavailable   string  `json:"unavailable,omitempty"`
+}
+
+func unavailable(reason string) *bodyContent { return &bodyContent{Unavailable: reason} }
+
+// bodyReasons 把扩展报告的不可用代码写成给调用方的原因(真机探针)。
+var bodyReasons = map[string]string{
+	BodyNavigated:  "the page navigated away; Chrome drops the bodies of earlier requests on navigation",
+	BodyNoData:     "Chrome kept no body: the response had none, or the page did not read it",
+	BodyEvicted:    "the body is over Chrome's retention limit (about 20 MB per resource) or was pushed out by later responses",
+	BodyNoPostData: "Chrome kept no request body",
+}
+
+func runDebugRequest(ctx context.Context, t *Tab, input json.RawMessage) (any, error) {
+	var q requestQuery
+	if err := decodeInput(input, &q); err != nil {
+		return nil, err
+	}
+	if q.ID == nil || *q.ID < 1 {
+		return nil, invalidRequest("give the id of a request from debug network")
+	}
+	s, ok := t.network.snapshot(uint64(*q.ID))
+	if !ok {
+		return nil, &Error{Code: generated.ErrorCodeNotFound, Message: fmt.Sprintf("no request %d in the records of tab %d: it was never recorded, was dropped from the full buffer, or the records were cleared", *q.ID, t.id)}
+	}
+	res := requestDetails{
+		debugResult: t.debugResult(s.dropped), networkRecord: s.rec,
+		RequestHeaders: s.requestHeaders, ResponseHeaders: s.responseHeaders, Timing: s.timing, RemoteAddress: s.remoteAddress,
+	}
+	if res.RequestHeaders == nil {
+		res.RequestHeaders = map[string]string{}
+	}
+	if s.hasPostData {
+		body, err := t.fetchBody(ctx, s.requestSession, s.requestID, BodyPartRequest)
+		if err != nil {
+			return nil, err
+		}
+		res.RequestBody = body
+	}
+	if q.Body {
+		if reason := noResponseBody(s.rec); reason != "" {
+			res.ResponseBody = unavailable(reason)
+		} else {
+			body, err := t.fetchBody(ctx, s.responseSession, s.requestID, BodyPartResponse)
+			if err != nil {
+				return nil, err
+			}
+			res.ResponseBody = body
+		}
+	}
+	return res, nil
+}
+
+// noResponseBody 是不必问浏览器就知道没有响应体的原因。重定向的各跳共用 requestId,向浏览器取到的会是最后一跳的体。
+func noResponseBody(r networkRecord) string {
+	switch {
+	case r.Type == typeWebSocket:
+		return "WebSocket messages are not recorded"
+	case r.State == requestPending:
+		return "the request is still in flight, or the page has not read the response body"
+	case r.State == requestFailed:
+		return "the request failed: " + r.Error
+	case r.State == requestRedirected:
+		return "this hop is a redirect; Chrome keeps no body for it"
+	}
+	return ""
+}
+
+// fetchBody 经扩展取一个体。发出请求的跨进程 iframe 已经不在时,它的子会话不再接受命令。
+func (t *Tab) fetchBody(ctx context.Context, sessionID, requestID string, part BodyPart) (*bodyContent, error) {
+	if sessionID != "" && !t.frames.alive(sessionID) {
+		return unavailable("the cross-origin iframe that made this request is gone"), nil
+	}
+	b, err := t.m.cdp.Body(ctx, t.instanceID, BodyQuery{TabID: t.id, SessionID: sessionID, RequestID: requestID, Part: part})
+	if err != nil {
+		return nil, err
+	}
+	if b.Unavailable != "" {
+		reason, ok := bodyReasons[b.Unavailable]
+		if !ok {
+			reason = "Chrome kept no body (" + b.Unavailable + ")"
+		}
+		return unavailable(reason), nil
+	}
+	return &bodyContent{Body: &b.Text, Base64Encoded: b.Base64, Size: &b.Size, Truncated: b.Truncated}, nil
 }

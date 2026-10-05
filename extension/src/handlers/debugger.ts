@@ -1,11 +1,29 @@
 import type { StorageLike } from "@/background/controller";
 import { HandlerError, type RpcHandler } from "@/background/registry";
-import type { NotificationMethod, NotificationParams } from "@/protocol/generated/protocol.generated";
+import type { NotificationMethod, NotificationParams, RpcResult } from "@/protocol/generated/protocol.generated";
 import { requireTab } from "./targets";
 
 // 守护进程持有 5 分钟的权威超时；这里只是扩展侧的兜底，防止守护进程失联后调试器提示条一直挂着。
 export const IDLE_DETACH_MS = 10 * 60_000;
 const IDLE_REASON = "idle_timeout";
+
+// 请求体与响应体回传前截断到的字节数（文本按 UTF-8 计）。截断必须在这里做：Chrome 只能一次取回整个体，
+// 超过一个 4 MiB 协议帧的体经 debugger.send 原样回传时一个字节也拿不到。
+export const BODY_LIMIT_BYTES = 1024 * 1024;
+
+type BodyResult = RpcResult<"debugger.body">;
+type Unavailable = NonNullable<BodyResult["unavailable"]>;
+
+// Chrome 不再保留一个体时 getResponseBody / getRequestPostData 的报错原文（真机探针，Chrome 125 与 153）。
+const UNAVAILABLE: [RegExp, Unavailable][] = [
+  // 页面导航之后，之前所有请求的资源记录都被丢弃。
+  [/No resource with given id/, "navigated"],
+  // 请求进行中、失败、没有响应体，或页面没有读取 fetch 的响应体。
+  [/No data found for resource with given identifier/, "noData"],
+  // 超出 Chrome 的缓冲（单个资源约 20 MB），或被后来的响应挤出。
+  [/evicted from inspector cache/, "evicted"],
+  [/No post data available/, "noPostData"],
+];
 
 export type NotifyFn = <N extends NotificationMethod>(method: N, params: NotificationParams<N>) => void;
 
@@ -93,6 +111,35 @@ export class DebuggerRelay {
     this.armIdle(params.tabId);
     this.persist();
     return { recording: params.recording };
+  };
+
+  // 取回一个请求的请求体或响应体，截断到 BODY_LIMIT_BYTES 后回传，并给出原始大小。Chrome 不再保留它时
+  // 不算错误，答 unavailable 与原因。和 record 一样不附加：daemon 只为已附加时记下的请求取体。
+  readonly body: RpcHandler<"debugger.body"> = async (params) => {
+    await this.restored;
+    await Promise.allSettled([this.attaching.get(params.tabId)].filter((p) => p !== undefined));
+    if (!this.idle.has(params.tabId)) {
+      throw new HandlerError("DEBUGGER_DETACHED", `the debugger is not attached to tab ${params.tabId}`);
+    }
+    this.armIdle(params.tabId);
+    const target =
+      params.sessionId === undefined ? { tabId: params.tabId } : { tabId: params.tabId, sessionId: params.sessionId };
+    const method = params.part === "request" ? "Network.getRequestPostData" : "Network.getResponseBody";
+    let raw: { body?: string; postData?: string; base64Encoded?: boolean };
+    try {
+      raw = (await chrome.debugger.sendCommand(target, method, { requestId: params.requestId })) as typeof raw;
+    } catch (error) {
+      if (!this.idle.has(params.tabId)) {
+        throw new HandlerError("DEBUGGER_DETACHED", "the debugger detached while the body was read");
+      }
+      const message = errorMessage(error);
+      const unavailable = UNAVAILABLE.find(([pattern]) => pattern.test(message));
+      if (unavailable) {
+        return { unavailable: unavailable[1] };
+      }
+      throw new HandlerError("INVALID_REQUEST", message);
+    }
+    return truncateBody((params.part === "request" ? raw.postData : raw.body) ?? "", raw.base64Encoded === true);
   };
 
   // 连接断开后没有人能再驱动这些标签页，全部释放；此时也无法通知守护进程。
@@ -222,6 +269,29 @@ export class DebuggerRelay {
       console.warn(`detaching the debugger from tab ${tabId} failed`, error);
     }
   }
+}
+
+// truncateBody 把体截到 BODY_LIMIT_BYTES：base64 按解码后的字节截，再重新编码；文本按 UTF-8 字节截，
+// 不切开一个字符。size 是截断前的字节数。
+export function truncateBody(body: string, base64Encoded: boolean): BodyResult {
+  if (base64Encoded) {
+    const padding = body.endsWith("==") ? 2 : body.endsWith("=") ? 1 : 0;
+    const size = (body.length / 4) * 3 - padding;
+    if (size <= BODY_LIMIT_BYTES) {
+      return { body, base64Encoded, size, truncated: false };
+    }
+    // 只解码够用的前缀：完整的体可能有 20 MB。
+    const prefix = atob(body.slice(0, Math.ceil(BODY_LIMIT_BYTES / 3) * 4)).slice(0, BODY_LIMIT_BYTES);
+    return { body: btoa(prefix), base64Encoded, size, truncated: true };
+  }
+  const encoder = new TextEncoder();
+  const size = encoder.encode(body).length;
+  if (size <= BODY_LIMIT_BYTES) {
+    return { body, base64Encoded, size, truncated: false };
+  }
+  // encodeInto 只写入完整的字符，read 是写进去的 UTF-16 码元数。
+  const { read } = encoder.encodeInto(body, new Uint8Array(BODY_LIMIT_BYTES));
+  return { body: body.slice(0, read), base64Encoded, size, truncated: true };
 }
 
 function errorMessage(error: unknown): string {

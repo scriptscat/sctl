@@ -30,11 +30,13 @@ type frameSession struct {
 	parent string
 	// url 是这个 frame 当前文档的 URL,写进来自子会话的调试记录。
 	url string
+	// iframe 表示目标是跨进程 iframe;worker 等其他目标的网络请求不记录。
+	iframe bool
 	// setupDone 在 setupChildSession 结束(无论成败)时关闭。
 	setupDone chan struct{}
 	// ready 表示已在这个会话上开启自动附加与 Page 域。
 	ready bool
-	// network 表示已在这个会话上开启 Network 域。只在标签页队列里读写。
+	// network 表示已在这个会话上开启 Network 域。
 	network bool
 }
 
@@ -43,10 +45,10 @@ func newFrameSessions() *frameSessions {
 }
 
 // attached 记录 parent 会话报告的子会话。同一个 frame 换进程时,新会话的附加可能早于旧会话的分离。
-func (fs *frameSessions) attached(parent, sessionID, frameID, url string) {
+func (fs *frameSessions) attached(parent, sessionID, frameID, url string, iframe bool) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
-	fs.sessions[sessionID] = &frameSession{frameID: frameID, parent: parent, url: url, setupDone: make(chan struct{})}
+	fs.sessions[sessionID] = &frameSession{frameID: frameID, parent: parent, url: url, iframe: iframe, setupDone: make(chan struct{})}
 	fs.byFrame[frameID] = sessionID
 }
 
@@ -58,6 +60,14 @@ func (fs *frameSessions) url(sessionID string) string {
 		return s.url
 	}
 	return ""
+}
+
+// isIframe 表示 sessionID 是仍然附加着的跨进程 iframe 子会话。
+func (fs *frameSessions) isIframe(sessionID string) bool {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	s, ok := fs.sessions[sessionID]
+	return ok && s.iframe
 }
 
 // navigated 在子会话的 frame 自己导航时更新它的 URL;子会话里嵌套的同进程 iframe 不算。
@@ -144,6 +154,13 @@ func (fs *frameSessions) withoutNetwork() []sessionRef {
 	return out
 }
 
+func (fs *frameSessions) hasNetwork(sessionID string) bool {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	s, ok := fs.sessions[sessionID]
+	return ok && s.network
+}
+
 func (fs *frameSessions) markNetwork(sessionID string) {
 	fs.mu.Lock()
 	defer fs.mu.Unlock()
@@ -219,7 +236,7 @@ func onTargetAttached(t *Tab, sessionID string, params json.RawMessage) {
 		t.m.log.Debug("ignoring a malformed Target.attachedToTarget event", zap.Int("tabId", t.id), zap.Error(err))
 		return
 	}
-	t.frames.attached(sessionID, ev.SessionID, ev.TargetInfo.TargetID, ev.TargetInfo.URL)
+	t.frames.attached(sessionID, ev.SessionID, ev.TargetInfo.TargetID, ev.TargetInfo.URL, ev.TargetInfo.Type == "iframe")
 	t.net.frameAttached(ev.TargetInfo.TargetID, ev.SessionID)
 }
 
@@ -241,7 +258,7 @@ func onChildSessionAttached(t *Tab, _ string, params json.RawMessage) {
 	}
 }
 
-// setupChildSession 在跨进程 iframe 的子会话上开启控制台记录、Page 域与嵌套 iframe 的自动附加,然后放行它。
+// setupChildSession 在跨进程 iframe 的子会话上开启网络与控制台记录、Page 域与嵌套 iframe 的自动附加,然后放行它。
 // 不是 iframe 的目标(worker)不记录,只放行。无论开启是否成功都放行:自动附加让新目标在启动时暂停,
 // 不放行它就一直卡住,第 3 期的导航与 networkidle 也会被拖住。标签页断开时不必放行,调试器分离会让目标继续。
 func (t *Tab) setupChildSession(sessionID string, iframe bool, done chan struct{}) {
@@ -262,7 +279,12 @@ func (t *Tab) setupChildSession(sessionID string, iframe bool, done chan struct{
 }
 
 // prepareChildSession 是子会话放行之前开启的全部域;要在 iframe 最早的事件之前开启的新域加在这里。
+// Network 最先开启:开启之前的请求不会回放,控制台记录开启失败时网络记录也已在了。
 func (t *Tab) prepareChildSession(ctx context.Context, sessionID string) error {
+	if err := t.sendTo(ctx, sessionID, "Network.enable", networkEnableParams, nil); err != nil {
+		return err
+	}
+	t.frames.markNetwork(sessionID)
 	for _, c := range []struct {
 		method string
 		params any

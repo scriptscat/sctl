@@ -654,6 +654,16 @@
       "level": "L0",
       "peer": "browser",
       "internal": true
+    },
+    "debugger.body": {
+      "params": "DebuggerBodyParams",
+      "result": "DebuggerBodyResult",
+      "scope": "debugger:body",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "internal": true
     }
   },
   "notifications": {
@@ -3531,6 +3541,63 @@
       "required": [
         "recording"
       ],
+      "additionalProperties": false
+    },
+    "DebuggerBodyParams": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "part": {
+          "type": "string",
+          "enum": [
+            "request",
+            "response"
+          ]
+        }
+      },
+      "required": [
+        "tabId",
+        "requestId",
+        "part"
+      ],
+      "additionalProperties": false
+    },
+    "DebuggerBodyResult": {
+      "type": "object",
+      "properties": {
+        "body": {
+          "type": "string"
+        },
+        "base64Encoded": {
+          "type": "boolean"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "unavailable": {
+          "type": "string",
+          "enum": [
+            "navigated",
+            "noData",
+            "evicted",
+            "noPostData"
+          ]
+        }
+      },
       "additionalProperties": false
     },
     "DebuggerEventNotification": {

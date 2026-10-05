@@ -44,19 +44,33 @@ func randomBufferID() uint64 {
 	return binary.BigEndian.Uint64(b[:])
 }
 
-// add 追加一条记录;build 收到分配给它的序号。
-func (b *recordBuffer[T]) add(build func(seq uint64) T) {
+// add 追加一条记录;build 收到分配给它的序号。缓存已满时丢弃最旧的一条,并返回它(ok 为 true)。
+func (b *recordBuffer[T]) add(build func(seq uint64) T) (evicted T, ok bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.last++
 	entry := buffered[T]{seq: b.last, rec: build(b.last)}
 	if len(b.items) < b.capacity {
 		b.items = append(b.items, entry)
-		return
+		return evicted, false
 	}
+	evicted = b.items[b.start].rec
 	b.items[b.start] = entry
 	b.start = (b.start + 1) % b.capacity
 	b.dropped++
+	return evicted, true
+}
+
+// get 返回序号为 seq 的记录;它不在缓存里(还没有、已被丢弃或已清空)时 ok 为 false。
+func (b *recordBuffer[T]) get(seq uint64) (rec T, ok bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	// 缓存里的序号从最旧到最新连续。
+	oldest := b.last - uint64(len(b.items)) + 1
+	if len(b.items) == 0 || seq < oldest || seq > b.last {
+		return rec, false
+	}
+	return b.items[(b.start+int(seq-oldest))%len(b.items)].rec, true
 }
 
 // clear 清空缓存并换一个 ID,之前签发的游标随之失效。

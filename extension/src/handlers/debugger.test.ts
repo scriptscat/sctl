@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { HandlerRegistry } from "@/background/registry";
-import { validateDebuggerDetachResult, validateDebuggerSendResult } from "@/protocol/generated/validators.generated";
+import {
+  validateDebuggerBodyResult,
+  validateDebuggerDetachResult,
+  validateDebuggerSendResult,
+} from "@/protocol/generated/validators.generated";
 import type { NotificationMethod, NotificationParams } from "@/protocol/generated/protocol.generated";
-import { DebuggerRelay, type AttachedTabsStorage } from "./debugger";
+import { BODY_LIMIT_BYTES, DebuggerRelay, type AttachedTabsStorage } from "./debugger";
 import { registerHandlers } from "./index";
 
 type Notice = { [N in NotificationMethod]: { method: N; params: NotificationParams<N> } }[NotificationMethod];
@@ -153,6 +157,137 @@ describe("debugger relay", () => {
         ok: false,
         code: "DEBUGGER_DETACHED",
       });
+    });
+  });
+
+  describe("debugger.body", () => {
+    const MiB = 1024 * 1024;
+
+    async function attached(): Promise<void> {
+      await registry.dispatch("debugger.send", { tabId: 5, method: "Network.enable" });
+      dbg.sendCommand.mockReset();
+    }
+
+    async function body(params: Record<string, unknown>): Promise<unknown> {
+      const outcome = await registry.dispatch("debugger.body", { tabId: 5, requestId: "R1", ...params });
+      if (outcome.ok) {
+        expect(validateDebuggerBodyResult(outcome.result)).toBe(true);
+      }
+      return outcome;
+    }
+
+    it("truncates at 1 MiB", () => {
+      expect(BODY_LIMIT_BYTES).toBe(MiB);
+    });
+
+    it("reads the request body with Network.getRequestPostData on the named session", async () => {
+      await attached();
+      dbg.sendCommand.mockResolvedValue({ postData: "a=1&b=é" });
+
+      expect(await body({ sessionId: "S1", part: "request" })).toEqual({
+        ok: true,
+        result: { body: "a=1&b=é", base64Encoded: false, size: 8, truncated: false },
+      });
+      expect(dbg.sendCommand).toHaveBeenCalledWith({ tabId: 5, sessionId: "S1" }, "Network.getRequestPostData", {
+        requestId: "R1",
+      });
+    });
+
+    it("reads the response body with Network.getResponseBody on the top-level session", async () => {
+      await attached();
+      dbg.sendCommand.mockResolvedValue({ body: "hello", base64Encoded: false });
+
+      expect(await body({ part: "response" })).toEqual({
+        ok: true,
+        result: { body: "hello", base64Encoded: false, size: 5, truncated: false },
+      });
+      expect(dbg.sendCommand).toHaveBeenCalledWith({ tabId: 5 }, "Network.getResponseBody", { requestId: "R1" });
+    });
+
+    it("returns a text body of exactly 1 MiB whole", async () => {
+      await attached();
+      const text = "x".repeat(MiB);
+      dbg.sendCommand.mockResolvedValue({ body: text, base64Encoded: false });
+
+      expect(await body({ part: "response" })).toEqual({
+        ok: true,
+        result: { body: text, base64Encoded: false, size: MiB, truncated: false },
+      });
+    });
+
+    it("cuts a longer text body to its first 1 MiB of UTF-8 without splitting a character, and reports the original size", async () => {
+      await attached();
+      // 1 MiB - 1 个 ASCII 字节之后是一个 3 字节的字符：它放不进 1 MiB，整个留到截断之外。
+      const text = "x".repeat(MiB - 1) + "中" + "y".repeat(10);
+      dbg.sendCommand.mockResolvedValue({ body: text, base64Encoded: false });
+
+      expect(await body({ part: "response" })).toEqual({
+        ok: true,
+        result: { body: "x".repeat(MiB - 1), base64Encoded: false, size: MiB - 1 + 3 + 10, truncated: true },
+      });
+    });
+
+    it("cuts a longer binary body to its first 1 MiB of bytes, still base64, and reports the decoded size", async () => {
+      await attached();
+      const bytes = new Uint8Array(MiB + 7).map((_, i) => i % 251);
+      dbg.sendCommand.mockResolvedValue({ body: Buffer.from(bytes).toString("base64"), base64Encoded: true });
+
+      const outcome = (await body({ part: "response" })) as {
+        ok: true;
+        result: { body: string; base64Encoded: boolean; size: number; truncated: boolean };
+      };
+      expect(outcome.result).toMatchObject({ base64Encoded: true, size: MiB + 7, truncated: true });
+      expect(Buffer.from(outcome.result.body, "base64")).toEqual(Buffer.from(bytes.subarray(0, MiB)));
+    });
+
+    it("returns a binary body under 1 MiB whole with its decoded size", async () => {
+      await attached();
+      dbg.sendCommand.mockResolvedValue({ body: Buffer.from([1, 2, 3, 4]).toString("base64"), base64Encoded: true });
+
+      expect(await body({ part: "response" })).toEqual({
+        ok: true,
+        result: { body: "AQIDBA==", base64Encoded: true, size: 4, truncated: false },
+      });
+    });
+
+    it.each([
+      ['{"code":-32000,"message":"No resource with given identifier found"}', "navigated"],
+      ["No resource with given id was found", "navigated"],
+      ['{"code":-32000,"message":"No data found for resource with given identifier"}', "noData"],
+      ['{"code":-32000,"message":"Request content was evicted from inspector cache"}', "evicted"],
+      ["No post data available for the request", "noPostData"],
+    ])("reports Chrome's %s as unavailable: %s", async (message, reason) => {
+      await attached();
+      dbg.sendCommand.mockRejectedValue(new Error(message));
+
+      expect(await body({ part: "response" })).toEqual({ ok: true, result: { unavailable: reason } });
+    });
+
+    it("surfaces any other CDP error as INVALID_REQUEST with the CDP message", async () => {
+      await attached();
+      dbg.sendCommand.mockRejectedValue(new Error("Session with given id not found."));
+
+      expect(await body({ sessionId: "S9", part: "response" })).toEqual({
+        ok: false,
+        code: "INVALID_REQUEST",
+        message: "Session with given id not found.",
+      });
+    });
+
+    it("answers DEBUGGER_DETACHED for a tab that is not attached, without attaching", async () => {
+      expect(await body({ part: "response" })).toMatchObject({ ok: false, code: "DEBUGGER_DETACHED" });
+      expect(dbg.attach).not.toHaveBeenCalled();
+      expect(dbg.sendCommand).not.toHaveBeenCalled();
+    });
+
+    it("answers DEBUGGER_DETACHED when the tab detaches while the body is read", async () => {
+      await attached();
+      dbg.sendCommand.mockImplementation(() => {
+        relay.onDetach({ tabId: 5 }, "target_closed");
+        return Promise.reject(new Error("No resource with given identifier found"));
+      });
+
+      expect(await body({ part: "response" })).toMatchObject({ ok: false, code: "DEBUGGER_DETACHED" });
     });
   });
 

@@ -123,25 +123,34 @@ func (w *netWatch) documentStatus() *int {
 	return &status
 }
 
-// watchNetwork 开启 Network 域,之后的请求才会被跟踪。只在需要网络状态的动作里开启,普通动作不付这个代价。
-func (t *Tab) watchNetwork(ctx context.Context) error {
+// watchNetwork 从这里开始跟踪进行中的请求。Network 域在附加时已为网络记录开启,但 networkidle 只看这次附加里
+// 第一个需要网络状态的动作之后开始的请求:之前开始、永远不结束的请求(页面没读响应体的 fetch、长轮询)
+// 不能让它永远等不到空闲。
+func (t *Tab) watchNetwork() {
 	if t.watchingNetwork {
-		return nil
-	}
-	if err := t.send(ctx, "Network.enable", nil, nil); err != nil {
-		return err
+		return
 	}
 	t.net.reset("")
 	t.watchingNetwork = true
-	return nil
 }
 
 // watchFrameNetwork 在还没开启 Network 域的子会话上开启它:跨进程 iframe 的请求只在它自己的子会话里报告。
 // 同时让子会话自动附加嵌套的跨进程 iframe。事件处理函数不能发命令,所以由等待网络空闲的动作在每次醒来时调用。
+// 子会话的准备(setupChildSession)本身会开启 Network 域,先等它结束,不重复开启。
 func (t *Tab) watchFrameNetwork(ctx context.Context) error {
 	for _, fs := range t.frames.withoutNetwork() {
+		if done, ok := t.frames.setupSignal(fs.sessionID); ok {
+			select {
+			case <-done:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+			if t.frames.hasNetwork(fs.sessionID) {
+				continue
+			}
+		}
 		// 已经分离的子会话与不是 frame 的目标(worker)拒绝这些命令,跳过它们。
-		if err := t.sendTo(ctx, fs.sessionID, "Network.enable", nil, nil); err != nil && !isCDPError(err) {
+		if err := t.sendTo(ctx, fs.sessionID, "Network.enable", networkEnableParams, nil); err != nil && !isCDPError(err) {
 			return err
 		}
 		t.frames.markNetwork(fs.sessionID)

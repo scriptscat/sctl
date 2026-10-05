@@ -240,6 +240,7 @@ It is optional in the schema so that an unconfirmed call that reaches the extens
 | `debugger.send` | browser, internal | send one Chrome DevTools Protocol command to a tab | none | L0 |
 | `debugger.detach` | browser, internal | detach the debugger from one tab, or from every tab | none | L0 |
 | `debugger.record` | browser, internal | mark a tab as recording, exempting it from the extension's idle fallback, or clear the mark | none | L0 |
+| `debugger.body` | browser, internal | read the request or response body of a recorded network request, cut at 1 MiB | none | L0 |
 | `tabs.move` | browser | move tabs to a window and position (`index` -1 is the end) | none | L0 |
 | `tabs.pin` | browser | pin tabs | none | L0 |
 | `tabs.unpin` | browser | unpin tabs | none | L0 |
@@ -454,6 +455,18 @@ from that moment. Starting to record a tab that is not attached answers `DEBUGGE
 attaches first); stopping one that is not attached succeeds and does nothing. CDP params and results are
 open objects: the schema checks only that they are JSON objects, and the frame limit still applies.
 
+`debugger.body` input is `{tabId, sessionId?, requestId, part}`: `requestId` is a CDP network request ID seen on the
+tab's top-level session or on the child session `sessionId`, and `part` is `request` or `response`. The extension
+reads the whole body in the browser (`Network.getRequestPostData` or `Network.getResponseBody`) and cuts it to its
+first 1 MiB before replying, because Chrome returns a body only whole and a body over one frame could not cross
+`debugger.send` at all. The result is `{body, base64Encoded, size, truncated}`: text bodies are cut at a UTF-8
+character boundary, binary bodies (`base64Encoded: true`) are cut in decoded bytes and re-encoded, and `size` is the
+original size in bytes. When Chrome no longer keeps the body the call still succeeds, with only `unavailable`:
+`navigated` (the page navigated away, which drops the bodies of all earlier requests), `noData` (the request is in
+flight or failed, has no body, or the page never read it), `evicted` (over Chrome's buffer, about 20 MB per resource,
+or pushed out by later responses), or `noPostData` (no request body). Any other CDP error answers `INVALID_REQUEST`
+with CDP's message. Like `debugger.record` it never attaches: a tab that is not attached answers `DEBUGGER_DETACHED`.
+
 `tabs.current` input is `{}`; its result `{tabId, windowId}` is the active tab of the last-focused window of type
 `normal`. The daemon asks for it once when a page command names no tab: the last-focused window stays the user's
 browser window while they type in a terminal, when no browser window has focus at all. It answers `NOT_FOUND`
@@ -468,7 +481,7 @@ without a page command on the tab, or on `page detach` — or until the extensio
 it, or the instance disconnects. Page commands on the same tab run one at a time in arrival order. A
 `debugger.detached` notification for a tab, or the instance disconnecting, fails the command running on that tab
 with `DEBUGGER_DETACHED`, and the next page command attaches again. The extension keeps a fallback of its own: a tab
-with no `debugger.send` for 10 minutes is detached and reported as `debugger.detached` with reason `idle_timeout`, so
+with no `debugger.send` or `debugger.body` for 10 minutes is detached and reported as `debugger.detached` with reason `idle_timeout`, so
 the infobar does not stay up if the daemon stops driving it, and when its connection to the daemon closes it detaches
 every tab without notifying. `debugger.detach` for a tab whose attach is still in flight waits for that attach and
 then detaches it. The extension records its attached tabs, and which of them are recording, in `chrome.storage.session`, because Chrome keeps a

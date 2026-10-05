@@ -63,9 +63,7 @@ func runNavigate(ctx context.Context, t *Tab, input json.RawMessage) (any, error
 	if state == "" {
 		state = loadStateLoad
 	}
-	if err := t.watchNetwork(ctx); err != nil {
-		return nil, err
-	}
+	t.watchNetwork()
 	run, err := beginAction(ctx, t, false)
 	if err != nil {
 		return nil, err

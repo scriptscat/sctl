@@ -382,12 +382,13 @@ most 15 seconds for the browser to return the image; if it does not (a tab that 
 emulation, such as a minimized window or a frozen tab), the tool returns `PAGE_HIDDEN` rather than a blank image, and
 retrying with `activate` may help.
 
-The debug tools `debug_console` and `debug_clear` read what sctl records for a tab while the debugger is attached to
+The debug tools `debug_console`, `debug_network`, `debug_request`, and `debug_clear` read what sctl records for a tab while the debugger is attached to
 it, whichever tool attached it. They take `browser`, `tabId`, and `timeoutMs` like the page tools, but not `activate`,
 and they still run while a JS dialog is open. A call on a tab that is not attached attaches it (the infobar appears)
 and returns what Chrome replays of the current document: its recent console messages and exceptions, and its CSP
-violations and failed resource loads. Records survive navigation and are kept in the daemon's memory, at most 1000 per
-tab with the oldest dropped first; they are cleared when the debugger detaches (idle for 5 minutes, `page_detach`, the
+violations and failed resource loads; network requests are recorded only from the attach on. Records survive
+navigation and are kept in the daemon's memory, at most 1000 console records and 1000 requests per tab with the
+oldest dropped first; they are cleared when the debugger detaches (idle for 5 minutes, `page_detach`, the
 tab closing, the browser disconnecting, the daemon exiting, or the infobar being dismissed) and by `debug_clear`, which
 keeps the debugger attached. Every debug result reports `tabId`, `attachedAt` (the time the debugger attached; replayed
 records are older), `recording`, and `dropped` (records dropped from the full buffer), and is marked
@@ -402,6 +403,25 @@ into one line as DevTools shows them, objects as previews, cut at 10,000 charact
 containing a substring, ignoring case. `limit` defaults to 100 (at most 1000) and `hasMore` reports that more records
 match. Pass the result's `next` as `after` to get only newer records; a cursor from before a `debug_clear`, a re-attach,
 or a daemon restart lists from the oldest record and sets `cursorReset: true`.
+
+`debug_network` lists the tab's network requests, oldest first, with the same `after`, `limit`, `hasMore`, and
+`cursorReset` as `debug_console`. Each record has `id` (pass it to `debug_request`), `method`, `url`, `type`
+(`document`, `xhr`, `fetch`, `script`, `stylesheet`, `image`, `font`, `media`, `websocket`, or `other`), `state`
+(`pending` while in flight, `finished`, `redirected` for a redirect hop, or `failed` for a network error, a cancelled or
+a blocked request, with Chrome's reason in `error`), `status` and `statusText`, `startTime`, `durationMs`,
+`transferSize`, `fromCache`, `redirectedFrom` (the `id` of the previous hop: every redirect hop is its own record),
+`frameUrl` for a cross-origin iframe, and `pageUrl`. `url` matches a substring of the URL, `method` ignores case,
+`status` takes a code such as `404` or a class such as `4xx`, and `failed: true` keeps only network failures, not
+4xx/5xx responses.
+
+`debug_request` takes the `id` of one of those records and returns its summary fields plus `requestHeaders`,
+`requestBody` (when the request has one), `responseHeaders`, `timing` (`queueMs`, `dnsMs`, `connectMs`, `sslMs`,
+`sendMs`, `waitMs`, `receiveMs`, each when it applies), and `remoteAddress`; `body: true` adds `responseBody`. Headers
+and bodies are not masked: `Cookie`, `Authorization`, and `Set-Cookie` appear as sent and received. A body has `body`
+(text as is, or base64 with `base64Encoded: true`), `size` (the original size in bytes), and `truncated` (only the
+first 1 MiB is returned). When Chrome no longer keeps a body — the page navigated away since, the request is in flight
+or failed, there is none, the page never read it, or it is over Chrome's limit of about 20 MB — `body` is null and
+`unavailable` gives the reason, and the call still succeeds. An unknown or dropped `id` returns `NOT_FOUND`.
 
 ## Troubleshooting
 

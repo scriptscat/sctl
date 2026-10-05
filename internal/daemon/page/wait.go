@@ -173,9 +173,7 @@ func runWait(ctx context.Context, t *Tab, input json.RawMessage) (any, error) {
 		return nil, err
 	}
 	if in.Load == loadStateNetworkIdle {
-		if err := t.watchNetwork(ctx); err != nil {
-			return nil, err
-		}
+		t.watchNetwork()
 	}
 	run, err := beginAction(ctx, t, false)
 	if err != nil {
