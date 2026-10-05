@@ -16,7 +16,7 @@ var debugTools = []pageToolDef{
 		description: "Start recording a browser tab so its console and network records survive while you reproduce a problem: the debugger " +
 			"is attached if needed and then stays attached, and Chrome's debugging infobar stays shown, instead of detaching after " +
 			"5 idle minutes. Recording ends with debug_stop, after 60 minutes without a debug_* call on the tab (every debug call on it " +
-			"restarts the 60 minutes; page_* calls and debug_status do not), or when the debugger detaches (page_detach, the tab " +
+			"restarts the 60 minutes, debug_status included; page_* calls do not), or when the debugger detaches (page_detach, the tab " +
 			"closing, the browser disconnecting, the infobar being dismissed), which also clears the records. Starting a tab that " +
 			"already records succeeds and keeps its records. A page the debugger cannot attach to returns PAGE_NOT_AUTOMATABLE. " +
 			"Stop recording when you are done. The result is the tab's entry as in debug_status.",
@@ -36,8 +36,8 @@ var debugTools = []pageToolDef{
 		name:   "debug_status",
 		description: "List the tabs of a browser that sctl has the debugger attached to (only tabId when given; an unattached tab gives an " +
 			"empty list). Each entry of tabs has tabId, attachedAt, recording, remainingMs (while recording: how long until the recording " +
-			"ends on its own), and console and network, each with records (how many are kept) and dropped. It never attaches the " +
-			"debugger and does not restart the 60 minutes of a recording.",
+			"ends on its own, counted from this call), and console and network, each with records (how many are kept) and dropped. " +
+			"It never attaches the debugger; like every debug call it restarts the 60 minutes of each recording tab it lists.",
 		inputSchema: `{"type":"object","properties":{},"additionalProperties":false}`,
 	},
 	{

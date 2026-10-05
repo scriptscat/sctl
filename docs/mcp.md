@@ -398,9 +398,9 @@ records are older), `recording`, and `dropped` (records dropped from the full bu
 needed and then stays attached, so Chrome's infobar stays shown the whole time, instead of detaching after 5 idle
 minutes. Recording ends with `debug_stop` (`all` stops every recording tab of the browser; the records are kept and
 the 5-minute idle detach resumes), when the debugger detaches for any reason above, or on its own after 60 minutes
-without a debug tool call on the tab: every debug call on the tab restarts the 60 minutes, while page tools and
-`debug_status` do not. `debug_status` lists the tabs sctl has attached in the browser, without attaching any, each with
-`tabId`, `attachedAt`, `recording`, `remainingMs` (while recording), and `console` and `network` counts of kept
+without a debug tool call on the tab: every debug call on the tab, `debug_status` included, restarts the 60 minutes, while
+page tools do not. `debug_status` lists the tabs sctl has attached in the browser, without attaching any, each with
+`tabId`, `attachedAt`, `recording`, `remainingMs` (while recording, counted from this call, which restarts it), and `console` and `network` counts of kept
 `records` and `dropped` ones; `debug_start` returns the tab's entry in the same shape.
 
 `debug_console` lists console messages (`source` `console`), uncaught exceptions and unhandled promise rejections

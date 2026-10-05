@@ -194,8 +194,8 @@ type statusResult struct {
 	Tabs []tabStatus `json:"tabs"`
 }
 
-// debugStatus 列出这个浏览器里被附加的标签页(给出 tab 时只列它)。它只读 daemon 的内存,不附加调试器,
-// 也不为录制重新计时:否则报告的剩余时间永远是 60 分钟。
+// debugStatus 列出这个浏览器里被附加的标签页(给出 tab 时只列它)。它只读 daemon 的内存,不附加调试器。
+// 它和其他 debug 命令一样为列出的录制中标签页重新计时(spec 设计决策 4),所以报告的剩余时间从这一刻起算。
 func (m *Manager) debugStatus(_ context.Context, instanceID string, req Request) (any, error) {
 	if err := decodeInput(req.Input, &struct{}{}); err != nil {
 		return nil, err
@@ -208,6 +208,9 @@ func (m *Manager) debugStatus(_ context.Context, instanceID string, req Request)
 	for key, s := range m.slots {
 		if key.instanceID == instanceID && s.tab != nil && (req.TabID == nil || key.tabID == *req.TabID) {
 			tabs = append(tabs, s.tab)
+			if s.tab.rec.on {
+				m.armRecording(s.tab)
+			}
 		}
 	}
 	m.mu.Unlock()

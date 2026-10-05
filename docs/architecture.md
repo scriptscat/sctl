@@ -62,14 +62,17 @@ because the daemon is the only process that outlives a single command. When the 
 tab is described in [protocol.md](./protocol.md#32-internal-methods).
 
 The same component keeps the debug records of each attached tab (`sctl debug`, `debug_*`). Every attach creates a
-fresh per-tab state (`page.Tab`) that holds a ring buffer of at most 1000 console records; attach hooks enable the
-`Runtime` and `Log` domains on the tab's top-level session, and the CDP events the extension relays are converted into
-records in the bridge read loop. Cross-process iframes are attached automatically with `waitForDebuggerOnStart`, so a
-new one starts paused: a background task of the tab enables the same domains on its child session and then always
-resumes it, because event handlers run in the bridge read loop and must not send commands. Since the buffers belong to
-the per-tab state, every path that detaches the debugger — idle detach, `page detach`, a `debugger.detached` notice,
-the browser instance going away, a failed attach — drops them, and before the daemon itself detaches a tab it ends and
-waits for that tab's background tasks so none of them re-attaches it. Debug records never leave the daemon's memory.
+fresh per-tab state (`page.Tab`) that holds two ring buffers, at most 1000 console records and 1000 network requests;
+attach hooks enable the `Runtime`, `Log`, and `Network` domains on the tab's top-level session (`Network` with a small
+`maxPostDataSize`, so a large request body cannot push an event over the frame limit), and the CDP events the
+extension relays are converted into records in the bridge read loop. Request and response bodies are not buffered:
+`debug request` reads them on demand through `debugger.body`, which cuts them to 1 MiB in the extension. Cross-process
+iframes are attached automatically with `waitForDebuggerOnStart`, so a new one starts paused: a background task of the
+tab enables the same domains on its child session and then always resumes it, because event handlers run in the bridge
+read loop and must not send commands. Since the buffers belong to the per-tab state, every path that detaches the
+debugger — idle detach, `page detach`, a `debugger.detached` notice, the browser instance going away, a failed attach
+— drops them, and before the daemon itself detaches a tab it ends and waits for that tab's background tasks so none of
+them re-attaches it. Debug records never leave the daemon's memory.
 
 Recording (`debug start`/`stop`/`status`) is also per-tab state. A recording tab gets no idle-detach timer after its
 commands; instead a 60-minute timer, restarted by every debug command on the tab, ends the recording through the tab's

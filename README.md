@@ -251,9 +251,9 @@ To record while you reproduce a problem, run `sctl debug start` first: the tab i
 attached — so the infobar stays shown — instead of detaching after 5 idle minutes. Recording ends with
 `sctl debug stop [--all]`, which keeps the records and lets the usual 5-minute idle detach resume, when the debugger
 detaches for any of the reasons above, or on its own after 60 minutes without a debug command on the tab: every
-`sctl debug` command on the tab restarts the 60 minutes, while page commands and `sctl debug status` do not.
+`sctl debug` command on the tab, `sctl debug status` included, restarts the 60 minutes, while page commands do not.
 `sctl debug status [--tab N]` lists the tabs sctl has attached in the browser without attaching any: whether each
-records and how long until that ends, when the debugger attached, and how many console records and requests are kept
+records and how long until that ends (counted from this status, which restarts it), when the debugger attached, and how many console records and requests are kept
 and dropped.
 
 `sctl debug console` lists console messages (source `console`), uncaught exceptions and unhandled promise rejections

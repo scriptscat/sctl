@@ -201,8 +201,8 @@ ScriptCat 中批准、拒绝或关闭确认流程；浏览器控制命令按设�
 
 要在复现问题时持续记录,先执行 `sctl debug start`:必要时附加标签页,之后调试器一直保持附加——提示条也一直显示——不再空闲 5 分钟断开。
 录制在以下情况结束:`sctl debug stop [--all]`(记录保留,恢复 5 分钟空闲断开)、调试器因上述任一原因断开、
-或连续 60 分钟没有对该标签页的 debug 命令(每条 `sctl debug` 命令都重新计时,页面命令和 `sctl debug status` 不算)。
-`sctl debug status [--tab N]` 列出这个浏览器里 sctl 附加的标签页,不附加任何标签页:是否在录制及还剩多久结束、调试器附加的时间、
+或连续 60 分钟没有对该标签页的 debug 命令(每条 `sctl debug` 命令都重新计时,包括 `sctl debug status`,页面命令不算)。
+`sctl debug status [--tab N]` 列出这个浏览器里 sctl 附加的标签页,不附加任何标签页:是否在录制及还剩多久结束(从这次 status 重新计时起算)、调试器附加的时间、
 控制台记录和网络请求各有多少条、各丢弃了多少条。
 
 `sctl debug console` 按时间先后列出控制台消息(来源 `console`)、未捕获的异常与未处理的 Promise 拒绝(`exception`,`-o json` 里带调用栈的前 5 帧),

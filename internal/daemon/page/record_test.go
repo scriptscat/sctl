@@ -247,12 +247,18 @@ func TestDebugRecordingAutoEnd(t *testing.T) {
 			So(cdp.recordCalls()[2], ShouldResemble, recordCall{tabID: 3, on: false})
 		})
 
-		Convey("debug status 报告剩余时间,本身不重新计时", func() {
+		Convey("debug status 也是 debug 命令:为它列出的录制中标签页重新计时,报告从这一刻起的剩余时间", func() {
 			clock.Advance(20 * time.Minute)
 			tabs, err := debugStatus(m, Request{})
 			So(err, ShouldBeNil)
-			So(*tabs[0].RemainingMs, ShouldEqual, (40 * time.Minute).Milliseconds())
-			clock.Advance(40 * time.Minute)
+			So(*tabs[0].RemainingMs, ShouldEqual, time.Hour.Milliseconds())
+			clock.Advance(59 * time.Minute)
+			So(cdp.recordCalls(), ShouldHaveLength, 1)
+			tabs, err = debugStatus(m, Request{TabID: tabRef(3)})
+			So(err, ShouldBeNil)
+			So(tabs[0].Recording, ShouldBeTrue)
+			clock.Advance(time.Hour)
+			So(cdp.recordCalls(), ShouldResemble, []recordCall{{tabID: 3, on: true}, {tabID: 3, on: false}})
 			tabs, err = debugStatus(m, Request{})
 			So(err, ShouldBeNil)
 			So(tabs[0].Recording, ShouldBeFalse)

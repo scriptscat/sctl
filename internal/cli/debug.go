@@ -107,7 +107,7 @@ func newDebugStartCmd() *cobra.Command {
 		Long: "Start recording a tab, attaching the debugger if it is not attached. While a tab records, the debugger\n" +
 			"stays attached and Chrome's debugging infobar stays shown: neither the 5-minute idle detach nor the\n" +
 			"extension's fallback applies. Recording ends with sctl debug stop, after 60 minutes without a debug command\n" +
-			"on the tab (every debug command restarts the 60 minutes; page commands and debug status do not), or when the\n" +
+			"on the tab (every debug command, debug status included, restarts the 60 minutes; page commands do not), or when the\n" +
 			"debugger detaches. Starting a tab that already records succeeds and keeps its records. A page the\n" +
 			"debugger cannot attach to fails with PAGE_NOT_AUTOMATABLE.",
 		Args: noDebugArgs("start"),
@@ -189,8 +189,8 @@ func newDebugStatusCmd() *cobra.Command {
 		Short: "List the tabs of the browser that sctl has attached, with their recording state and record counts",
 		Long: "List the tabs of the browser that sctl has the debugger attached to (only the --tab one when given): whether\n" +
 			"each records and how long until its recording ends on its own, when the debugger attached, and how many\n" +
-			"console records and requests are kept and how many were dropped. It never attaches the debugger and does not\n" +
-			"restart the 60 minutes of a recording.",
+			"console records and requests are kept and how many were dropped. It never attaches the debugger; like every\n" +
+			"debug command it restarts the 60 minutes of each recording tab it lists, so the time left counts from now.",
 		Args: noDebugArgs("status"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return dispatchPage(cmd, "debug.status", mustInput(map[string]any{}), func(result json.RawMessage) error {
