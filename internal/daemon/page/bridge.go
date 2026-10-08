@@ -78,6 +78,36 @@ func (b bridgeCDP) Detach(ctx context.Context, instanceID string, tabID *int) ([
 	return res.TabIds, nil
 }
 
+func (b bridgeCDP) Record(ctx context.Context, instanceID string, tabID int, on bool) error {
+	return b.call(ctx, instanceID, generated.MethodDebuggerRecord, generated.DebuggerRecordParams{TabId: tabID, Recording: on}, nil)
+}
+
+func (b bridgeCDP) Body(ctx context.Context, instanceID string, q BodyQuery) (Body, error) {
+	params := generated.DebuggerBodyParams{TabId: q.TabID, RequestId: q.RequestID, Part: string(q.Part)}
+	if q.SessionID != "" {
+		params.SessionId = &q.SessionID
+	}
+	var res generated.DebuggerBodyResult
+	if err := b.call(ctx, instanceID, generated.MethodDebuggerBody, params, &res); err != nil {
+		return Body{}, err
+	}
+	return bodyOf(res)
+}
+
+// bodyOf 校验扩展的回答:schema 让每个字段都可选,要么给出不可用的原因,要么给出体与它的原始大小。
+func bodyOf(res generated.DebuggerBodyResult) (Body, error) {
+	if res.Unavailable != nil {
+		if res.Body != nil {
+			return Body{}, fmt.Errorf("decode %s result: both a body and an unavailable reason", generated.MethodDebuggerBody)
+		}
+		return Body{Unavailable: *res.Unavailable}, nil
+	}
+	if res.Body == nil || res.Size == nil {
+		return Body{}, fmt.Errorf("decode %s result: neither a body with its size nor an unavailable reason", generated.MethodDebuggerBody)
+	}
+	return Body{Text: *res.Body, Base64: res.Base64Encoded != nil && *res.Base64Encoded, Size: *res.Size, Truncated: res.Truncated != nil && *res.Truncated}, nil
+}
+
 // call 调用实例上的一个浏览器方法。结果已由 bridge 按方法 schema 校验过,解码失败说明生成类型与 schema 不一致。
 func (b bridgeCDP) call(ctx context.Context, instanceID string, method generated.Method, input, result any) error {
 	raw, err := json.Marshal(input)

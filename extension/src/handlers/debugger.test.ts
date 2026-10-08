@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { HandlerRegistry } from "@/background/registry";
-import { validateDebuggerDetachResult, validateDebuggerSendResult } from "@/protocol/generated/validators.generated";
+import {
+  validateDebuggerBodyResult,
+  validateDebuggerDetachResult,
+  validateDebuggerSendResult,
+} from "@/protocol/generated/validators.generated";
 import type { NotificationMethod, NotificationParams } from "@/protocol/generated/protocol.generated";
 import { DebuggerRelay, type AttachedTabsStorage } from "./debugger";
 import { registerHandlers } from "./index";
@@ -17,7 +21,7 @@ interface DebuggerMock {
 }
 
 // 模拟 chrome.storage.session:service worker 重启后仍在,浏览器重启后清空。
-function memoryStore(): AttachedTabsStorage & { tabIds: () => unknown } {
+function memoryStore(): AttachedTabsStorage & { tabIds: () => unknown; recordingTabIds: () => unknown } {
   const items: Record<string, unknown> = {};
   return {
     get: (keys) => Promise.resolve(Object.fromEntries(keys.filter((k) => k in items).map((k) => [k, items[k]]))),
@@ -26,6 +30,7 @@ function memoryStore(): AttachedTabsStorage & { tabIds: () => unknown } {
       return Promise.resolve();
     },
     tabIds: () => items.debuggerTabs,
+    recordingTabIds: () => items.debuggerRecording,
   };
 }
 
@@ -152,6 +157,134 @@ describe("debugger relay", () => {
         ok: false,
         code: "DEBUGGER_DETACHED",
       });
+    });
+  });
+
+  describe("debugger.body", () => {
+    const MiB = 1024 * 1024;
+
+    async function attached(): Promise<void> {
+      await registry.dispatch("debugger.send", { tabId: 5, method: "Network.enable" });
+      dbg.sendCommand.mockReset();
+    }
+
+    async function body(params: Record<string, unknown>): Promise<unknown> {
+      const outcome = await registry.dispatch("debugger.body", { tabId: 5, requestId: "R1", ...params });
+      if (outcome.ok) {
+        expect(validateDebuggerBodyResult(outcome.result)).toBe(true);
+      }
+      return outcome;
+    }
+
+    it("reads the request body with Network.getRequestPostData on the named session", async () => {
+      await attached();
+      dbg.sendCommand.mockResolvedValue({ postData: "a=1&b=é" });
+
+      expect(await body({ sessionId: "S1", part: "request" })).toEqual({
+        ok: true,
+        result: { body: "a=1&b=é", base64Encoded: false, size: 8, truncated: false },
+      });
+      expect(dbg.sendCommand).toHaveBeenCalledWith({ tabId: 5, sessionId: "S1" }, "Network.getRequestPostData", {
+        requestId: "R1",
+      });
+    });
+
+    it("reads the response body with Network.getResponseBody on the top-level session", async () => {
+      await attached();
+      dbg.sendCommand.mockResolvedValue({ body: "hello", base64Encoded: false });
+
+      expect(await body({ part: "response" })).toEqual({
+        ok: true,
+        result: { body: "hello", base64Encoded: false, size: 5, truncated: false },
+      });
+      expect(dbg.sendCommand).toHaveBeenCalledWith({ tabId: 5 }, "Network.getResponseBody", { requestId: "R1" });
+    });
+
+    it("returns a text body of exactly 1 MiB whole", async () => {
+      await attached();
+      const text = "x".repeat(MiB);
+      dbg.sendCommand.mockResolvedValue({ body: text, base64Encoded: false });
+
+      expect(await body({ part: "response" })).toEqual({
+        ok: true,
+        result: { body: text, base64Encoded: false, size: MiB, truncated: false },
+      });
+    });
+
+    it("cuts a longer text body to its first 1 MiB of UTF-8 without splitting a character, and reports the original size", async () => {
+      await attached();
+      // 1 MiB - 1 个 ASCII 字节之后是一个 3 字节的字符：它放不进 1 MiB，整个留到截断之外。
+      const text = "x".repeat(MiB - 1) + "中" + "y".repeat(10);
+      dbg.sendCommand.mockResolvedValue({ body: text, base64Encoded: false });
+
+      expect(await body({ part: "response" })).toEqual({
+        ok: true,
+        result: { body: "x".repeat(MiB - 1), base64Encoded: false, size: MiB - 1 + 3 + 10, truncated: true },
+      });
+    });
+
+    it("cuts a longer binary body to its first 1 MiB of bytes, still base64, and reports the decoded size", async () => {
+      await attached();
+      const bytes = new Uint8Array(MiB + 7).map((_, i) => i % 251);
+      dbg.sendCommand.mockResolvedValue({ body: Buffer.from(bytes).toString("base64"), base64Encoded: true });
+
+      const outcome = (await body({ part: "response" })) as {
+        ok: true;
+        result: { body: string; base64Encoded: boolean; size: number; truncated: boolean };
+      };
+      expect(outcome.result).toMatchObject({ base64Encoded: true, size: MiB + 7, truncated: true });
+      // 比较 base64 原文而不是解码后的 Buffer：toEqual 逐元素比较 1 MiB 的 Buffer 要 1.3 s，满载时会超时。
+      expect(outcome.result.body).toBe(Buffer.from(bytes.subarray(0, MiB)).toString("base64"));
+    });
+
+    it("returns a binary body under 1 MiB whole with its decoded size", async () => {
+      await attached();
+      dbg.sendCommand.mockResolvedValue({ body: Buffer.from([1, 2, 3, 4]).toString("base64"), base64Encoded: true });
+
+      expect(await body({ part: "response" })).toEqual({
+        ok: true,
+        result: { body: "AQIDBA==", base64Encoded: true, size: 4, truncated: false },
+      });
+    });
+
+    it.each([
+      ['{"code":-32000,"message":"No resource with given identifier found"}', "navigated"],
+      ["No resource with given id was found", "navigated"],
+      ['{"code":-32000,"message":"No data found for resource with given identifier"}', "noData"],
+      ['{"code":-32000,"message":"Request content was evicted from inspector cache"}', "evicted"],
+      ["No post data available for the request", "noPostData"],
+    ])("reports Chrome's %s as unavailable: %s", async (message, reason) => {
+      await attached();
+      dbg.sendCommand.mockRejectedValue(new Error(message));
+
+      expect(await body({ part: "response" })).toEqual({ ok: true, result: { unavailable: reason } });
+    });
+
+    it("surfaces any other CDP error as INVALID_REQUEST with the CDP message", async () => {
+      await attached();
+      dbg.sendCommand.mockRejectedValue(new Error("Session with given id not found."));
+
+      expect(await body({ sessionId: "S9", part: "response" })).toEqual({
+        ok: false,
+        code: "INVALID_REQUEST",
+        message: "Session with given id not found.",
+      });
+    });
+
+    it("answers DEBUGGER_DETACHED for a tab that is not attached, without attaching", async () => {
+      expect(await body({ part: "response" })).toMatchObject({ ok: false, code: "DEBUGGER_DETACHED" });
+      expect(dbg.attach).not.toHaveBeenCalled();
+      expect(dbg.sendCommand).not.toHaveBeenCalled();
+    });
+
+    it("answers DEBUGGER_DETACHED when the tab detaches while the body is read", async () => {
+      await attached();
+      dbg.sendCommand.mockImplementation(() => {
+        relay.onDetach({ tabId: 5 }, "target_closed");
+        return Promise.reject(new Error("No resource with given identifier found"));
+      });
+
+      expect(await body({ part: "response" })).toMatchObject({ ok: false, code: "DEBUGGER_DETACHED" });
     });
   });
 
@@ -317,6 +450,103 @@ describe("debugger relay", () => {
     });
   });
 
+  describe("recording", () => {
+    const IDLE = 10 * 60_000;
+
+    it("does not detach a recording tab when the idle backstop elapses", async () => {
+      await registry.dispatch("debugger.send", { tabId: 5, method: "A" });
+      expect(await registry.dispatch("debugger.record", { tabId: 5, recording: true })).toEqual({
+        ok: true,
+        result: { recording: true },
+      });
+
+      await vi.advanceTimersByTimeAsync(3 * IDLE);
+      await registry.dispatch("debugger.send", { tabId: 5, method: "B" });
+      await vi.advanceTimersByTimeAsync(3 * IDLE);
+
+      expect(dbg.detach).not.toHaveBeenCalled();
+      expect(notices).toEqual([]);
+    });
+
+    it("re-arms the backstop when recording stops, then detaches after 10 minutes", async () => {
+      await registry.dispatch("debugger.send", { tabId: 5, method: "A" });
+      await registry.dispatch("debugger.record", { tabId: 5, recording: true });
+      await vi.advanceTimersByTimeAsync(2 * IDLE);
+
+      expect(await registry.dispatch("debugger.record", { tabId: 5, recording: false })).toEqual({
+        ok: true,
+        result: { recording: false },
+      });
+      await vi.advanceTimersByTimeAsync(IDLE - 1);
+      expect(dbg.detach).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+
+      expect(dbg.detach).toHaveBeenCalledWith({ tabId: 5 });
+      expect(notices).toEqual([{ method: "debugger.detached", params: { tabId: 5, reason: "idle_timeout" } }]);
+    });
+
+    it("answers DEBUGGER_DETACHED when starting to record a tab that is not attached", async () => {
+      expect(await registry.dispatch("debugger.record", { tabId: 5, recording: true })).toMatchObject({
+        ok: false,
+        code: "DEBUGGER_DETACHED",
+      });
+      expect(store.recordingTabIds()).toBeUndefined();
+    });
+
+    it("succeeds without effect when stopping a tab that is not attached", async () => {
+      expect(await registry.dispatch("debugger.record", { tabId: 5, recording: false })).toEqual({
+        ok: true,
+        result: { recording: false },
+      });
+      expect(dbg.attach).not.toHaveBeenCalled();
+    });
+
+    it("keeps a tab recording across a service worker restart", async () => {
+      await registry.dispatch("debugger.send", { tabId: 5, method: "A" });
+      await registry.dispatch("debugger.record", { tabId: 5, recording: true });
+      expect(store.recordingTabIds()).toEqual([5]);
+      dbg.getTargets.mockResolvedValue([{ type: "page", id: "T5", tabId: 5, attached: true, title: "", url: "" }]);
+
+      new DebuggerRelay(() => undefined, store);
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(3 * IDLE);
+
+      expect(dbg.detach).not.toHaveBeenCalled();
+    });
+
+    it("drops recording of a tab that is gone after a service worker restart", async () => {
+      await registry.dispatch("debugger.send", { tabId: 5, method: "A" });
+      await registry.dispatch("debugger.record", { tabId: 5, recording: true });
+      dbg.getTargets.mockResolvedValue([]);
+
+      new DebuggerRelay(() => undefined, store);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(store.recordingTabIds()).toEqual([]);
+    });
+
+    it("clears the recording state when the tab is detached by the daemon", async () => {
+      await registry.dispatch("debugger.send", { tabId: 5, method: "A" });
+      await registry.dispatch("debugger.record", { tabId: 5, recording: true });
+
+      await registry.dispatch("debugger.detach", { tabId: 5 });
+
+      expect(store.recordingTabIds()).toEqual([]);
+      await registry.dispatch("debugger.send", { tabId: 5, method: "B" });
+      await vi.advanceTimersByTimeAsync(IDLE);
+      expect(dbg.detach).toHaveBeenCalledTimes(2);
+    });
+
+    it("clears the recording state when Chrome detaches the tab", async () => {
+      await registry.dispatch("debugger.send", { tabId: 5, method: "A" });
+      await registry.dispatch("debugger.record", { tabId: 5, recording: true });
+
+      relay.onDetach({ tabId: 5 }, "canceled_by_user");
+
+      expect(store.recordingTabIds()).toEqual([]);
+    });
+  });
+
   describe("idle safety net", () => {
     it("detaches a tab 10 minutes after its last send and tells the daemon", async () => {
       await registry.dispatch("debugger.send", { tabId: 5, method: "A" });
@@ -341,6 +571,105 @@ describe("debugger relay", () => {
 
       expect(dbg.detach).not.toHaveBeenCalled();
       expect(notices).toEqual([]);
+    });
+  });
+
+  describe("dialogs left behind on release", () => {
+    // sctl 断开调试器之后，这次附加期间打开的弹框成了孤儿：之后任何调试会话都处理不了它（真机探针）。
+    const handled = () => dbg.sendCommand.mock.calls.filter((call) => call[1] === "Page.handleJavaScriptDialog");
+    const order = (mock: Mock<AsyncFn>, method?: string) => {
+      const index = mock.mock.calls.findIndex((call) => method === undefined || call[1] === method);
+      return mock.mock.invocationCallOrder[index];
+    };
+
+    beforeEach(async () => {
+      await registry.dispatch("debugger.send", { tabId: 5, method: "Page.enable" });
+      await registry.dispatch("debugger.send", { tabId: 6, method: "Page.enable" });
+    });
+
+    it("dismisses a dialog it saw open before the idle backstop detaches the tab", async () => {
+      relay.onEvent({ tabId: 5 }, "Page.javascriptDialogOpening", { type: "alert", message: "hi" });
+
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+      expect(handled()).toEqual([[{ tabId: 5 }, "Page.handleJavaScriptDialog", { accept: false }]]);
+      expect(order(dbg.sendCommand, "Page.handleJavaScriptDialog")).toBeLessThan(order(dbg.detach));
+      expect(dbg.detach).toHaveBeenCalledWith({ tabId: 5 });
+      expect(dbg.detach).toHaveBeenCalledWith({ tabId: 6 });
+    });
+
+    it("dismisses open dialogs before releasing every tab when the connection to the daemon closes", async () => {
+      relay.onEvent({ tabId: 6 }, "Page.javascriptDialogOpening", { type: "confirm", message: "sure?" });
+
+      await relay.detachAll();
+
+      expect(handled()).toEqual([[{ tabId: 6 }, "Page.handleJavaScriptDialog", { accept: false }]]);
+      expect(order(dbg.sendCommand, "Page.handleJavaScriptDialog")).toBeLessThan(
+        dbg.detach.mock.invocationCallOrder[
+          dbg.detach.mock.calls.findIndex((call) => (call[0] as { tabId: number }).tabId === 6)
+        ],
+      );
+      expect(dbg.detach).toHaveBeenCalledTimes(2);
+    });
+
+    it("dismisses on the top-level session even when the dialog event came from a child session", async () => {
+      relay.onEvent({ tabId: 5, sessionId: "S1" }, "Page.javascriptDialogOpening", { type: "alert", message: "x" });
+
+      await relay.detachAll();
+
+      expect(handled()).toEqual([[{ tabId: 5 }, "Page.handleJavaScriptDialog", { accept: false }]]);
+    });
+
+    it("also dismisses a dialog it still knows about when the daemon asks for the detach", async () => {
+      relay.onEvent({ tabId: 5 }, "Page.javascriptDialogOpening", { type: "alert", message: "hi" });
+
+      expect(await registry.dispatch("debugger.detach", { tabId: 5 })).toEqual({ ok: true, result: { tabIds: [5] } });
+
+      expect(handled()).toEqual([[{ tabId: 5 }, "Page.handleJavaScriptDialog", { accept: false }]]);
+      expect(order(dbg.sendCommand, "Page.handleJavaScriptDialog")).toBeLessThan(order(dbg.detach));
+    });
+
+    it("does not touch a dialog that has already closed, or a tab without one", async () => {
+      relay.onEvent({ tabId: 5 }, "Page.javascriptDialogOpening", { type: "alert", message: "hi" });
+      relay.onEvent({ tabId: 5 }, "Page.javascriptDialogClosed", { result: true, userInput: "" });
+
+      await relay.detachAll();
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+      expect(handled()).toEqual([]);
+    });
+
+    it("still releases the tab when dismissing the dialog fails", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      relay.onEvent({ tabId: 5 }, "Page.javascriptDialogOpening", { type: "alert", message: "hi" });
+      dbg.sendCommand.mockRejectedValue(new Error("No dialog is showing"));
+
+      await relay.detachAll();
+
+      expect(dbg.detach).toHaveBeenCalledWith({ tabId: 5 });
+    });
+
+    it("forgets the dialog of a tab Chrome detached on its own", async () => {
+      relay.onEvent({ tabId: 5 }, "Page.javascriptDialogOpening", { type: "alert", message: "hi" });
+      relay.onDetach({ tabId: 5 }, "canceled_by_user");
+      await registry.dispatch("debugger.send", { tabId: 5, method: "Page.enable" });
+
+      await relay.detachAll();
+
+      expect(handled()).toEqual([]);
+    });
+
+    it("remembers an open dialog across a service worker restart", async () => {
+      relay.onEvent({ tabId: 5 }, "Page.javascriptDialogOpening", { type: "alert", message: "hi" });
+      dbg.getTargets.mockResolvedValue([
+        { type: "page", id: "T5", tabId: 5, attached: true, title: "", url: "" },
+        { type: "page", id: "T6", tabId: 6, attached: true, title: "", url: "" },
+      ]);
+
+      const next = new DebuggerRelay(() => undefined, store);
+      await next.detachAll();
+
+      expect(handled()).toEqual([[{ tabId: 5 }, "Page.handleJavaScriptDialog", { accept: false }]]);
     });
   });
 });

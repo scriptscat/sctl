@@ -32,7 +32,11 @@ type fakeCDP struct {
 	selected    []int
 	sent        []sentCommand
 	detaches    [][]int // 每次 Detach 的目标;nil 表示全部
-	attached    map[int]bool
+	records     []recordCall
+	bodies      []BodyQuery
+	// body 为 nil 时取体返回空文本。
+	body     func(ctx context.Context, q BodyQuery) (Body, error)
+	attached map[int]bool
 	// send 为 nil 时每条命令都成功返回 {}。
 	send func(ctx context.Context, cmd Command) (json.RawMessage, error)
 }
@@ -88,6 +92,35 @@ func (f *fakeCDP) markAttached(tabID int) {
 	f.mu.Lock()
 	f.attached[tabID] = true
 	f.mu.Unlock()
+}
+
+type recordCall struct {
+	tabID int
+	on    bool
+}
+
+func (f *fakeCDP) Record(ctx context.Context, instanceID string, tabID int, on bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.records = append(f.records, recordCall{tabID: tabID, on: on})
+	return nil
+}
+
+func (f *fakeCDP) Body(ctx context.Context, instanceID string, q BodyQuery) (Body, error) {
+	f.mu.Lock()
+	f.bodies = append(f.bodies, q)
+	body := f.body
+	f.mu.Unlock()
+	if body == nil {
+		return Body{}, nil
+	}
+	return body(ctx, q)
+}
+
+func (f *fakeCDP) bodyCalls() []BodyQuery {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.bodies)
 }
 
 func (f *fakeCDP) Detach(ctx context.Context, instanceID string, tabID *int) ([]int, error) {
@@ -166,6 +199,13 @@ func (t *fakeTimer) Stop() bool {
 	return pending
 }
 
+// Now 从 baseTime 起按 Advance 走动。
+func (c *fakeClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return baseTime.Add(c.now)
+}
+
 func (c *fakeClock) Advance(d time.Duration) {
 	c.mu.Lock()
 	c.now += d
@@ -181,6 +221,9 @@ func (c *fakeClock) Advance(d time.Duration) {
 		t.f()
 	}
 }
+
+// attachSequence 是附加钩子在标签页顶层会话上依次发出的命令。
+var attachSequence = []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", "Page.getFrameTree", "Runtime.enable", "Log.enable", "Network.enable"}
 
 // probeMethod 是测试动作发出的 CDP 命令,与附加钩子发出的命令区分开。
 const probeMethod = "Probe.run"
@@ -285,17 +328,17 @@ func TestManagerAttachSetup(t *testing.T) {
 			So(err, ShouldBeNil)
 			_, err = probe(m, Request{TabID: tabRef(3)})
 			So(err, ShouldBeNil)
-			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod, probeMethod})
+			So(cdp.methods(3), ShouldResemble, append(slices.Clone(attachSequence), probeMethod, probeMethod))
 			cdp.mu.Lock()
 			So(string(cdp.sent[0].Params), ShouldEqual, `{"enabled":true}`)
-			So(string(cdp.sent[1].Params), ShouldEqual, `{"autoAttach":true,"flatten":true,"waitForDebuggerOnStart":false}`)
+			So(string(cdp.sent[1].Params), ShouldEqual, `{"autoAttach":true,"flatten":true,"waitForDebuggerOnStart":true}`)
 			cdp.mu.Unlock()
 		})
 
 		Convey("每个标签页各自开启一次", func() {
 			_, _ = probe(m, Request{TabID: tabRef(3)})
 			_, _ = probe(m, Request{TabID: tabRef(4)})
-			So(cdp.methods(4), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod})
+			So(cdp.methods(4), ShouldResemble, append(slices.Clone(attachSequence), probeMethod))
 		})
 
 		Convey("附加被拒时返回 PAGE_NOT_AUTOMATABLE,下一条命令重新尝试附加", func() {
@@ -309,13 +352,13 @@ func TestManagerAttachSetup(t *testing.T) {
 			cdp.setSend(nil)
 			_, err = probe(m, Request{TabID: tabRef(3)})
 			So(err, ShouldBeNil)
-			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod})
+			So(cdp.methods(3), ShouldResemble, append([]string{"Emulation.setFocusEmulationEnabled"}, append(slices.Clone(attachSequence), probeMethod)...))
 		})
 
 		Convey("命令在附加钩子全部成功的同时结束时断开调试器,不留下 daemon 不再计时断开的附加", func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			cdp.setSend(func(_ context.Context, cmd Command) (json.RawMessage, error) {
-				if cmd.Method == "Page.enable" {
+				if cmd.Method == attachSequence[len(attachSequence)-1] {
 					cancel()
 				}
 				return json.RawMessage(`{}`), nil
@@ -382,7 +425,7 @@ func TestManagerIdleDetach(t *testing.T) {
 			So(cdp.detachCalls(), ShouldResemble, [][]int{{3}})
 			_, err := probe(m, Request{TabID: tabRef(3)})
 			So(err, ShouldBeNil)
-			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod, "Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod})
+			So(cdp.methods(3), ShouldResemble, append(append(slices.Clone(attachSequence), probeMethod), append(slices.Clone(attachSequence), probeMethod)...))
 		})
 
 		Convey("期间的新命令重新计时", func() {
@@ -425,7 +468,7 @@ func TestManagerDetachNotifications(t *testing.T) {
 			m.OnNotification(testInstance, "debugger.detached", json.RawMessage(`{"tabId":3,"reason":"target_closed"}`))
 			_, err := probe(m, Request{TabID: tabRef(3)})
 			So(err, ShouldBeNil)
-			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod, "Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod})
+			So(cdp.methods(3), ShouldResemble, append(append(slices.Clone(attachSequence), probeMethod), append(slices.Clone(attachSequence), probeMethod)...))
 		})
 
 		Convey("其他实例或其他标签页的分离通知不影响这个标签页", func() {
@@ -433,7 +476,7 @@ func TestManagerDetachNotifications(t *testing.T) {
 			m.OnNotification(testInstance, "debugger.detached", json.RawMessage(`{"tabId":4,"reason":"target_closed"}`))
 			_, err := probe(m, Request{TabID: tabRef(3)})
 			So(err, ShouldBeNil)
-			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod, probeMethod})
+			So(cdp.methods(3), ShouldResemble, append(slices.Clone(attachSequence), probeMethod, probeMethod))
 		})
 
 		Convey("实例断开清空它的全部标签页状态,空闲计时不再对它发断开", func() {
@@ -442,7 +485,7 @@ func TestManagerDetachNotifications(t *testing.T) {
 			So(cdp.detachCalls(), ShouldBeEmpty)
 			_, err := probe(m, Request{TabID: tabRef(3)})
 			So(err, ShouldBeNil)
-			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod, "Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod})
+			So(cdp.methods(3), ShouldResemble, append(append(slices.Clone(attachSequence), probeMethod), append(slices.Clone(attachSequence), probeMethod)...))
 		})
 
 		Convey("实例断开时正在执行的命令返回 DEBUGGER_DETACHED", func() {
@@ -501,11 +544,11 @@ func TestManagerDetachAction(t *testing.T) {
 			res, err := m.Do(context.Background(), Request{Action: "detach", TabID: tabRef(3)})
 			So(err, ShouldBeNil)
 			So(string(res), ShouldEqual, `{"tabId":3,"tabIds":[3]}`)
-			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod})
+			So(cdp.methods(3), ShouldResemble, append(slices.Clone(attachSequence), probeMethod))
 
 			_, err = probe(m, Request{TabID: tabRef(3)})
 			So(err, ShouldBeNil)
-			So(cdp.methods(3), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod, "Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod})
+			So(cdp.methods(3), ShouldResemble, append(append(slices.Clone(attachSequence), probeMethod), append(slices.Clone(attachSequence), probeMethod)...))
 		})
 
 		Convey("未指定标签页时断开默认标签页", func() {
@@ -533,7 +576,7 @@ func TestManagerDetachAction(t *testing.T) {
 			So(cdp.detachCalls(), ShouldResemble, [][]int{nil})
 			_, err = probe(m, Request{TabID: tabRef(4)})
 			So(err, ShouldBeNil)
-			So(cdp.methods(4), ShouldResemble, []string{"Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod, "Emulation.setFocusEmulationEnabled", "Target.setAutoAttach", "Page.enable", probeMethod})
+			So(cdp.methods(4), ShouldResemble, append(append(slices.Clone(attachSequence), probeMethod), append(slices.Clone(attachSequence), probeMethod)...))
 		})
 
 		Convey("断开不激活标签页:带 --activate 返回 INVALID_REQUEST", func() {
@@ -545,6 +588,115 @@ func TestManagerDetachAction(t *testing.T) {
 		Convey("--all 与 --tab 不能同时给", func() {
 			_, err := m.Do(context.Background(), Request{Action: "detach", TabID: tabRef(3), Input: json.RawMessage(`{"all":true}`)})
 			So(errorCode(err), ShouldEqual, generated.ErrorCodeInvalidRequest)
+		})
+	})
+}
+
+func TestManagerAttachUnresponsive(t *testing.T) {
+	Convey("附加命令在时限内没有回应时放弃这次附加并返回 PAGE_UNRESPONSIVE,不等满命令超时", t, func() {
+		cdp := newFakeCDP()
+		m := newTestManager(cdp, &fakeClock{})
+		m.attachResponseTimeout = 200 * time.Millisecond
+		// 页面有遗留的孤儿弹框时,新会话上的附加命令一直不回应(真机探针)。
+		hangOn := func(method string) {
+			cdp.setSend(func(ctx context.Context, cmd Command) (json.RawMessage, error) {
+				if cmd.Method == method && cmd.SessionID == "" {
+					<-ctx.Done()
+					return nil, ctx.Err()
+				}
+				return json.RawMessage(`{}`), nil
+			})
+		}
+
+		Convey("页面命令:错误说明可能有遗留的弹框、可用 page reload 或 page goto 恢复;断开调试器,下一条命令从头附加", func() {
+			hangOn("Runtime.enable")
+			start := time.Now()
+			_, err := probe(m, Request{TabID: tabRef(3), Timeout: time.Minute})
+			So(errorCode(err), ShouldEqual, generated.ErrorCodePageUnresponsive)
+			So(time.Since(start), ShouldBeLessThan, 5*time.Second)
+			So(err.Error(), ShouldContainSubstring, "tab 3")
+			So(err.Error(), ShouldContainSubstring, "JS dialog")
+			So(err.Error(), ShouldContainSubstring, "page reload")
+			So(err.Error(), ShouldContainSubstring, "page goto")
+			So(cdp.detachCalls(), ShouldResemble, [][]int{{3}})
+
+			cdp.setSend(nil)
+			_, err = probe(m, Request{TabID: tabRef(3)})
+			So(err, ShouldBeNil)
+			So(cdp.methods(3), ShouldResemble, append(slices.Clone(attachSequence[:5]), append(slices.Clone(attachSequence), probeMethod)...))
+		})
+
+		Convey("debug 命令同样返回 PAGE_UNRESPONSIVE", func() {
+			hangOn("Runtime.enable")
+			_, err := m.Do(context.Background(), Request{Action: "debug.console", TabID: tabRef(3)})
+			So(errorCode(err), ShouldEqual, generated.ErrorCodePageUnresponsive)
+			So(cdp.detachCalls(), ShouldResemble, [][]int{{3}})
+		})
+
+		Convey("第一条附加命令就没有回应时同样", func() {
+			hangOn(attachSequence[0])
+			_, err := probe(m, Request{TabID: tabRef(3)})
+			So(errorCode(err), ShouldEqual, generated.ErrorCodePageUnresponsive)
+		})
+
+		Convey("每条附加命令各有时限:整个附加慢但每一步都有回应时照常附加", func() {
+			cdp.setSend(func(ctx context.Context, cmd Command) (json.RawMessage, error) {
+				time.Sleep(60 * time.Millisecond)
+				return json.RawMessage(`{}`), nil
+			})
+			_, err := probe(m, Request{TabID: tabRef(3)})
+			So(err, ShouldBeNil)
+		})
+
+		Convey("命令自己的超时更短时仍返回 TIMEOUT", func() {
+			hangOn("Runtime.enable")
+			_, err := probe(m, Request{TabID: tabRef(3), Timeout: 10 * time.Millisecond})
+			So(errorCode(err), ShouldEqual, generated.ErrorCodeTimeout)
+		})
+
+		Convey("附加之后的命令不受这个时限限制", func() {
+			_, err := probe(m, Request{TabID: tabRef(3)})
+			So(err, ShouldBeNil)
+			cdp.setSend(func(ctx context.Context, cmd Command) (json.RawMessage, error) {
+				if cmd.Method == probeMethod {
+					time.Sleep(400 * time.Millisecond)
+				}
+				return json.RawMessage(`{}`), nil
+			})
+			_, err = probe(m, Request{TabID: tabRef(3)})
+			So(err, ShouldBeNil)
+		})
+
+		Convey("放弃附加时不留下暂停中的 iframe:子会话的准备随附加一起结束,断开调试器让它继续", func() {
+			var mu sync.Mutex
+			childCommands := 0
+			cdp.setSend(func(ctx context.Context, cmd Command) (json.RawMessage, error) {
+				if cmd.SessionID == "S1" {
+					mu.Lock()
+					childCommands++
+					mu.Unlock()
+					<-ctx.Done() // 子会话所在的进程同样不回应
+					return nil, ctx.Err()
+				}
+				switch cmd.Method {
+				case "Target.setAutoAttach":
+					emit(m, 3, "", "Target.attachedToTarget", map[string]any{"sessionId": "S1", "waitingForDebugger": true, "targetInfo": map[string]any{"targetId": "F1", "type": "iframe", "url": "https://other.test/"}})
+				case "Runtime.enable":
+					<-ctx.Done()
+					return nil, ctx.Err()
+				}
+				return json.RawMessage(`{}`), nil
+			})
+			_, err := probe(m, Request{TabID: tabRef(3)})
+			So(errorCode(err), ShouldEqual, generated.ErrorCodePageUnresponsive)
+			So(cdp.detachCalls(), ShouldResemble, [][]int{{3}})
+			mu.Lock()
+			after := childCommands
+			mu.Unlock()
+			time.Sleep(100 * time.Millisecond)
+			mu.Lock()
+			So(childCommands, ShouldEqual, after)
+			mu.Unlock()
 		})
 	})
 }

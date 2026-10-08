@@ -162,6 +162,8 @@ describe("browser method handlers", () => {
         "extensions.uninstall",
         "debugger.send",
         "debugger.detach",
+        "debugger.record",
+        "debugger.body",
       ]),
     );
   });

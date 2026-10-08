@@ -1,11 +1,29 @@
 import type { StorageLike } from "@/background/controller";
 import { HandlerError, type RpcHandler } from "@/background/registry";
-import type { NotificationMethod, NotificationParams } from "@/protocol/generated/protocol.generated";
+import type { NotificationMethod, NotificationParams, RpcResult } from "@/protocol/generated/protocol.generated";
 import { requireTab } from "./targets";
 
 // 守护进程持有 5 分钟的权威超时；这里只是扩展侧的兜底，防止守护进程失联后调试器提示条一直挂着。
 export const IDLE_DETACH_MS = 10 * 60_000;
 const IDLE_REASON = "idle_timeout";
+
+// 请求体与响应体回传前截断到的字节数（文本按 UTF-8 计）。截断必须在这里做：Chrome 只能一次取回整个体，
+// 超过一个 4 MiB 协议帧的体经 debugger.send 原样回传时一个字节也拿不到。
+const BODY_LIMIT_BYTES = 1024 * 1024;
+
+type BodyResult = RpcResult<"debugger.body">;
+type Unavailable = NonNullable<BodyResult["unavailable"]>;
+
+// Chrome 不再保留一个体时 getResponseBody / getRequestPostData 的报错原文（真机探针，Chrome 125 与 153）。
+const UNAVAILABLE: [RegExp, Unavailable][] = [
+  // 页面导航之后，之前所有请求的资源记录都被丢弃。
+  [/No resource with given id/, "navigated"],
+  // 请求进行中、失败、没有响应体，或页面没有读取 fetch 的响应体。
+  [/No data found for resource with given identifier/, "noData"],
+  // 超出 Chrome 的缓冲（单个资源约 20 MB），或被后来的响应挤出。
+  [/evicted from inspector cache/, "evicted"],
+  [/No post data available/, "noPostData"],
+];
 
 export type NotifyFn = <N extends NotificationMethod>(method: N, params: NotificationParams<N>) => void;
 
@@ -15,11 +33,18 @@ export type NotifyFn = <N extends NotificationMethod>(method: N, params: Notific
 export type AttachedTabsStorage = Pick<StorageLike, "get" | "set">;
 
 const ATTACHED_TABS_KEY = "debuggerTabs";
+// 守护进程正在录制的标签页，同样要活过 service worker 重启，否则重启后兜底计时会把录制中的标签页断开。
+const RECORDING_TABS_KEY = "debuggerRecording";
+// 有未处理 JS 弹框的标签页，同样要活过 service worker 重启：释放前要先关闭这些弹框。
+const DIALOG_TABS_KEY = "debuggerDialogs";
 
 // 按标签页维护 chrome.debugger 附加状态：发送命令时按需附加，把事件和被动分离转成通知，并在空闲、连接断开时释放。
 export class DebuggerRelay {
-  // 已附加（或正在附加）的标签页 → 空闲计时器。
-  private readonly idle = new Map<number, ReturnType<typeof setTimeout>>();
+  // 已附加（或正在附加）的标签页 → 空闲计时器；录制中的标签页没有计时器（undefined），不会被兜底断开。
+  private readonly idle = new Map<number, ReturnType<typeof setTimeout> | undefined>();
+  private readonly recording = new Set<number>();
+  // 这次附加期间打开、还没关闭的 JS 弹框所在的标签页。
+  private readonly dialogs = new Set<number>();
   private readonly attaching = new Map<number, Promise<void>>();
   // 恢复重启前的附加记录；恢复完成前到达的事件排在它之后处理，保持原有顺序。
   private readonly restored: Promise<void>;
@@ -70,6 +95,57 @@ export class DebuggerRelay {
     return { tabIds };
   };
 
+  // 守护进程开始或停止录制一个标签页：录制期间免除兜底空闲断开，停止后重新计时。
+  // 停止一个没附加的标签页是空操作；开始录制要求标签页已附加（守护进程总是先附加），否则按分离处理。
+  readonly record: RpcHandler<"debugger.record"> = async (params) => {
+    await this.restored;
+    // 与 detach 一样等附加结束再判断，避免把刚附加完的标签页当成没附加。
+    await Promise.allSettled([this.attaching.get(params.tabId)].filter((p) => p !== undefined));
+    if (!this.idle.has(params.tabId)) {
+      if (params.recording) {
+        throw new HandlerError("DEBUGGER_DETACHED", `the debugger is not attached to tab ${params.tabId}`);
+      }
+      return { recording: false };
+    }
+    if (params.recording) {
+      this.recording.add(params.tabId);
+    } else {
+      this.recording.delete(params.tabId);
+    }
+    this.armIdle(params.tabId);
+    this.persist();
+    return { recording: params.recording };
+  };
+
+  // 取回一个请求的请求体或响应体，截断到 BODY_LIMIT_BYTES 后回传，并给出原始大小。Chrome 不再保留它时
+  // 不算错误，答 unavailable 与原因。和 record 一样不附加：daemon 只为已附加时记下的请求取体。
+  readonly body: RpcHandler<"debugger.body"> = async (params) => {
+    await this.restored;
+    await Promise.allSettled([this.attaching.get(params.tabId)].filter((p) => p !== undefined));
+    if (!this.idle.has(params.tabId)) {
+      throw new HandlerError("DEBUGGER_DETACHED", `the debugger is not attached to tab ${params.tabId}`);
+    }
+    this.armIdle(params.tabId);
+    const target =
+      params.sessionId === undefined ? { tabId: params.tabId } : { tabId: params.tabId, sessionId: params.sessionId };
+    const method = params.part === "request" ? "Network.getRequestPostData" : "Network.getResponseBody";
+    let raw: { body?: string; postData?: string; base64Encoded?: boolean };
+    try {
+      raw = (await chrome.debugger.sendCommand(target, method, { requestId: params.requestId })) as typeof raw;
+    } catch (error) {
+      if (!this.idle.has(params.tabId)) {
+        throw new HandlerError("DEBUGGER_DETACHED", "the debugger detached while the body was read");
+      }
+      const message = errorMessage(error);
+      const unavailable = UNAVAILABLE.find(([pattern]) => pattern.test(message));
+      if (unavailable) {
+        return { unavailable: unavailable[1] };
+      }
+      throw new HandlerError("INVALID_REQUEST", message);
+    }
+    return truncateBody((params.part === "request" ? raw.postData : raw.body) ?? "", raw.base64Encoded === true);
+  };
+
   // 连接断开后没有人能再驱动这些标签页，全部释放；此时也无法通知守护进程。
   async detachAll(): Promise<void> {
     await this.restored;
@@ -85,6 +161,7 @@ export class DebuggerRelay {
     if (source.tabId === undefined || !this.idle.has(source.tabId)) {
       return;
     }
+    this.trackDialog(source.tabId, method);
     this.notify("debugger.event", {
       tabId: source.tabId,
       method,
@@ -131,8 +208,13 @@ export class DebuggerRelay {
 
   // 重启前附加的标签页仍附加着就接着管理（重新开始兜底计时）；已经不在的告诉 daemon，它可能还当它附加着。
   private async restore(): Promise<void> {
-    const stored = (await this.storage.get([ATTACHED_TABS_KEY]))[ATTACHED_TABS_KEY];
+    const items = await this.storage.get([ATTACHED_TABS_KEY, RECORDING_TABS_KEY, DIALOG_TABS_KEY]);
+    const stored = items[ATTACHED_TABS_KEY];
     const saved = Array.isArray(stored) ? (stored as number[]) : [];
+    const storedRecording = items[RECORDING_TABS_KEY];
+    const wasRecording = new Set(Array.isArray(storedRecording) ? (storedRecording as number[]) : []);
+    const storedDialogs = items[DIALOG_TABS_KEY];
+    const hadDialog = new Set(Array.isArray(storedDialogs) ? (storedDialogs as number[]) : []);
     if (saved.length === 0) {
       return;
     }
@@ -140,6 +222,12 @@ export class DebuggerRelay {
     const gone: number[] = [];
     for (const tabId of saved) {
       if (attached.has(tabId)) {
+        if (wasRecording.has(tabId)) {
+          this.recording.add(tabId);
+        }
+        if (hadDialog.has(tabId)) {
+          this.dialogs.add(tabId);
+        }
         this.armIdle(tabId);
       } else {
         gone.push(tabId);
@@ -154,13 +242,23 @@ export class DebuggerRelay {
   }
 
   private persist(): void {
-    this.storage.set({ [ATTACHED_TABS_KEY]: [...this.idle.keys()] }).catch((error: unknown) => {
-      console.error("failed to save the attached tabs", error);
-    });
+    this.storage
+      .set({
+        [ATTACHED_TABS_KEY]: [...this.idle.keys()],
+        [RECORDING_TABS_KEY]: [...this.recording],
+        [DIALOG_TABS_KEY]: [...this.dialogs],
+      })
+      .catch((error: unknown) => {
+        console.error("failed to save the attached tabs", error);
+      });
   }
 
   private armIdle(tabId: number): void {
     clearTimeout(this.idle.get(tabId));
+    if (this.recording.has(tabId)) {
+      this.idle.set(tabId, undefined);
+      return;
+    }
     this.idle.set(
       tabId,
       setTimeout(() => {
@@ -169,14 +267,38 @@ export class DebuggerRelay {
     );
   }
 
-  private forget(tabId: number): void {
-    clearTimeout(this.idle.get(tabId));
-    this.idle.delete(tabId);
+  // 弹框事件只在附加期间送达，弹框所在的子会话里打开时事件也在顶层会话上（真机探针）。
+  private trackDialog(tabId: number, method: string): void {
+    if (method === "Page.javascriptDialogOpening") {
+      this.dialogs.add(tabId);
+    } else if (method === "Page.javascriptDialogClosed") {
+      this.dialogs.delete(tabId);
+    } else {
+      return;
+    }
     this.persist();
   }
 
+  private forget(tabId: number): void {
+    clearTimeout(this.idle.get(tabId));
+    this.idle.delete(tabId);
+    this.recording.delete(tabId);
+    this.dialogs.delete(tabId);
+    this.persist();
+  }
+
+  // 释放前先关闭（dismiss）已知的弹框：断开之后它成了孤儿，之后任何调试会话都处理不了它、附加用的命令全部阻塞，
+  // 只有导航能关掉（真机探针）。只有处理弹框的命令在弹框打开期间仍有回应，并且只能发往顶层会话。
   private async release(tabId: number): Promise<void> {
+    const hadDialog = this.dialogs.has(tabId);
     this.forget(tabId);
+    if (hadDialog) {
+      try {
+        await chrome.debugger.sendCommand({ tabId }, "Page.handleJavaScriptDialog", { accept: false });
+      } catch (error) {
+        console.warn(`dismissing the JS dialog on tab ${tabId} before detaching failed`, error);
+      }
+    }
     try {
       await chrome.debugger.detach({ tabId });
     } catch (error) {
@@ -184,6 +306,29 @@ export class DebuggerRelay {
       console.warn(`detaching the debugger from tab ${tabId} failed`, error);
     }
   }
+}
+
+// truncateBody 把体截到 BODY_LIMIT_BYTES：base64 按解码后的字节截，再重新编码；文本按 UTF-8 字节截，
+// 不切开一个字符。size 是截断前的字节数。
+function truncateBody(body: string, base64Encoded: boolean): BodyResult {
+  if (base64Encoded) {
+    const padding = body.endsWith("==") ? 2 : body.endsWith("=") ? 1 : 0;
+    const size = (body.length / 4) * 3 - padding;
+    if (size <= BODY_LIMIT_BYTES) {
+      return { body, base64Encoded, size, truncated: false };
+    }
+    // 只解码够用的前缀：完整的体可能有 20 MB。
+    const prefix = atob(body.slice(0, Math.ceil(BODY_LIMIT_BYTES / 3) * 4)).slice(0, BODY_LIMIT_BYTES);
+    return { body: btoa(prefix), base64Encoded, size, truncated: true };
+  }
+  const encoder = new TextEncoder();
+  const size = encoder.encode(body).length;
+  if (size <= BODY_LIMIT_BYTES) {
+    return { body, base64Encoded, size, truncated: false };
+  }
+  // encodeInto 只写入完整的字符，read 是写进去的 UTF-16 码元数。
+  const { read } = encoder.encodeInto(body, new Uint8Array(BODY_LIMIT_BYTES));
+  return { body: body.slice(0, read), base64Encoded, size, truncated: true };
 }
 
 function errorMessage(error: unknown): string {

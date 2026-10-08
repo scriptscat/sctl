@@ -38,6 +38,7 @@ export const ERROR_CODES = [
   "PAGE_HIDDEN",
   "DEBUGGER_DETACHED",
   "DIALOG_OPEN",
+  "PAGE_UNRESPONSIVE",
   "EVAL_ERROR",
   "NAVIGATION_FAILED"
 ] as const;
@@ -189,6 +190,19 @@ export interface CookiesSetResult {
   contentTrust: "untrusted-page-content";
   cookie: { domain: string; expires?: number; httpOnly: boolean; name: string; partitionTopLevelSite?: string; path: string; sameSite: "no_restriction" | "lax" | "strict" | "unspecified"; secure: boolean; session: boolean; value: string; };
 }
+export interface DebuggerBodyParams {
+  part: "request" | "response";
+  requestId: string;
+  sessionId?: string;
+  tabId: number;
+}
+export interface DebuggerBodyResult {
+  base64Encoded?: boolean;
+  body?: string;
+  size?: number;
+  truncated?: boolean;
+  unavailable?: "navigated" | "noData" | "evicted" | "noPostData";
+}
 export interface DebuggerDetachParams {
   tabId?: number;
 }
@@ -204,6 +218,13 @@ export interface DebuggerEventNotification {
   params?: Record<string, unknown>;
   sessionId?: string;
   tabId: number;
+}
+export interface DebuggerRecordParams {
+  recording: boolean;
+  tabId: number;
+}
+export interface DebuggerRecordResult {
+  recording: boolean;
 }
 export interface DebuggerSendParams {
   method: string;
@@ -512,7 +533,9 @@ export interface RpcMethodMap {
   "cookies.list": { params: CookiesListParams; result: CookiesListResult };
   "cookies.remove": { params: CookiesRemoveParams; result: CookiesRemoveResult };
   "cookies.set": { params: CookiesSetParams; result: CookiesSetResult };
+  "debugger.body": { params: DebuggerBodyParams; result: DebuggerBodyResult };
   "debugger.detach": { params: DebuggerDetachParams; result: DebuggerDetachResult };
+  "debugger.record": { params: DebuggerRecordParams; result: DebuggerRecordResult };
   "debugger.send": { params: DebuggerSendParams; result: DebuggerSendResult };
   "downloads.cancel": { params: DownloadsCancelParams; result: DownloadsCancelResult };
   "downloads.deleteFile": { params: DownloadsDeleteFileParams; result: DownloadsDeleteFileResult };
@@ -668,10 +691,26 @@ export const RPC_METHODS = {
     blocking: "none",
     level: "L0",
   },
+  "debugger.body": {
+    params: "DebuggerBodyParams",
+    result: "DebuggerBodyResult",
+    scope: "debugger:body",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
   "debugger.detach": {
     params: "DebuggerDetachParams",
     result: "DebuggerDetachResult",
     scope: "debugger:detach",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "debugger.record": {
+    params: "DebuggerRecordParams",
+    result: "DebuggerRecordResult",
+    scope: "debugger:record",
     effect: "write",
     blocking: "none",
     level: "L0",

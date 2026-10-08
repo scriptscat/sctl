@@ -63,9 +63,7 @@ func runNavigate(ctx context.Context, t *Tab, input json.RawMessage) (any, error
 	if state == "" {
 		state = loadStateLoad
 	}
-	if err := t.watchNetwork(ctx); err != nil {
-		return nil, err
-	}
+	t.watchNetwork()
 	run, err := beginAction(ctx, t, false)
 	if err != nil {
 		return nil, err
@@ -86,6 +84,26 @@ func runNavigate(ctx context.Context, t *Tab, input json.RawMessage) (any, error
 		return nil, err
 	}
 	return navigateResult{ActionResult: res, HTTPStatus: t.net.documentStatus()}, nil
+}
+
+// recoverByNavigating 让留着孤儿弹框、附加没有回应的页面重新回应(spec §JS 弹框):真机探针显示这时新会话上的
+// 附加命令全部阻塞,而作为第一条命令发出的 Page.navigate 与 Page.reload 照常回应并关掉弹框。之后动作照常重新附加
+// 并导航,所以页面会被加载两次。back 与 forward 要先读导航历史,不能这样恢复。
+func recoverByNavigating(ctx context.Context, t *Tab, input json.RawMessage) (bool, error) {
+	var in navigateInput
+	if err := decodeInput(input, &in); err != nil {
+		return false, err
+	}
+	if err := in.validate(); err != nil {
+		return false, err
+	}
+	switch in.Action {
+	case "goto":
+		return true, t.send(ctx, "Page.navigate", map[string]string{"url": in.URL}, nil)
+	case "reload":
+		return true, t.send(ctx, "Page.reload", nil, nil)
+	}
+	return false, nil
 }
 
 // errAborted 是 Chrome 对不替换文档的导航(204 响应、下载)给出的错误文本;它不是网络错误。

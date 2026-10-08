@@ -142,10 +142,11 @@ func TestPageEval(t *testing.T) {
 			So(errOut+err.Error(), ShouldContainSubstring, "canceled_by_user")
 		})
 
-		Convey("EVAL_ERROR、PAGE_NOT_AUTOMATABLE、NOT_FOUND 退出码 3,消息带原因", func() {
+		Convey("EVAL_ERROR、PAGE_NOT_AUTOMATABLE、PAGE_UNRESPONSIVE、NOT_FOUND 退出码 3,消息带原因", func() {
 			for code, message := range map[string]string{
 				"EVAL_ERROR":           "Error: boom",
 				"PAGE_NOT_AUTOMATABLE": "Cannot access a chrome:// URL",
+				"PAGE_UNRESPONSIVE":    "run page reload or page goto on the tab to recover",
 				"NOT_FOUND":            "no tab 9",
 			} {
 				stubPageDaemon(t, pageError(code, message))

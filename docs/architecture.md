@@ -4,7 +4,7 @@
 
 ```text
 MCP client (Claude/Codex…) ─ stdio ─→ sctl mcp ─┐ (authenticated control API)
-CLI verbs (sctl get / edit / install / browsers / tabs / windows / page …) ┤
+CLI verbs (sctl get / edit / install / browsers / tabs / windows / page / debug …) ┤
                                                 ▼
                           sctl serve (daemon; defaults to 127.0.0.1:8643)
                                                 ▲ WebSocket (each extension dials in + mutual HMAC handshake)
@@ -44,7 +44,7 @@ is when the CLI prints its waiting line and `sctl mcp` starts its progress notif
 
 ### Page automation
 
-`sctl page` commands and the `page_*` MCP tools reach the daemon through `/control/page`, not `/control/call`: a
+`sctl page` and `sctl debug` commands and the `page_*` and `debug_*` MCP tools reach the daemon through `/control/page`, not `/control/call`: a
 page action is not one extension method but a sequence of Chrome DevTools Protocol (CDP) commands decided in Go.
 The page automation component (`internal/daemon/page`) resolves the browser and tab, then drives the tab through
 the extension's internal relay methods ([protocol.md](./protocol.md#32-internal-methods)):
@@ -59,7 +59,30 @@ The extension only relays CDP commands, events, and detach notices; the page log
 tested against a fake CDP. Page state — which tabs are attached, their idle
 timers, and the per-tab queue that runs commands on one tab in arrival order — lives in the daemon's memory,
 because the daemon is the only process that outlives a single command. When the daemon attaches and detaches a
-tab is described in [protocol.md](./protocol.md#32-internal-methods).
+tab is described in [protocol.md](./protocol.md#32-internal-methods). Each attach hook gets 5 seconds to be answered,
+after which the attach is given up with `PAGE_UNRESPONSIVE`; and before the daemon or the extension detaches a tab
+itself, it dismisses a JS dialog it knows is open there, because a dialog left behind by a detached debugger blocks
+every later attach.
+
+The same component keeps the debug records of each attached tab (`sctl debug`, `debug_*`). Every attach creates a
+fresh per-tab state (`page.Tab`) that holds two ring buffers, at most 1000 console records and 1000 network requests,
+each also capped at 32 MiB of record content (a record is page-controlled and can approach one 4 MiB frame) with the
+oldest dropped first; attach hooks enable the `Runtime`, `Log`, and `Network` domains on the tab's top-level session (`Network` with a small
+`maxPostDataSize`, so a large request body cannot push an event over the frame limit), and the CDP events the
+extension relays are converted into records in the bridge read loop. Request and response bodies are not buffered:
+`debug request` reads them on demand through `debugger.body`, which cuts them to 1 MiB in the extension. Cross-process
+iframes are attached automatically with `waitForDebuggerOnStart`, so a new one starts paused: a background task of the
+tab enables the same domains on its child session and then always resumes it, because event handlers run in the bridge
+read loop and must not send commands. Since the buffers belong to the per-tab state, every path that detaches the
+debugger — idle detach, `page detach`, a `debugger.detached` notice, the browser instance going away, a failed attach
+— drops them, and before the daemon itself detaches a tab it ends and waits for that tab's background tasks so none of
+them re-attaches it. Debug records never leave the daemon's memory.
+
+Recording (`debug start`/`stop`/`status`) is also per-tab state. A recording tab gets no idle-detach timer after its
+commands; instead a 60-minute timer, restarted by every debug command on the tab, ends the recording through the tab's
+queue and re-arms the idle timer, with a sequence number discarding a timer that fired late. The daemon tells the
+extension through `debugger.record` so its own idle fallback leaves the tab alone too. Because recording lives in the
+per-tab state, every detach path ends it.
 
 ## Directory layout
 
@@ -82,6 +105,7 @@ internal/cli/               # subcommand definitions; spans both sides, hence to
   tabs.go windows.go        #   sctl tabs list|open|close|activate, sctl windows list
   page*.go                  #   sctl page snapshot|click|hover|fill|type|press|select|upload|scroll|goto|back|forward|
                             #   reload|wait|screenshot|eval|dialog|detach (reach /control/page through dispatchPage)
+  debug.go                  #   sctl debug start|stop|status|console|network|request|clear (also through dispatchPage)
   resource.go               #   the optional scripts|script|sc resource word shared by those verbs
   dispatch.go               #   action forwarding and bridge error → exit code mapping
 
@@ -95,7 +119,7 @@ internal/daemon/            # ── sctl serve side ──
     envelope.go             #     envelope, payload structs, error codes
   controlapi/               #   /control/* handlers (controller role), depends on the narrow Bridge and Page interfaces
   page/                     #   page automation: Manager (target tab, per-tab queue, attach and idle detach),
-                             #     page actions, the bridge-backed CDP implementation
+                             #     page actions, per-tab debug record buffers, the bridge-backed CDP implementation
   auth/                     #   mutual HMAC handshake, enrollment-code derivation (HKDF), key delivery (AES-GCM)
   store/                    #   persistence (repository role): ScriptCat's long-term key K, plus the
                              #     browsers.json registry of paired sctl Browser instances and their own

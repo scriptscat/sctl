@@ -46,8 +46,8 @@ type Deps struct {
 	Caller  BridgeCaller
 }
 
-// New 按依赖构建 MCP server,注册 protocol.json 里定义的非内部逐方法工具、按领域合并的工具、page_* 页面工具以及
-// browsers_list。方法是否是浏览器方法、是否汇总多实例、是否等待人工决定,都取自 protocol.json 的 peer、mergeField 与
+// New 按依赖构建 MCP server,注册 protocol.json 里定义的非内部逐方法工具、按领域合并的工具、page_* 页面工具、
+// debug_* 调试工具以及 browsers_list。方法是否是浏览器方法、是否汇总多实例、是否等待人工决定,都取自 protocol.json 的 peer、mergeField 与
 // blocking,不按方法名推断。
 func New(d Deps) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{Name: d.Name, Version: d.Version}, &mcp.ServerOptions{})
@@ -67,6 +67,9 @@ func New(d Deps) *mcp.Server {
 		registerDomainTool(srv, dt, d.Proto, d.Caller)
 	}
 	for _, td := range pageTools {
+		registerPageTool(srv, td, d.Caller)
+	}
+	for _, td := range debugTools {
 		registerPageTool(srv, td, d.Caller)
 	}
 	// browsers_list 特殊处理:不是 bridge action,由控制 API 直接提供已配对实例列表。

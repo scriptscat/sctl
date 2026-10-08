@@ -28,6 +28,8 @@ type dialogState struct {
 	mu   sync.Mutex
 	seq  uint64
 	open *dialogInfo
+	// opening 在下一个弹框打开时关闭;nil 表示还没有人等。
+	opening chan struct{}
 }
 
 func (d *dialogState) opened(sessionID, kind, message string) dialogInfo {
@@ -35,7 +37,26 @@ func (d *dialogState) opened(sessionID, kind, message string) dialogInfo {
 	defer d.mu.Unlock()
 	d.seq++
 	d.open = &dialogInfo{seq: d.seq, kind: kind, message: message, sessionID: sessionID}
+	if d.opening != nil {
+		close(d.opening)
+		d.opening = nil
+	}
 	return *d.open
+}
+
+// whenOpen 返回一个在弹框打开时关闭的 channel;此刻已有弹框打开时它已经关闭。
+func (d *dialogState) whenOpen() <-chan struct{} {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.open != nil {
+		done := make(chan struct{})
+		close(done)
+		return done
+	}
+	if d.opening == nil {
+		d.opening = make(chan struct{})
+	}
+	return d.opening
 }
 
 // closed 在弹框关闭事件到达时清除状态;seq 非 0 时只清除同一个弹框(处理命令返回后的补充清除)。
@@ -69,6 +90,20 @@ func dialogOpenError(tabID int, d dialogInfo) *Error {
 type dialogOpeningParams struct {
 	Type    string `json:"type"`
 	Message string `json:"message"`
+}
+
+// dismissDialog 在 sctl 自己断开调试器之前关闭(dismiss)标签页上已知的弹框(spec §JS 弹框):断开之后它成了孤儿,
+// 之后任何调试会话都处理不了它,附加用的命令也全部阻塞,只有导航能关掉。关闭失败只记日志,断开照常进行。
+func (t *Tab) dismissDialog(ctx context.Context) {
+	d := t.dialog.current()
+	if d == nil {
+		return
+	}
+	if err := t.sendTo(ctx, d.sessionID, "Page.handleJavaScriptDialog", map[string]bool{"accept": false}, nil); err != nil {
+		t.m.log.Warn("failed to dismiss a JS dialog before detaching", zap.Int("tabId", t.id), zap.Error(err))
+		return
+	}
+	t.dialog.closed(d.seq)
 }
 
 func onDialogOpening(t *Tab, sessionID string, params json.RawMessage) {
