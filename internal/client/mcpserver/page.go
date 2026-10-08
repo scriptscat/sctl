@@ -240,7 +240,7 @@ var pageTools = []pageToolDef{
 			"every other page command except page_detach returns DIALOG_OPEN, naming the dialog type and its text, " +
 			"and a command that was running when the dialog opened, such as a click that triggers an alert, returns DIALOG_OPEN at once " +
 			"(it may already have taken effect). sctl handles a dialog itself only right before it detaches the debugger (page_detach, " +
-			"the 5-minute idle detach): it dismisses it, since a dialog left open after the debugger detaches can no longer be handled. " +
+			"the 5-minute idle detach, or the extension letting go of the tab): it dismisses it, since a dialog left open after the debugger detaches can no longer be handled. " +
 			"A page that does not answer while sctl attaches the debugger, for example because of such a dialog left behind after the " +
 			"infobar was dismissed, returns PAGE_UNRESPONSIVE within 5 seconds, and page_navigate with action reload or goto recovers it. " +
 			"text is the input of a prompt and only applies " +

@@ -349,7 +349,8 @@ func newPageDialogCmd() *cobra.Command {
 		Long: "Handle the JS dialog (alert, confirm, prompt or beforeunload) that is open in the tab. While one is open every\n" +
 			"other page command except detach fails with DIALOG_OPEN, which names the dialog type and its text.\n" +
 			"sctl handles a dialog itself only right before it detaches the debugger (page detach, the 5-minute idle\n" +
-			"detach): it dismisses it, since a dialog left open after the debugger detaches can no longer be handled.\n" +
+			"detach, or the extension letting go of the tab): it dismisses it, since a dialog left open after the\n" +
+			"debugger detaches can no longer be handled.\n" +
 			"A page that does not answer while sctl attaches the debugger, for example because of such a dialog left\n" +
 			"behind after the infobar was dismissed, fails with PAGE_UNRESPONSIVE within 5 seconds: page reload or\n" +
 			"page goto recovers it. --text is the input of a prompt and only applies to accept.\n" +
