@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -193,5 +194,117 @@ func TestDialogOpeningInterruptsRunningAction(t *testing.T) {
 		So(slices.Contains(cdp.methods(3), "Page.handleJavaScriptDialog"), ShouldBeFalse)
 		_, err := dialog(m, 3, `{"action":"dismiss"}`)
 		So(err, ShouldBeNil)
+	})
+}
+
+// dismissal 是假 CDP 收到的一条 Page.handleJavaScriptDialog:发往哪个标签页、参数,以及当时已经有过几次断开。
+type dismissal struct {
+	tab            int
+	params         string
+	detachesBefore int
+}
+
+// recordDismissals 让假 CDP 记下每条 Page.handleJavaScriptDialog,handle 非 nil 时由它决定这条命令的结果。
+func recordDismissals(cdp *fakeCDP, handle func() error) func() []dismissal {
+	var mu sync.Mutex
+	var got []dismissal
+	cdp.setSend(func(_ context.Context, cmd Command) (json.RawMessage, error) {
+		if cmd.Method == "Page.handleJavaScriptDialog" {
+			d := dismissal{tab: cmd.TabID, params: string(cmd.Params), detachesBefore: len(cdp.detachCalls())}
+			mu.Lock()
+			got = append(got, d)
+			mu.Unlock()
+			if handle != nil {
+				if err := handle(); err != nil {
+					return nil, err
+				}
+			}
+		}
+		return json.RawMessage(`{}`), nil
+	})
+	return func() []dismissal {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(got)
+	}
+}
+
+func TestSctlDismissesKnownDialogBeforeDetaching(t *testing.T) {
+	Convey("sctl 自己断开调试器前先关闭(dismiss)它知道的弹框,不留下之后谁都处理不了的孤儿弹框", t, func() {
+		cdp := newFakeCDP()
+		clock := &fakeClock{}
+		m := newTestManager(cdp, clock)
+		_, err := probe(m, Request{TabID: tabRef(3)})
+		So(err, ShouldBeNil)
+		_, err = probe(m, Request{TabID: tabRef(4)})
+		So(err, ShouldBeNil)
+		dismissals := recordDismissals(cdp, nil)
+
+		Convey("page detach:先 dismiss 再断开", func() {
+			openDialog(m, 3, "confirm", "leave?")
+			_, err := m.Do(context.Background(), Request{Action: "detach", TabID: tabRef(3)})
+			So(err, ShouldBeNil)
+			So(dismissals(), ShouldResemble, []dismissal{{tab: 3, params: `{"accept":false}`, detachesBefore: 0}})
+			So(cdp.detachCalls(), ShouldResemble, [][]int{{3}})
+		})
+
+		Convey("page detach --all:只关闭有弹框的标签页上的弹框,都在断开之前", func() {
+			openDialog(m, 4, "alert", "hi")
+			_, err := m.Do(context.Background(), Request{Action: "detach", Input: json.RawMessage(`{"all":true}`)})
+			So(err, ShouldBeNil)
+			So(dismissals(), ShouldResemble, []dismissal{{tab: 4, params: `{"accept":false}`, detachesBefore: 0}})
+			So(cdp.detachCalls(), ShouldResemble, [][]int{nil})
+		})
+
+		Convey("5 分钟空闲断开:先 dismiss 再断开", func() {
+			openDialog(m, 3, "prompt", "name?")
+			clock.Advance(idleTimeout)
+			So(dismissals(), ShouldResemble, []dismissal{{tab: 3, params: `{"accept":false}`, detachesBefore: 0}})
+			So(cdp.detachCalls(), ShouldResemble, [][]int{{3}, {4}})
+		})
+
+		Convey("没有弹框或弹框已经关闭时断开不发出 handleJavaScriptDialog", func() {
+			openDialog(m, 3, "alert", "hi")
+			closeDialog(m, 3)
+			_, err := m.Do(context.Background(), Request{Action: "detach", TabID: tabRef(3)})
+			So(err, ShouldBeNil)
+			clock.Advance(idleTimeout)
+			So(dismissals(), ShouldBeEmpty)
+			So(cdp.detachCalls(), ShouldResemble, [][]int{{3}, {4}})
+		})
+
+		Convey("关闭弹框失败时照常断开", func() {
+			recordDismissals(cdp, func() error { return &Error{Code: generated.ErrorCodeInvalidRequest, Message: "No dialog is showing"} })
+			openDialog(m, 3, "alert", "hi")
+			res, err := m.Do(context.Background(), Request{Action: "detach", TabID: tabRef(3)})
+			So(err, ShouldBeNil)
+			So(string(res), ShouldEqual, `{"tabId":3,"tabIds":[3]}`)
+		})
+
+		Convey("附加途中弹框打开、放弃这次附加时,先关闭它再断开;命令照第 3 期返回 DIALOG_OPEN", func() {
+			cdp.setSend(func(ctx context.Context, cmd Command) (json.RawMessage, error) {
+				switch cmd.Method {
+				case "Runtime.enable":
+					openDialog(m, 5, "alert", "during attach")
+					<-ctx.Done() // 弹框卡住渲染进程,之后的附加命令不再回应
+					return nil, ctx.Err()
+				case "Page.handleJavaScriptDialog":
+					So(cdp.detachCalls(), ShouldBeEmpty)
+				}
+				return json.RawMessage(`{}`), nil
+			})
+			_, err := probe(m, Request{TabID: tabRef(5)})
+			So(errorCode(err), ShouldEqual, generated.ErrorCodeDialogOpen)
+			So(cdp.methods(5), ShouldContain, "Page.handleJavaScriptDialog")
+			So(cdp.detachCalls(), ShouldResemble, [][]int{{5}})
+		})
+
+		Convey("其余时候仍不自动处理弹框:debug stop、调试器被动分离都不发出 handleJavaScriptDialog", func() {
+			openDialog(m, 3, "alert", "hi")
+			_, err := m.Do(context.Background(), Request{Action: "debug.stop", TabID: tabRef(3)})
+			So(err, ShouldBeNil)
+			m.OnNotification(testInstance, "debugger.detached", json.RawMessage(`{"tabId":3,"reason":"canceled_by_user"}`))
+			So(dismissals(), ShouldBeEmpty)
+		})
 	})
 }

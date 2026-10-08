@@ -3,6 +3,7 @@ package page
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -275,13 +276,37 @@ func noResponseBody(r networkRecord) string {
 	return ""
 }
 
-// fetchBody 经扩展取一个体。发出请求的跨进程 iframe 已经不在时,它的子会话不再接受命令。
+// dialogBlocksBody 是弹框打开期间取体的原因:Chrome 的 getResponseBody / getRequestPostData 一直阻塞到弹框关闭
+// (真机探针),debug 命令不能因此等下去(spec §JS 弹框)。
+const dialogBlocksBody = "the page has an unhandled JS dialog, and Chrome returns no bodies while it is open: handle it with page dialog accept or dismiss, then ask again"
+
+// errDialogOpened 是取体途中弹框打开时取消取体的原因。
+var errDialogOpened = errors.New("a JS dialog opened while the body was read")
+
+// fetchBody 经扩展取一个体。发出请求的跨进程 iframe 已经不在时,它的子会话不再接受命令。弹框打开时(包括取体途中)
+// 不等它关闭。弹框可能开在别的进程里、并不挡住这个体,但事件不说是哪个 frame 开的,一律不等。
 func (t *Tab) fetchBody(ctx context.Context, sessionID, requestID string, part BodyPart) (*bodyContent, error) {
 	if sessionID != "" && !t.frames.alive(sessionID) {
 		return unavailable("the cross-origin iframe that made this request is gone"), nil
 	}
-	b, err := t.m.cdp.Body(ctx, t.instanceID, BodyQuery{TabID: t.id, SessionID: sessionID, RequestID: requestID, Part: part})
+	if t.dialog.current() != nil {
+		return unavailable(dialogBlocksBody), nil
+	}
+	bodyCtx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	opened := t.dialog.whenOpen()
+	go func() {
+		select {
+		case <-opened:
+			cancel(errDialogOpened)
+		case <-bodyCtx.Done():
+		}
+	}()
+	b, err := t.m.cdp.Body(bodyCtx, t.instanceID, BodyQuery{TabID: t.id, SessionID: sessionID, RequestID: requestID, Part: part})
 	if err != nil {
+		if ctx.Err() == nil && errors.Is(context.Cause(bodyCtx), errDialogOpened) {
+			return unavailable(dialogBlocksBody), nil
+		}
 		return nil, err
 	}
 	if b.Unavailable != "" {

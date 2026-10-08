@@ -171,11 +171,16 @@ when the debugger detaches while it runs (for example, the infobar was dismissed
 waiting but does not undo what the page already did, and with 3 on other errors.
 
 While a JS dialog is open in a tab, every page command except `sctl page dialog` and `detach` fails with
-`DIALOG_OPEN` (exit 3), naming the dialog type and its text (page-controlled content). Dialogs are never handled
-automatically: handle one with `sctl page dialog accept` or `dismiss`, which fails with `NOT_FOUND` when none is
-open. A command already running when a dialog opens, such as a click that triggers an `alert`, returns `DIALOG_OPEN` at
-once instead of waiting for its timeout; the dialog stays open and the action may already have taken effect. This includes
-`screenshot`, since a dialog blocks page rendering and no image can be taken while it is open.
+`DIALOG_OPEN` (exit 3), naming the dialog type and its text (page-controlled content). Handle one with
+`sctl page dialog accept` or `dismiss`, which fails with `NOT_FOUND` when none is open. A command already running
+when a dialog opens, such as a click that triggers an `alert`, returns `DIALOG_OPEN` at once instead of waiting for its
+timeout; the dialog stays open and the action may already have taken effect. This includes `screenshot`, since a dialog
+blocks page rendering and no image can be taken while it is open. sctl handles a dialog itself only right before it
+detaches the debugger — `sctl page detach`, the 5-minute idle detach, or the extension letting go of the tab — and
+then dismisses it: a dialog left open after the debugger detaches can no longer be handled by any later debugger
+session. A page that does not answer while sctl attaches the debugger, for example because such a dialog was left
+behind after the infobar was dismissed, fails with `PAGE_UNRESPONSIVE` (exit 3) within 5 seconds; `sctl page reload`
+or `sctl page goto` recovers it.
 
 `sctl page snapshot` prints one line per visible node, indented by level: `- role "name" [states] [ref=eN]`, with
 the current value of form controls after a colon, link URLs in `/url:` child lines, and plain text in `text:`
@@ -284,8 +289,8 @@ per-phase timing, and remote address; `--body` adds the response body. Headers a
 `Authorization`, and `Set-Cookie` appear as sent and received (see [`docs/threat-model.md`](./docs/threat-model.md)).
 Text bodies are returned as is and binary ones as base64; a body over 1 MiB is cut to its first 1 MiB with the original
 size given. When Chrome no longer keeps a body — the page navigated away since, the request is in flight or failed,
-there is none, the page never read it, or it is over Chrome's limit of about 20 MB — the reason is printed and the
-command still exits 0. An unknown or dropped ID fails with `NOT_FOUND` (exit code 3).
+there is none, the page never read it, or it is over Chrome's limit of about 20 MB — or while a JS dialog is open in
+the tab, the reason is printed and the command still exits 0. An unknown or dropped ID fails with `NOT_FOUND` (exit code 3).
 
 ## License
 

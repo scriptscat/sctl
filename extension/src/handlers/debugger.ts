@@ -35,12 +35,16 @@ export type AttachedTabsStorage = Pick<StorageLike, "get" | "set">;
 const ATTACHED_TABS_KEY = "debuggerTabs";
 // 守护进程正在录制的标签页，同样要活过 service worker 重启，否则重启后兜底计时会把录制中的标签页断开。
 const RECORDING_TABS_KEY = "debuggerRecording";
+// 有未处理 JS 弹框的标签页，同样要活过 service worker 重启：释放前要先关闭这些弹框。
+const DIALOG_TABS_KEY = "debuggerDialogs";
 
 // 按标签页维护 chrome.debugger 附加状态：发送命令时按需附加，把事件和被动分离转成通知，并在空闲、连接断开时释放。
 export class DebuggerRelay {
   // 已附加（或正在附加）的标签页 → 空闲计时器；录制中的标签页没有计时器（undefined），不会被兜底断开。
   private readonly idle = new Map<number, ReturnType<typeof setTimeout> | undefined>();
   private readonly recording = new Set<number>();
+  // 这次附加期间打开、还没关闭的 JS 弹框所在的标签页。
+  private readonly dialogs = new Set<number>();
   private readonly attaching = new Map<number, Promise<void>>();
   // 恢复重启前的附加记录；恢复完成前到达的事件排在它之后处理，保持原有顺序。
   private readonly restored: Promise<void>;
@@ -157,6 +161,7 @@ export class DebuggerRelay {
     if (source.tabId === undefined || !this.idle.has(source.tabId)) {
       return;
     }
+    this.trackDialog(source.tabId, method);
     this.notify("debugger.event", {
       tabId: source.tabId,
       method,
@@ -203,11 +208,13 @@ export class DebuggerRelay {
 
   // 重启前附加的标签页仍附加着就接着管理（重新开始兜底计时）；已经不在的告诉 daemon，它可能还当它附加着。
   private async restore(): Promise<void> {
-    const items = await this.storage.get([ATTACHED_TABS_KEY, RECORDING_TABS_KEY]);
+    const items = await this.storage.get([ATTACHED_TABS_KEY, RECORDING_TABS_KEY, DIALOG_TABS_KEY]);
     const stored = items[ATTACHED_TABS_KEY];
     const saved = Array.isArray(stored) ? (stored as number[]) : [];
     const storedRecording = items[RECORDING_TABS_KEY];
     const wasRecording = new Set(Array.isArray(storedRecording) ? (storedRecording as number[]) : []);
+    const storedDialogs = items[DIALOG_TABS_KEY];
+    const hadDialog = new Set(Array.isArray(storedDialogs) ? (storedDialogs as number[]) : []);
     if (saved.length === 0) {
       return;
     }
@@ -217,6 +224,9 @@ export class DebuggerRelay {
       if (attached.has(tabId)) {
         if (wasRecording.has(tabId)) {
           this.recording.add(tabId);
+        }
+        if (hadDialog.has(tabId)) {
+          this.dialogs.add(tabId);
         }
         this.armIdle(tabId);
       } else {
@@ -233,7 +243,11 @@ export class DebuggerRelay {
 
   private persist(): void {
     this.storage
-      .set({ [ATTACHED_TABS_KEY]: [...this.idle.keys()], [RECORDING_TABS_KEY]: [...this.recording] })
+      .set({
+        [ATTACHED_TABS_KEY]: [...this.idle.keys()],
+        [RECORDING_TABS_KEY]: [...this.recording],
+        [DIALOG_TABS_KEY]: [...this.dialogs],
+      })
       .catch((error: unknown) => {
         console.error("failed to save the attached tabs", error);
       });
@@ -253,15 +267,38 @@ export class DebuggerRelay {
     );
   }
 
+  // 弹框事件只在附加期间送达，弹框所在的子会话里打开时事件也在顶层会话上（真机探针）。
+  private trackDialog(tabId: number, method: string): void {
+    if (method === "Page.javascriptDialogOpening") {
+      this.dialogs.add(tabId);
+    } else if (method === "Page.javascriptDialogClosed") {
+      this.dialogs.delete(tabId);
+    } else {
+      return;
+    }
+    this.persist();
+  }
+
   private forget(tabId: number): void {
     clearTimeout(this.idle.get(tabId));
     this.idle.delete(tabId);
     this.recording.delete(tabId);
+    this.dialogs.delete(tabId);
     this.persist();
   }
 
+  // 释放前先关闭（dismiss）已知的弹框：断开之后它成了孤儿，之后任何调试会话都处理不了它、附加用的命令全部阻塞，
+  // 只有导航能关掉（真机探针）。只有处理弹框的命令在弹框打开期间仍有回应，并且只能发往顶层会话。
   private async release(tabId: number): Promise<void> {
+    const hadDialog = this.dialogs.has(tabId);
     this.forget(tabId);
+    if (hadDialog) {
+      try {
+        await chrome.debugger.sendCommand({ tabId }, "Page.handleJavaScriptDialog", { accept: false });
+      } catch (error) {
+        console.warn(`dismissing the JS dialog on tab ${tabId} before detaching failed`, error);
+      }
+    }
     try {
       await chrome.debugger.detach({ tabId });
     } catch (error) {

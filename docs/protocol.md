@@ -466,6 +466,8 @@ original size in bytes. When Chrome no longer keeps the body the call still succ
 flight or failed, has no body, or the page never read it), `evicted` (over Chrome's buffer, about 20 MB per resource,
 or pushed out by later responses), or `noPostData` (no request body). Any other CDP error answers `INVALID_REQUEST`
 with CDP's message. Like `debugger.record` it never attaches: a tab that is not attached answers `DEBUGGER_DETACHED`.
+Both CDP commands block until a JavaScript dialog open in the tab closes, so the daemon does not send
+`debugger.body` while it knows a dialog is open, and stops waiting for one when a dialog opens meanwhile.
 
 `tabs.current` input is `{}`; its result `{tabId, windowId}` is the active tab of the last-focused window of type
 `normal`. The daemon asks for it once when a page command names no tab: the last-focused window stays the user's
@@ -476,7 +478,11 @@ without focusing the window, unlike `tabs.activate`, and answers `NOT_FOUND` for
 
 The daemon drives the debugger lifecycle. A page command on a tab the daemon has not attached sends
 `Emulation.setFocusEmulationEnabled {enabled: true}` through `debugger.send` first; that first send makes the
-extension attach. The daemon then treats the tab as attached until it sends `debugger.detach` — after 5 minutes
+extension attach. If any of the commands that set up the attach gets no answer within 5 seconds, the daemon gives
+the attach up, sends `debugger.detach` for the tab, and fails the command with `PAGE_UNRESPONSIVE`. For `page goto`
+and `page reload` it first tries to recover: on a fresh attach it sends only `Page.navigate` or `Page.reload` — on a
+page held by a leftover dialog Chrome still answers that as the first command, and the navigation closes the dialog —
+sends `debugger.detach`, and then attaches again and runs the navigation as usual, so the page loads twice. The daemon then treats the tab as attached until it sends `debugger.detach` — after 5 minutes
 without a page command on the tab, or on `page detach` — or until the extension reports `debugger.detached` for
 it, or the instance disconnects. `debug start` sends `debugger.record {recording: true}` after attaching, and the
 daemon then does not detach the tab for idleness; `debug stop`, or 60 minutes without a debug command on the tab,
@@ -487,7 +493,14 @@ with `DEBUGGER_DETACHED`, and the next page command attaches again. The extensio
 with no `debugger.send` or `debugger.body` for 10 minutes is detached and reported as `debugger.detached` with reason `idle_timeout`, so
 the infobar does not stay up if the daemon stops driving it, and when its connection to the daemon closes it detaches
 every tab without notifying. `debugger.detach` for a tab whose attach is still in flight waits for that attach and
-then detaches it. The extension records its attached tabs, and which of them are recording, in `chrome.storage.session`, because Chrome keeps a
+then detaches it. A JavaScript dialog that opened while the debugger was attached and is still open when the debugger
+detaches can no longer be handled by any later debugger session, and blocks every command that would attach one
+again; only navigating or reloading the page closes it. So before either side detaches a tab — the daemon on
+`page detach`, its idle detach, or when it gives an attach up; the extension on any `debugger.detach`, its 10-minute
+fallback, or its connection closing — it sends `Page.handleJavaScriptDialog {accept: false}` to the tab if it has seen
+`Page.javascriptDialogOpening` there without a matching `Page.javascriptDialogClosed`. A failed dismissal does not stop
+the detach. A detach Chrome starts itself, such as the user cancelling the infobar, can still leave such a dialog
+behind. The extension records its attached tabs, which of them are recording, and which have an open dialog, in `chrome.storage.session`, because Chrome keeps a
 debugger attached when the MV3 service worker restarts: after a restart it keeps driving the recorded tabs that are
 still attached, and reports each one that no longer is as `debugger.detached` with reason `target_closed`. A tab that is still attached
 keeps its recording state across the restart; any detach of a tab clears it.
@@ -557,6 +570,7 @@ These codes are reserved for page automation on a browser instance:
 | `PAGE_HIDDEN` | the operation cannot complete on a background tab even with focus emulation |
 | `DEBUGGER_DETACHED` | the debugger detached while a page command was running |
 | `DIALOG_OPEN` | an unhandled JavaScript dialog blocks the page |
+| `PAGE_UNRESPONSIVE` | the page did not answer within 5 seconds while the debugger was being attached, possibly because of a JavaScript dialog left open after an earlier debugger detached; reloading or navigating the page recovers it |
 | `EVAL_ERROR` | an evaluated expression threw in the page |
 | `NAVIGATION_FAILED` | a navigation failed with a network error |
 

@@ -3665,6 +3665,7 @@
     { "code": "PAGE_HIDDEN", "peers": ["browser"] },
     { "code": "DEBUGGER_DETACHED", "peers": ["browser"] },
     { "code": "DIALOG_OPEN", "peers": ["browser"] },
+    { "code": "PAGE_UNRESPONSIVE", "peers": ["browser"] },
     { "code": "EVAL_ERROR", "peers": ["browser"] },
     { "code": "NAVIGATION_FAILED", "peers": ["browser"] }
   ],

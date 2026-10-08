@@ -319,12 +319,17 @@ cannot be attached shows `[unavailable]`.
 
 While a JS dialog (alert, confirm, prompt, beforeunload) is open in a tab, every page tool except `page_dialog`
 and `page_detach` returns `DIALOG_OPEN`, whose message names the dialog type and its text
-(untrusted page content). Dialogs are never handled automatically: `page_dialog` takes `action` (`accept` or
+(untrusted page content). `page_dialog` takes `action` (`accept` or
 `dismiss`) and an optional `text` for a prompt, returns `tabId`, `dialogType`, and the page's `url`, `title`, and
 `navigated` after handling it, and returns `NOT_FOUND` when no dialog is open. A tool call that is running
 when a dialog opens, such as a click that triggers an `alert`, returns `DIALOG_OPEN` at once and leaves the dialog open; the
 action may already have taken effect. `page_screenshot` is included: a dialog blocks page rendering, so no image can be taken while one is open and it returns
-`DIALOG_OPEN` at once, including a screenshot already running when the dialog opens.
+`DIALOG_OPEN` at once, including a screenshot already running when the dialog opens. sctl handles a dialog itself only
+right before it detaches the debugger — `page_detach`, the 5-minute idle detach, or the extension letting go of the
+tab — and then dismisses it: a dialog left open after the debugger detaches can no longer be handled by any later
+debugger session. A page that does not answer while sctl attaches the debugger, for example because such a dialog was
+left behind after the infobar was dismissed, returns `PAGE_UNRESPONSIVE` within 5 seconds, from page and `debug_*`
+tools alike; `page_navigate` with `action` `reload` or `goto` recovers it.
 
 `page_eval` takes an optional `ref` from the tab's latest snapshot. With it, `expression` must be a function that
 receives the element, such as `el => el.textContent`, and it runs in the element's own frame, so elements inside
@@ -429,7 +434,8 @@ a blocked request, with Chrome's reason in `error`), `status` and `statusText`, 
 and bodies are not masked: `Cookie`, `Authorization`, and `Set-Cookie` appear as sent and received. A body has `body`
 (text as is, or base64 with `base64Encoded: true`), `size` (the original size in bytes), and `truncated` (only the
 first 1 MiB is returned). When Chrome no longer keeps a body — the page navigated away since, the request is in flight
-or failed, there is none, the page never read it, or it is over Chrome's limit of about 20 MB — `body` is null and
+or failed, there is none, the page never read it, or it is over Chrome's limit of about 20 MB — or while a JS dialog is
+open in the tab, `body` is null and
 `unavailable` gives the reason, and the call still succeeds. An unknown or dropped `id` returns `NOT_FOUND`.
 
 ## Troubleshooting

@@ -511,7 +511,7 @@ func TestDebugRequest(t *testing.T) {
 		emit(m, 3, "", "Network.responseReceivedExtraInfo", map[string]any{"requestId": "R1", "statusCode": 200, "headers": map[string]string{"Content-Type": "text/plain", "Set-Cookie": "sid=new; HttpOnly"}})
 		emit(m, 3, "", "Network.loadingFinished", finished("R1", 60, 300))
 		cdp.mu.Lock()
-		cdp.body = func(q BodyQuery) (Body, error) {
+		cdp.body = func(_ context.Context, q BodyQuery) (Body, error) {
 			if q.Part == BodyPartRequest {
 				return Body{Text: `{"user":"a"}`, Size: 12}, nil
 			}
@@ -546,7 +546,7 @@ func TestDebugRequest(t *testing.T) {
 			So(cdp.bodyCalls()[1], ShouldResemble, BodyQuery{TabID: 3, RequestID: "R1", Part: BodyPartResponse})
 
 			cdp.mu.Lock()
-			cdp.body = func(BodyQuery) (Body, error) {
+			cdp.body = func(context.Context, BodyQuery) (Body, error) {
 				return Body{Text: "AAEC", Base64: true, Size: 5 << 20, Truncated: true}, nil
 			}
 			cdp.mu.Unlock()
@@ -565,7 +565,7 @@ func TestDebugRequest(t *testing.T) {
 				BodyEvicted:   "about 20 MB",
 			} {
 				cdp.mu.Lock()
-				cdp.body = func(q BodyQuery) (Body, error) {
+				cdp.body = func(_ context.Context, q BodyQuery) (Body, error) {
 					if q.Part == BodyPartRequest {
 						return Body{Unavailable: BodyNoPostData}, nil
 					}
@@ -663,7 +663,7 @@ func TestDebugRequest(t *testing.T) {
 
 		Convey("取体时调试器分离:命令以 DEBUGGER_DETACHED 失败", func() {
 			cdp.mu.Lock()
-			cdp.body = func(BodyQuery) (Body, error) {
+			cdp.body = func(context.Context, BodyQuery) (Body, error) {
 				return Body{}, &Error{Code: generated.ErrorCodeDebuggerDetached, Message: "the debugger detached while the body was read"}
 			}
 			cdp.mu.Unlock()
@@ -675,6 +675,62 @@ func TestDebugRequest(t *testing.T) {
 			openDialog(m, 3, "alert", "hi")
 			_, err := debugRequest(m, 3, `{"id":1}`)
 			So(err, ShouldBeNil)
+		})
+
+		Convey("JS 弹框打开时不向浏览器取体:详情照常返回,请求体与响应体写明页面有未处理的 JS 弹框;关掉弹框后可以取到", func() {
+			openDialog(m, 3, "alert", "hi")
+			before := len(cdp.bodyCalls())
+			v, err := debugRequest(m, 3, `{"id":1,"body":true}`)
+			So(err, ShouldBeNil)
+			So(v.Status, ShouldEqual, 200)
+			So(v.RequestHeaders["Cookie"], ShouldEqual, "sid=secret")
+			So(v.RequestBody.Body, ShouldBeNil)
+			So(v.RequestBody.Unavailable, ShouldContainSubstring, "unhandled JS dialog")
+			So(v.ResponseBody.Body, ShouldBeNil)
+			So(v.ResponseBody.Unavailable, ShouldContainSubstring, "unhandled JS dialog")
+			So(cdp.bodyCalls(), ShouldHaveLength, before)
+
+			closeDialog(m, 3)
+			v, err = debugRequest(m, 3, `{"id":1,"body":true}`)
+			So(err, ShouldBeNil)
+			So(*v.RequestBody.Body, ShouldEqual, `{"user":"a"}`)
+			So(*v.ResponseBody.Body, ShouldEqual, "hello")
+		})
+
+		Convey("取体途中弹框打开时不等弹框关闭:这个体写明页面有未处理的 JS 弹框,命令照常返回", func() {
+			entered := make(chan struct{})
+			cdp.mu.Lock()
+			cdp.body = func(ctx context.Context, q BodyQuery) (Body, error) {
+				if q.Part == BodyPartRequest {
+					return Body{Text: "x", Size: 1}, nil
+				}
+				close(entered)
+				<-ctx.Done() // 弹框打开期间 Chrome 的 Network.getResponseBody 一直阻塞到弹框关闭
+				return Body{}, ctx.Err()
+			}
+			cdp.mu.Unlock()
+			type outcome struct {
+				raw json.RawMessage
+				err error
+			}
+			done := make(chan outcome, 1)
+			go func() {
+				raw, err := m.Do(context.Background(), Request{Action: "debug.request", TabID: tabRef(3), Input: json.RawMessage(`{"id":1,"body":true}`)})
+				done <- outcome{raw, err}
+			}()
+			<-entered
+			openDialog(m, 3, "alert", "mid-body")
+			select {
+			case got := <-done:
+				So(got.err, ShouldBeNil)
+				var v requestView
+				So(json.Unmarshal(got.raw, &v), ShouldBeNil)
+				So(*v.RequestBody.Body, ShouldEqual, "x")
+				So(v.ResponseBody.Body, ShouldBeNil)
+				So(v.ResponseBody.Unavailable, ShouldContainSubstring, "unhandled JS dialog")
+			case <-time.After(5 * time.Second):
+				So("debug request waited for the dialog", ShouldBeEmpty)
+			}
 		})
 	})
 }

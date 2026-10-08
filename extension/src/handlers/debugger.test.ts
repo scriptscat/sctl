@@ -573,4 +573,103 @@ describe("debugger relay", () => {
       expect(notices).toEqual([]);
     });
   });
+
+  describe("dialogs left behind on release", () => {
+    // sctl 断开调试器之后，这次附加期间打开的弹框成了孤儿：之后任何调试会话都处理不了它（真机探针）。
+    const handled = () => dbg.sendCommand.mock.calls.filter((call) => call[1] === "Page.handleJavaScriptDialog");
+    const order = (mock: Mock<AsyncFn>, method?: string) => {
+      const index = mock.mock.calls.findIndex((call) => method === undefined || call[1] === method);
+      return mock.mock.invocationCallOrder[index];
+    };
+
+    beforeEach(async () => {
+      await registry.dispatch("debugger.send", { tabId: 5, method: "Page.enable" });
+      await registry.dispatch("debugger.send", { tabId: 6, method: "Page.enable" });
+    });
+
+    it("dismisses a dialog it saw open before the idle backstop detaches the tab", async () => {
+      relay.onEvent({ tabId: 5 }, "Page.javascriptDialogOpening", { type: "alert", message: "hi" });
+
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+      expect(handled()).toEqual([[{ tabId: 5 }, "Page.handleJavaScriptDialog", { accept: false }]]);
+      expect(order(dbg.sendCommand, "Page.handleJavaScriptDialog")).toBeLessThan(order(dbg.detach));
+      expect(dbg.detach).toHaveBeenCalledWith({ tabId: 5 });
+      expect(dbg.detach).toHaveBeenCalledWith({ tabId: 6 });
+    });
+
+    it("dismisses open dialogs before releasing every tab when the connection to the daemon closes", async () => {
+      relay.onEvent({ tabId: 6 }, "Page.javascriptDialogOpening", { type: "confirm", message: "sure?" });
+
+      await relay.detachAll();
+
+      expect(handled()).toEqual([[{ tabId: 6 }, "Page.handleJavaScriptDialog", { accept: false }]]);
+      expect(order(dbg.sendCommand, "Page.handleJavaScriptDialog")).toBeLessThan(
+        dbg.detach.mock.invocationCallOrder[
+          dbg.detach.mock.calls.findIndex((call) => (call[0] as { tabId: number }).tabId === 6)
+        ],
+      );
+      expect(dbg.detach).toHaveBeenCalledTimes(2);
+    });
+
+    it("dismisses on the top-level session even when the dialog event came from a child session", async () => {
+      relay.onEvent({ tabId: 5, sessionId: "S1" }, "Page.javascriptDialogOpening", { type: "alert", message: "x" });
+
+      await relay.detachAll();
+
+      expect(handled()).toEqual([[{ tabId: 5 }, "Page.handleJavaScriptDialog", { accept: false }]]);
+    });
+
+    it("also dismisses a dialog it still knows about when the daemon asks for the detach", async () => {
+      relay.onEvent({ tabId: 5 }, "Page.javascriptDialogOpening", { type: "alert", message: "hi" });
+
+      expect(await registry.dispatch("debugger.detach", { tabId: 5 })).toEqual({ ok: true, result: { tabIds: [5] } });
+
+      expect(handled()).toEqual([[{ tabId: 5 }, "Page.handleJavaScriptDialog", { accept: false }]]);
+      expect(order(dbg.sendCommand, "Page.handleJavaScriptDialog")).toBeLessThan(order(dbg.detach));
+    });
+
+    it("does not touch a dialog that has already closed, or a tab without one", async () => {
+      relay.onEvent({ tabId: 5 }, "Page.javascriptDialogOpening", { type: "alert", message: "hi" });
+      relay.onEvent({ tabId: 5 }, "Page.javascriptDialogClosed", { result: true, userInput: "" });
+
+      await relay.detachAll();
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+
+      expect(handled()).toEqual([]);
+    });
+
+    it("still releases the tab when dismissing the dialog fails", async () => {
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      relay.onEvent({ tabId: 5 }, "Page.javascriptDialogOpening", { type: "alert", message: "hi" });
+      dbg.sendCommand.mockRejectedValue(new Error("No dialog is showing"));
+
+      await relay.detachAll();
+
+      expect(dbg.detach).toHaveBeenCalledWith({ tabId: 5 });
+    });
+
+    it("forgets the dialog of a tab Chrome detached on its own", async () => {
+      relay.onEvent({ tabId: 5 }, "Page.javascriptDialogOpening", { type: "alert", message: "hi" });
+      relay.onDetach({ tabId: 5 }, "canceled_by_user");
+      await registry.dispatch("debugger.send", { tabId: 5, method: "Page.enable" });
+
+      await relay.detachAll();
+
+      expect(handled()).toEqual([]);
+    });
+
+    it("remembers an open dialog across a service worker restart", async () => {
+      relay.onEvent({ tabId: 5 }, "Page.javascriptDialogOpening", { type: "alert", message: "hi" });
+      dbg.getTargets.mockResolvedValue([
+        { type: "page", id: "T5", tabId: 5, attached: true, title: "", url: "" },
+        { type: "page", id: "T6", tabId: 6, attached: true, title: "", url: "" },
+      ]);
+
+      const next = new DebuggerRelay(() => undefined, store);
+      await next.detachAll();
+
+      expect(handled()).toEqual([[{ tabId: 5 }, "Page.handleJavaScriptDialog", { accept: false }]]);
+    });
+  });
 });

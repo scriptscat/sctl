@@ -25,6 +25,9 @@ const (
 	idleTimeout = 5 * time.Minute
 	// cleanupTimeout 限定 daemon 自行发起的断开(空闲、附加准备失败),它们不属于任何调用方的命令。
 	cleanupTimeout = 10 * time.Second
+	// unresponsiveTimeout 限定附加时每一步等待页面回应的时间(spec §JS 弹框):页面有之前留下的孤儿弹框时,
+	// 新会话上的附加命令一直不回应,不能让命令等满它自己的超时。
+	unresponsiveTimeout = 5 * time.Second
 )
 
 // Request 是一次页面动作。TabID 为 nil 时使用默认标签页;Timeout 为 0 时使用动作的默认超时。
@@ -182,6 +185,9 @@ type action struct {
 	dialogSafe bool
 	// debug 表示 debug 命令:它为录制中的标签页重新开始 60 分钟的自动结束计时(spec 设计决策 4)。
 	debug bool
+	// recover 非 nil 时,附加因页面没有回应(PAGE_UNRESPONSIVE)失败后调用它:它在一次 daemon 不记录的临时附加上
+	// 发出能让页面重新回应的命令,之后重新附加。ok 为 false 表示什么都没发:输入不合法(err 非 nil)或不能这样恢复。
+	recover func(ctx context.Context, t *Tab, input json.RawMessage) (ok bool, err error)
 }
 
 // attachHook 在标签页每次附加后、第一个动作执行前按注册顺序运行,为这次附加准备页面状态。
@@ -241,6 +247,8 @@ type Manager struct {
 	childSetupTimeout time.Duration
 	// recordBudget 是每个标签页每种调试记录的字节数上限;测试缩小它。
 	recordBudget int
+	// attachResponseTimeout 是每个附加钩子等待回应的时限;测试缩短它。
+	attachResponseTimeout time.Duration
 
 	mu    sync.Mutex
 	slots map[tabKey]*slot
@@ -261,8 +269,9 @@ func newManager(cdp CDP, log *zap.Logger, refStart uint64) *Manager {
 		events:  map[string][]eventHandler{},
 		slots:   map[tabKey]*slot{},
 
-		childSetupTimeout: cleanupTimeout,
-		recordBudget:      debugBufferBytes,
+		childSetupTimeout:     cleanupTimeout,
+		recordBudget:          debugBufferBytes,
+		attachResponseTimeout: unresponsiveTimeout,
 	}
 	m.refSeq.n.Store(refStart)
 	m.addAttachHook(enableFocusEmulation)
@@ -301,7 +310,7 @@ func newManager(cdp CDP, log *zap.Logger, refStart uint64) *Manager {
 	m.register("scroll", runScroll)
 	m.addAction("screenshot", action{tab: runScreenshot, timeout: screenshotActionTimeout})
 	m.addAction("dialog", action{tab: runDialog, dialogSafe: true})
-	m.addAction("navigate", action{tab: runNavigate, timeout: navigationTimeout})
+	m.addAction("navigate", action{tab: runNavigate, timeout: navigationTimeout, recover: recoverByNavigating})
 	m.register("wait", runWait)
 	m.registerBrowser("detach", m.detach)
 	m.registerDebug("debug.console", runDebugConsole)
@@ -403,6 +412,15 @@ func (m *Manager) dispatch(ctx context.Context, a action, req Request) (any, err
 			}
 		}
 		t, err := m.attach(ctx, s, instanceID, tabID)
+		if err != nil && a.recover != nil && isUnresponsive(err) {
+			retry, inputErr := m.recoverAttach(ctx, a, instanceID, tabID, req.Input)
+			if inputErr != nil {
+				return nil, inputErr
+			}
+			if retry {
+				t, err = m.attach(ctx, s, instanceID, tabID)
+			}
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -565,7 +583,7 @@ func (m *Manager) attach(ctx context.Context, s *slot, instanceID string, tabID 
 	s.attaching = t
 	m.mu.Unlock()
 	for _, hook := range m.hooks {
-		if err := hook(ctx, t); err != nil {
+		if err := m.runAttachHook(ctx, t, hook); err != nil {
 			m.mu.Lock()
 			s.attaching = nil
 			m.mu.Unlock()
@@ -590,11 +608,64 @@ func (m *Manager) attach(ctx context.Context, s *slot, instanceID string, tabID 
 	return t, nil
 }
 
+// runAttachHook 运行一个附加钩子,它在 attachResponseTimeout 内没有回应时返回 PAGE_UNRESPONSIVE(spec §JS 弹框)。
+// 命令自己的超时或取消更早到来时照常返回它们。
+func (m *Manager) runAttachHook(ctx context.Context, t *Tab, hook attachHook) error {
+	unresponsive := pageUnresponsiveError(t.id, m.attachResponseTimeout)
+	hookCtx, cancel := context.WithTimeoutCause(ctx, m.attachResponseTimeout, unresponsive)
+	defer cancel()
+	err := hook(hookCtx, t)
+	if err != nil && ctx.Err() == nil && errors.Is(context.Cause(hookCtx), unresponsive) {
+		return unresponsive
+	}
+	return err
+}
+
+func isUnresponsive(err error) bool {
+	var pe *Error
+	return errors.As(err, &pe) && pe.Code == generated.ErrorCodePageUnresponsive
+}
+
+// recoverAttach 在附加没有回应之后运行动作的 recover,用一次只发这一条命令的临时附加:daemon 不记录它,发完就断开。
+// retry 为 true 表示 recover 成功发出了命令,值得重新附加;没能发出时保留原来的 PAGE_UNRESPONSIVE。输入不合法时
+// 返回它的错误:调用方要改的是输入。
+func (m *Manager) recoverAttach(ctx context.Context, a action, instanceID string, tabID int, input json.RawMessage) (retry bool, inputErr error) {
+	t := m.newTab(instanceID, tabID)
+	defer t.endBackground()
+	sendCtx, cancel := context.WithTimeout(ctx, m.attachResponseTimeout)
+	ok, err := a.recover(sendCtx, t, input)
+	cancel()
+	if !ok {
+		return false, err
+	}
+	detachCtx, cancelDetach := context.WithTimeout(context.Background(), cleanupTimeout)
+	defer cancelDetach()
+	if _, derr := m.cdp.Detach(detachCtx, instanceID, &tabID); derr != nil {
+		m.log.Debug("failed to detach after a recovery command", zap.Int("tabId", tabID), zap.Error(derr))
+	}
+	if err != nil {
+		m.log.Debug("a recovery command on an unresponsive tab failed", zap.Int("tabId", tabID), zap.Error(err))
+		return false, nil
+	}
+	return true, nil
+}
+
+func pageUnresponsiveError(tabID int, waited time.Duration) *Error {
+	return &Error{
+		Code: generated.ErrorCodePageUnresponsive,
+		Message: fmt.Sprintf("tab %d did not answer the debugger within %s while sctl was attaching: the page is not responding, "+
+			"possibly because of a JS dialog left open after an earlier debugger detached, which no new debugger session can see or handle; "+
+			"run page reload or page goto on the tab to recover", tabID, waited),
+	}
+}
+
 // abandonAttach 在附加钩子失败后断开标签页:扩展可能已经附加,daemon 不记录它就不会再为它计时断开。
+// 附加途中打开的弹框先关闭,否则断开后它成了孤儿。
 func (m *Manager) abandonAttach(t *Tab, cause error) {
 	t.closeBackground()
 	ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
 	defer cancel()
+	t.dismissDialog(ctx)
 	if _, err := m.cdp.Detach(ctx, t.instanceID, &t.id); err != nil {
 		m.log.Debug("failed to detach after a failed attach setup", zap.Int("tabId", t.id), zap.NamedError("setupError", cause), zap.Error(err))
 	}
@@ -619,6 +690,7 @@ func (m *Manager) idleExpired(key tabKey, armed *slot, seq uint64) {
 	m.mu.Unlock()
 	if expired {
 		t.closeBackground()
+		t.dismissDialog(ctx)
 		if _, err := m.cdp.Detach(ctx, key.instanceID, &key.tabID); err != nil {
 			m.log.Warn("failed to detach an idle tab", zap.String("instanceId", key.instanceID), zap.Int("tabId", key.tabID), zap.Error(err))
 		}
@@ -727,7 +799,7 @@ func (m *Manager) detach(ctx context.Context, instanceID string, req Request) (a
 		if req.TabID != nil {
 			return nil, invalidRequest("give either a tab or all, not both")
 		}
-		m.closeInstanceBackground(instanceID)
+		m.prepareInstanceDetach(ctx, instanceID)
 		tabIDs, err := m.cdp.Detach(ctx, instanceID, nil)
 		// 后台任务已经结束,即使断开失败也不能再把这些标签页当作已附加:新出现的 iframe 不会再被放行。
 		m.clearInstance(instanceID, detachedError("page detach --all detached the debugger while the command was running"))
@@ -747,6 +819,7 @@ func (m *Manager) detach(ctx context.Context, instanceID string, req Request) (a
 		m.mu.Unlock()
 		if t != nil {
 			t.closeBackground()
+			t.dismissDialog(ctx)
 		}
 		tabIDs, err := m.cdp.Detach(ctx, instanceID, &tabID)
 		// 后台任务已经结束,即使断开失败也不能再把标签页当作已附加:新出现的 iframe 不会再被放行。
@@ -760,8 +833,9 @@ func (m *Manager) detach(ctx context.Context, instanceID string, req Request) (a
 	})
 }
 
-// closeInstanceBackground 结束一个浏览器实例上全部标签页的后台任务,并等它们结束。
-func (m *Manager) closeInstanceBackground(instanceID string) {
+// prepareInstanceDetach 为断开一个浏览器实例上的全部标签页做准备:结束它们的后台任务并等它们结束,
+// 再关闭已知的弹框。
+func (m *Manager) prepareInstanceDetach(ctx context.Context, instanceID string) {
 	var tabs []*Tab
 	m.mu.Lock()
 	for key, s := range m.slots {
@@ -777,6 +851,7 @@ func (m *Manager) closeInstanceBackground(instanceID string) {
 	m.mu.Unlock()
 	for _, t := range tabs {
 		t.closeBackground()
+		t.dismissDialog(ctx)
 	}
 }
 

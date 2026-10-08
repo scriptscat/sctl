@@ -35,7 +35,7 @@ type fakeCDP struct {
 	records     []recordCall
 	bodies      []BodyQuery
 	// body 为 nil 时取体返回空文本。
-	body     func(q BodyQuery) (Body, error)
+	body     func(ctx context.Context, q BodyQuery) (Body, error)
 	attached map[int]bool
 	// send 为 nil 时每条命令都成功返回 {}。
 	send func(ctx context.Context, cmd Command) (json.RawMessage, error)
@@ -114,7 +114,7 @@ func (f *fakeCDP) Body(ctx context.Context, instanceID string, q BodyQuery) (Bod
 	if body == nil {
 		return Body{}, nil
 	}
-	return body(q)
+	return body(ctx, q)
 }
 
 func (f *fakeCDP) bodyCalls() []BodyQuery {
@@ -588,6 +588,115 @@ func TestManagerDetachAction(t *testing.T) {
 		Convey("--all 与 --tab 不能同时给", func() {
 			_, err := m.Do(context.Background(), Request{Action: "detach", TabID: tabRef(3), Input: json.RawMessage(`{"all":true}`)})
 			So(errorCode(err), ShouldEqual, generated.ErrorCodeInvalidRequest)
+		})
+	})
+}
+
+func TestManagerAttachUnresponsive(t *testing.T) {
+	Convey("附加命令在时限内没有回应时放弃这次附加并返回 PAGE_UNRESPONSIVE,不等满命令超时", t, func() {
+		cdp := newFakeCDP()
+		m := newTestManager(cdp, &fakeClock{})
+		m.attachResponseTimeout = 200 * time.Millisecond
+		// 页面有遗留的孤儿弹框时,新会话上的附加命令一直不回应(真机探针)。
+		hangOn := func(method string) {
+			cdp.setSend(func(ctx context.Context, cmd Command) (json.RawMessage, error) {
+				if cmd.Method == method && cmd.SessionID == "" {
+					<-ctx.Done()
+					return nil, ctx.Err()
+				}
+				return json.RawMessage(`{}`), nil
+			})
+		}
+
+		Convey("页面命令:错误说明可能有遗留的弹框、可用 page reload 或 page goto 恢复;断开调试器,下一条命令从头附加", func() {
+			hangOn("Runtime.enable")
+			start := time.Now()
+			_, err := probe(m, Request{TabID: tabRef(3), Timeout: time.Minute})
+			So(errorCode(err), ShouldEqual, generated.ErrorCodePageUnresponsive)
+			So(time.Since(start), ShouldBeLessThan, 5*time.Second)
+			So(err.Error(), ShouldContainSubstring, "tab 3")
+			So(err.Error(), ShouldContainSubstring, "JS dialog")
+			So(err.Error(), ShouldContainSubstring, "page reload")
+			So(err.Error(), ShouldContainSubstring, "page goto")
+			So(cdp.detachCalls(), ShouldResemble, [][]int{{3}})
+
+			cdp.setSend(nil)
+			_, err = probe(m, Request{TabID: tabRef(3)})
+			So(err, ShouldBeNil)
+			So(cdp.methods(3), ShouldResemble, append(slices.Clone(attachSequence[:5]), append(slices.Clone(attachSequence), probeMethod)...))
+		})
+
+		Convey("debug 命令同样返回 PAGE_UNRESPONSIVE", func() {
+			hangOn("Runtime.enable")
+			_, err := m.Do(context.Background(), Request{Action: "debug.console", TabID: tabRef(3)})
+			So(errorCode(err), ShouldEqual, generated.ErrorCodePageUnresponsive)
+			So(cdp.detachCalls(), ShouldResemble, [][]int{{3}})
+		})
+
+		Convey("第一条附加命令就没有回应时同样", func() {
+			hangOn(attachSequence[0])
+			_, err := probe(m, Request{TabID: tabRef(3)})
+			So(errorCode(err), ShouldEqual, generated.ErrorCodePageUnresponsive)
+		})
+
+		Convey("每条附加命令各有时限:整个附加慢但每一步都有回应时照常附加", func() {
+			cdp.setSend(func(ctx context.Context, cmd Command) (json.RawMessage, error) {
+				time.Sleep(60 * time.Millisecond)
+				return json.RawMessage(`{}`), nil
+			})
+			_, err := probe(m, Request{TabID: tabRef(3)})
+			So(err, ShouldBeNil)
+		})
+
+		Convey("命令自己的超时更短时仍返回 TIMEOUT", func() {
+			hangOn("Runtime.enable")
+			_, err := probe(m, Request{TabID: tabRef(3), Timeout: 10 * time.Millisecond})
+			So(errorCode(err), ShouldEqual, generated.ErrorCodeTimeout)
+		})
+
+		Convey("附加之后的命令不受这个时限限制", func() {
+			_, err := probe(m, Request{TabID: tabRef(3)})
+			So(err, ShouldBeNil)
+			cdp.setSend(func(ctx context.Context, cmd Command) (json.RawMessage, error) {
+				if cmd.Method == probeMethod {
+					time.Sleep(400 * time.Millisecond)
+				}
+				return json.RawMessage(`{}`), nil
+			})
+			_, err = probe(m, Request{TabID: tabRef(3)})
+			So(err, ShouldBeNil)
+		})
+
+		Convey("放弃附加时不留下暂停中的 iframe:子会话的准备随附加一起结束,断开调试器让它继续", func() {
+			var mu sync.Mutex
+			childCommands := 0
+			cdp.setSend(func(ctx context.Context, cmd Command) (json.RawMessage, error) {
+				if cmd.SessionID == "S1" {
+					mu.Lock()
+					childCommands++
+					mu.Unlock()
+					<-ctx.Done() // 子会话所在的进程同样不回应
+					return nil, ctx.Err()
+				}
+				switch cmd.Method {
+				case "Target.setAutoAttach":
+					emit(m, 3, "", "Target.attachedToTarget", map[string]any{"sessionId": "S1", "waitingForDebugger": true, "targetInfo": map[string]any{"targetId": "F1", "type": "iframe", "url": "https://other.test/"}})
+				case "Runtime.enable":
+					<-ctx.Done()
+					return nil, ctx.Err()
+				}
+				return json.RawMessage(`{}`), nil
+			})
+			_, err := probe(m, Request{TabID: tabRef(3)})
+			So(errorCode(err), ShouldEqual, generated.ErrorCodePageUnresponsive)
+			So(cdp.detachCalls(), ShouldResemble, [][]int{{3}})
+			mu.Lock()
+			after := childCommands
+			mu.Unlock()
+			time.Sleep(100 * time.Millisecond)
+			mu.Lock()
+			So(childCommands, ShouldEqual, after)
+			mu.Unlock()
 		})
 	})
 }

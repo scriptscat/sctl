@@ -1000,6 +1000,7 @@ const (
 	ErrorCodePageHidden           = "PAGE_HIDDEN"
 	ErrorCodeDebuggerDetached     = "DEBUGGER_DETACHED"
 	ErrorCodeDialogOpen           = "DIALOG_OPEN"
+	ErrorCodePageUnresponsive     = "PAGE_UNRESPONSIVE"
 	ErrorCodeEvalError            = "EVAL_ERROR"
 	ErrorCodeNavigationFailed     = "NAVIGATION_FAILED"
 )

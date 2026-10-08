@@ -150,9 +150,11 @@ ScriptCat 中批准、拒绝或关闭确认流程；浏览器控制命令按设�
 `--timeout` 覆盖默认的 10 秒上限(导航与截图为 30 秒),`-o json` 输出完整结果。命令执行中调试器被断开(例如关掉了提示条)或按 Ctrl-C 时退出码为 2(Ctrl-C 只是不再等待,不撤回页面上已经发生的动作),其他错误为 3。
 
 标签页上有未处理的 JS 弹框时,除 `sctl page dialog` 与 `detach` 外的页面命令都返回 `DIALOG_OPEN`(退出码 3),并写明弹框类型与文字(网页控制的内容)。
-弹框从不自动处理:用 `sctl page dialog accept` 或 `dismiss` 处理,没有打开的弹框时返回 `NOT_FOUND`。
+用 `sctl page dialog accept` 或 `dismiss` 处理弹框,没有打开的弹框时返回 `NOT_FOUND`。
 命令执行中弹框打开(例如点击触发了 `alert`)时,该命令立即返回 `DIALOG_OPEN` 而不是等到超时;弹框保持打开,动作可能已经生效。
 `screenshot` 也在其中:弹框会阻塞页面渲染,打开期间拿不到图像,所以立即返回 `DIALOG_OPEN`,执行中的截图遇到弹框打开同样立即返回。
+sctl 只在自己即将断开调试器时(`sctl page detach`、5 分钟空闲断开、扩展释放标签页)才处理弹框:先关闭(dismiss)它,因为调试器断开后留下的弹框,之后任何调试会话都处理不了。
+附加调试器时页面没有回应(例如关掉提示条后留下了这样的弹框),命令在 5 秒内返回 `PAGE_UNRESPONSIVE`(退出码 3);用 `sctl page reload` 或 `sctl page goto` 可以恢复。
 
 `sctl page snapshot` 每个可见节点输出一行,按层级缩进:`- 角色 "名称" [状态…] [ref=eN]`;表单控件在冒号后写出当前值,
 链接在 `/url:` 子行写出地址,纯文本输出为 `text:` 行;所有 iframe(含跨域与嵌套的)都展开在 iframe 节点下面,无法附加的显示为 `[unavailable]`。`--root` 只输出以某个引用、
@@ -223,7 +225,7 @@ ScriptCat 中批准、拒绝或关闭确认流程；浏览器控制命令按设�
 `sctl debug request <ID>` 显示其中一个请求:摘要、请求头与请求体、响应头、各阶段耗时与远端地址;加 `--body` 一并给出响应体。
 头与体都不打码,`Cookie`、`Authorization`、`Set-Cookie` 按实际收发的原样给出(参见 [`threat-model.md`](./threat-model.md))。
 文本体原样返回,二进制体以 base64 返回;超过 1 MiB 时只给前 1 MiB,并给出原始大小。
-Chrome 已不再保留某个体时(之后页面导航离开、请求进行中或失败、没有体、页面没有读取它,或超过 Chrome 约 20 MB 的上限),输出写明原因,退出码仍为 0。
+Chrome 已不再保留某个体时(之后页面导航离开、请求进行中或失败、没有体、页面没有读取它,或超过 Chrome 约 20 MB 的上限),以及标签页上有未处理的 JS 弹框时,输出写明原因,退出码仍为 0。
 ID 不存在或已被丢弃时返回 `NOT_FOUND`(退出码 3)。
 
 ## 许可证

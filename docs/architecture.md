@@ -59,7 +59,10 @@ The extension only relays CDP commands, events, and detach notices; the page log
 tested against a fake CDP. Page state — which tabs are attached, their idle
 timers, and the per-tab queue that runs commands on one tab in arrival order — lives in the daemon's memory,
 because the daemon is the only process that outlives a single command. When the daemon attaches and detaches a
-tab is described in [protocol.md](./protocol.md#32-internal-methods).
+tab is described in [protocol.md](./protocol.md#32-internal-methods). Each attach hook gets 5 seconds to be answered,
+after which the attach is given up with `PAGE_UNRESPONSIVE`; and before the daemon or the extension detaches a tab
+itself, it dismisses a JS dialog it knows is open there, because a dialog left behind by a detached debugger blocks
+every later attach.
 
 The same component keeps the debug records of each attached tab (`sctl debug`, `debug_*`). Every attach creates a
 fresh per-tab state (`page.Tab`) that holds two ring buffers, at most 1000 console records and 1000 network requests,
