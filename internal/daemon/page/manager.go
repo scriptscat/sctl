@@ -413,9 +413,9 @@ func (m *Manager) dispatch(ctx context.Context, a action, req Request) (any, err
 		}
 		t, err := m.attach(ctx, s, instanceID, tabID)
 		if err != nil && a.recover != nil && isUnresponsive(err) {
-			retry, inputErr := m.recoverAttach(ctx, a, instanceID, tabID, req.Input)
-			if inputErr != nil {
-				return nil, inputErr
+			retry, failed := m.recoverAttach(ctx, a, instanceID, tabID, req.Input)
+			if failed != nil {
+				return nil, failed
 			}
 			if retry {
 				t, err = m.attach(ctx, s, instanceID, tabID)
@@ -627,9 +627,9 @@ func isUnresponsive(err error) bool {
 }
 
 // recoverAttach 在附加没有回应之后运行动作的 recover,用一次只发这一条命令的临时附加:daemon 不记录它,发完就断开。
-// retry 为 true 表示 recover 成功发出了命令,值得重新附加;没能发出时保留原来的 PAGE_UNRESPONSIVE。输入不合法时
-// 返回它的错误:调用方要改的是输入。
-func (m *Manager) recoverAttach(ctx context.Context, a action, instanceID string, tabID int, input json.RawMessage) (retry bool, inputErr error) {
+// retry 为 true 表示 recover 成功发出了命令,值得重新附加;命令在时限内没有回应时保留原来的 PAGE_UNRESPONSIVE。
+// 输入不合法,或浏览器拒绝了这条命令(例如不合法的 URL、不可调试的页面)时返回 failed:再用同一条命令恢复也没用。
+func (m *Manager) recoverAttach(ctx context.Context, a action, instanceID string, tabID int, input json.RawMessage) (retry bool, failed error) {
 	t := m.newTab(instanceID, tabID)
 	defer t.endBackground()
 	sendCtx, cancel := context.WithTimeout(ctx, m.attachResponseTimeout)
@@ -643,8 +643,12 @@ func (m *Manager) recoverAttach(ctx context.Context, a action, instanceID string
 	if _, derr := m.cdp.Detach(detachCtx, instanceID, &tabID); derr != nil {
 		m.log.Debug("failed to detach after a recovery command", zap.Int("tabId", tabID), zap.Error(derr))
 	}
+	var rejected *Error
+	if errors.As(err, &rejected) {
+		return false, err
+	}
 	if err != nil {
-		m.log.Debug("a recovery command on an unresponsive tab failed", zap.Int("tabId", tabID), zap.Error(err))
+		m.log.Debug("a recovery command on an unresponsive tab got no answer", zap.Int("tabId", tabID), zap.Error(err))
 		return false, nil
 	}
 	return true, nil
@@ -660,12 +664,16 @@ func pageUnresponsiveError(tabID int, waited time.Duration) *Error {
 }
 
 // abandonAttach 在附加钩子失败后断开标签页:扩展可能已经附加,daemon 不记录它就不会再为它计时断开。
-// 附加途中打开的弹框先关闭,否则断开后它成了孤儿。
+// 附加途中打开的弹框先关闭,否则断开后它成了孤儿。生命期已被 clearTab 或 prepareInstanceDetach 结束时不关闭:
+// 调试器已被动分离(此时再发命令会让扩展悄悄重新附加),或 page detach --all 已经关闭过它。
 func (m *Manager) abandonAttach(t *Tab, cause error) {
+	handedOff := t.life.Err() != nil
 	t.closeBackground()
 	ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
 	defer cancel()
-	t.dismissDialog(ctx)
+	if !handedOff {
+		t.dismissDialog(ctx)
+	}
 	if _, err := m.cdp.Detach(ctx, t.instanceID, &t.id); err != nil {
 		m.log.Debug("failed to detach after a failed attach setup", zap.Int("tabId", t.id), zap.NamedError("setupError", cause), zap.Error(err))
 	}

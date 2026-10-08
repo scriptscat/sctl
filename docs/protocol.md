@@ -482,7 +482,9 @@ extension attach. If any of the commands that set up the attach gets no answer w
 the attach up, sends `debugger.detach` for the tab, and fails the command with `PAGE_UNRESPONSIVE`. For `page goto`
 and `page reload` it first tries to recover: on a fresh attach it sends only `Page.navigate` or `Page.reload` — on a
 page held by a leftover dialog Chrome still answers that as the first command, and the navigation closes the dialog —
-sends `debugger.detach`, and then attaches again and runs the navigation as usual, so the page loads twice. The daemon then treats the tab as attached until it sends `debugger.detach` — after 5 minutes
+sends `debugger.detach`, and then attaches again and runs the navigation as usual, so the page loads twice. If that
+command is answered with an error (for example Chrome rejecting an invalid URL), the daemon still sends
+`debugger.detach` and fails the command with that error instead of `PAGE_UNRESPONSIVE`. The daemon then treats the tab as attached until it sends `debugger.detach` — after 5 minutes
 without a page command on the tab, or on `page detach` — or until the extension reports `debugger.detached` for
 it, or the instance disconnects. `debug start` sends `debugger.record {recording: true}` after attaching, and the
 daemon then does not detach the tab for idleness; `debug stop`, or 60 minutes without a debug command on the tab,

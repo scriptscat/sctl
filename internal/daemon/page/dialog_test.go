@@ -299,6 +299,29 @@ func TestSctlDismissesKnownDialogBeforeDetaching(t *testing.T) {
 			So(cdp.detachCalls(), ShouldResemble, [][]int{{5}})
 		})
 
+		Convey("附加途中调试器被动分离(用户关掉提示条)时不关闭附加途中打开的弹框:分离之后再发命令会让扩展重新附加", func() {
+			entered := make(chan struct{})
+			cdp.setSend(func(ctx context.Context, cmd Command) (json.RawMessage, error) {
+				if cmd.Method == "Runtime.enable" {
+					close(entered)
+					<-ctx.Done()
+					return nil, ctx.Err()
+				}
+				return json.RawMessage(`{}`), nil
+			})
+			done := make(chan error, 1)
+			go func() {
+				// debug 命令在弹框打开时照常执行,弹框不会中断这次附加。
+				_, err := m.Do(context.Background(), Request{Action: "debug.console", TabID: tabRef(5)})
+				done <- err
+			}()
+			<-entered
+			openDialog(m, 5, "alert", "during attach")
+			m.OnNotification(testInstance, "debugger.detached", json.RawMessage(`{"tabId":5,"reason":"canceled_by_user"}`))
+			So(errorCode(<-done), ShouldEqual, generated.ErrorCodeDebuggerDetached)
+			So(cdp.methods(5), ShouldNotContain, "Page.handleJavaScriptDialog")
+		})
+
 		Convey("其余时候仍不自动处理弹框:debug stop、调试器被动分离都不发出 handleJavaScriptDialog", func() {
 			openDialog(m, 3, "alert", "hi")
 			_, err := m.Do(context.Background(), Request{Action: "debug.stop", TabID: tabRef(3)})

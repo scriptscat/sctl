@@ -209,6 +209,26 @@ func TestNavigationRecoversUnresponsivePage(t *testing.T) {
 			So(navigations(cdp), ShouldResemble, []string{attachSequence[0]})
 		})
 
+		Convey("恢复用的导航被拒绝时返回拒绝的原因,而不是让调用方再用同一个导航去恢复的 PAGE_UNRESPONSIVE;不留下附加", func() {
+			m, cdp := newOrphanedPage(true)
+			orphaned := cdp.send
+			cdp.setSend(func(ctx context.Context, cmd Command) (json.RawMessage, error) {
+				if cmd.Method == "Page.navigate" {
+					cdp.markAttached(cmd.TabID)
+					return nil, &Error{Code: generated.ErrorCodeInvalidRequest, Message: "Cannot navigate to invalid URL"}
+				}
+				return orphaned(ctx, cmd)
+			})
+			_, err := doAction(m, "navigate", `{"action":"goto","url":"example.test"}`, 30*time.Second)
+			So(errorCode(err), ShouldEqual, generated.ErrorCodeInvalidRequest)
+			So(err.Error(), ShouldContainSubstring, "Cannot navigate to invalid URL")
+			So(cdp.detachCalls(), ShouldResemble, [][]int{{7}, {7}})
+			cdp.mu.Lock()
+			attached := cdp.attached[7]
+			cdp.mu.Unlock()
+			So(attached, ShouldBeFalse)
+		})
+
 		Convey("导航也没能让页面回应时返回 PAGE_UNRESPONSIVE,不留下附加", func() {
 			m, cdp := newOrphanedPage(false)
 			_, err := doAction(m, "navigate", `{"action":"goto","url":"https://example.test/"}`, 30*time.Second)

@@ -141,18 +141,15 @@ func newDebugStopCmd() *cobra.Command {
 			"attaches the debugger, and succeeds when the tab is not recording.",
 		Args: noDebugArgs("stop"),
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			input := map[string]any{}
-			if all {
-				if cmd.Flags().Changed("tab") {
-					return &ExitError{Code: exitError, Message: "give either --tab or --all, not both"}
-				}
-				input["all"] = true
+			input, err := tabsInput(cmd, all)
+			if err != nil {
+				return err
 			}
-			return dispatchPage(cmd, "debug.stop", mustInput(input), func(result json.RawMessage) error {
+			return dispatchPage(cmd, "debug.stop", input, func(result json.RawMessage) error {
 				if outputFormat == outputJSON {
 					return printResultJSON(result)
 				}
-				return printStopSummary(result)
+				return printTabsSummary(result, stopOutcome)
 			})
 		},
 	}
@@ -160,30 +157,7 @@ func newDebugStopCmd() *cobra.Command {
 	return cmd
 }
 
-func printStopSummary(result json.RawMessage) error {
-	var payload struct {
-		TabID  *int  `json:"tabId"`
-		TabIDs []int `json:"tabIds"`
-	}
-	if err := json.Unmarshal(result, &payload); err != nil {
-		return printResultJSON(result)
-	}
-	switch {
-	case payload.TabID != nil && len(payload.TabIDs) > 0:
-		fmt.Fprintf(os.Stdout, "tab %d stopped recording\n", *payload.TabID)
-	case payload.TabID != nil:
-		fmt.Fprintf(os.Stdout, "tab %d was not recording\n", *payload.TabID)
-	case len(payload.TabIDs) > 0:
-		ids := make([]string, len(payload.TabIDs))
-		for i, id := range payload.TabIDs {
-			ids[i] = strconv.Itoa(id)
-		}
-		fmt.Fprintf(os.Stdout, "tabs %s stopped recording\n", strings.Join(ids, ", "))
-	default:
-		fmt.Fprintln(os.Stdout, "no tab was recording")
-	}
-	return nil
-}
+var stopOutcome = tabsOutcome{one: "tab %d stopped recording", none: "tab %d was not recording", many: "tabs %s stopped recording", nothing: "no tab was recording"}
 
 func newDebugStatusCmd() *cobra.Command {
 	return &cobra.Command{
