@@ -614,7 +614,9 @@ client, and when the browser instance is forgotten with `sctl browsers forget`, 
 expires, the same address can connect again after a client disconnects. A browser instance disconnecting closes the
 client's connection but does not expire the endpoint: once the instance is back, the same address works again, while
 a connection attempt while it is offline fails with `503`. `sctl cdp status` and `sctl cdp close` resolve the browser
-like any browser command, so for an offline browser they answer `BROWSER_OFFLINE`.
+like any browser command, except that a paired browser named with `--browser` (or `browser`) may be offline, so its
+address can be inspected and revoked before it reconnects; without a named browser they still need exactly one
+online browser.
 
 ## 4. Errors
 

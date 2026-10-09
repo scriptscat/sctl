@@ -405,6 +405,21 @@ func TestEndpointExpiry(t *testing.T) {
 			So(closed, ShouldBeFalse)
 		})
 
+		Convey("浏览器离线时 status 仍给出端点,close 仍让地址立即失效:浏览器重新连上后地址被拒绝", func() {
+			h.bridge.setOnline("work", false)
+			snap, err := h.m.Status("work", h.host)
+			So(err, ShouldBeNil)
+			So(snap.Browser, ShouldResemble, BrowserRef{ID: "inst-work", Name: "work"})
+			So(snap.Endpoint.HTTPURL, ShouldEqual, info.HTTPURL)
+			ref, closed, err := h.m.Close(context.Background(), "work")
+			So(err, ShouldBeNil)
+			So(closed, ShouldBeTrue)
+			So(ref, ShouldResemble, BrowserRef{ID: "inst-work", Name: "work"})
+			h.bridge.setOnline("work", true)
+			status, _ := h.get(t, versionURL, "", "")
+			So(status, ShouldEqual, http.StatusNotFound)
+		})
+
 		Convey("浏览器被忘记(离线时也一样)时失效", func() {
 			h.bridge.setOnline("work", false)
 			h.m.OnInstanceForgotten("inst-work")

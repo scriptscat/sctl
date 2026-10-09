@@ -289,6 +289,42 @@ func TestResolveBrowserWithoutTargetPicksTheOnlyOnlineInstance(t *testing.T) {
 	})
 }
 
+func TestResolvePairedBrowser(t *testing.T) {
+	Convey("ResolvePairedBrowser 与 ResolveBrowser 规则相同,但点名的离线实例也能解析", t, func() {
+		h := startTestServer(t)
+		keyA := h.registerBrowser(instanceA, "chrome-0123")
+		h.registerBrowser("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "offline-one")
+		h.registerBrowser("aaaaaaaabbbbbbbbbbbbbbbbbbbbbbbb", "offline-two")
+
+		Convey("点名的离线实例按名称或 ID 前缀解析,Online 为 false", func() {
+			info, err := h.srv.ResolvePairedBrowser("offline-one")
+			So(err, ShouldBeNil)
+			So(info.ID, ShouldEqual, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+			So(info.Online, ShouldBeFalse)
+			info, err = h.srv.ResolvePairedBrowser("aaaaaaaab")
+			So(err, ShouldBeNil)
+			So(info.Name, ShouldEqual, "offline-two")
+		})
+
+		Convey("不匹配与前缀匹配多个时的错误码同 ResolveBrowser", func() {
+			_, err := h.srv.ResolvePairedBrowser("nope")
+			So(errorCode(err), ShouldEqual, generated.ErrorCodeBrowserNotFound)
+			_, err = h.srv.ResolvePairedBrowser("aaaaaaaa")
+			So(errorCode(err), ShouldEqual, generated.ErrorCodeBrowserAmbiguous)
+		})
+
+		Convey("目标为空时仍只选在线实例", func() {
+			_, err := h.srv.ResolvePairedBrowser("")
+			So(errorCode(err), ShouldEqual, generated.ErrorCodeNoBrowserConnected)
+			h.connectBrowser(instanceA, keyA, "chrome-0123")
+			info, err := h.srv.ResolvePairedBrowser("")
+			So(err, ShouldBeNil)
+			So(info.ID, ShouldEqual, instanceA)
+			So(info.Online, ShouldBeTrue)
+		})
+	})
+}
+
 func TestCallInstanceTargetsTheExactInstance(t *testing.T) {
 	Convey("CallInstance 只发给精确 ID 的在线实例", t, func() {
 		h := startTestServer(t)

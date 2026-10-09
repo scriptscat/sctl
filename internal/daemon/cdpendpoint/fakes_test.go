@@ -123,6 +123,19 @@ func (f *fakeBridge) ResolveBrowser(target string) (bridge.InstanceInfo, error) 
 	return bridge.InstanceInfo{ID: inst.id, Name: target, Online: true}, nil
 }
 
+func (f *fakeBridge) ResolvePairedBrowser(target string) (bridge.InstanceInfo, error) {
+	if target == "" {
+		return f.ResolveBrowser(target)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	inst, ok := f.instances[target]
+	if !ok {
+		return bridge.InstanceInfo{}, &bridge.Error{Code: generated.ErrorCodeBrowserNotFound, Message: "no paired browser instance matches " + target}
+	}
+	return bridge.InstanceInfo{ID: inst.id, Name: target, Online: inst.online}, nil
+}
+
 func (f *fakeBridge) CallInstance(ctx context.Context, instanceID string, req bridge.Request) (bridge.Response, error) {
 	f.mu.Lock()
 	online := false

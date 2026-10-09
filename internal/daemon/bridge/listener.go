@@ -109,6 +109,25 @@ func (s *Server) ResolveBrowser(target string) (InstanceInfo, error) {
 	return InstanceInfo{}, &Error{Code: generated.ErrorCodeBrowserOffline, Message: "browser " + targets[0].name + " is not connected"}
 }
 
+// ResolvePairedBrowser 与 ResolveBrowser 规则相同,只是点名(target 非空)的离线实例也算:原始 CDP 端点在浏览器离线时
+// 依然有效,浏览器重新连上后地址又能连接,查看与关闭(撤销地址)它不能要求浏览器在线。target 为空时仍要求恰好一个在线实例。
+func (s *Server) ResolvePairedBrowser(target string) (InstanceInfo, error) {
+	if target == "" {
+		return s.ResolveBrowser(target)
+	}
+	byID := map[string]InstanceInfo{}
+	var registered []browserTarget
+	for _, info := range s.Instances() {
+		byID[info.ID] = info
+		registered = append(registered, browserTarget{id: info.ID, name: info.Name})
+	}
+	matched, err := matchOneTarget(registered, target)
+	if err != nil {
+		return InstanceInfo{}, err
+	}
+	return byID[matched.id], nil
+}
+
 // CallInstance 调用精确实例 ID 对应的在线浏览器实例;不做名称或前缀解析,那是 ResolveBrowser 的职责。
 // 实例不在线(离线、未配对或已被忘记)返回 BROWSER_OFFLINE。
 func (s *Server) CallInstance(ctx context.Context, instanceID string, req Request) (Response, error) {

@@ -27,8 +27,10 @@ const idleExpiry = 60 * time.Minute
 const secretBytes = 16
 
 // Bridge 是端点用到的 *bridge.Server 能力:按 sctl 的目标规则解析浏览器,并调用它的内部方法。
+// ResolvePairedBrowser 还接受点名的离线实例:端点在浏览器离线时依然有效,查看与关闭它不要求浏览器在线。
 type Bridge interface {
 	ResolveBrowser(target string) (bridge.InstanceInfo, error)
+	ResolvePairedBrowser(target string) (bridge.InstanceInfo, error)
 	CallInstance(ctx context.Context, instanceID string, req bridge.Request) (bridge.Response, error)
 }
 
@@ -176,9 +178,9 @@ func (m *Manager) Create(browser, host string) (Snapshot, error) {
 	return Snapshot{Browser: BrowserRef{ID: info.ID, Name: info.Name}, Endpoint: ep.infoLocked(host)}, nil
 }
 
-// Status 返回 browser 的端点状态,不创建端点。
+// Status 返回 browser 的端点状态,不创建端点。点名的浏览器离线时同样回答。
 func (m *Manager) Status(browser, host string) (Snapshot, error) {
-	info, err := m.deps.Bridge.ResolveBrowser(browser)
+	info, err := m.deps.Bridge.ResolvePairedBrowser(browser)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -192,9 +194,10 @@ func (m *Manager) Status(browser, host string) (Snapshot, error) {
 }
 
 // Close 让 browser 的端点立即失效;有客户端连着时断开它,等它的清理(关弹框、断开端点标签页、收回)完成后返回,
-// 之后 sctl 自己的页面命令立即可用。没有端点时也成功,closed 为 false。
+// 之后 sctl 自己的页面命令立即可用。没有端点时也成功,closed 为 false。点名的浏览器离线时同样关闭:
+// 否则地址要等浏览器重新连上才能撤销,而那时它又能连接了。
 func (m *Manager) Close(ctx context.Context, browser string) (ref BrowserRef, closed bool, err error) {
-	info, err := m.deps.Bridge.ResolveBrowser(browser)
+	info, err := m.deps.Bridge.ResolvePairedBrowser(browser)
 	if err != nil {
 		return BrowserRef{}, false, err
 	}

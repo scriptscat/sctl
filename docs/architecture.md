@@ -120,8 +120,8 @@ connections and a hijacked client WebSocket lives outside `http.Server`.
 
 The endpoint keeps the transport and the ownership; what the client's CDP is answered with is a narrow `Hook`
 (`Serve(ctx, conn, browser)`), given the accepted connection and a per-client `cdpendpoint.Browser` that wraps the
-instance's internal methods (`debugger.targets`, `userAgent`, `open`, `close`, `send`, `detach`) and delivers its
-notifications. `Browser` records which tabs the client attached, marked, and has an open dialog on, which is what the
+instance's internal methods (`debugger.targets`, `userAgent`, `open`, `close`, `own`, `send`, `detach`) plus
+`tabs.activate`, and delivers its notifications. `Browser` records which tabs the client attached, marked, and has an open dialog on, which is what the
 cleanup works from. `cdpendpoint` reaches the page component only through its own `Pages` interface, without
 importing `page`.
 

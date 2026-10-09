@@ -85,6 +85,13 @@ can therefore read the credentials and data a signed-in page sends and receives 
 requests per tab; they never reach disk and are dropped when the debugger detaches or on `debug clear`. Bodies are
 not kept by the daemon at all: each `debug request` reads them from Chrome on demand.
 
+**Raw CDP commands open the whole tab-level protocol.** `sctl cdp send` and the `cdp_send` MCP tool send any Chrome
+DevTools Protocol command to a tab's top-level page over the same attach as page automation, with no per-operation
+approval. Only the few commands that would break sctl's own state are refused
+([protocol.md](./protocol.md#32-internal-methods)); everything else Chrome allows on a tab session goes through,
+such as reading cookies where Chrome allows it, intercepting requests, or pausing the page. Chrome's result is
+page-controlled and carries `contentTrust: untrusted-page-content` like every other page result.
+
 **The raw CDP endpoint hands a whole browser to whoever holds its address.** `sctl cdp endpoint` and the
 `cdp_endpoint` MCP tool create, for one paired browser instance, an endpoint that a CDP client connects to
 ([protocol.md](./protocol.md#34-raw-cdp-endpoint)). The connected client gets full control of every tab in that
