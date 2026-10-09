@@ -145,6 +145,7 @@ troubleshooting.
 | `sctl debug network [--url S] [--method M] [--status 404\|4xx] [--type T] [--failed] [--after CURSOR] [--limit N]` | List a tab's network requests, oldest first. |
 | `sctl debug request <ID> [--body]` | Show one request's headers, request body, timing, and, with `--body`, response body. |
 | `sctl debug clear` | Empty a tab's debug records without detaching the debugger. |
+| `sctl cdp send <Method> [--params '<JSON object>'] [--tab N] [--timeout D]` | Send one raw Chrome DevTools Protocol command to a tab's page and print Chrome's result. |
 
 Run `sctl --help` or `sctl <command> --help` for usage and flags. Write operations block
 until the user approves, rejects, or closes the confirmation flow in ScriptCat; browser control commands run
@@ -291,6 +292,22 @@ Text bodies are returned as is and binary ones as base64; a body over 1 MiB is c
 size given. When Chrome no longer keeps a body — the page navigated away since, the request is in flight or failed,
 there is none, the page never read it, or it is over Chrome's limit of about 20 MB — or while a JS dialog is open in
 the tab, the reason is printed and the command still exits 0. An unknown or dropped ID fails with `NOT_FOUND` (exit code 3).
+
+`sctl cdp send <Method>` sends one raw Chrome DevTools Protocol command, such as `Page.getNavigationHistory`, to the
+top-level page of a tab, and prints Chrome's result as indented JSON plus `tabId` and `contentTrust`. `--params` takes
+a JSON object; `--tab`, `--browser`, and `--timeout` work as for `page` commands. The tab is attached like for a page
+command, the command queues with page and debug commands on the same tab, and it is sent even while a JS dialog is
+open (so `Page.handleJavaScriptDialog` works; a command Chrome blocks during a dialog waits until `--timeout`).
+Only the top-level page is addressed, and the events a command causes are not returned. A command Chrome rejects or
+does not know fails with `INVALID_REQUEST` (exit code 3) carrying Chrome's own error; a result over 4 MiB fails with
+`PAYLOAD_TOO_LARGE`. `Page.disable`, `Runtime.disable`, `Network.disable`, `Log.disable`,
+`Emulation.setFocusEmulationEnabled`, `Target.setAutoAttach`, and `Target.detachFromTarget` are refused without being
+sent, because they break state sctl depends on. Every other command is sent as is and its effects are yours to undo:
+a persistent setting such as `Emulation.setDeviceMetricsOverride` or `Network.setExtraHTTPHeaders` affects later page
+commands until you restore it; after `Fetch.enable` every request of the tab hangs, since nothing handles the paused
+requests; `Debugger.enable` plus `Debugger.pause` freezes the page. Recover with `Fetch.disable` or `Debugger.resume`,
+or `sctl page detach` and attach again. Like `page` and `debug`, it has no human gate. The MCP equivalent is `cdp_send`
+(see [`docs/mcp.md`](./docs/mcp.md)).
 
 ## License
 

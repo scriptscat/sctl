@@ -242,6 +242,39 @@ func TestPageDebuggerLifecycle(t *testing.T) {
 	})
 }
 
+func TestPageCdpSend(t *testing.T) {
+	Convey("/control/page 的 cdp.send 经扩展把命令发给标签页的顶层会话", t, func() {
+		h := startTestServer(t)
+		a := h.connectBrowser(instanceA, "chrome-0123")
+
+		Convey("附加后发出原始命令,结果带 tabId 与 contentTrust", func() {
+			ch := h.goPage(control.PageRequest{Action: "cdp.send", TabID: new(5), Input: json.RawMessage(`{"method":"Browser.getVersion","params":{"x":1}}`)})
+			a.answerAttach(5)
+			req := a.debuggerSend(5, "Browser.getVersion")
+			So(string(req.Params), ShouldContainSubstring, `"params":{"x":1}`)
+			a.writeResult(req.ID, json.RawMessage(`{"result":{"product":"Chrome/125"}}`))
+			res := <-ch
+			So(res.Error, ShouldBeNil)
+			So(string(res.Result), ShouldEqualJSON, `{"product":"Chrome/125","tabId":5,"contentTrust":"untrusted-page-content"}`)
+		})
+
+		Convey("Chrome 的拒绝成为 INVALID_REQUEST 并保留 Chrome 的错误文本", func() {
+			ch := h.goPage(control.PageRequest{Action: "cdp.send", TabID: new(5), Input: json.RawMessage(`{"method":"Foo.bar"}`)})
+			a.answerAttach(5)
+			req := a.debuggerSend(5, "Foo.bar")
+			a.writeDomainError(req.ID, generated.ErrorCodeInvalidRequest, `{"code":-32601,"message":"'Foo.bar' wasn't found"}`)
+			res := <-ch
+			So(errCode(res), ShouldEqual, generated.ErrorCodeInvalidRequest)
+			So(res.Error.Message, ShouldContainSubstring, "wasn't found")
+		})
+
+		Convey("拒绝列表里的命令不发给浏览器,也不附加调试器", func() {
+			res := <-h.goPage(control.PageRequest{Action: "cdp.send", TabID: new(5), Input: json.RawMessage(`{"method":"Page.disable"}`)})
+			So(errCode(res), ShouldEqual, generated.ErrorCodeInvalidRequest)
+		})
+	})
+}
+
 func TestPageRequestValidation(t *testing.T) {
 	Convey("/control/page 在边界上校验请求", t, func() {
 		h := startTestServer(t)

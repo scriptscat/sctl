@@ -132,6 +132,7 @@ Chrome DevTools Protocol 驱动页面时,Chrome 会在浏览器顶部显示"sctl
 | `sctl debug network [--url S] [--method M] [--status 404\|4xx] [--type T] [--failed] [--after CURSOR] [--limit N]` | 按开始先后列出标签页的网络请求。 |
 | `sctl debug request <ID> [--body]` | 显示一个请求的请求头、请求体、各阶段耗时,加 `--body` 时一并给出响应体。 |
 | `sctl debug clear` | 清空标签页的调试记录,不断开调试器。 |
+| `sctl cdp send <Method> [--params '<JSON 对象>'] [--tab N] [--timeout D]` | 向标签页的页面发送一条原始 Chrome DevTools Protocol 命令,输出 Chrome 的结果。 |
 
 运行 `sctl --help` 或 `sctl <command> --help` 查看用法和参数。写操作会阻塞，直到用户在
 ScriptCat 中批准、拒绝或关闭确认流程；浏览器控制命令按设计没有审批步骤、立即执行(参见
@@ -227,6 +228,18 @@ sctl 只在自己即将断开调试器时(`sctl page detach`、5 分钟空闲断
 文本体原样返回,二进制体以 base64 返回;超过 1 MiB 时只给前 1 MiB,并给出原始大小。
 Chrome 已不再保留某个体时(之后页面导航离开、请求进行中或失败、没有体、页面没有读取它,或超过 Chrome 约 20 MB 的上限),以及标签页上有未处理的 JS 弹框时,输出写明原因,退出码仍为 0。
 ID 不存在或已被丢弃时返回 `NOT_FOUND`(退出码 3)。
+
+`sctl cdp send <Method>` 向标签页的顶层页面发送一条原始 Chrome DevTools Protocol 命令(如 `Page.getNavigationHistory`),
+以缩进的 JSON 输出 Chrome 的结果,外加 `tabId` 和 `contentTrust`。`--params` 接受 JSON 对象;`--tab`、`--browser`、`--timeout` 与 `page` 命令相同。
+标签页未附加时先附加,同一标签页上与页面、调试命令排队执行;标签页有未处理的 JS 弹框时照常发送(所以可以发 `Page.handleJavaScriptDialog`,
+弹框期间 Chrome 会阻塞的命令会等到 `--timeout`)。只发给顶层页面,命令产生的事件不返回。
+Chrome 拒绝或不认识这条命令时返回 `INVALID_REQUEST`(退出码 3),带 Chrome 自己的错误信息;结果超过 4 MiB 返回 `PAYLOAD_TOO_LARGE`。
+`Page.disable`、`Runtime.disable`、`Network.disable`、`Log.disable`、`Emulation.setFocusEmulationEnabled`、`Target.setAutoAttach`、`Target.detachFromTarget`
+会破坏 sctl 自身依赖的状态,直接拒绝、不发给 Chrome。其余命令原样发送,副作用由你负责恢复:
+`Emulation.setDeviceMetricsOverride`、`Network.setExtraHTTPHeaders` 这类持续生效的设置会影响之后的页面命令,直到你恢复;
+`Fetch.enable` 之后没有人处理被暂停的请求,标签页上的请求都会挂住;`Debugger.enable` 加 `Debugger.pause` 会让页面停住。
+恢复办法:发送 `Fetch.disable` 或 `Debugger.resume`,或 `sctl page detach` 后重新附加。和 `page`、`debug` 一样没有人工确认环节。
+对应的 MCP 工具是 `cdp_send`(见 [`mcp.md`](./mcp.md))。
 
 ## 许可证
 

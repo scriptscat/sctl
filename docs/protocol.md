@@ -512,6 +512,19 @@ debugger attached when the MV3 service worker restarts: after a restart it keeps
 still attached, and reports each one that no longer is as `debugger.detached` with reason `target_closed`. A tab that is still attached
 keeps its recording state across the restart; any detach of a tab clears it.
 
+`cdp send` is a `/control/page` action (`cdp.send`, input `{method, params?}`), not a protocol method: the daemon
+sends the command to the tab's top-level session with `debugger.send`, after the same target selection, attach and
+per-tab queue as other page commands. `method` must have the form `Domain.method` and `params` must be an object,
+otherwise the daemon answers `INVALID_REQUEST` without attaching. It also answers `INVALID_REQUEST` without sending
+anything for the commands that would break state the daemon depends on: `Page.disable`, `Runtime.disable`,
+`Network.disable`, `Log.disable` (page automation and the debug records need those domains enabled),
+`Emulation.setFocusEmulationEnabled` (commands on background tabs depend on the focus emulation), and
+`Target.setAutoAttach` and `Target.detachFromTarget` (the daemon uses them to discover, pause and release
+out-of-process iframes). Every other command is sent as is, also while a JS dialog is open. The result is Chrome's
+result object with `tabId` and `contentTrust` added; a command Chrome rejects answers `INVALID_REQUEST` carrying
+Chrome's error text, a result over the 4 MiB frame limit `PAYLOAD_TOO_LARGE`, and a command that does not finish in
+time `TIMEOUT`. Events the command causes are not returned.
+
 The raw CDP endpoint uses five more internal methods. `debugger.targets` returns `{targets: [{tabId, targetId, title, url}]}`:
 the `page` targets that have a tab, from `chrome.debugger.getTargets`, without `chrome://` and other browser-internal
 pages, extension pages (`chrome-extension://`), DevTools pages, and the Chrome Web Store, none of which Chrome lets a

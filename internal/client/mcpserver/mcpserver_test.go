@@ -141,9 +141,9 @@ func TestToolsListExposesAllTools(t *testing.T) {
 				legacy++
 			}
 		}
-		// 逐方法工具各映射一个方法,每个领域工具合并多个方法,再加上 page_* 页面工具、debug_* 调试工具与 browsers_list
+		// 逐方法工具各映射一个方法,每个领域工具合并多个方法,再加上 page_* 页面工具、debug_* 调试工具、cdp_* 原始 CDP 工具与 browsers_list
 		// (不是方法);内部方法(CDP 中转)不暴露。
-		So(len(res.Tools), ShouldEqual, legacy+len(domainTools)+len(pageTools)+len(debugTools)+1)
+		So(len(res.Tools), ShouldEqual, legacy+len(domainTools)+len(pageTools)+len(debugTools)+len(cdpTools)+1)
 		So(toolNames(res), ShouldContain, "reading_list")
 		So(toolNames(res), ShouldNotContain, "debugger_send")
 		So(toolNames(res), ShouldNotContain, "debugger_detach")
@@ -163,6 +163,7 @@ func TestToolsListExposesAllTools(t *testing.T) {
 		So(toolNames(res), ShouldContain, "debug_start")
 		So(toolNames(res), ShouldContain, "debug_stop")
 		So(toolNames(res), ShouldContain, "debug_status")
+		So(toolNames(res), ShouldContain, "cdp_send")
 	})
 }
 

@@ -438,6 +438,23 @@ or failed, there is none, the page never read it, or it is over Chrome's limit o
 open in the tab, `body` is null and
 `unavailable` gives the reason, and the call still succeeds. An unknown or dropped `id` returns `NOT_FOUND`.
 
+The raw CDP tool `cdp_send` sends one Chrome DevTools Protocol command to the top-level page of a tab and returns
+Chrome's result object plus `tabId` and `contentTrust`. It takes `method` (`Domain.method`), an optional `params`
+object, `browser`, `tabId`, and `timeoutMs`, but not `activate`. The tab is attached like for a page tool, the call
+queues with page and debug calls on the same tab, and it still runs while a JS dialog is open, so it can send
+`Page.handleJavaScriptDialog`; a command Chrome blocks while the dialog is open waits until the time limit and
+returns `TIMEOUT`. Only the top-level page is addressed: sessions of cross-process iframes are out of scope, and the
+events a command causes are not returned. Chrome rejecting or not knowing the command returns `INVALID_REQUEST` with
+Chrome's own error, and a result over one protocol frame (4 MiB) returns `PAYLOAD_TOO_LARGE`. These commands are
+refused with `INVALID_REQUEST` and never sent, because they break state sctl depends on: `Page.disable`,
+`Runtime.disable`, `Network.disable`, `Log.disable`, `Emulation.setFocusEmulationEnabled`, `Target.setAutoAttach`,
+and `Target.detachFromTarget`. Every other command is sent as is and its effects are the caller's to undo. A setting
+that persists, such as `Emulation.setDeviceMetricsOverride` or `Network.setExtraHTTPHeaders`, affects later page
+calls until it is restored. After `Fetch.enable` nothing handles the paused requests, since events are not returned,
+so every request of the tab hangs; `Debugger.enable` followed by `Debugger.pause` freezes the page. Recover by sending
+`Fetch.disable` or `Debugger.resume`, or by `page_detach` and attaching again. Like the page tools, it has no human
+gate, and the result is untrusted page content.
+
 ## Troubleshooting
 
 | Symptom | Check |

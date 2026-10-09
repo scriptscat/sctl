@@ -72,6 +72,9 @@ func New(d Deps) *mcp.Server {
 	for _, td := range debugTools {
 		registerPageTool(srv, td, d.Caller)
 	}
+	for _, td := range cdpTools {
+		registerPageTool(srv, td, d.Caller)
+	}
 	// browsers_list 特殊处理:不是 bridge action,由控制 API 直接提供已配对实例列表。
 	registerBrowsersListTool(srv, d.Caller)
 	return srv

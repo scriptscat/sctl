@@ -188,6 +188,8 @@ type action struct {
 	// recover 非 nil 时,附加因页面没有回应(PAGE_UNRESPONSIVE)失败后调用它:它在一次 daemon 不记录的临时附加上
 	// 发出能让页面重新回应的命令,之后重新附加。ok 为 false 表示什么都没发:输入不合法(err 非 nil)或不能这样恢复。
 	recover func(ctx context.Context, t *Tab, input json.RawMessage) (ok bool, err error)
+	// validate 非 nil 时在选择标签页与附加之前检查输入:被拒绝的输入不该为此附加调试器、弹出提示条。
+	validate func(input json.RawMessage) error
 }
 
 // attachHook 在标签页每次附加后、第一个动作执行前按注册顺序运行,为这次附加准备页面状态。
@@ -312,6 +314,7 @@ func newManager(cdp CDP, log *zap.Logger, refStart uint64) *Manager {
 	m.addAction("dialog", action{tab: runDialog, dialogSafe: true})
 	m.addAction("navigate", action{tab: runNavigate, timeout: navigationTimeout, recover: recoverByNavigating})
 	m.register("wait", runWait)
+	m.addAction("cdp.send", action{tab: runCDPSend, dialogSafe: true, validate: validateCDPSend})
 	m.registerBrowser("detach", m.detach)
 	m.registerDebug("debug.console", runDebugConsole)
 	m.registerDebug("debug.clear", runDebugClear)
@@ -394,6 +397,11 @@ func (m *Manager) Do(ctx context.Context, req Request) (json.RawMessage, error) 
 }
 
 func (m *Manager) dispatch(ctx context.Context, a action, req Request) (any, error) {
+	if a.validate != nil {
+		if err := a.validate(req.Input); err != nil {
+			return nil, err
+		}
+	}
 	instanceID, err := m.cdp.ResolveBrowser(req.Browser)
 	if err != nil {
 		return nil, err
