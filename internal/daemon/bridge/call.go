@@ -224,18 +224,26 @@ func (s *Server) resolveBrowsers(target string, mergeable bool) ([]browserTarget
 		}
 	}
 
+	matched, err := matchOneTarget(registered, target)
+	if err != nil {
+		return nil, err
+	}
+	if matched.conn == nil {
+		return nil, &Error{Code: generated.ErrorCodeBrowserOffline, Message: "browser " + describeTargets([]browserTarget{matched}) + " is not connected"}
+	}
+	return []browserTarget{matched}, nil
+}
+
+// matchOneTarget 按 matchTarget 解析非空 target,要求恰好匹配一个已配对实例(在线与否)。
+func matchOneTarget(registered []browserTarget, target string) (browserTarget, error) {
 	matched := matchTarget(registered, target)
 	switch len(matched) {
 	case 0:
-		return nil, &Error{Code: generated.ErrorCodeBrowserNotFound, Message: "no paired browser matches " + target}
+		return browserTarget{}, &Error{Code: generated.ErrorCodeBrowserNotFound, Message: "no paired browser matches " + target}
 	case 1:
-	default:
-		return nil, &Error{Code: generated.ErrorCodeBrowserAmbiguous, Message: "browser ID prefix " + target + " matches several paired browsers: " + describeTargets(matched)}
+		return matched[0], nil
 	}
-	if matched[0].conn == nil {
-		return nil, &Error{Code: generated.ErrorCodeBrowserOffline, Message: "browser " + describeTargets(matched) + " is not connected"}
-	}
-	return matched, nil
+	return browserTarget{}, &Error{Code: generated.ErrorCodeBrowserAmbiguous, Message: "browser ID prefix " + target + " matches several paired browsers: " + describeTargets(matched)}
 }
 
 // matchTarget 返回 target 指向的已配对实例:名称精确匹配优先(名称也可能形如 ID 前缀),否则取实例 ID 前缀匹配的全部实例。

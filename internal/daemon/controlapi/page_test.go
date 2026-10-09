@@ -5,23 +5,30 @@ import (
 	"encoding/json"
 	"math"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/coder/websocket/wsjson"
 	. "github.com/smartystreets/goconvey/convey"
+	"go.uber.org/zap"
 
 	"github.com/scriptscat/sctl/internal/client/control"
 	"github.com/scriptscat/sctl/internal/daemon/bridge"
+	"github.com/scriptscat/sctl/internal/daemon/page"
 	"github.com/scriptscat/sctl/internal/pkg/protocol/generated"
 )
 
 func (h *testHarness) goPage(req control.PageRequest) <-chan control.CallResult {
+	return goPageAt(h.httpBase(), req)
+}
+
+func goPageAt(base string, req control.PageRequest) <-chan control.CallResult {
 	out := make(chan control.CallResult, 1)
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), callTimeout)
 		defer cancel()
-		resp, err := postControl(ctx, h.httpBase(), control.PathPage, testControlToken, "", req)
+		resp, err := postControl(ctx, base, control.PathPage, testControlToken, "", req)
 		if err != nil {
 			out <- control.CallResult{Error: &control.CallError{Code: "TEST_TRANSPORT", Message: err.Error()}}
 			return
@@ -239,6 +246,83 @@ func TestPageDebuggerLifecycle(t *testing.T) {
 			So(res.Error, ShouldBeNil)
 			So(string(res.Result), ShouldEqual, `{"tabIds":[5,6]}`)
 		})
+	})
+}
+
+func TestPageCdpSend(t *testing.T) {
+	Convey("/control/page 的 cdp.send 经扩展把命令发给标签页的顶层会话", t, func() {
+		h := startTestServer(t)
+		a := h.connectBrowser(instanceA, "chrome-0123")
+
+		Convey("附加后发出原始命令,结果带 tabId 与 contentTrust", func() {
+			ch := h.goPage(control.PageRequest{Action: "cdp.send", TabID: new(5), Input: json.RawMessage(`{"method":"Browser.getVersion","params":{"x":1}}`)})
+			a.answerAttach(5)
+			req := a.debuggerSend(5, "Browser.getVersion")
+			So(string(req.Params), ShouldContainSubstring, `"params":{"x":1}`)
+			a.writeResult(req.ID, json.RawMessage(`{"result":{"product":"Chrome/125"}}`))
+			res := <-ch
+			So(res.Error, ShouldBeNil)
+			So(string(res.Result), ShouldEqualJSON, `{"product":"Chrome/125","tabId":5,"contentTrust":"untrusted-page-content"}`)
+		})
+
+		Convey("Chrome 的拒绝成为 INVALID_REQUEST 并保留 Chrome 的错误文本", func() {
+			ch := h.goPage(control.PageRequest{Action: "cdp.send", TabID: new(5), Input: json.RawMessage(`{"method":"Foo.bar"}`)})
+			a.answerAttach(5)
+			req := a.debuggerSend(5, "Foo.bar")
+			a.writeDomainError(req.ID, generated.ErrorCodeInvalidRequest, `{"code":-32601,"message":"'Foo.bar' wasn't found"}`)
+			res := <-ch
+			So(errCode(res), ShouldEqual, generated.ErrorCodeInvalidRequest)
+			So(res.Error.Message, ShouldContainSubstring, "wasn't found")
+		})
+
+		Convey("拒绝列表里的命令不发给浏览器,也不附加调试器", func() {
+			res := <-h.goPage(control.PageRequest{Action: "cdp.send", TabID: new(5), Input: json.RawMessage(`{"method":"Page.disable"}`)})
+			So(errCode(res), ShouldEqual, generated.ErrorCodeInvalidRequest)
+		})
+	})
+}
+
+// servePagesOf 换上一个由测试持有的页面组件,让测试能像端点组件那样交出、收回浏览器;返回经它处理 /control/* 的基址。
+func (h *testHarness) servePagesOf(t *testing.T) (*page.Manager, string) {
+	pages := page.NewManager(page.NewBridgeCDP(h.srv), zap.NewNop())
+	h.srv.SetBrowserListener(pages)
+	mux := http.NewServeMux()
+	New(h.srv, pages, nil, testControlToken, zap.NewNop()).Register(mux)
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+	return pages, ts.URL
+}
+
+func TestPageEndpointConnected(t *testing.T) {
+	Convey("端点客户端连着时 /control/page 拒绝这个浏览器上的 page、debug 与 cdp send,其他控制路径照常", t, func() {
+		h := startTestServer(t)
+		a := h.connectBrowser(instanceA, "chrome-0123")
+		pages, base := h.servePagesOf(t)
+
+		handedOver := make(chan error, 1)
+		go func() { handedOver <- pages.HandOver(context.Background(), instanceA) }()
+		a.answer("debugger.detach", json.RawMessage(`{"tabIds":[]}`))
+		So(<-handedOver, ShouldBeNil)
+
+		for _, req := range []control.PageRequest{
+			{Action: "eval", TabID: new(5), Input: evalInput},
+			{Action: "debug.console", TabID: new(5)},
+			{Action: "cdp.send", TabID: new(5), Input: json.RawMessage(`{"method":"Page.getNavigationHistory"}`)},
+		} {
+			res := <-goPageAt(base, req)
+			So(errCode(res), ShouldEqual, generated.ErrorCodeEndpointConnected)
+			So(res.Error.Message, ShouldContainSubstring, "sctl cdp close")
+		}
+
+		ch := h.goCall(control.CallRequest{Action: "tabs.list", Input: json.RawMessage(`{}`)})
+		a.answer("tabs.list", tabsResult(5))
+		So((<-ch).Error, ShouldBeNil)
+
+		pages.Reclaim(instanceA)
+		ch = goPageAt(base, control.PageRequest{Action: "eval", TabID: new(5), Input: evalInput})
+		a.answerAttach(5)
+		a.answerEval(5)
+		So((<-ch).Error, ShouldBeNil)
 	})
 }
 

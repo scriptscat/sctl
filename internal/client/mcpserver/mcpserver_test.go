@@ -35,6 +35,12 @@ type fakeCaller struct {
 	// entersApproval 为 true 时,带 onPending 的调用一进入就报告请求已进入审批(模拟浏览器的 $/approvalPending)。
 	entersApproval bool
 	pages          []control.PageRequest // 记录每次 Page 的请求
+	cdp            []cdpCall             // 记录每次 CDP 端点请求
+}
+
+type cdpCall struct {
+	path string
+	req  control.CDPRequest
 }
 
 func (f *fakeCaller) Call(ctx context.Context, action, browser string, input json.RawMessage, onPending func()) (control.CallResult, error) {
@@ -64,6 +70,13 @@ func (f *fakeCaller) Call(ctx context.Context, action, browser string, input jso
 func (f *fakeCaller) Page(ctx context.Context, req control.PageRequest) (control.CallResult, error) {
 	f.mu.Lock()
 	f.pages = append(f.pages, req)
+	f.mu.Unlock()
+	return f.result, f.err
+}
+
+func (f *fakeCaller) CDP(_ context.Context, path string, req control.CDPRequest) (control.CallResult, error) {
+	f.mu.Lock()
+	f.cdp = append(f.cdp, cdpCall{path: path, req: req})
 	f.mu.Unlock()
 	return f.result, f.err
 }
@@ -141,9 +154,9 @@ func TestToolsListExposesAllTools(t *testing.T) {
 				legacy++
 			}
 		}
-		// 逐方法工具各映射一个方法,每个领域工具合并多个方法,再加上 page_* 页面工具、debug_* 调试工具与 browsers_list
-		// (不是方法);内部方法(CDP 中转)不暴露。
-		So(len(res.Tools), ShouldEqual, legacy+len(domainTools)+len(pageTools)+len(debugTools)+1)
+		// 逐方法工具各映射一个方法,每个领域工具合并多个方法,再加上 page_* 页面工具、debug_* 调试工具、cdp_* 原始 CDP 工具
+		// (cdp_send 与端点的 cdp_endpoint、cdp_close)与 browsers_list(不是方法);内部方法(CDP 中转)不暴露。
+		So(len(res.Tools), ShouldEqual, legacy+len(domainTools)+len(pageTools)+len(debugTools)+len(cdpTools)+len(cdpEndpointTools)+1)
 		So(toolNames(res), ShouldContain, "reading_list")
 		So(toolNames(res), ShouldNotContain, "debugger_send")
 		So(toolNames(res), ShouldNotContain, "debugger_detach")
@@ -163,6 +176,9 @@ func TestToolsListExposesAllTools(t *testing.T) {
 		So(toolNames(res), ShouldContain, "debug_start")
 		So(toolNames(res), ShouldContain, "debug_stop")
 		So(toolNames(res), ShouldContain, "debug_status")
+		So(toolNames(res), ShouldContain, "cdp_send")
+		So(toolNames(res), ShouldContain, "cdp_endpoint")
+		So(toolNames(res), ShouldContain, "cdp_close")
 	})
 }
 

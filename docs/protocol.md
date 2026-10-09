@@ -241,6 +241,11 @@ It is optional in the schema so that an unconfirmed call that reaches the extens
 | `debugger.detach` | browser, internal | detach the debugger from one tab, or from every tab | none | L0 |
 | `debugger.record` | browser, internal | mark a tab as recording, exempting it from the extension's idle fallback, or clear the mark | none | L0 |
 | `debugger.body` | browser, internal | read the request or response body of a recorded network request, cut at 1 MiB | none | L0 |
+| `debugger.targets` | browser, internal | list the tabs a debugger can attach to, with their DevTools target IDs | none | L0 |
+| `debugger.userAgent` | browser, internal | return the browser's real `navigator.userAgent` | none | L0 |
+| `debugger.open` | browser, internal | open a tab for the raw CDP endpoint, marked endpoint-owned, and return its tab and target IDs | none | L0 |
+| `debugger.close` | browser, internal | close a tab for the raw CDP endpoint | none | L0 |
+| `debugger.own` | browser, internal | mark a tab as endpoint-owned, exempting it from the extension's idle fallback, or clear the mark | none | L0 |
 | `tabs.move` | browser | move tabs to a window and position (`index` -1 is the end) | none | L0 |
 | `tabs.pin` | browser | pin tabs | none | L0 |
 | `tabs.unpin` | browser | unpin tabs | none | L0 |
@@ -507,6 +512,33 @@ debugger attached when the MV3 service worker restarts: after a restart it keeps
 still attached, and reports each one that no longer is as `debugger.detached` with reason `target_closed`. A tab that is still attached
 keeps its recording state across the restart; any detach of a tab clears it.
 
+`cdp send` is a `/control/page` action (`cdp.send`, input `{method, params?}`), not a protocol method: the daemon
+sends the command to the tab's top-level session with `debugger.send`, after the same target selection, attach and
+per-tab queue as other page commands. `method` must have the form `Domain.method` and `params` must be an object,
+otherwise the daemon answers `INVALID_REQUEST` without attaching. It also answers `INVALID_REQUEST` without sending
+anything for the commands that would break state the daemon depends on: `Page.disable`, `Runtime.disable`,
+`Network.disable`, `Log.disable` (page automation and the debug records need those domains enabled),
+`Emulation.setFocusEmulationEnabled` (commands on background tabs depend on the focus emulation), and
+`Target.setAutoAttach` and `Target.detachFromTarget` (the daemon uses them to discover, pause and release
+out-of-process iframes). Every other command is sent as is, also while a JS dialog is open. The result is Chrome's
+result object with `tabId` and `contentTrust` added; a command Chrome rejects answers `INVALID_REQUEST` carrying
+Chrome's error text, a result over the 4 MiB frame limit `PAYLOAD_TOO_LARGE`, and a command that does not finish in
+time `TIMEOUT`. Events the command causes are not returned.
+
+The raw CDP endpoint uses five more internal methods. `debugger.targets` returns `{targets: [{tabId, targetId, title, url}]}`:
+the `page` targets that have a tab, from `chrome.debugger.getTargets`, without `chrome://` and other browser-internal
+pages, extension pages (`chrome-extension://`), DevTools pages, and the Chrome Web Store, none of which Chrome lets a
+debugger attach to; `targetId` is the DevTools target ID. `debugger.userAgent` returns `{userAgent}`. `debugger.open`
+takes `{url, background?}`, opens the tab in the last-focused window (not activated when `background` is true), marks it
+endpoint-owned before returning, and answers `{tabId, targetId}` (or `NOT_FOUND`, leaving the opened tab unmarked, when
+Chrome lists no target for it); it exists apart from `tabs.open` because it must
+return the target ID and set the mark in one step, and `debugger.close` `{tabId}` is its counterpart, answering
+`NOT_FOUND` for a missing tab. `debugger.own` `{tabId, owned}` marks or unmarks any tab, attached or not, which the
+daemon uses for tabs the endpoint's client attaches to. The extension's 10-minute fallback never detaches an
+endpoint-owned tab, the same as a recording one; the mark is kept in `chrome.storage.session` and survives a
+service-worker restart for tabs that still exist. Any detach of the tab, closing it, `debugger.own {owned: false}`, or
+the connection to the daemon closing clears the mark, and the fallback timer restarts.
+
 ### 3.3 Extension notifications
 
 An sctl Browser instance sends notifications to the daemon. They are the only business messages in that
@@ -516,11 +548,78 @@ there is no `input` wrapper or `clientId`:
 | Notification | Params | Sent when |
 |---|---|---|
 | `debugger.event` | `{tabId, sessionId?, method, params?}` | the debugger attached to `tabId` receives a CDP event; `sessionId` names the child session that produced it |
+| `debugger.tabCreated` | `{tabId, targetId, title, url}` | a tab is created and is already listed as an attachable target; a tab whose target is not listed yet is reported by `debugger.tabUpdated` once it is |
+| `debugger.tabUpdated` | `{tabId, targetId, title, url}` | an attachable tab's URL, title or load status changes; a tab that is not attachable is never reported, including one that navigates to such a page |
+| `debugger.tabRemoved` | `{tabId}` | any tab is closed, including tabs that were never reported |
 | `debugger.detached` | `{tabId, reason}` | Chrome detaches the debugger from `tabId` (`chrome.debugger.onDetach`), where `reason` is Chrome's detach reason, such as `target_closed` or `canceled_by_user`; or the extension's 10-minute fallback detaches it, with reason `idle_timeout`; or, after a service-worker restart, a tab it had attached is no longer attached, with reason `target_closed` |
 
 The daemon validates a notification against its schema like any other frame; a notification that carries an
 `id` or fails its schema is an invalid frame. Notifications with these names from ScriptCat are valid frames
 that the daemon drops without affecting the ScriptCat connection.
+
+### 3.4 Raw CDP endpoint
+
+The raw CDP endpoint is not part of the JSON-RPC protocol: it is an HTTP and WebSocket surface the daemon serves on
+its own listener under `/cdp/`, for Playwright `chromium.connectOverCDP` and Puppeteer `connect`. A control-token
+holder creates it through `/control/cdp/endpoint` (`sctl cdp endpoint`, MCP `cdp_endpoint`); creating it for a browser
+that is not online fails with the target errors of [§3.1](#31-routing-and-target-selection), such as `BROWSER_OFFLINE`
+or `NO_BROWSER_CONNECTED`. Each browser instance has at most one endpoint, and creating it again returns the same
+addresses:
+
+| Address | For |
+|---|---|
+| `http://<host>/cdp/<secret>` | Playwright `chromium.connectOverCDP` |
+| `ws://<host>/cdp/<secret>/devtools/browser/<id>` | Puppeteer `connect({browserWSEndpoint})` |
+
+`<host>` is the address the requester used to reach the daemon; when that is a host name rather than an IP literal or
+`localhost`, `sctl cdp endpoint` and `sctl cdp status` answer `INVALID_REQUEST` instead of an address the `Host` check
+below would refuse. `<secret>` is 128 random bits from `crypto/rand`,
+hex-encoded, kept only in the daemon's memory; `<id>` is a random ID in the shape of a Chrome browser target ID. The
+address is the credential: a client presents nothing else. `GET /cdp/<secret>/json/version`, with or without a trailing
+slash, answers Chrome's JSON shape — `Browser` (the `Chrome/<version>` product from the User-Agent), `Protocol-Version`
+`1.3`, `User-Agent` from `debugger.userAgent`, and `webSocketDebuggerUrl`, the WebSocket address built from the
+request's `Host` — or `503` when the browser cannot answer. Every request under `/cdp/` is checked in this order:
+
+1. `Host` must be an IP literal or `localhost` (with any port), otherwise `403`: a page that rebinds its own domain
+   to 127.0.0.1 still sends that domain as `Host`.
+2. A request carrying any `Origin` header is refused with `403`, like Chrome's own remote debugging by default:
+   Playwright and Puppeteer in Node send none, while a browser always stamps one. Extension and DevTools origins are
+   refused as well.
+3. A wrong secret, an unknown path, and a WebSocket path whose `<id>` does not match all answer the same `404`, so a
+   response never tells whether an endpoint exists.
+
+One client at a time: while one is connected, or being handed the tabs, another WebSocket request is refused with
+`409` saying a client is already connected; a request to the WebSocket address that is not a WebSocket upgrade
+answers `400` before anything else happens. A WebSocket request first makes the page automation component hand
+the browser's tabs over (architecture.md, [Raw CDP endpoint](./architecture.md#raw-cdp-endpoint)); if that fails —
+for example the browser is offline — the request is refused with `503` and the reason, and nothing changes. Then the
+connection is upgraded; a client message may be at most `limits.maxFrameBytes`. Before the first command the client's
+session sends to a tab, the daemon marks the tab endpoint-owned with `debugger.own`; a tab opened through
+`debugger.open` is already marked. The daemon answers the client's CDP itself for browser-level
+commands (`Browser.*`, `Target.*`), forwards commands sent on an attached tab's session to that tab and returns the
+tab's events on the same session, and answers a feature it cannot provide (new browser contexts, permissions, window
+size and position, ignoring certificate errors) with a CDP error that names the unsupported feature.
+
+The client is disconnected when it closes the connection or the connection drops, when the session ends itself, on
+`sctl cdp close`, when the endpoint expires, when the browser instance disconnects, and when the daemon exits. The
+daemon sends a close frame — `1000` when the session ended itself, `1001` for the other daemon-side reasons, `1013`
+when the client fell more than 4096 browser notifications behind — and then, in order: dismisses with
+`Page.handleJavaScriptDialog {accept: false}` every JS dialog it saw open (`Page.javascriptDialogOpening` without a
+matching `Page.javascriptDialogClosed`) on a tab the client attached, on the session that reported it; sends
+`debugger.detach` for each tab the client attached that Chrome has not detached or closed meanwhile; sends
+`debugger.own {owned: false}` for each tab it marked; and gives the tabs back to sctl's page commands. No tab is
+closed, including tabs the client opened. A failed step is logged and does not stop the next one.
+
+The endpoint expires — its addresses answer `404` from then on — on `sctl cdp close` (which answers once the client's
+cleanup is done, and succeeds when there is no endpoint), when the daemon exits, after 60 minutes without a connected
+client, and when the browser instance is forgotten with `sctl browsers forget`, whether it is online or not. The
+60 minutes count from creation and again from each disconnect, and do not run while a client is connected. Until it
+expires, the same address can connect again after a client disconnects. A browser instance disconnecting closes the
+client's connection but does not expire the endpoint: once the instance is back, the same address works again, while
+a connection attempt while it is offline fails with `503`. `sctl cdp status` and `sctl cdp close` resolve the browser
+like any browser command, except that a paired browser named with `--browser` (or `browser`) may be offline, so its
+address can be inspected and revoked before it reconnects; without a named browser they still need exactly one
+online browser.
 
 ## 4. Errors
 
@@ -575,6 +674,7 @@ These codes are reserved for page automation on a browser instance:
 | `PAGE_UNRESPONSIVE` | the page did not answer within 5 seconds while the debugger was being attached, possibly because of a JavaScript dialog left open after an earlier debugger detached; reloading or navigating the page recovers it |
 | `EVAL_ERROR` | an evaluated expression threw in the page |
 | `NAVIGATION_FAILED` | a navigation failed with a network error |
+| `ENDPOINT_CONNECTED` | a raw CDP endpoint client is connected and owns the browser's tabs, so sctl's own page, debug and `cdp send` commands are refused until it disconnects |
 
 `USER_REJECTED` and `PAYLOAD_TOO_LARGE` are registered for both peers. For the browser, `USER_REJECTED` is
 reserved for a rejected L2 approval (including an uninstall cancelled in Chrome's own dialog, §5) and `PAYLOAD_TOO_LARGE` answers a result that would exceed the frame limit

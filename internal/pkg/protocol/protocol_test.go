@@ -182,7 +182,11 @@ func TestLoadMarksDebuggerRelayAsInternalBrowserMethods(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load protocol: %v", err)
 	}
-	for _, name := range []string{string(generated.MethodDebuggerSend), string(generated.MethodDebuggerDetach)} {
+	for _, name := range []string{
+		string(generated.MethodDebuggerSend), string(generated.MethodDebuggerDetach),
+		string(generated.MethodDebuggerTargets), string(generated.MethodDebuggerUserAgent),
+		string(generated.MethodDebuggerOpen), string(generated.MethodDebuggerClose), string(generated.MethodDebuggerOwn),
+	} {
 		action, ok := p.Actions[name]
 		if !ok {
 			t.Errorf("%s is not a protocol action", name)
@@ -210,7 +214,7 @@ func TestLoadListsPageAutomationErrorCodesForBrowser(t *testing.T) {
 		generated.ErrorCodeStaleRef, generated.ErrorCodeTimeout, generated.ErrorCodeTargetAmbiguous,
 		generated.ErrorCodePageNotAutomatable, generated.ErrorCodePageHidden,
 		generated.ErrorCodeDebuggerDetached, generated.ErrorCodeDialogOpen,
-		generated.ErrorCodeEvalError, generated.ErrorCodeNavigationFailed,
+		generated.ErrorCodeEvalError, generated.ErrorCodeNavigationFailed, generated.ErrorCodeEndpointConnected,
 	}
 	for _, code := range browserOnly {
 		if got := peers[code]; len(got) != 1 || got[0] != PeerBrowser {

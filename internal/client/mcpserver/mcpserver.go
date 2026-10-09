@@ -29,11 +29,12 @@ const maxFullSourceResponseBytes = 64 * 1024
 // 超时的值,使每次通知都能刷新其倒计时。以 var 暴露仅为便于测试压缩等待。
 var progressInterval = 10 * time.Second
 
-// BridgeCaller 抽象「向 daemon 转发 bridge action 调用、页面动作与查询浏览器列表」,便于测试注入桩。
+// BridgeCaller 抽象「向 daemon 转发 bridge action 调用、页面动作、原始 CDP 端点请求与查询浏览器列表」,便于测试注入桩。
 // browser 是浏览器方法的可选目标,其余方法传空串。
 type BridgeCaller interface {
 	Call(ctx context.Context, action, browser string, input json.RawMessage, onPending func()) (control.CallResult, error)
 	Page(ctx context.Context, req control.PageRequest) (control.CallResult, error)
+	CDP(ctx context.Context, path string, req control.CDPRequest) (control.CallResult, error)
 	Browsers(ctx context.Context) ([]control.BrowserInfo, error)
 }
 
@@ -47,7 +48,7 @@ type Deps struct {
 }
 
 // New 按依赖构建 MCP server,注册 protocol.json 里定义的非内部逐方法工具、按领域合并的工具、page_* 页面工具、
-// debug_* 调试工具以及 browsers_list。方法是否是浏览器方法、是否汇总多实例、是否等待人工决定,都取自 protocol.json 的 peer、mergeField 与
+// debug_* 调试工具、cdp_* 原始 CDP 工具以及 browsers_list。方法是否是浏览器方法、是否汇总多实例、是否等待人工决定,都取自 protocol.json 的 peer、mergeField 与
 // blocking,不按方法名推断。
 func New(d Deps) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{Name: d.Name, Version: d.Version}, &mcp.ServerOptions{})
@@ -71,6 +72,12 @@ func New(d Deps) *mcp.Server {
 	}
 	for _, td := range debugTools {
 		registerPageTool(srv, td, d.Caller)
+	}
+	for _, td := range cdpTools {
+		registerPageTool(srv, td, d.Caller)
+	}
+	for _, td := range cdpEndpointTools {
+		registerCDPEndpointTool(srv, td, d.Caller)
 	}
 	// browsers_list 特殊处理:不是 bridge action,由控制 API 直接提供已配对实例列表。
 	registerBrowsersListTool(srv, d.Caller)

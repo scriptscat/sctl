@@ -145,11 +145,13 @@ troubleshooting.
 | `sctl debug network [--url S] [--method M] [--status 404\|4xx] [--type T] [--failed] [--after CURSOR] [--limit N]` | List a tab's network requests, oldest first. |
 | `sctl debug request <ID> [--body]` | Show one request's headers, request body, timing, and, with `--body`, response body. |
 | `sctl debug clear` | Empty a tab's debug records without detaching the debugger. |
+| `sctl cdp send <Method> [--params '<JSON object>'] [--tab N] [--timeout D]` | Send one raw Chrome DevTools Protocol command to a tab's page and print Chrome's result. |
+| `sctl cdp endpoint` / `sctl cdp status` / `sctl cdp close` | Create or show a browser's CDP endpoint addresses for Playwright `connectOverCDP` and Puppeteer `connect`, show whether a client is connected and when the endpoint expires, or close it. |
 
 Run `sctl --help` or `sctl <command> --help` for usage and flags. Write operations block
 until the user approves, rejects, or closes the confirmation flow in ScriptCat; browser control commands run
 immediately with no approval step (see [`docs/threat-model.md`](./docs/threat-model.md)). `tabs`, `windows`, `groups`,
-`reading-list`, `bookmarks`, `history`, `browsing-data`, `recent`, `downloads`, `cookies`, `extensions`, `page`, and `debug` accept `--browser <name|id>` (or `SCTL_BROWSER`) to pick an instance when more than one is online.
+`reading-list`, `bookmarks`, `history`, `browsing-data`, `recent`, `downloads`, `cookies`, `extensions`, `page`, `debug`, and `cdp` accept `--browser <name|id>` (or `SCTL_BROWSER`) to pick an instance when more than one is online.
 Destructive browser operations need explicit confirmation: `reading-list rm`, `history rm`, `history clear`, `browsing-data clear`, `downloads cancel`, `erase` and `delete-file`, `cookies rm` and `clear`, and `extensions disable` run only with `--yes` (MCP:
 `confirm: true`); without it nothing runs and the command exits with code 3. `bookmarks rm <id>...` needs human
 approval instead: the browser opens an approval window and the command waits, exiting 0 once the bookmarks are
@@ -291,6 +293,75 @@ Text bodies are returned as is and binary ones as base64; a body over 1 MiB is c
 size given. When Chrome no longer keeps a body — the page navigated away since, the request is in flight or failed,
 there is none, the page never read it, or it is over Chrome's limit of about 20 MB — or while a JS dialog is open in
 the tab, the reason is printed and the command still exits 0. An unknown or dropped ID fails with `NOT_FOUND` (exit code 3).
+
+`sctl cdp send <Method>` sends one raw Chrome DevTools Protocol command, such as `Page.getNavigationHistory`, to the
+top-level page of a tab, and prints Chrome's result as indented JSON plus `tabId` and `contentTrust`. `--params` takes
+a JSON object; `--tab`, `--browser`, and `--timeout` work as for `page` commands. The tab is attached like for a page
+command, the command queues with page and debug commands on the same tab, and it is sent even while a JS dialog is
+open (so `Page.handleJavaScriptDialog` works; a command Chrome blocks during a dialog waits until `--timeout`).
+Only the top-level page is addressed, and the events a command causes are not returned. A command Chrome rejects or
+does not know fails with `INVALID_REQUEST` (exit code 3) carrying Chrome's own error; a result over 4 MiB fails with
+`PAYLOAD_TOO_LARGE`. `Page.disable`, `Runtime.disable`, `Network.disable`, `Log.disable`,
+`Emulation.setFocusEmulationEnabled`, `Target.setAutoAttach`, and `Target.detachFromTarget` are refused without being
+sent, because they break state sctl depends on. Every other command is sent as is and its effects are yours to undo:
+a persistent setting such as `Emulation.setDeviceMetricsOverride` or `Network.setExtraHTTPHeaders` affects later page
+commands until you restore it; after `Fetch.enable` every request of the tab hangs, since nothing handles the paused
+requests; `Debugger.enable` plus `Debugger.pause` freezes the page. Recover with `Fetch.disable` or `Debugger.resume`,
+or `sctl page detach` and attach again. Like `page` and `debug`, it has no human gate. The MCP equivalent is `cdp_send`
+(see [`docs/mcp.md`](./docs/mcp.md)).
+
+`sctl cdp endpoint` creates a CDP endpoint for the browser, or shows the one it already has, and prints two addresses:
+`http://<daemon address>/cdp/<secret>` for Playwright `chromium.connectOverCDP` and
+`ws://<daemon address>/cdp/<secret>/devtools/browser/<id>` for Puppeteer `connect({browserWSEndpoint})`, plus whether a
+client is connected and when the endpoint expires. A connected client gets full control of every tab Chrome lets a
+debugger attach to in that browser, with no approval. The address carries a random secret and is itself the
+credential, so treat it like a password. One client can connect at a time; while it is connected, `sctl page`,
+`sctl debug`, and `sctl cdp send` on that browser fail with `ENDPOINT_CONNECTED` (exit code 3), and the other
+commands keep working. When the client disconnects, sctl detaches the tabs it attached, keeps them open, and its own
+commands work again; the same address can connect again. `sctl cdp status` shows the addresses, whether a client is
+connected and since when, and when the endpoint expires, or says that there is none. `sctl cdp close` closes the
+endpoint at once, disconnecting its client, and succeeds when there is none. The endpoint also expires when the daemon
+exits, when the browser is forgotten, and after 60 minutes without a connected client. The MCP equivalents are
+`cdp_endpoint` and `cdp_close`. Details are in [`docs/protocol.md`](./docs/protocol.md#34-raw-cdp-endpoint) and the
+security trade in [`docs/threat-model.md`](./docs/threat-model.md).
+
+Point an existing script at the addresses `sctl cdp endpoint` prints. With Playwright, use the browser's own
+context — the user's profile, with its logins — instead of creating one:
+
+```js
+const { chromium } = require("playwright");
+
+const browser = await chromium.connectOverCDP("http://127.0.0.1:8643/cdp/<secret>");
+const context = browser.contexts()[0];
+const page = await context.newPage(); // or pick one of context.pages()
+await page.goto("https://example.com");
+await browser.close(); // disconnects only: the browser and every tab stay open
+```
+
+With Puppeteer, pass `defaultViewport: null` so it does not resize the user's tabs to its default viewport:
+
+```js
+const puppeteer = require("puppeteer-core");
+
+const browser = await puppeteer.connect({
+  browserWSEndpoint: "ws://127.0.0.1:8643/cdp/<secret>/devtools/browser/<id>",
+  defaultViewport: null,
+});
+const [page] = await browser.pages();
+await page.goto("https://example.com");
+await browser.disconnect();
+```
+
+The client sees every tab Chrome lets a debugger attach to (not `chrome://` pages, extension pages, or the Chrome Web
+Store), including tabs the user or a page opens while it is connected; each tab it attaches shows Chrome's
+debugging infobar and gets focus emulation, so background tabs behave like the active one. Browser-level commands
+are answered by sctl, and commands for a page or its cross-process iframes go to that tab unchanged. Not supported,
+and answered with a CDP error saying sctl's CDP endpoint does not support them: new browser contexts (Playwright
+`browser.newContext()`, Puppeteer `createBrowserContext()`), granting permissions, window size and position,
+ignoring certificate errors, and Service Worker targets. Setting the download behavior (Playwright always does)
+succeeds without effect: downloads follow the browser's own settings and the client gets no download events. On
+Chrome 125, Chrome itself refuses to read cookies (Playwright `context.cookies()`), and its error comes back as is. A
+browser event larger than 4 MiB cannot cross the extension connection and is dropped, so the client never sees it.
 
 ## License
 

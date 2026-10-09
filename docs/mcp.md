@@ -438,6 +438,63 @@ or failed, there is none, the page never read it, or it is over Chrome's limit o
 open in the tab, `body` is null and
 `unavailable` gives the reason, and the call still succeeds. An unknown or dropped `id` returns `NOT_FOUND`.
 
+The raw CDP tool `cdp_send` sends one Chrome DevTools Protocol command to the top-level page of a tab and returns
+Chrome's result object plus `tabId` and `contentTrust`. It takes `method` (`Domain.method`), an optional `params`
+object, `browser`, `tabId`, and `timeoutMs`, but not `activate`. The tab is attached like for a page tool, the call
+queues with page and debug calls on the same tab, and it still runs while a JS dialog is open, so it can send
+`Page.handleJavaScriptDialog`; a command Chrome blocks while the dialog is open waits until the time limit and
+returns `TIMEOUT`. Only the top-level page is addressed: sessions of cross-process iframes are out of scope, and the
+events a command causes are not returned. Chrome rejecting or not knowing the command returns `INVALID_REQUEST` with
+Chrome's own error, and a result over one protocol frame (4 MiB) returns `PAYLOAD_TOO_LARGE`. These commands are
+refused with `INVALID_REQUEST` and never sent, because they break state sctl depends on: `Page.disable`,
+`Runtime.disable`, `Network.disable`, `Log.disable`, `Emulation.setFocusEmulationEnabled`, `Target.setAutoAttach`,
+and `Target.detachFromTarget`. Every other command is sent as is and its effects are the caller's to undo. A setting
+that persists, such as `Emulation.setDeviceMetricsOverride` or `Network.setExtraHTTPHeaders`, affects later page
+calls until it is restored. After `Fetch.enable` nothing handles the paused requests, since events are not returned,
+so every request of the tab hangs; `Debugger.enable` followed by `Debugger.pause` freezes the page. Recover by sending
+`Fetch.disable` or `Debugger.resume`, or by `page_detach` and attaching again. Like the page tools, it has no human
+gate, and the result is untrusted page content.
+
+`cdp_endpoint` creates the browser's raw CDP endpoint, or returns the one it already has, and doubles as its status:
+it takes only `browser` and returns `httpUrl` (for Playwright `chromium.connectOverCDP`), `wsUrl` (for Puppeteer
+`connect({browserWSEndpoint})`), `clientConnected`, `connectedAt` while a client is connected, and `expiresAt` while
+none is. A connected client gets full control of every tab Chrome lets a debugger attach to in that browser, with no
+approval, and the URLs carry the secret that is its only credential — keep them out of anything shared. One client
+at a time; while it is connected, the `page_*`, `debug_*`, and `cdp_send` tools on that browser return
+`ENDPOINT_CONNECTED`, and the other browser tools keep working. When the client disconnects, sctl detaches the tabs it
+attached and keeps them open, and the same URL can connect again. `cdp_close` (also only `browser`) closes the
+endpoint at once, disconnecting its client, and succeeds with `closed: false` when there is none; otherwise the
+endpoint expires when the daemon exits, when the browser is forgotten, or after 60 minutes without a connected client.
+Lifecycle details are in [protocol.md](./protocol.md#34-raw-cdp-endpoint) and the security trade in
+[threat-model.md](./threat-model.md).
+
+A script uses the URLs like any CDP endpoint. With Playwright, work in the browser's own context, which holds the
+user's logins:
+
+```js
+const browser = await chromium.connectOverCDP(httpUrl);
+const page = await browser.contexts()[0].newPage();
+// ...
+await browser.close(); // disconnects only: the browser and every tab stay open
+```
+
+With Puppeteer, pass `defaultViewport: null` so it does not resize the user's tabs:
+
+```js
+const browser = await puppeteer.connect({ browserWSEndpoint: wsUrl, defaultViewport: null });
+const [page] = await browser.pages();
+// ...
+await browser.disconnect();
+```
+
+The client sees every tab Chrome lets a debugger attach to, including tabs opened while it is connected, and each
+tab it attaches gets focus emulation, so background tabs behave like the active one. These fail with a CDP error
+saying sctl's CDP endpoint does not support them: new browser contexts (Playwright `browser.newContext()`, Puppeteer
+`createBrowserContext()`), granting permissions, window size and position, ignoring certificate errors, and Service
+Worker targets. Setting the download behavior (Playwright always does) succeeds without effect: downloads follow the
+browser's own settings, and the client gets no download events. On Chrome 125, Chrome itself refuses to read cookies
+and its error comes back as is. A browser event larger than 4 MiB is dropped and never reaches the client.
+
 ## Troubleshooting
 
 | Symptom | Check |
@@ -455,6 +512,8 @@ see [protocol.md](./protocol.md).
 ## Security checklist
 
 - Never send the one-time enrollment code, `pairing.key`, or `control.token` to an AI model or another user.
+- Treat a CDP endpoint URL from `cdp_endpoint` like a password for that browser: do not share or log it, and close it
+  with `cdp_close` (or `sctl cdp close`) when the script is done.
 - Keep the data directory private to the current operating-system user.
 - Treat `--name` only as an audit label; it does not isolate one MCP client from another.
 - Review ScriptCat's browser confirmation page before approving writes or source disclosure.

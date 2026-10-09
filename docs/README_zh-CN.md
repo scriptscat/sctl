@@ -132,10 +132,12 @@ Chrome DevTools Protocol 驱动页面时,Chrome 会在浏览器顶部显示"sctl
 | `sctl debug network [--url S] [--method M] [--status 404\|4xx] [--type T] [--failed] [--after CURSOR] [--limit N]` | 按开始先后列出标签页的网络请求。 |
 | `sctl debug request <ID> [--body]` | 显示一个请求的请求头、请求体、各阶段耗时,加 `--body` 时一并给出响应体。 |
 | `sctl debug clear` | 清空标签页的调试记录,不断开调试器。 |
+| `sctl cdp send <Method> [--params '<JSON 对象>'] [--tab N] [--timeout D]` | 向标签页的页面发送一条原始 Chrome DevTools Protocol 命令,输出 Chrome 的结果。 |
+| `sctl cdp endpoint` / `sctl cdp status` / `sctl cdp close` | 创建或查看浏览器的 CDP 端点地址(给 Playwright `connectOverCDP` 与 Puppeteer `connect`),查看是否有客户端连着、何时失效,或关闭端点。 |
 
 运行 `sctl --help` 或 `sctl <command> --help` 查看用法和参数。写操作会阻塞，直到用户在
 ScriptCat 中批准、拒绝或关闭确认流程；浏览器控制命令按设计没有审批步骤、立即执行(参见
-[`threat-model.md`](./threat-model.md))。当多个实例同时在线时，`tabs`、`windows`、`groups`、`reading-list`、`bookmarks`、`history`、`browsing-data`、`recent`、`downloads`、`cookies`、`extensions`、`page` 与 `debug` 可用
+[`threat-model.md`](./threat-model.md))。当多个实例同时在线时，`tabs`、`windows`、`groups`、`reading-list`、`bookmarks`、`history`、`browsing-data`、`recent`、`downloads`、`cookies`、`extensions`、`page`、`debug` 与 `cdp` 可用
 `--browser <name|id>`（或环境变量 `SCTL_BROWSER`）指定目标实例。破坏性的浏览器操作需要显式确认：
 `reading-list rm`、`history rm`、`history clear`、`browsing-data clear`，`downloads cancel`、`erase`、`delete-file`，`cookies rm`、`clear`，以及 `extensions disable` 必须加 `--yes`（MCP 传 `confirm: true`），否则什么都不执行，退出码为 3。
 `bookmarks rm <id>...` 则需要人工审批：浏览器打开审批窗口，命令一直等待；书签删除后退出码为 0，被拒绝或关闭窗口为 1，
@@ -227,6 +229,59 @@ sctl 只在自己即将断开调试器时(`sctl page detach`、5 分钟空闲断
 文本体原样返回,二进制体以 base64 返回;超过 1 MiB 时只给前 1 MiB,并给出原始大小。
 Chrome 已不再保留某个体时(之后页面导航离开、请求进行中或失败、没有体、页面没有读取它,或超过 Chrome 约 20 MB 的上限),以及标签页上有未处理的 JS 弹框时,输出写明原因,退出码仍为 0。
 ID 不存在或已被丢弃时返回 `NOT_FOUND`(退出码 3)。
+
+`sctl cdp send <Method>` 向标签页的顶层页面发送一条原始 Chrome DevTools Protocol 命令(如 `Page.getNavigationHistory`),
+以缩进的 JSON 输出 Chrome 的结果,外加 `tabId` 和 `contentTrust`。`--params` 接受 JSON 对象;`--tab`、`--browser`、`--timeout` 与 `page` 命令相同。
+标签页未附加时先附加,同一标签页上与页面、调试命令排队执行;标签页有未处理的 JS 弹框时照常发送(所以可以发 `Page.handleJavaScriptDialog`,
+弹框期间 Chrome 会阻塞的命令会等到 `--timeout`)。只发给顶层页面,命令产生的事件不返回。
+Chrome 拒绝或不认识这条命令时返回 `INVALID_REQUEST`(退出码 3),带 Chrome 自己的错误信息;结果超过 4 MiB 返回 `PAYLOAD_TOO_LARGE`。
+`Page.disable`、`Runtime.disable`、`Network.disable`、`Log.disable`、`Emulation.setFocusEmulationEnabled`、`Target.setAutoAttach`、`Target.detachFromTarget`
+会破坏 sctl 自身依赖的状态,直接拒绝、不发给 Chrome。其余命令原样发送,副作用由你负责恢复:
+`Emulation.setDeviceMetricsOverride`、`Network.setExtraHTTPHeaders` 这类持续生效的设置会影响之后的页面命令,直到你恢复;
+`Fetch.enable` 之后没有人处理被暂停的请求,标签页上的请求都会挂住;`Debugger.enable` 加 `Debugger.pause` 会让页面停住。
+恢复办法:发送 `Fetch.disable` 或 `Debugger.resume`,或 `sctl page detach` 后重新附加。和 `page`、`debug` 一样没有人工确认环节。
+对应的 MCP 工具是 `cdp_send`(见 [`mcp.md`](./mcp.md))。
+
+`sctl cdp endpoint` 为浏览器创建一个 CDP 端点,已有时给出同一个,并输出两种地址:给 Playwright `chromium.connectOverCDP` 的
+`http://<daemon 地址>/cdp/<密钥>`,给 Puppeteer `connect({browserWSEndpoint})` 的 `ws://<daemon 地址>/cdp/<密钥>/devtools/browser/<id>`,
+同时给出是否有客户端连着、何时失效。连上的客户端可以不经审批完整控制这个浏览器里 Chrome 允许附加调试器的全部标签页。
+地址里带随机密钥,地址本身就是凭据,请像密码一样对待。同一时刻只能有一个客户端;客户端连着时,这个浏览器上的 `sctl page`、`sctl debug`、
+`sctl cdp send` 返回 `ENDPOINT_CONNECTED`(退出码 3),其他命令照常执行。客户端断开后,sctl 断开它附加的标签页、保留这些标签页,
+自己的命令恢复可用;同一地址可以再次连接。`sctl cdp status` 列出地址、是否有客户端连着及连上的时间、失效时间,没有端点时如实说明。
+`sctl cdp close` 让端点立即失效并断开连着的客户端,没有端点时也成功。daemon 退出、浏览器被遗忘、连续 60 分钟没有客户端连着时端点也会失效。
+对应的 MCP 工具是 `cdp_endpoint` 与 `cdp_close`。细节见 [`protocol.md`](./protocol.md#34-raw-cdp-endpoint),安全取舍见 [`threat-model.md`](./threat-model.md)。
+
+把已有的脚本指向 `sctl cdp endpoint` 输出的地址即可。Playwright 请使用浏览器自己的上下文(即用户的配置文件与登录状态),不要新建:
+
+```js
+const { chromium } = require("playwright");
+
+const browser = await chromium.connectOverCDP("http://127.0.0.1:8643/cdp/<密钥>");
+const context = browser.contexts()[0];
+const page = await context.newPage(); // 或者从 context.pages() 里选一个
+await page.goto("https://example.com");
+await browser.close(); // 只断开连接:浏览器和所有标签页都保留
+```
+
+Puppeteer 请传 `defaultViewport: null`,否则它会把用户的标签页调整成它的默认视口尺寸:
+
+```js
+const puppeteer = require("puppeteer-core");
+
+const browser = await puppeteer.connect({
+  browserWSEndpoint: "ws://127.0.0.1:8643/cdp/<密钥>/devtools/browser/<id>",
+  defaultViewport: null,
+});
+const [page] = await browser.pages();
+await page.goto("https://example.com");
+await browser.disconnect();
+```
+
+客户端能看到 Chrome 允许附加调试器的全部标签页(`chrome://` 页面、扩展页面和 Chrome 应用商店除外),包括连着期间用户或页面新打开的标签页;
+它附加的每个标签页都会显示 Chrome 的调试提示条并开启焦点模拟,后台标签页的表现与前台一致。浏览器级命令由 sctl 回答,发给页面或其跨进程 iframe 的命令原样转发到那个标签页。
+以下功能不支持,会返回说明 sctl 的 CDP 端点不支持的 CDP 错误:新的浏览器上下文(Playwright `browser.newContext()`、Puppeteer `createBrowserContext()`)、
+权限授予、窗口尺寸与位置、忽略证书错误、Service Worker 目标。设置下载行为的请求(Playwright 连接时一定会发)成功但不起作用:下载按浏览器自己的设置进行,客户端收不到下载事件。
+Chrome 125 上读取 Cookie 会被 Chrome 自己拒绝(Playwright `context.cookies()`),错误原样返回。超过 4 MiB 的浏览器事件无法经扩展连接传出,会被丢弃,客户端收不到。
 
 ## 许可证
 

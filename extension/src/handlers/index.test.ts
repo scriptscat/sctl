@@ -164,6 +164,11 @@ describe("browser method handlers", () => {
         "debugger.detach",
         "debugger.record",
         "debugger.body",
+        "debugger.targets",
+        "debugger.userAgent",
+        "debugger.open",
+        "debugger.close",
+        "debugger.own",
       ]),
     );
   });

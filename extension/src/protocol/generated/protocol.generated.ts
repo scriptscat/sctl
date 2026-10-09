@@ -40,7 +40,8 @@ export const ERROR_CODES = [
   "DIALOG_OPEN",
   "PAGE_UNRESPONSIVE",
   "EVAL_ERROR",
-  "NAVIGATION_FAILED"
+  "NAVIGATION_FAILED",
+  "ENDPOINT_CONNECTED"
 ] as const;
 export const CRYPTO = {
   "mac": "HMAC-SHA-256",
@@ -203,6 +204,12 @@ export interface DebuggerBodyResult {
   truncated?: boolean;
   unavailable?: "navigated" | "noData" | "evicted" | "noPostData";
 }
+export interface DebuggerCloseParams {
+  tabId: number;
+}
+export interface DebuggerCloseResult {
+  tabId: number;
+}
 export interface DebuggerDetachParams {
   tabId?: number;
 }
@@ -219,6 +226,21 @@ export interface DebuggerEventNotification {
   sessionId?: string;
   tabId: number;
 }
+export interface DebuggerOpenParams {
+  background?: boolean;
+  url: string;
+}
+export interface DebuggerOpenResult {
+  tabId: number;
+  targetId: string;
+}
+export interface DebuggerOwnParams {
+  owned: boolean;
+  tabId: number;
+}
+export interface DebuggerOwnResult {
+  owned: boolean;
+}
 export interface DebuggerRecordParams {
   recording: boolean;
   tabId: number;
@@ -234,6 +256,23 @@ export interface DebuggerSendParams {
 }
 export interface DebuggerSendResult {
   result: Record<string, unknown>;
+}
+export interface DebuggerTabNotification {
+  tabId: number;
+  targetId: string;
+  title: string;
+  url: string;
+}
+export interface DebuggerTabRemovedNotification {
+  tabId: number;
+}
+export type DebuggerTargetsParams = Record<string, never>;
+export interface DebuggerTargetsResult {
+  targets: Array<{ tabId: number; targetId: string; title: string; url: string; }>;
+}
+export type DebuggerUserAgentParams = Record<string, never>;
+export interface DebuggerUserAgentResult {
+  userAgent: string;
 }
 export interface DownloadsCancelParams {
   confirm?: true;
@@ -534,9 +573,14 @@ export interface RpcMethodMap {
   "cookies.remove": { params: CookiesRemoveParams; result: CookiesRemoveResult };
   "cookies.set": { params: CookiesSetParams; result: CookiesSetResult };
   "debugger.body": { params: DebuggerBodyParams; result: DebuggerBodyResult };
+  "debugger.close": { params: DebuggerCloseParams; result: DebuggerCloseResult };
   "debugger.detach": { params: DebuggerDetachParams; result: DebuggerDetachResult };
+  "debugger.open": { params: DebuggerOpenParams; result: DebuggerOpenResult };
+  "debugger.own": { params: DebuggerOwnParams; result: DebuggerOwnResult };
   "debugger.record": { params: DebuggerRecordParams; result: DebuggerRecordResult };
   "debugger.send": { params: DebuggerSendParams; result: DebuggerSendResult };
+  "debugger.targets": { params: DebuggerTargetsParams; result: DebuggerTargetsResult };
+  "debugger.userAgent": { params: DebuggerUserAgentParams; result: DebuggerUserAgentResult };
   "downloads.cancel": { params: DownloadsCancelParams; result: DownloadsCancelResult };
   "downloads.deleteFile": { params: DownloadsDeleteFileParams; result: DownloadsDeleteFileResult };
   "downloads.erase": { params: DownloadsEraseParams; result: DownloadsEraseResult };
@@ -699,10 +743,34 @@ export const RPC_METHODS = {
     blocking: "none",
     level: "L0",
   },
+  "debugger.close": {
+    params: "DebuggerCloseParams",
+    result: "DebuggerCloseResult",
+    scope: "debugger:close",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
   "debugger.detach": {
     params: "DebuggerDetachParams",
     result: "DebuggerDetachResult",
     scope: "debugger:detach",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "debugger.open": {
+    params: "DebuggerOpenParams",
+    result: "DebuggerOpenResult",
+    scope: "debugger:open",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "debugger.own": {
+    params: "DebuggerOwnParams",
+    result: "DebuggerOwnResult",
+    scope: "debugger:own",
     effect: "write",
     blocking: "none",
     level: "L0",
@@ -720,6 +788,22 @@ export const RPC_METHODS = {
     result: "DebuggerSendResult",
     scope: "debugger:send",
     effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "debugger.targets": {
+    params: "DebuggerTargetsParams",
+    result: "DebuggerTargetsResult",
+    scope: "debugger:targets",
+    effect: "read",
+    blocking: "none",
+    level: "L0",
+  },
+  "debugger.userAgent": {
+    params: "DebuggerUserAgentParams",
+    result: "DebuggerUserAgentResult",
+    scope: "debugger:userAgent",
+    effect: "read",
     blocking: "none",
     level: "L0",
   },
@@ -1090,6 +1174,9 @@ export const RPC_METHODS = {
 export interface NotificationMap {
   "debugger.detached": DebuggerDetachedNotification;
   "debugger.event": DebuggerEventNotification;
+  "debugger.tabCreated": DebuggerTabNotification;
+  "debugger.tabRemoved": DebuggerTabRemovedNotification;
+  "debugger.tabUpdated": DebuggerTabNotification;
 }
 export type NotificationMethod = keyof NotificationMap;
 export type NotificationParams<N extends NotificationMethod> = NotificationMap[N];

@@ -67,6 +67,7 @@ func (s *Server) ForgetInstance(ref string) error {
 	if forgotten != nil {
 		s.instanceGone(id)
 	}
+	s.instanceForgotten(id)
 	return nil
 }
 

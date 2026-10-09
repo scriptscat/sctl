@@ -44,7 +44,7 @@ is when the CLI prints its waiting line and `sctl mcp` starts its progress notif
 
 ### Page automation
 
-`sctl page` and `sctl debug` commands and the `page_*` and `debug_*` MCP tools reach the daemon through `/control/page`, not `/control/call`: a
+`sctl page`, `sctl debug`, and `sctl cdp send` commands and the `page_*`, `debug_*`, and `cdp_send` MCP tools reach the daemon through `/control/page`, not `/control/call`: a
 page action is not one extension method but a sequence of Chrome DevTools Protocol (CDP) commands decided in Go.
 The page automation component (`internal/daemon/page`) resolves the browser and tab, then drives the tab through
 the extension's internal relay methods ([protocol.md](./protocol.md#32-internal-methods)):
@@ -84,6 +84,47 @@ queue and re-arms the idle timer, with a sequence number discarding a timer that
 extension through `debugger.record` so its own idle fallback leaves the tab alone too. Because recording lives in the
 per-tab state, every detach path ends it.
 
+A raw CDP endpoint client and sctl never drive the same browser's tabs at once, because all users of a tab share its
+one debugger session. `page.Manager.HandOver` hands one browser instance's tabs over to an endpoint client: it
+cancels sctl's commands running on that instance with `ENDPOINT_CONNECTED` and waits for them and for any idle detach
+or recording expiry in progress, then detaches as `page detach --all` does — ending recording, dismissing known
+dialogs first, and dropping the debug records. From then on every `/control/page` action on that instance (`page`,
+`debug`, `cdp send`) fails with `ENDPOINT_CONNECTED` before anything is sent to the browser, until
+`page.Manager.Reclaim` gives the tabs back. Only `/control/page` goes through the page component, so `/control/call`
+methods (`tabs`, `windows`, bookmarks and the other browser control verbs) keep working on that browser by
+construction.
+
+### Raw CDP endpoint
+
+The raw CDP endpoint component (`internal/daemon/cdpendpoint`) gives a Playwright or Puppeteer client one browser's
+tabs. `component.go` mounts its `Manager` on the daemon mux at `/cdp/` and registers it as a second
+`BrowserListener` with `bridge.Server.AddBrowserListener`, so it receives the same notifications as the page
+component plus `OnInstanceForgotten`; `sctl cdp endpoint|status|close` and the `cdp_endpoint` and `cdp_close` MCP
+tools reach it through `/control/cdp/*`. Endpoints, their secrets, and their clients live only in the daemon's memory.
+URL forms, checks, and lifecycle are in [protocol.md](./protocol.md#34-raw-cdp-endpoint).
+
+```text
+Playwright / Puppeteer ─WS /cdp/<secret>/…─▶ cdpendpoint.Manager ─▶ Hook ─▶ Browser ─▶ bridge ─WS─▶ sctl Browser ─▶ tab
+sctl cdp endpoint|status|close ─/control/cdp/*─▶ controlapi ─┘   │
+                                     page.Manager.HandOver / Reclaim ◀┘
+```
+
+Ownership switches at the client's edges. Before upgrading a client's WebSocket, the endpoint calls
+`page.Manager.HandOver` for the instance and refuses the client if it fails; after the client is gone — whatever
+ended it — it dismisses known dialogs, detaches the tabs the client attached, clears their endpoint-owned marks, and
+only then calls `page.Manager.Reclaim`. Every path that ends a client goes through that one cleanup, because the
+handed-over state survives the instance reconnecting. Context cancellation drives every daemon-side end: `sctl cdp
+close`, expiry, and `sctl browsers forget` cancel the endpoint's context, the instance disconnecting cancels the
+client's, and the daemon's own context is the parent of both — needed because `bridge` shuts down only its own
+connections and a hijacked client WebSocket lives outside `http.Server`.
+
+The endpoint keeps the transport and the ownership; what the client's CDP is answered with is a narrow `Hook`
+(`Serve(ctx, conn, browser)`), given the accepted connection and a per-client `cdpendpoint.Browser` that wraps the
+instance's internal methods (`debugger.targets`, `userAgent`, `open`, `close`, `own`, `send`, `detach`) plus
+`tabs.activate`, and delivers its notifications. `Browser` records which tabs the client attached, marked, and has an open dialog on, which is what the
+cleanup works from. `cdpendpoint` reaches the page component only through its own `Pages` interface, without
+importing `page`.
+
 ## Directory layout
 
 `internal/` is grouped by **process role**: `daemon/` is the guard side (`sctl serve`), `client/` is the
@@ -106,11 +147,12 @@ internal/cli/               # subcommand definitions; spans both sides, hence to
   page*.go                  #   sctl page snapshot|click|hover|fill|type|press|select|upload|scroll|goto|back|forward|
                             #   reload|wait|screenshot|eval|dialog|detach (reach /control/page through dispatchPage)
   debug.go                  #   sctl debug start|stop|status|console|network|request|clear (also through dispatchPage)
+  cdp.go                    #   sctl cdp send (also through dispatchPage), sctl cdp endpoint|status|close (/control/cdp/*)
   resource.go               #   the optional scripts|script|sc resource word shared by those verbs
   dispatch.go               #   action forwarding and bridge error → exit code mapping
 
 internal/daemon/            # ── sctl serve side ──
-  component.go              #   cago Component: assembles listener + bridge + page + controlapi
+  component.go              #   cago Component: assembles listener + bridge + page + cdpendpoint + controlapi
   bridge/                   #   WS service core
     server.go               #     Server struct, Serve, Origin whitelist, handshake admission, connection registry
     conn.go                 #     single connection: handshake, read loop, send
@@ -120,6 +162,8 @@ internal/daemon/            # ── sctl serve side ──
   controlapi/               #   /control/* handlers (controller role), depends on the narrow Bridge and Page interfaces
   page/                     #   page automation: Manager (target tab, per-tab queue, attach and idle detach),
                              #     page actions, per-tab debug record buffers, the bridge-backed CDP implementation
+  cdpendpoint/              #   raw CDP endpoint: per-browser endpoints, /cdp/ HTTP and WS, Host/Origin/secret checks,
+                             #     expiry, hand-over to and from page, the per-client Hook and Browser
   auth/                     #   mutual HMAC handshake, enrollment-code derivation (HKDF), key delivery (AES-GCM)
   store/                    #   persistence (repository role): ScriptCat's long-term key K, plus the
                              #     browsers.json registry of paired sctl Browser instances and their own
@@ -150,12 +194,15 @@ extension/                  # ── sctl Browser, the second extension kind (MV
 
 ## Dependency direction
 
-`cli` → `daemon` (for `serve` only) and `client`. `daemon/controlapi` → `daemon/page` → `daemon/bridge`, never
-the reverse: the control API sees the guard only through the narrow `controlapi.Bridge` and `controlapi.Page`
-interfaces, `page` reaches browsers only through its narrow `page.CDP` interface, and `bridge` knows
-nothing about HTTP paths or page automation — `component.go` registers the page `Manager` as the bridge's
-`BrowserListener`. The `/control/*` routes are registered by `controlapi.Handler.Register`, on the mux
-`internal/daemon/component.go` assembles and hands to `bridge.Server.Serve` (which owns only `/`). The shared
+`cli` → `daemon` (for `serve` only) and `client`. `daemon/controlapi` → `daemon/page` → `daemon/bridge` and
+`daemon/controlapi` → `daemon/cdpendpoint` → `daemon/bridge`, never the reverse: the control API sees the guard only
+through the narrow `controlapi.Bridge`, `controlapi.Page`, and `controlapi.CDPEndpoints` interfaces, `page` reaches
+browsers only through its narrow `page.CDP` interface, `cdpendpoint` reaches browsers through `cdpendpoint.Bridge` and
+the page component through `cdpendpoint.Pages` without importing it, and `bridge` knows nothing about HTTP paths, page
+automation, or the endpoint — `component.go` registers the page `Manager` as the bridge's `BrowserListener` and the
+endpoint `Manager` as an additional one. The `/control/*` routes are registered by `controlapi.Handler.Register`, on the mux
+`internal/daemon/component.go` assembles and hands to `bridge.Server.Serve` (which owns only `/`); `component.go` also
+mounts the endpoint on `/cdp/`. The shared
 DTOs live in `client/control` and are referenced one-way by `controlapi`.
 
 Two further cross-package conventions: sensitive files reach disk only through `internal/pkg/fsutil`, and

@@ -289,6 +289,42 @@ func TestResolveBrowserWithoutTargetPicksTheOnlyOnlineInstance(t *testing.T) {
 	})
 }
 
+func TestResolvePairedBrowser(t *testing.T) {
+	Convey("ResolvePairedBrowser 与 ResolveBrowser 规则相同,但点名的离线实例也能解析", t, func() {
+		h := startTestServer(t)
+		keyA := h.registerBrowser(instanceA, "chrome-0123")
+		h.registerBrowser("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "offline-one")
+		h.registerBrowser("aaaaaaaabbbbbbbbbbbbbbbbbbbbbbbb", "offline-two")
+
+		Convey("点名的离线实例按名称或 ID 前缀解析,Online 为 false", func() {
+			info, err := h.srv.ResolvePairedBrowser("offline-one")
+			So(err, ShouldBeNil)
+			So(info.ID, ShouldEqual, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+			So(info.Online, ShouldBeFalse)
+			info, err = h.srv.ResolvePairedBrowser("aaaaaaaab")
+			So(err, ShouldBeNil)
+			So(info.Name, ShouldEqual, "offline-two")
+		})
+
+		Convey("不匹配与前缀匹配多个时的错误码同 ResolveBrowser", func() {
+			_, err := h.srv.ResolvePairedBrowser("nope")
+			So(errorCode(err), ShouldEqual, generated.ErrorCodeBrowserNotFound)
+			_, err = h.srv.ResolvePairedBrowser("aaaaaaaa")
+			So(errorCode(err), ShouldEqual, generated.ErrorCodeBrowserAmbiguous)
+		})
+
+		Convey("目标为空时仍只选在线实例", func() {
+			_, err := h.srv.ResolvePairedBrowser("")
+			So(errorCode(err), ShouldEqual, generated.ErrorCodeNoBrowserConnected)
+			h.connectBrowser(instanceA, keyA, "chrome-0123")
+			info, err := h.srv.ResolvePairedBrowser("")
+			So(err, ShouldBeNil)
+			So(info.ID, ShouldEqual, instanceA)
+			So(info.Online, ShouldBeTrue)
+		})
+	})
+}
+
 func TestCallInstanceTargetsTheExactInstance(t *testing.T) {
 	Convey("CallInstance 只发给精确 ID 的在线实例", t, func() {
 		h := startTestServer(t)
@@ -336,5 +372,64 @@ func TestCallInstanceTargetsTheExactInstance(t *testing.T) {
 			_, err := h.srv.CallInstance(ctx, instanceA, Request{Action: "scripts.list", Input: json.RawMessage(`{}`)})
 			So(errorCode(err), ShouldEqual, CodeInvalidRequest)
 		})
+	})
+}
+
+// forgetRecorder 在通知与断开之外还实现 InstanceForgottenListener。
+type forgetRecorder struct {
+	*recordingListener
+	forgotten chan string
+}
+
+func newForgetRecorder() *forgetRecorder {
+	return &forgetRecorder{recordingListener: newRecordingListener(), forgotten: make(chan string, 16)}
+}
+
+func (l *forgetRecorder) OnInstanceForgotten(instanceID string) { l.forgotten <- instanceID }
+
+func TestSeveralListenersAllReceiveBrowserEvents(t *testing.T) {
+	Convey("多个监听者都收到调试器通知、标签页通知与实例丢失", t, func() {
+		h := startTestServer(t)
+		first, second := newRecordingListener(), newRecordingListener()
+		h.srv.AddBrowserListener(first)
+		h.srv.AddBrowserListener(second)
+		keyA := h.registerBrowser(instanceA, "chrome-0123")
+		a := h.connectBrowser(instanceA, keyA, "chrome-0123")
+
+		tab := `{"tabId":7,"targetId":"T7","title":"t","url":"https://example.com/"}`
+		for method, params := range map[generated.Notification]string{
+			generated.NotificationDebuggerEvent:      debuggerEventParams,
+			generated.NotificationDebuggerDetached:   debuggerDetachedParams,
+			generated.NotificationDebuggerTabCreated: tab,
+			generated.NotificationDebuggerTabUpdated: tab,
+			generated.NotificationDebuggerTabRemoved: `{"tabId":7}`,
+		} {
+			a.writeNotification(string(method), json.RawMessage(params))
+			So(first.nextNotification(), ShouldResemble, notification{instanceA, string(method), params})
+			So(second.nextNotification(), ShouldResemble, notification{instanceA, string(method), params})
+		}
+
+		So(a.ws.Close(1000, ""), ShouldBeNil)
+		So(first.awaitGone(), ShouldEqual, instanceA)
+		So(second.awaitGone(), ShouldEqual, instanceA)
+	})
+}
+
+func TestForgetNotifiesListenersEvenWhenOffline(t *testing.T) {
+	Convey("忘记实例(含离线)时实现了 InstanceForgottenListener 的监听者带实例 ID 被通知,且不触发 OnInstanceGone", t, func() {
+		h := startTestServer(t)
+		l := newForgetRecorder()
+		h.srv.AddBrowserListener(l)
+		h.registerBrowser(instanceA, "chrome-0123")
+
+		So(h.srv.ForgetInstance("chrome-0123"), ShouldBeNil)
+		select {
+		case id := <-l.forgotten:
+			So(id, ShouldEqual, instanceA)
+		case <-time.After(3 * time.Second):
+			So("OnInstanceForgotten not called", ShouldBeEmpty)
+		}
+		settle()
+		So(l.goneCount(), ShouldEqual, 0)
 	})
 }

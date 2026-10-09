@@ -37,12 +37,28 @@ const ATTACHED_TABS_KEY = "debuggerTabs";
 const RECORDING_TABS_KEY = "debuggerRecording";
 // 有未处理 JS 弹框的标签页，同样要活过 service worker 重启：释放前要先关闭这些弹框。
 const DIALOG_TABS_KEY = "debuggerDialogs";
+// 原始 CDP 端点占用的标签页：与录制一样免除兜底空闲断开，并活过 service worker 重启。
+const OWNED_TABS_KEY = "debuggerOwned";
+
+// 不能附加调试器的页面：浏览器内部页、扩展页与应用商店（Chrome 拒绝附加，列出来只会让端点的客户端附加失败）。
+const UNATTACHABLE_SCHEMES = ["chrome:", "chrome-extension:", "chrome-untrusted:", "chrome-search:", "devtools:"];
+const WEB_STORE_PREFIXES = ["https://chromewebstore.google.com/", "https://chrome.google.com/webstore"];
+
+function isAttachableUrl(url: string): boolean {
+  return (
+    !UNATTACHABLE_SCHEMES.some((scheme) => url.startsWith(scheme)) && !WEB_STORE_PREFIXES.some((p) => url.startsWith(p))
+  );
+}
+
+type TabInfo = RpcResult<"debugger.targets">["targets"][number];
 
 // 按标签页维护 chrome.debugger 附加状态：发送命令时按需附加，把事件和被动分离转成通知，并在空闲、连接断开时释放。
 export class DebuggerRelay {
   // 已附加（或正在附加）的标签页 → 空闲计时器；录制中的标签页没有计时器（undefined），不会被兜底断开。
   private readonly idle = new Map<number, ReturnType<typeof setTimeout> | undefined>();
   private readonly recording = new Set<number>();
+  // 端点占用的标签页，可以还没附加（端点打开的新标签页）。
+  private readonly owned = new Set<number>();
   // 这次附加期间打开、还没关闭的 JS 弹框所在的标签页。
   private readonly dialogs = new Set<number>();
   private readonly attaching = new Map<number, Promise<void>>();
@@ -117,6 +133,60 @@ export class DebuggerRelay {
     return { recording: params.recording };
   };
 
+  // 列出能附加调试器的标签页及其 DevTools 目标 ID：端点用它回答浏览器级的目标发现。
+  readonly targets: RpcHandler<"debugger.targets"> = async () => {
+    const targets = (await chrome.debugger.getTargets()).flatMap(toTabInfo);
+    return { targets };
+  };
+
+  // 真实的 User-Agent：端点的 Browser.getVersion 要回答它，客户端据此判断浏览器版本。
+  readonly userAgent: RpcHandler<"debugger.userAgent"> = () => Promise.resolve({ userAgent: navigator.userAgent });
+
+  // 为端点打开标签页并立即标为端点占用：端点随后才附加，中间不会被任何兜底计时误伤。
+  readonly open: RpcHandler<"debugger.open"> = async (params) => {
+    const lastFocused = await chrome.windows.getLastFocused();
+    const tab = await chrome.tabs.create({
+      url: params.url,
+      windowId: lastFocused.id!,
+      active: params.background !== true,
+    });
+    const tabId = tab.id!;
+    this.owned.add(tabId);
+    this.persist();
+    const target = (await chrome.debugger.getTargets()).find((t) => t.tabId === tabId);
+    if (target === undefined) {
+      // 守护进程拿不到这个标签页的 ID，清理不到它的标记：留着它，之后附加的这个标签页就永远免于兜底断开。
+      this.owned.delete(tabId);
+      this.persist();
+      throw new HandlerError("NOT_FOUND", `no debuggable target for tab ${tabId}`);
+    }
+    return { tabId, targetId: target.id };
+  };
+
+  // 为端点关闭标签页；关闭时 Chrome 会分离调试器并走 onDetach，占用记录在那里与标签页一起清掉。
+  readonly close: RpcHandler<"debugger.close"> = async (params) => {
+    await requireTab(params.tabId);
+    await chrome.tabs.remove(params.tabId);
+    this.owned.delete(params.tabId);
+    this.persist();
+    return { tabId: params.tabId };
+  };
+
+  // 标记或取消标记端点占用的标签页：占用期间免除兜底空闲断开，取消后重新计时。可作用于未附加的标签页。
+  readonly own: RpcHandler<"debugger.own"> = async (params) => {
+    await this.restored;
+    if (params.owned) {
+      this.owned.add(params.tabId);
+    } else {
+      this.owned.delete(params.tabId);
+    }
+    if (this.idle.has(params.tabId)) {
+      this.armIdle(params.tabId);
+    }
+    this.persist();
+    return { owned: params.owned };
+  };
+
   // 取回一个请求的请求体或响应体，截断到 BODY_LIMIT_BYTES 后回传，并给出原始大小。Chrome 不再保留它时
   // 不算错误，答 unavailable 与原因。和 record 一样不附加：daemon 只为已附加时记下的请求取体。
   readonly body: RpcHandler<"debugger.body"> = async (params) => {
@@ -151,6 +221,11 @@ export class DebuggerRelay {
     await this.restored;
     await Promise.allSettled([...this.attaching.values()]);
     await Promise.all([...this.idle.keys()].map((tabId) => this.release(tabId)));
+    // 端点的客户端随连接一起断开，守护进程也无法再清除标记；没附加的标签页不经 release，要在这里清掉。
+    if (this.owned.size > 0) {
+      this.owned.clear();
+      this.persist();
+    }
   }
 
   onEvent(source: chrome.debugger.DebuggerSession, method: string, params?: object): void {
@@ -183,6 +258,40 @@ export class DebuggerRelay {
     this.notify("debugger.detached", { tabId: source.tabId, reason });
   }
 
+  // 标签页的创建、变化与关闭报告给守护进程，由它转成端点客户端的目标事件。新建时目标可能还没出现在
+  // getTargets 里，此时不报告，等随后的变化通知补上。
+  onTabCreated(tab: chrome.tabs.Tab): void {
+    void this.reportTab("debugger.tabCreated", tab.id!, tab.url || tab.pendingUrl || "");
+  }
+
+  onTabUpdated(tabId: number, changeInfo: chrome.tabs.OnUpdatedInfo): void {
+    if (changeInfo.url === undefined && changeInfo.title === undefined && changeInfo.status === undefined) {
+      return;
+    }
+    void this.reportTab("debugger.tabUpdated", tabId, changeInfo.url);
+  }
+
+  onTabRemoved(tabId: number): void {
+    if (this.owned.delete(tabId)) {
+      this.persist();
+    }
+    this.notify("debugger.tabRemoved", { tabId });
+  }
+
+  private async reportTab(method: "debugger.tabCreated" | "debugger.tabUpdated", tabId: number, hint?: string) {
+    if (hint !== undefined && !isAttachableUrl(hint)) {
+      return;
+    }
+    try {
+      const info = (await chrome.debugger.getTargets()).flatMap(toTabInfo).find((t) => t.tabId === tabId);
+      if (info !== undefined) {
+        this.notify(method, info);
+      }
+    } catch (error) {
+      console.error(`failed to report ${method} for tab ${tabId}`, error);
+    }
+  }
+
   private ensureAttached(tabId: number): Promise<void> {
     if (this.idle.has(tabId)) {
       return Promise.resolve();
@@ -208,17 +317,30 @@ export class DebuggerRelay {
 
   // 重启前附加的标签页仍附加着就接着管理（重新开始兜底计时）；已经不在的告诉 daemon，它可能还当它附加着。
   private async restore(): Promise<void> {
-    const items = await this.storage.get([ATTACHED_TABS_KEY, RECORDING_TABS_KEY, DIALOG_TABS_KEY]);
+    const items = await this.storage.get([ATTACHED_TABS_KEY, RECORDING_TABS_KEY, DIALOG_TABS_KEY, OWNED_TABS_KEY]);
     const stored = items[ATTACHED_TABS_KEY];
     const saved = Array.isArray(stored) ? (stored as number[]) : [];
     const storedRecording = items[RECORDING_TABS_KEY];
     const wasRecording = new Set(Array.isArray(storedRecording) ? (storedRecording as number[]) : []);
     const storedDialogs = items[DIALOG_TABS_KEY];
     const hadDialog = new Set(Array.isArray(storedDialogs) ? (storedDialogs as number[]) : []);
-    if (saved.length === 0) {
+    const storedOwned = items[OWNED_TABS_KEY];
+    const wasOwned = Array.isArray(storedOwned) ? (storedOwned as number[]) : [];
+    if (saved.length === 0 && wasOwned.length === 0) {
       return;
     }
-    const attached = new Set((await chrome.debugger.getTargets()).filter((t) => t.attached).map((t) => t.tabId));
+    const targets = await chrome.debugger.getTargets();
+    // 重启期间被关掉的标签页不再占用，否则记录只增不减。
+    const existing = new Set(targets.map((t) => t.tabId));
+    for (const tabId of wasOwned) {
+      if (existing.has(tabId)) {
+        this.owned.add(tabId);
+      }
+    }
+    if (this.owned.size !== wasOwned.length) {
+      this.persist();
+    }
+    const attached = new Set(targets.filter((t) => t.attached).map((t) => t.tabId));
     const gone: number[] = [];
     for (const tabId of saved) {
       if (attached.has(tabId)) {
@@ -247,6 +369,7 @@ export class DebuggerRelay {
         [ATTACHED_TABS_KEY]: [...this.idle.keys()],
         [RECORDING_TABS_KEY]: [...this.recording],
         [DIALOG_TABS_KEY]: [...this.dialogs],
+        [OWNED_TABS_KEY]: [...this.owned],
       })
       .catch((error: unknown) => {
         console.error("failed to save the attached tabs", error);
@@ -255,7 +378,7 @@ export class DebuggerRelay {
 
   private armIdle(tabId: number): void {
     clearTimeout(this.idle.get(tabId));
-    if (this.recording.has(tabId)) {
+    if (this.recording.has(tabId) || this.owned.has(tabId)) {
       this.idle.set(tabId, undefined);
       return;
     }
@@ -283,6 +406,7 @@ export class DebuggerRelay {
     clearTimeout(this.idle.get(tabId));
     this.idle.delete(tabId);
     this.recording.delete(tabId);
+    this.owned.delete(tabId);
     this.dialogs.delete(tabId);
     this.persist();
   }
@@ -329,6 +453,14 @@ function truncateBody(body: string, base64Encoded: boolean): BodyResult {
   // encodeInto 只写入完整的字符，read 是写进去的 UTF-16 码元数。
   const { read } = encoder.encodeInto(body, new Uint8Array(BODY_LIMIT_BYTES));
   return { body: body.slice(0, read), base64Encoded, size, truncated: true };
+}
+
+// 只有普通页面目标能被端点驱动：扩展的后台页、service worker 等没有标签页或不是 page 类型。
+function toTabInfo(target: chrome.debugger.TargetInfo): TabInfo[] {
+  if (target.type !== "page" || target.tabId === undefined || !isAttachableUrl(target.url)) {
+    return [];
+  }
+  return [{ tabId: target.tabId, targetId: target.id, title: target.title, url: target.url }];
 }
 
 function errorMessage(error: unknown): string {

@@ -218,6 +218,14 @@ type DebuggerBodyResult struct {
 	Unavailable   *string `json:"unavailable,omitempty"`
 }
 
+type DebuggerCloseParams struct {
+	TabId int `json:"tabId"`
+}
+
+type DebuggerCloseResult struct {
+	TabId int `json:"tabId"`
+}
+
 type DebuggerDetachParams struct {
 	TabId *int `json:"tabId,omitempty"`
 }
@@ -238,6 +246,25 @@ type DebuggerEventNotification struct {
 	TabId     int             `json:"tabId"`
 }
 
+type DebuggerOpenParams struct {
+	Background *bool  `json:"background,omitempty"`
+	URL        string `json:"url"`
+}
+
+type DebuggerOpenResult struct {
+	TabId    int    `json:"tabId"`
+	TargetId string `json:"targetId"`
+}
+
+type DebuggerOwnParams struct {
+	Owned bool `json:"owned"`
+	TabId int  `json:"tabId"`
+}
+
+type DebuggerOwnResult struct {
+	Owned bool `json:"owned"`
+}
+
 type DebuggerRecordParams struct {
 	Recording bool `json:"recording"`
 	TabId     int  `json:"tabId"`
@@ -256,6 +283,36 @@ type DebuggerSendParams struct {
 
 type DebuggerSendResult struct {
 	Result json.RawMessage `json:"result"`
+}
+
+type DebuggerTabNotification struct {
+	TabId    int    `json:"tabId"`
+	TargetId string `json:"targetId"`
+	Title    string `json:"title"`
+	URL      string `json:"url"`
+}
+
+type DebuggerTabRemovedNotification struct {
+	TabId int `json:"tabId"`
+}
+
+type DebuggerTargetsParams struct {
+}
+
+type DebuggerTargetsResult struct {
+	Targets []struct {
+		TabId    int    `json:"tabId"`
+		TargetId string `json:"targetId"`
+		Title    string `json:"title"`
+		URL      string `json:"url"`
+	} `json:"targets"`
+}
+
+type DebuggerUserAgentParams struct {
+}
+
+type DebuggerUserAgentResult struct {
+	UserAgent string `json:"userAgent"`
 }
 
 type DownloadsCancelParams struct {
@@ -826,9 +883,14 @@ const (
 	MethodCookiesRemove         Method = "cookies.remove"
 	MethodCookiesSet            Method = "cookies.set"
 	MethodDebuggerBody          Method = "debugger.body"
+	MethodDebuggerClose         Method = "debugger.close"
 	MethodDebuggerDetach        Method = "debugger.detach"
+	MethodDebuggerOpen          Method = "debugger.open"
+	MethodDebuggerOwn           Method = "debugger.own"
 	MethodDebuggerRecord        Method = "debugger.record"
 	MethodDebuggerSend          Method = "debugger.send"
+	MethodDebuggerTargets       Method = "debugger.targets"
+	MethodDebuggerUserAgent     Method = "debugger.userAgent"
 	MethodDownloadsCancel       Method = "downloads.cancel"
 	MethodDownloadsDeleteFile   Method = "downloads.deleteFile"
 	MethodDownloadsErase        Method = "downloads.erase"
@@ -904,9 +966,14 @@ var Methods = map[string]MethodMetadata{
 	"cookies.remove":          {Params: "CookiesRemoveParams", Result: "CookiesRemoveResult", Scope: "cookies:remove", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: "", Internal: false},
 	"cookies.set":             {Params: "CookiesSetParams", Result: "CookiesSetResult", Scope: "cookies:set", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: false},
 	"debugger.body":           {Params: "DebuggerBodyParams", Result: "DebuggerBodyResult", Scope: "debugger:body", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: true},
+	"debugger.close":          {Params: "DebuggerCloseParams", Result: "DebuggerCloseResult", Scope: "debugger:close", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: true},
 	"debugger.detach":         {Params: "DebuggerDetachParams", Result: "DebuggerDetachResult", Scope: "debugger:detach", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: true},
+	"debugger.open":           {Params: "DebuggerOpenParams", Result: "DebuggerOpenResult", Scope: "debugger:open", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: true},
+	"debugger.own":            {Params: "DebuggerOwnParams", Result: "DebuggerOwnResult", Scope: "debugger:own", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: true},
 	"debugger.record":         {Params: "DebuggerRecordParams", Result: "DebuggerRecordResult", Scope: "debugger:record", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: true},
 	"debugger.send":           {Params: "DebuggerSendParams", Result: "DebuggerSendResult", Scope: "debugger:send", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: true},
+	"debugger.targets":        {Params: "DebuggerTargetsParams", Result: "DebuggerTargetsResult", Scope: "debugger:targets", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: true},
+	"debugger.userAgent":      {Params: "DebuggerUserAgentParams", Result: "DebuggerUserAgentResult", Scope: "debugger:userAgent", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: true},
 	"downloads.cancel":        {Params: "DownloadsCancelParams", Result: "DownloadsCancelResult", Scope: "downloads:cancel", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: "", Internal: false},
 	"downloads.deleteFile":    {Params: "DownloadsDeleteFileParams", Result: "DownloadsDeleteFileResult", Scope: "downloads:deleteFile", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: "", Internal: false},
 	"downloads.erase":         {Params: "DownloadsEraseParams", Result: "DownloadsEraseResult", Scope: "downloads:erase", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: "", Internal: false},
@@ -966,15 +1033,21 @@ var Methods = map[string]MethodMetadata{
 type Notification string
 
 const (
-	NotificationDebuggerDetached Notification = "debugger.detached"
-	NotificationDebuggerEvent    Notification = "debugger.event"
+	NotificationDebuggerDetached   Notification = "debugger.detached"
+	NotificationDebuggerEvent      Notification = "debugger.event"
+	NotificationDebuggerTabCreated Notification = "debugger.tabCreated"
+	NotificationDebuggerTabRemoved Notification = "debugger.tabRemoved"
+	NotificationDebuggerTabUpdated Notification = "debugger.tabUpdated"
 )
 
 type NotificationMetadata struct{ Params, Peer string }
 
 var Notifications = map[string]NotificationMetadata{
-	"debugger.detached": {Params: "DebuggerDetachedNotification", Peer: "browser"},
-	"debugger.event":    {Params: "DebuggerEventNotification", Peer: "browser"},
+	"debugger.detached":   {Params: "DebuggerDetachedNotification", Peer: "browser"},
+	"debugger.event":      {Params: "DebuggerEventNotification", Peer: "browser"},
+	"debugger.tabCreated": {Params: "DebuggerTabNotification", Peer: "browser"},
+	"debugger.tabRemoved": {Params: "DebuggerTabRemovedNotification", Peer: "browser"},
+	"debugger.tabUpdated": {Params: "DebuggerTabNotification", Peer: "browser"},
 }
 
 const (
@@ -1003,6 +1076,7 @@ const (
 	ErrorCodePageUnresponsive     = "PAGE_UNRESPONSIVE"
 	ErrorCodeEvalError            = "EVAL_ERROR"
 	ErrorCodeNavigationFailed     = "NAVIGATION_FAILED"
+	ErrorCodeEndpointConnected    = "ENDPOINT_CONNECTED"
 )
 
 // crypto.context 的键,用于查 protocol.Crypto.Context。

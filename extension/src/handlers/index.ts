@@ -121,4 +121,9 @@ export function registerHandlers(registry: HandlerRegistry, relay: DebuggerRelay
   registry.register("debugger.detach", relay.detach);
   registry.register("debugger.record", relay.record);
   registry.register("debugger.body", relay.body);
+  registry.register("debugger.targets", relay.targets);
+  registry.register("debugger.userAgent", relay.userAgent);
+  registry.register("debugger.open", relay.open);
+  registry.register("debugger.close", relay.close);
+  registry.register("debugger.own", relay.own);
 }
