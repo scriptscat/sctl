@@ -468,6 +468,33 @@ endpoint expires when the daemon exits, when the browser is forgotten, or after 
 Lifecycle details are in [protocol.md](./protocol.md#34-raw-cdp-endpoint) and the security trade in
 [threat-model.md](./threat-model.md).
 
+A script uses the URLs like any CDP endpoint. With Playwright, work in the browser's own context, which holds the
+user's logins:
+
+```js
+const browser = await chromium.connectOverCDP(httpUrl);
+const page = await browser.contexts()[0].newPage();
+// ...
+await browser.close(); // disconnects only: the browser and every tab stay open
+```
+
+With Puppeteer, pass `defaultViewport: null` so it does not resize the user's tabs:
+
+```js
+const browser = await puppeteer.connect({ browserWSEndpoint: wsUrl, defaultViewport: null });
+const [page] = await browser.pages();
+// ...
+await browser.disconnect();
+```
+
+The client sees every tab Chrome lets a debugger attach to, including tabs opened while it is connected, and each
+tab it attaches gets focus emulation, so background tabs behave like the active one. These fail with a CDP error
+saying sctl's CDP endpoint does not support them: new browser contexts (Playwright `browser.newContext()`, Puppeteer
+`createBrowserContext()`), granting permissions, window size and position, ignoring certificate errors, and Service
+Worker targets. Setting the download behavior (Playwright always does) succeeds without effect: downloads follow the
+browser's own settings, and the client gets no download events. On Chrome 125, Chrome itself refuses to read cookies
+and its error comes back as is. A browser event larger than 4 MiB is dropped and never reaches the client.
+
 ## Troubleshooting
 
 | Symptom | Check |

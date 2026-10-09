@@ -325,6 +325,44 @@ exits, when the browser is forgotten, and after 60 minutes without a connected c
 `cdp_endpoint` and `cdp_close`. Details are in [`docs/protocol.md`](./docs/protocol.md#34-raw-cdp-endpoint) and the
 security trade in [`docs/threat-model.md`](./docs/threat-model.md).
 
+Point an existing script at the addresses `sctl cdp endpoint` prints. With Playwright, use the browser's own
+context — the user's profile, with its logins — instead of creating one:
+
+```js
+const { chromium } = require("playwright");
+
+const browser = await chromium.connectOverCDP("http://127.0.0.1:8643/cdp/<secret>");
+const context = browser.contexts()[0];
+const page = await context.newPage(); // or pick one of context.pages()
+await page.goto("https://example.com");
+await browser.close(); // disconnects only: the browser and every tab stay open
+```
+
+With Puppeteer, pass `defaultViewport: null` so it does not resize the user's tabs to its default viewport:
+
+```js
+const puppeteer = require("puppeteer-core");
+
+const browser = await puppeteer.connect({
+  browserWSEndpoint: "ws://127.0.0.1:8643/cdp/<secret>/devtools/browser/<id>",
+  defaultViewport: null,
+});
+const [page] = await browser.pages();
+await page.goto("https://example.com");
+await browser.disconnect();
+```
+
+The client sees every tab Chrome lets a debugger attach to (not `chrome://` pages, extension pages, or the Chrome Web
+Store), including tabs the user or a page opens while it is connected; each tab it attaches shows Chrome's
+debugging infobar and gets focus emulation, so background tabs behave like the active one. Browser-level commands
+are answered by sctl, and commands for a page or its cross-process iframes go to that tab unchanged. Not supported,
+and answered with a CDP error saying sctl's CDP endpoint does not support them: new browser contexts (Playwright
+`browser.newContext()`, Puppeteer `createBrowserContext()`), granting permissions, window size and position,
+ignoring certificate errors, and Service Worker targets. Setting the download behavior (Playwright always does)
+succeeds without effect: downloads follow the browser's own settings and the client gets no download events. On
+Chrome 125, Chrome itself refuses to read cookies (Playwright `context.cookies()`), and its error comes back as is. A
+browser event larger than 4 MiB cannot cross the extension connection and is dropped, so the client never sees it.
+
 ## License
 
 GPL-3.0, the same license as ScriptCat. See [LICENSE](./LICENSE).

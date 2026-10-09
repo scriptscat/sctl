@@ -61,8 +61,7 @@ func hostAllowed(hostport string) bool {
 	return strings.EqualFold(host, "localhost") || net.ParseIP(host) != nil
 }
 
-// chromeProduct 从 User-Agent 里取出 Chrome 的产品与版本,作为 /json/version 的 Browser 字段。
-var chromeProduct = regexp.MustCompile(`(?:Headless)?Chrome/[0-9.]+`)
+var chromeProductPattern = regexp.MustCompile(`(?:Headless)?Chrome/[0-9.]+`)
 
 func (m *Manager) serveVersion(w http.ResponseWriter, r *http.Request, ep *endpoint) {
 	if r.Method != http.MethodGet {
@@ -77,13 +76,9 @@ func (m *Manager) serveVersion(w http.ResponseWriter, r *http.Request, ep *endpo
 		return
 	}
 	userAgent := res.UserAgent
-	product := chromeProduct.FindString(userAgent)
-	if product == "" {
-		product = "Chrome"
-	}
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	_ = json.NewEncoder(w).Encode(map[string]string{
-		"Browser":              product,
+		"Browser":              chromeProduct(userAgent),
 		"Protocol-Version":     protocolVersion,
 		"User-Agent":           userAgent,
 		"webSocketDebuggerUrl": wsURL(r.Host, ep.secret, ep.browserID),

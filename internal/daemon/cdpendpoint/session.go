@@ -53,6 +53,7 @@ type Notification struct {
 type Browser struct {
 	m          *Manager
 	instanceID string
+	browserID  string
 	ctx        context.Context
 	cancel     context.CancelCauseFunc
 	events     chan Notification
@@ -68,10 +69,11 @@ type Browser struct {
 	dialogs map[int]string
 }
 
-func newBrowser(m *Manager, instanceID string, c *client) *Browser {
+func newBrowser(m *Manager, ep *endpoint, c *client) *Browser {
 	return &Browser{
 		m:          m,
-		instanceID: instanceID,
+		instanceID: ep.instanceID,
+		browserID:  ep.browserID,
 		ctx:        c.ctx,
 		cancel:     c.cancel,
 		events:     make(chan Notification, notificationBuffer),
@@ -83,6 +85,9 @@ func newBrowser(m *Manager, instanceID string, c *client) *Browser {
 
 // InstanceID 是端点所属浏览器实例的 ID。
 func (b *Browser) InstanceID() string { return b.instanceID }
+
+// BrowserID 是端点 WS 地址最后一段的浏览器目标 ID,客户端查询浏览器自己的目标信息时用它。
+func (b *Browser) BrowserID() string { return b.browserID }
 
 // Notifications 送达这个浏览器的 debugger.event、debugger.detached 与 debugger.tabCreated / tabUpdated / tabRemoved,
 // 按到达顺序。Hook 要及时取走:积压超过上限时会话被结束。channel 不会关闭,会话结束看 Serve 的 ctx。
@@ -133,6 +138,11 @@ func (b *Browser) CloseTab(ctx context.Context, tabID int) error {
 	}
 	b.forget(tabID)
 	return nil
+}
+
+// ActivateTab 把标签页切到前台(tabs.activate),客户端激活目标时用;不附加调试器。
+func (b *Browser) ActivateTab(ctx context.Context, tabID int) error {
+	return b.call(ctx, generated.MethodTabsActivate, generated.TabsActivateParams{TabId: tabID}, nil)
 }
 
 // DetachTab 断开一个标签页的调试器(debugger.detach),客户端分离目标时用;扩展同时清除端点所有的标记。
@@ -280,7 +290,7 @@ func (m *Manager) OnNotification(instanceID, method string, params json.RawMessa
 
 // runSession 运行一个已交出标签页的客户端,直到它断开、Hook 返回或 ctx 结束,然后清理并收回标签页。
 func (m *Manager) runSession(ep *endpoint, c *client, conn *websocket.Conn) {
-	b := newBrowser(m, ep.instanceID, c)
+	b := newBrowser(m, ep, c)
 	m.mu.Lock()
 	c.browser = b
 	m.mu.Unlock()

@@ -23,6 +23,7 @@ type cdpRequest struct {
 	ID        json.RawMessage `json:"id"`
 	SessionID string          `json:"sessionId,omitempty"`
 	Method    string          `json:"method"`
+	Params    json.RawMessage `json:"params,omitempty"`
 }
 
 type cdpErrorResponse struct {
@@ -32,8 +33,9 @@ type cdpErrorResponse struct {
 }
 
 type cdpError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data,omitempty"`
 }
 
 // cdpMethodNotFound 是 CDP 对不认识的命令回答的错误码。

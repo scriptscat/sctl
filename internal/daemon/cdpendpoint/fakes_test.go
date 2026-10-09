@@ -74,6 +74,13 @@ type fakeBridge struct {
 	log       *eventLog
 	// fail 让某个方法回答一个扩展错误。
 	fail map[generated.Method]bridge.Error
+	// tabs 是 debugger.targets 列出的标签页;nil 时只有标签页 5。
+	tabs []generated.DebuggerTabNotification
+	// opened 是 debugger.open 打开的标签页;零值时是标签页 100。
+	opened generated.DebuggerOpenResult
+	// cdp 回答 debugger.send,像 Chrome 一样:失败时返回 Code 非空的扩展错误;nil 时一律回答 {"ok":true}。它在
+	// CallInstance 的 goroutine 里运行,可以阻塞到 ctx 结束,也可以先经 OnNotification 送出事件,模拟 Chrome 在应答之前发出的事件。
+	cdp func(ctx context.Context, tabID int, sessionID, method string, params json.RawMessage) (json.RawMessage, bridge.Error)
 }
 
 type fakeInstance struct {
@@ -125,17 +132,19 @@ func (f *fakeBridge) CallInstance(ctx context.Context, instanceID string, req br
 		}
 	}
 	failure, failing := f.fail[generated.Method(req.Action)]
+	tabs, opened, cdp := f.tabs, f.opened, f.cdp
 	f.mu.Unlock()
 	if !online {
 		return bridge.Response{}, &bridge.Error{Code: generated.ErrorCodeBrowserOffline, Message: "browser " + instanceID + " is not connected"}
 	}
 	var in struct {
-		TabID     *int            `json:"tabId"`
-		SessionID *string         `json:"sessionId"`
-		Method    string          `json:"method"`
-		Params    json.RawMessage `json:"params"`
-		Owned     *bool           `json:"owned"`
-		URL       string          `json:"url"`
+		TabID      *int            `json:"tabId"`
+		SessionID  *string         `json:"sessionId"`
+		Method     string          `json:"method"`
+		Params     json.RawMessage `json:"params"`
+		Owned      *bool           `json:"owned"`
+		URL        string          `json:"url"`
+		Background *bool           `json:"background"`
 	}
 	if err := json.Unmarshal(req.Input, &in); err != nil {
 		return bridge.Response{}, err
@@ -159,6 +168,9 @@ func (f *fakeBridge) CallInstance(ctx context.Context, instanceID string, req br
 	if in.URL != "" {
 		entry += " " + in.URL
 	}
+	if in.Background != nil && *in.Background {
+		entry += " background"
+	}
 	f.log.add(entry)
 	if failing {
 		return bridge.Response{OK: false, Error: &failure}, nil
@@ -168,17 +180,37 @@ func (f *fakeBridge) CallInstance(ctx context.Context, instanceID string, req br
 	case generated.MethodDebuggerUserAgent:
 		result = generated.DebuggerUserAgentResult{UserAgent: testUserAgent}
 	case generated.MethodDebuggerSend:
-		result = generated.DebuggerSendResult{Result: json.RawMessage(`{"ok":true}`)}
+		if cdp == nil {
+			result = generated.DebuggerSendResult{Result: json.RawMessage(`{"ok":true}`)}
+			break
+		}
+		session := ""
+		if in.SessionID != nil {
+			session = *in.SessionID
+		}
+		res, failure := cdp(ctx, *in.TabID, session, in.Method, in.Params)
+		if failure.Code != "" {
+			return bridge.Response{OK: false, Error: &failure}, nil
+		}
+		result = generated.DebuggerSendResult{Result: res}
 	case generated.MethodDebuggerDetach:
 		result = generated.DebuggerDetachResult{TabIds: []int{}}
 	case generated.MethodDebuggerOwn:
 		result = generated.DebuggerOwnResult{Owned: in.Owned != nil && *in.Owned}
 	case generated.MethodDebuggerOpen:
-		result = generated.DebuggerOpenResult{TabId: 100, TargetId: "T100"}
+		if opened.TargetId == "" {
+			opened = generated.DebuggerOpenResult{TabId: 100, TargetId: "T100"}
+		}
+		result = opened
 	case generated.MethodDebuggerClose:
 		result = generated.DebuggerCloseResult{TabId: *in.TabID}
 	case generated.MethodDebuggerTargets:
-		result = map[string]any{"targets": []map[string]any{{"tabId": 5, "targetId": "T5", "title": "Five", "url": "https://five.test/"}}}
+		if tabs == nil {
+			tabs = []generated.DebuggerTabNotification{{TabId: 5, TargetId: "T5", Title: "Five", URL: "https://five.test/"}}
+		}
+		result = map[string]any{"targets": tabs}
+	case generated.MethodTabsActivate:
+		result = generated.TabsActivateResult{TabId: *in.TabID, WindowId: 1}
 	default:
 		return bridge.Response{}, fmt.Errorf("fake bridge: unexpected method %s", req.Action)
 	}

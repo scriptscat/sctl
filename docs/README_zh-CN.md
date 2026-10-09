@@ -251,6 +251,38 @@ Chrome 拒绝或不认识这条命令时返回 `INVALID_REQUEST`(退出码 3),�
 `sctl cdp close` 让端点立即失效并断开连着的客户端,没有端点时也成功。daemon 退出、浏览器被遗忘、连续 60 分钟没有客户端连着时端点也会失效。
 对应的 MCP 工具是 `cdp_endpoint` 与 `cdp_close`。细节见 [`protocol.md`](./protocol.md#34-raw-cdp-endpoint),安全取舍见 [`threat-model.md`](./threat-model.md)。
 
+把已有的脚本指向 `sctl cdp endpoint` 输出的地址即可。Playwright 请使用浏览器自己的上下文(即用户的配置文件与登录状态),不要新建:
+
+```js
+const { chromium } = require("playwright");
+
+const browser = await chromium.connectOverCDP("http://127.0.0.1:8643/cdp/<密钥>");
+const context = browser.contexts()[0];
+const page = await context.newPage(); // 或者从 context.pages() 里选一个
+await page.goto("https://example.com");
+await browser.close(); // 只断开连接:浏览器和所有标签页都保留
+```
+
+Puppeteer 请传 `defaultViewport: null`,否则它会把用户的标签页调整成它的默认视口尺寸:
+
+```js
+const puppeteer = require("puppeteer-core");
+
+const browser = await puppeteer.connect({
+  browserWSEndpoint: "ws://127.0.0.1:8643/cdp/<密钥>/devtools/browser/<id>",
+  defaultViewport: null,
+});
+const [page] = await browser.pages();
+await page.goto("https://example.com");
+await browser.disconnect();
+```
+
+客户端能看到 Chrome 允许附加调试器的全部标签页(`chrome://` 页面、扩展页面和 Chrome 应用商店除外),包括连着期间用户或页面新打开的标签页;
+它附加的每个标签页都会显示 Chrome 的调试提示条并开启焦点模拟,后台标签页的表现与前台一致。浏览器级命令由 sctl 回答,发给页面或其跨进程 iframe 的命令原样转发到那个标签页。
+以下功能不支持,会返回说明 sctl 的 CDP 端点不支持的 CDP 错误:新的浏览器上下文(Playwright `browser.newContext()`、Puppeteer `createBrowserContext()`)、
+权限授予、窗口尺寸与位置、忽略证书错误、Service Worker 目标。设置下载行为的请求(Playwright 连接时一定会发)成功但不起作用:下载按浏览器自己的设置进行,客户端收不到下载事件。
+Chrome 125 上读取 Cookie 会被 Chrome 自己拒绝(Playwright `context.cookies()`),错误原样返回。超过 4 MiB 的浏览器事件无法经扩展连接传出,会被丢弃,客户端收不到。
+
 ## 许可证
 
 GPL-3.0，与 ScriptCat 相同。参见 [LICENSE](../LICENSE)。
