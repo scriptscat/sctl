@@ -146,11 +146,12 @@ troubleshooting.
 | `sctl debug request <ID> [--body]` | Show one request's headers, request body, timing, and, with `--body`, response body. |
 | `sctl debug clear` | Empty a tab's debug records without detaching the debugger. |
 | `sctl cdp send <Method> [--params '<JSON object>'] [--tab N] [--timeout D]` | Send one raw Chrome DevTools Protocol command to a tab's page and print Chrome's result. |
+| `sctl cdp endpoint` / `sctl cdp status` / `sctl cdp close` | Create or show a browser's CDP endpoint addresses for Playwright `connectOverCDP` and Puppeteer `connect`, show whether a client is connected and when the endpoint expires, or close it. |
 
 Run `sctl --help` or `sctl <command> --help` for usage and flags. Write operations block
 until the user approves, rejects, or closes the confirmation flow in ScriptCat; browser control commands run
 immediately with no approval step (see [`docs/threat-model.md`](./docs/threat-model.md)). `tabs`, `windows`, `groups`,
-`reading-list`, `bookmarks`, `history`, `browsing-data`, `recent`, `downloads`, `cookies`, `extensions`, `page`, and `debug` accept `--browser <name|id>` (or `SCTL_BROWSER`) to pick an instance when more than one is online.
+`reading-list`, `bookmarks`, `history`, `browsing-data`, `recent`, `downloads`, `cookies`, `extensions`, `page`, `debug`, and `cdp` accept `--browser <name|id>` (or `SCTL_BROWSER`) to pick an instance when more than one is online.
 Destructive browser operations need explicit confirmation: `reading-list rm`, `history rm`, `history clear`, `browsing-data clear`, `downloads cancel`, `erase` and `delete-file`, `cookies rm` and `clear`, and `extensions disable` run only with `--yes` (MCP:
 `confirm: true`); without it nothing runs and the command exits with code 3. `bookmarks rm <id>...` needs human
 approval instead: the browser opens an approval window and the command waits, exiting 0 once the bookmarks are
@@ -308,6 +309,21 @@ commands until you restore it; after `Fetch.enable` every request of the tab han
 requests; `Debugger.enable` plus `Debugger.pause` freezes the page. Recover with `Fetch.disable` or `Debugger.resume`,
 or `sctl page detach` and attach again. Like `page` and `debug`, it has no human gate. The MCP equivalent is `cdp_send`
 (see [`docs/mcp.md`](./docs/mcp.md)).
+
+`sctl cdp endpoint` creates a CDP endpoint for the browser, or shows the one it already has, and prints two addresses:
+`http://<daemon address>/cdp/<secret>` for Playwright `chromium.connectOverCDP` and
+`ws://<daemon address>/cdp/<secret>/devtools/browser/<id>` for Puppeteer `connect({browserWSEndpoint})`, plus whether a
+client is connected and when the endpoint expires. A connected client gets full control of every tab Chrome lets a
+debugger attach to in that browser, with no approval. The address carries a random secret and is itself the
+credential, so treat it like a password. One client can connect at a time; while it is connected, `sctl page`,
+`sctl debug`, and `sctl cdp send` on that browser fail with `ENDPOINT_CONNECTED` (exit code 3), and the other
+commands keep working. When the client disconnects, sctl detaches the tabs it attached, keeps them open, and its own
+commands work again; the same address can connect again. `sctl cdp status` shows the addresses, whether a client is
+connected and since when, and when the endpoint expires, or says that there is none. `sctl cdp close` closes the
+endpoint at once, disconnecting its client, and succeeds when there is none. The endpoint also expires when the daemon
+exits, when the browser is forgotten, and after 60 minutes without a connected client. The MCP equivalents are
+`cdp_endpoint` and `cdp_close`. Details are in [`docs/protocol.md`](./docs/protocol.md#34-raw-cdp-endpoint) and the
+security trade in [`docs/threat-model.md`](./docs/threat-model.md).
 
 ## License
 

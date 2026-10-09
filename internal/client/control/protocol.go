@@ -27,6 +27,10 @@ const (
 	PathBrowsers      = "/control/browsers"
 	PathBrowserForget = "/control/browsers/forget"
 	PathPage          = "/control/page"
+	// 原始 CDP 端点:创建或查看、只查看、关闭。请求体都是 CDPRequest。
+	PathCDPEndpoint = "/control/cdp/endpoint"
+	PathCDPStatus   = "/control/cdp/status"
+	PathCDPClose    = "/control/cdp/close"
 )
 
 // 控制 API 请求头。
@@ -128,4 +132,40 @@ type BrowsersResult struct {
 // ForgetBrowserRequest 是 /control/browsers/forget 的请求体:Ref 是实例名称或完整实例 ID。
 type ForgetBrowserRequest struct {
 	Ref string `json:"ref"`
+}
+
+// CDPRequest 是 /control/cdp/* 的请求体:Browser 是目标浏览器(名称或实例 ID 前缀),空串由 daemon 按在线实例选择。
+type CDPRequest struct {
+	Browser string `json:"browser,omitempty"`
+}
+
+// CDPBrowserRef 标识端点所属的浏览器实例。
+type CDPBrowserRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// CDPEndpoint 是一个原始 CDP 端点的当前视图。地址里带着密钥,本身就是凭据。ExpiresAt 在客户端连着时省略:
+// 60 分钟的失效计时从客户端断开时才开始。
+type CDPEndpoint struct {
+	// HTTPURL 给 Playwright chromium.connectOverCDP。
+	HTTPURL string `json:"httpUrl"`
+	// WSURL 给 Puppeteer connect({browserWSEndpoint})。
+	WSURL           string    `json:"wsUrl"`
+	ClientConnected bool      `json:"clientConnected"`
+	ConnectedAt     time.Time `json:"connectedAt,omitzero"`
+	ExpiresAt       time.Time `json:"expiresAt,omitzero"`
+}
+
+// CDPEndpointResult 是 /control/cdp/endpoint 与 /control/cdp/status 的结果(CallResult.Result):
+// Endpoint 为 null 表示这个浏览器没有端点(只有 status 会这样回答)。
+type CDPEndpointResult struct {
+	Browser  CDPBrowserRef `json:"browser"`
+	Endpoint *CDPEndpoint  `json:"endpoint"`
+}
+
+// CDPCloseResult 是 /control/cdp/close 的结果:Closed 为 false 表示本来就没有端点。
+type CDPCloseResult struct {
+	Browser CDPBrowserRef `json:"browser"`
+	Closed  bool          `json:"closed"`
 }

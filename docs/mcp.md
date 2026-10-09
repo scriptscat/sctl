@@ -455,6 +455,19 @@ so every request of the tab hangs; `Debugger.enable` followed by `Debugger.pause
 `Fetch.disable` or `Debugger.resume`, or by `page_detach` and attaching again. Like the page tools, it has no human
 gate, and the result is untrusted page content.
 
+`cdp_endpoint` creates the browser's raw CDP endpoint, or returns the one it already has, and doubles as its status:
+it takes only `browser` and returns `httpUrl` (for Playwright `chromium.connectOverCDP`), `wsUrl` (for Puppeteer
+`connect({browserWSEndpoint})`), `clientConnected`, `connectedAt` while a client is connected, and `expiresAt` while
+none is. A connected client gets full control of every tab Chrome lets a debugger attach to in that browser, with no
+approval, and the URLs carry the secret that is its only credential — keep them out of anything shared. One client
+at a time; while it is connected, the `page_*`, `debug_*`, and `cdp_send` tools on that browser return
+`ENDPOINT_CONNECTED`, and the other browser tools keep working. When the client disconnects, sctl detaches the tabs it
+attached and keeps them open, and the same URL can connect again. `cdp_close` (also only `browser`) closes the
+endpoint at once, disconnecting its client, and succeeds with `closed: false` when there is none; otherwise the
+endpoint expires when the daemon exits, when the browser is forgotten, or after 60 minutes without a connected client.
+Lifecycle details are in [protocol.md](./protocol.md#34-raw-cdp-endpoint) and the security trade in
+[threat-model.md](./threat-model.md).
+
 ## Troubleshooting
 
 | Symptom | Check |
@@ -472,6 +485,8 @@ see [protocol.md](./protocol.md).
 ## Security checklist
 
 - Never send the one-time enrollment code, `pairing.key`, or `control.token` to an AI model or another user.
+- Treat a CDP endpoint URL from `cdp_endpoint` like a password for that browser: do not share or log it, and close it
+  with `cdp_close` (or `sctl cdp close`) when the script is done.
 - Keep the data directory private to the current operating-system user.
 - Treat `--name` only as an audit label; it does not isolate one MCP client from another.
 - Review ScriptCat's browser confirmation page before approving writes or source disclosure.

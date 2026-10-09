@@ -287,7 +287,7 @@ func (h *testHarness) servePagesOf(t *testing.T) (*page.Manager, string) {
 	pages := page.NewManager(page.NewBridgeCDP(h.srv), zap.NewNop())
 	h.srv.SetBrowserListener(pages)
 	mux := http.NewServeMux()
-	New(h.srv, pages, testControlToken, zap.NewNop()).Register(mux)
+	New(h.srv, pages, nil, testControlToken, zap.NewNop()).Register(mux)
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
 	return pages, ts.URL

@@ -331,7 +331,7 @@ func TestControlBrowserForgetLogsRegistryFailure(t *testing.T) {
 		core, logs := observer.New(zap.WarnLevel)
 		cause := errors.New("write browsers.json: no space left on device")
 		mux := http.NewServeMux()
-		New(forgetFailingBridge{cause: cause}, nil, testControlToken, zap.New(core)).Register(mux)
+		New(forgetFailingBridge{cause: cause}, nil, nil, testControlToken, zap.New(core)).Register(mux)
 
 		body, err := json.Marshal(control.ForgetBrowserRequest{Ref: "chrome-a"})
 		So(err, ShouldBeNil)

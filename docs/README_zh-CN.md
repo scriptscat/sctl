@@ -133,10 +133,11 @@ Chrome DevTools Protocol 驱动页面时,Chrome 会在浏览器顶部显示"sctl
 | `sctl debug request <ID> [--body]` | 显示一个请求的请求头、请求体、各阶段耗时,加 `--body` 时一并给出响应体。 |
 | `sctl debug clear` | 清空标签页的调试记录,不断开调试器。 |
 | `sctl cdp send <Method> [--params '<JSON 对象>'] [--tab N] [--timeout D]` | 向标签页的页面发送一条原始 Chrome DevTools Protocol 命令,输出 Chrome 的结果。 |
+| `sctl cdp endpoint` / `sctl cdp status` / `sctl cdp close` | 创建或查看浏览器的 CDP 端点地址(给 Playwright `connectOverCDP` 与 Puppeteer `connect`),查看是否有客户端连着、何时失效,或关闭端点。 |
 
 运行 `sctl --help` 或 `sctl <command> --help` 查看用法和参数。写操作会阻塞，直到用户在
 ScriptCat 中批准、拒绝或关闭确认流程；浏览器控制命令按设计没有审批步骤、立即执行(参见
-[`threat-model.md`](./threat-model.md))。当多个实例同时在线时，`tabs`、`windows`、`groups`、`reading-list`、`bookmarks`、`history`、`browsing-data`、`recent`、`downloads`、`cookies`、`extensions`、`page` 与 `debug` 可用
+[`threat-model.md`](./threat-model.md))。当多个实例同时在线时，`tabs`、`windows`、`groups`、`reading-list`、`bookmarks`、`history`、`browsing-data`、`recent`、`downloads`、`cookies`、`extensions`、`page`、`debug` 与 `cdp` 可用
 `--browser <name|id>`（或环境变量 `SCTL_BROWSER`）指定目标实例。破坏性的浏览器操作需要显式确认：
 `reading-list rm`、`history rm`、`history clear`、`browsing-data clear`，`downloads cancel`、`erase`、`delete-file`，`cookies rm`、`clear`，以及 `extensions disable` 必须加 `--yes`（MCP 传 `confirm: true`），否则什么都不执行，退出码为 3。
 `bookmarks rm <id>...` 则需要人工审批：浏览器打开审批窗口，命令一直等待；书签删除后退出码为 0，被拒绝或关闭窗口为 1，
@@ -240,6 +241,15 @@ Chrome 拒绝或不认识这条命令时返回 `INVALID_REQUEST`(退出码 3),�
 `Fetch.enable` 之后没有人处理被暂停的请求,标签页上的请求都会挂住;`Debugger.enable` 加 `Debugger.pause` 会让页面停住。
 恢复办法:发送 `Fetch.disable` 或 `Debugger.resume`,或 `sctl page detach` 后重新附加。和 `page`、`debug` 一样没有人工确认环节。
 对应的 MCP 工具是 `cdp_send`(见 [`mcp.md`](./mcp.md))。
+
+`sctl cdp endpoint` 为浏览器创建一个 CDP 端点,已有时给出同一个,并输出两种地址:给 Playwright `chromium.connectOverCDP` 的
+`http://<daemon 地址>/cdp/<密钥>`,给 Puppeteer `connect({browserWSEndpoint})` 的 `ws://<daemon 地址>/cdp/<密钥>/devtools/browser/<id>`,
+同时给出是否有客户端连着、何时失效。连上的客户端可以不经审批完整控制这个浏览器里 Chrome 允许附加调试器的全部标签页。
+地址里带随机密钥,地址本身就是凭据,请像密码一样对待。同一时刻只能有一个客户端;客户端连着时,这个浏览器上的 `sctl page`、`sctl debug`、
+`sctl cdp send` 返回 `ENDPOINT_CONNECTED`(退出码 3),其他命令照常执行。客户端断开后,sctl 断开它附加的标签页、保留这些标签页,
+自己的命令恢复可用;同一地址可以再次连接。`sctl cdp status` 列出地址、是否有客户端连着及连上的时间、失效时间,没有端点时如实说明。
+`sctl cdp close` 让端点立即失效并断开连着的客户端,没有端点时也成功。daemon 退出、浏览器被遗忘、连续 60 分钟没有客户端连着时端点也会失效。
+对应的 MCP 工具是 `cdp_endpoint` 与 `cdp_close`。细节见 [`protocol.md`](./protocol.md#34-raw-cdp-endpoint),安全取舍见 [`threat-model.md`](./threat-model.md)。
 
 ## 许可证
 

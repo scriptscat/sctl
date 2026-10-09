@@ -96,7 +96,7 @@ func startTestServer(t *testing.T) *testHarness {
 	mux := http.NewServeMux()
 	pages := page.NewManager(page.NewBridgeCDP(srv), zap.NewNop())
 	srv.SetBrowserListener(pages)
-	New(srv, pages, testControlToken, zap.NewNop()).Register(mux)
+	New(srv, pages, nil, testControlToken, zap.NewNop()).Register(mux)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	So(err, ShouldBeNil)

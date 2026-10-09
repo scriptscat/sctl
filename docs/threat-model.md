@@ -85,12 +85,34 @@ can therefore read the credentials and data a signed-in page sends and receives 
 requests per tab; they never reach disk and are dropped when the debugger detaches or on `debug clear`. Bodies are
 not kept by the daemon at all: each `debug request` reads them from Chrome on demand.
 
+**The raw CDP endpoint hands a whole browser to whoever holds its address.** `sctl cdp endpoint` and the
+`cdp_endpoint` MCP tool create, for one paired browser instance, an endpoint that a CDP client connects to
+([protocol.md](./protocol.md#34-raw-cdp-endpoint)). The connected client gets full control of every tab in that
+browser that Chrome lets a debugger attach to — the same reach as page automation and page debugging together, with
+no per-operation approval and no per-site limit: it can read page content and, where Chrome allows it, cookies, run
+scripts, send requests with the user's signed-in session, and open and close tabs, also in background tabs. The CDP
+messages it exchanges are forwarded as they are, without a `contentTrust` mark, so the client must itself treat
+everything a page returns as untrusted. Only a control-token holder can create an endpoint. The address is then the
+whole credential, because many CDP tools accept nothing but a URL: it carries a secret of 128 random bits from
+`crypto/rand`, kept only in the daemon's memory, never written to disk or logged, and gone on `sctl cdp close`, after
+60 minutes without a connected client, when the browser is forgotten, and when the daemon restarts. Anyone the
+address reaches — another local user who sees it in a process list or a shared terminal, a log an agent writes it to,
+a prompt it is pasted into — can take over the browser until then; `sctl cdp close` revokes it at once. One client at
+a time: a second connection is refused, and while a client is connected sctl's own page, debug, and `cdp send`
+commands on that browser fail with `ENDPOINT_CONNECTED`. Against web pages the endpoint refuses any request whose
+`Host` is not an IP literal or `localhost`, which defeats DNS rebinding, and any request carrying an `Origin` header,
+which a browser always stamps on a page's requests; extension and DevTools origins are refused too, and a page would
+still need the secret. The daemon listens on 127.0.0.1 by default; bound to another interface with
+`--listen-address`, the endpoint is reachable from that network over plaintext HTTP and WebSocket, so whoever on it
+holds or observes the address controls the browser.
+
 ## 2. Attack surface and countermeasures
 
 | Threat | Countermeasure | Residual risk |
 |---|---|---|
 | A web page connects straight to the daemon with `new WebSocket("ws://127.0.0.1:8643")` | An **Origin whitelist** rejects any connection whose `Origin` is present and not an extension origin (`chrome-extension://` etc.) — a cheap pre-filter that a browser page cannot get past (the browser stamps Origin, page JS cannot forge it). Beyond that, a connection must complete the mutual HMAC handshake before it can send or receive any business message; without credentials it fails the challenge-response and is disconnected on the 5s timeout **with no reason echoed back** (close 1008). A non-browser process can forge any Origin, so the handshake remains the real gate. Both rejections are recorded in the daemon-side audit (§6) | A page can probe that the port is open |
 | A web page impersonates the local frontend with `fetch("http://127.0.0.1:8643/control/…")` | Apart from `/control/health`, every control API requires an `X-Sctl-Control-Token` header, compared in constant time against the daemon's user-only token; a web page cannot read that file, so it gets a 401 and the action never runs at all | Port / health information can be probed (see below) |
+| A web page drives the raw CDP endpoint, directly or by rebinding its domain to 127.0.0.1 | `/cdp/` refuses any request carrying an `Origin` header and any request whose `Host` is not an IP literal or `localhost` (`403`); a wrong secret answers the same `404` as an unknown path, and the secret is 128 random bits | A process that is not a browser can send any `Host` and no `Origin`, so the secret in the address is the real gate |
 | A local process grabs 8643 to impersonate the daemon, or connects in while impersonating the extension | **Mutual** HMAC-SHA-256 challenge-response between the extension and the daemon ([protocol.md](./protocol.md#21-authentication)); long-term keys come from a one-time enrollment code and never travel in plaintext; nonces are regenerated per connection, so replays are useless. A browser instance's MAC also binds its peer kind and instance ID, so a recorded MAC cannot be replayed as ScriptCat or as another instance | See the "malicious same-user process" row |
 | A process that reaches the daemon requests a privileged action | Flat trust deliberately grants any control-token holder full read/list and the ability to *request* writes; the gate is not per-client authorization but the **per-operation human gate**: writes need browser approval and source reads need disclosure approval, both keyed by script (extension session). There is no per-client scope or request-frequency limit | Any process that obtains the control token has the same capabilities; write requests remain browser-gated unless always-allow is enabled, while browser control (tabs, windows, tab groups, reading list, bookmarks, history, recently closed, downloads, cookies, browsing data, and extensions in every paired sctl Browser instance), page automation (reading pages and running scripts in them), and page debugging (console and network records, headers and bodies included) are not gated at all except for L2 bookmark deletion and extension uninstall, which need approval in that browser |
 | Write operations are abused (installing a malicious script / bulk deletion) | Two-phase confirmation plus a TOCTOU re-check at the moment of approval (staged `contentHash`, target `existingCodeHash`); calls are purely blocking, so a requester disconnect voids them. The install page's own enable toggle decides the enabled state (installs are usable immediately, like a normal install). "Always-allow" is an explicit security-downgrade switch (amber warning in the UI) | Under "always-allow" a write is no longer confirmed by a human — the user takes that risk |
@@ -150,10 +172,15 @@ on the daemon's listener (same port as the extension WS surface, separate path).
 | `<dataDir>/browsers.json` | POSIX 0600; protected current-user DACL on Windows | The registry of paired sctl Browser instances: instance ID, unique name, each instance's long-term key (hex), and last self-reported product and versions | Allows impersonating any paired browser instance when connecting to the daemon |
 | `<dataDir>/control.token` | POSIX 0600; protected current-user DACL on Windows | The local control-channel token (regenerated on every serve start) | Allows impersonating the local frontend to call the control API; writes still need browser approval, while tabs and windows in every paired sctl Browser instance can be controlled directly |
 
+The raw CDP endpoint's secret is the one credential that is never persisted: it lives only in the daemon's memory
+and dies with it (§1).
+
 Three iron rules: **a token's plaintext never goes over the wire, never enters a log, never enters a URL**;
 audit events **never record** a token, source code, or a URL containing credentials; keys are written atomically
 through a restricted temporary file (POSIX 0600, or a protected DACL granting only the current Windows user)
-before rename, with no window where the credential itself is broadly readable.
+before rename, with no window where the credential itself is broadly readable. The raw CDP endpoint's address is the
+deliberate exception to "never enters a URL": it is a short-lived bearer credential that CDP tools take only as a URL;
+the daemon still never logs it.
 
 ## 6. Daemon-side audit
 

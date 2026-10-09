@@ -135,6 +135,11 @@ func (c *Client) Page(ctx context.Context, req PageRequest) (CallResult, error) 
 	return c.post(ctx, PathPage, req, nil)
 }
 
+// CDP 发送一个原始 CDP 端点请求;path 是 PathCDPEndpoint、PathCDPStatus 或 PathCDPClose。
+func (c *Client) CDP(ctx context.Context, path string, req CDPRequest) (CallResult, error) {
+	return c.post(ctx, path, req, nil)
+}
+
 // post 发送一个返回 CallResult 的控制请求。onPending 非 nil 时接受 daemon 至多一行的审批等待行并回调;
 // 为 nil 时任何等待行都是协议错误。
 func (c *Client) post(ctx context.Context, path string, payload any, onPending func()) (CallResult, error) {

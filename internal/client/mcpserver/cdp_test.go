@@ -78,3 +78,55 @@ func TestCdpSendTool(t *testing.T) {
 		})
 	})
 }
+
+func TestCdpEndpointTools(t *testing.T) {
+	Convey("cdp_endpoint 与 cdp_close 经 /control/cdp/* 转发", t, func() {
+		p := loadProto(t)
+		result := json.RawMessage(`{"browser":{"id":"inst-work","name":"work"},"endpoint":{"httpUrl":"http://h/cdp/s","wsUrl":"ws://h/cdp/s/devtools/browser/b","clientConnected":false}}`)
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: result}}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+
+		Convey("cdp_endpoint 创建或查看端点,cdp_close 关闭;browser 原样转发,结果原样返回", func() {
+			for tool, path := range map[string]string{"cdp_endpoint": control.PathCDPEndpoint, "cdp_close": control.PathCDPClose} {
+				caller.cdp = nil
+				res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: tool, Arguments: map[string]any{"browser": "work"}})
+				So(err, ShouldBeNil)
+				So(res.IsError, ShouldBeFalse)
+				So(res.Content[0].(*mcp.TextContent).Text, ShouldEqual, string(result))
+				So(caller.cdp, ShouldResemble, []cdpCall{{path: path, req: control.CDPRequest{Browser: "work"}}})
+			}
+		})
+
+		Convey("省略 browser 时交给 daemon 选择;多余参数不转发", func() {
+			_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "cdp_endpoint"})
+			So(err, ShouldBeNil)
+			So(caller.cdp, ShouldResemble, []cdpCall{{path: control.PathCDPEndpoint, req: control.CDPRequest{}}})
+			_, err = session.CallTool(context.Background(), &mcp.CallToolParams{Name: "cdp_close", Arguments: map[string]any{"tabId": 5}})
+			So(err, ShouldNotBeNil)
+			So(caller.cdp, ShouldHaveLength, 1)
+		})
+
+		Convey("daemon 的错误成为工具错误", func() {
+			caller.result = control.CallResult{OK: false, Error: &control.CallError{Code: "BROWSER_OFFLINE", Message: "browser work is not connected"}}
+			res, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "cdp_endpoint", Arguments: map[string]any{"browser": "work"}})
+			So(err, ShouldBeNil)
+			So(res.IsError, ShouldBeTrue)
+			So(res.Content[0].(*mcp.TextContent).Text, ShouldContainSubstring, "BROWSER_OFFLINE")
+		})
+
+		Convey("描述是静态文本,写明地址就是凭据、独占与恢复办法", func() {
+			tools, err := session.ListTools(context.Background(), nil)
+			So(err, ShouldBeNil)
+			descs := map[string]string{}
+			for _, tool := range tools.Tools {
+				descs[tool.Name] = tool.Description
+			}
+			for _, want := range []string{"connectOverCDP", "browserWSEndpoint", "ENDPOINT_CONNECTED", "cdp_close", "60 minutes", "full control"} {
+				So(descs["cdp_endpoint"], ShouldContainSubstring, want)
+			}
+			for _, want := range []string{"disconnect", "kept", "Succeeds"} {
+				So(descs["cdp_close"], ShouldContainSubstring, want)
+			}
+		})
+	})
+}

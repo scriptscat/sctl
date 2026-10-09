@@ -556,6 +556,64 @@ The daemon validates a notification against its schema like any other frame; a n
 `id` or fails its schema is an invalid frame. Notifications with these names from ScriptCat are valid frames
 that the daemon drops without affecting the ScriptCat connection.
 
+### 3.4 Raw CDP endpoint
+
+The raw CDP endpoint is not part of the JSON-RPC protocol: it is an HTTP and WebSocket surface the daemon serves on
+its own listener under `/cdp/`, for Playwright `chromium.connectOverCDP` and Puppeteer `connect`. A control-token
+holder creates it through `/control/cdp/endpoint` (`sctl cdp endpoint`, MCP `cdp_endpoint`); creating it for a browser
+that is not online fails with the target errors of [§3.1](#31-routing-and-target-selection), such as `BROWSER_OFFLINE`
+or `NO_BROWSER_CONNECTED`. Each browser instance has at most one endpoint, and creating it again returns the same
+addresses:
+
+| Address | For |
+|---|---|
+| `http://<host>/cdp/<secret>` | Playwright `chromium.connectOverCDP` |
+| `ws://<host>/cdp/<secret>/devtools/browser/<id>` | Puppeteer `connect({browserWSEndpoint})` |
+
+`<host>` is the address the requester used to reach the daemon. `<secret>` is 128 random bits from `crypto/rand`,
+hex-encoded, kept only in the daemon's memory; `<id>` is a random ID in the shape of a Chrome browser target ID. The
+address is the credential: a client presents nothing else. `GET /cdp/<secret>/json/version`, with or without a trailing
+slash, answers Chrome's JSON shape — `Browser` (the `Chrome/<version>` product from the User-Agent), `Protocol-Version`
+`1.3`, `User-Agent` from `debugger.userAgent`, and `webSocketDebuggerUrl`, the WebSocket address built from the
+request's `Host` — or `503` when the browser cannot answer. Every request under `/cdp/` is checked in this order:
+
+1. `Host` must be an IP literal or `localhost` (with any port), otherwise `403`: a page that rebinds its own domain
+   to 127.0.0.1 still sends that domain as `Host`.
+2. A request carrying any `Origin` header is refused with `403`, like Chrome's own remote debugging by default:
+   Playwright and Puppeteer in Node send none, while a browser always stamps one. Extension and DevTools origins are
+   refused as well.
+3. A wrong secret, an unknown path, and a WebSocket path whose `<id>` does not match all answer the same `404`, so a
+   response never tells whether an endpoint exists.
+
+One client at a time: while one is connected, or being handed the tabs, another WebSocket request is refused with
+`409` saying a client is already connected; a request to the WebSocket address that is not a WebSocket upgrade
+answers `400` before anything else happens. A WebSocket request first makes the page automation component hand
+the browser's tabs over (architecture.md, [Raw CDP endpoint](./architecture.md#raw-cdp-endpoint)); if that fails —
+for example the browser is offline — the request is refused with `503` and the reason, and nothing changes. Then the
+connection is upgraded; a client message may be at most `limits.maxFrameBytes`. Before the first command the client's
+session sends to a tab, the daemon marks the tab endpoint-owned with `debugger.own`; a tab opened through
+`debugger.open` is already marked. Until the CDP emulation lands, the endpoint answers every CDP request with the CDP
+error `{code: -32601, message: "<method> is not supported"}`.
+
+The client is disconnected when it closes the connection or the connection drops, when the session ends itself, on
+`sctl cdp close`, when the endpoint expires, when the browser instance disconnects, and when the daemon exits. The
+daemon sends a close frame — `1000` when the session ended itself, `1001` for the other daemon-side reasons, `1013`
+when the client fell more than 4096 browser notifications behind — and then, in order: dismisses with
+`Page.handleJavaScriptDialog {accept: false}` every JS dialog it saw open (`Page.javascriptDialogOpening` without a
+matching `Page.javascriptDialogClosed`) on a tab the client attached, on the session that reported it; sends
+`debugger.detach` for each tab the client attached that Chrome has not detached or closed meanwhile; sends
+`debugger.own {owned: false}` for each tab it marked; and gives the tabs back to sctl's page commands. No tab is
+closed, including tabs the client opened. A failed step is logged and does not stop the next one.
+
+The endpoint expires — its addresses answer `404` from then on — on `sctl cdp close` (which answers once the client's
+cleanup is done, and succeeds when there is no endpoint), when the daemon exits, after 60 minutes without a connected
+client, and when the browser instance is forgotten with `sctl browsers forget`, whether it is online or not. The
+60 minutes count from creation and again from each disconnect, and do not run while a client is connected. Until it
+expires, the same address can connect again after a client disconnects. A browser instance disconnecting closes the
+client's connection but does not expire the endpoint: once the instance is back, the same address works again, while
+a connection attempt while it is offline fails with `503`. `sctl cdp status` and `sctl cdp close` resolve the browser
+like any browser command, so for an offline browser they answer `BROWSER_OFFLINE`.
+
 ## 4. Errors
 
 Protocol errors use the JSON-RPC standard codes. Application failures use the server-defined code `-32000` and

@@ -19,6 +19,7 @@ import (
 
 	"github.com/scriptscat/sctl/internal/client/control"
 	"github.com/scriptscat/sctl/internal/daemon/bridge"
+	"github.com/scriptscat/sctl/internal/daemon/cdpendpoint"
 	"github.com/scriptscat/sctl/internal/daemon/page"
 	"github.com/scriptscat/sctl/internal/pkg/audit"
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
@@ -47,20 +48,29 @@ type Page interface {
 	Do(ctx context.Context, req page.Request) (json.RawMessage, error)
 }
 
+// CDPEndpoints 是控制 API 依赖的原始 CDP 端点能力面,由 *cdpendpoint.Manager 实现。
+// host 是调用方连到 daemon 用的地址,端点地址用它拼出,调用方一定能连上。
+type CDPEndpoints interface {
+	Create(browser, host string) (cdpendpoint.Snapshot, error)
+	Status(browser, host string) (cdpendpoint.Snapshot, error)
+	Close(ctx context.Context, browser string) (cdpendpoint.BrowserRef, bool, error)
+}
+
 // Handler 是控制 API 的处理器集合。
 type Handler struct {
-	bridge Bridge
-	page   Page
-	token  string
-	log    *zap.Logger
+	bridge    Bridge
+	page      Page
+	endpoints CDPEndpoints
+	token     string
+	log       *zap.Logger
 }
 
 // New 构造控制 API。token 是 daemon 绑定端口后落盘的 0600 控制令牌;空令牌下除健康检查外全拒。
-func New(b Bridge, p Page, token string, log *zap.Logger) *Handler {
+func New(b Bridge, p Page, e CDPEndpoints, token string, log *zap.Logger) *Handler {
 	if log == nil {
 		log = zap.NewNop()
 	}
-	return &Handler{bridge: b, page: p, token: token, log: log}
+	return &Handler{bridge: b, page: p, endpoints: e, token: token, log: log}
 }
 
 // Register 把控制 API 挂到 daemon listener 的 mux 上。
@@ -72,6 +82,9 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc(control.PathBrowsers, h.guard(h.browsers))
 	mux.HandleFunc(control.PathBrowserForget, h.guard(h.forgetBrowser))
 	mux.HandleFunc(control.PathPage, h.guard(h.pageAction))
+	mux.HandleFunc(control.PathCDPEndpoint, h.guard(h.cdpEndpoint))
+	mux.HandleFunc(control.PathCDPStatus, h.guard(h.cdpStatus))
+	mux.HandleFunc(control.PathCDPClose, h.guard(h.cdpClose))
 }
 
 // guard 包装需要控制令牌的处理器:恒定时间校验 X-Sctl-Control-Token,不符即 401(无细节)。

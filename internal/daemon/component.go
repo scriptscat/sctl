@@ -1,6 +1,7 @@
 // Package daemon 是 sctl serve 的组装层:一个 cago Component,把可配置监听地址的
 // 桥接 WS server(internal/daemon/bridge)、本机控制 API(internal/daemon/controlapi)、
-// 页面自动化组件(internal/daemon/page)与持久化存储(internal/daemon/store)接到同一个 listener 上。
+// 页面自动化组件(internal/daemon/page)、原始 CDP 端点(internal/daemon/cdpendpoint)与持久化存储(internal/daemon/store)
+// 接到同一个 listener 上。
 // 扩展 ↔ daemon 协议见 docs/protocol.md。
 package daemon
 
@@ -17,6 +18,7 @@ import (
 
 	"github.com/scriptscat/sctl/internal/client/control"
 	"github.com/scriptscat/sctl/internal/daemon/bridge"
+	"github.com/scriptscat/sctl/internal/daemon/cdpendpoint"
 	"github.com/scriptscat/sctl/internal/daemon/controlapi"
 	"github.com/scriptscat/sctl/internal/daemon/page"
 	"github.com/scriptscat/sctl/internal/daemon/store"
@@ -81,12 +83,22 @@ func (b *daemonComponent) StartCancel(ctx context.Context, cancel context.Cancel
 		return err
 	}
 
-	// 控制 API 与扩展 WS 面同 listener、独立路径:mux 在此组装,bridge 只认根路径。
+	// 控制 API、原始 CDP 端点与扩展 WS 面同 listener、独立路径:mux 在此组装,bridge 只认根路径。
 	// 页面自动化组件经 bridge 收发 CDP 中转,并作为 bridge 的浏览器监听者接收调试器通知与实例断开。
+	// CDP 端点也是监听者:客户端连着时这个浏览器的标签页从页面组件交给它,通知同时送达两者。
 	pages := page.NewManager(page.NewBridgeCDP(b.srv), logger.Ctx(ctx))
 	b.srv.SetBrowserListener(pages)
+	endpoints := cdpendpoint.New(ctx, cdpendpoint.Deps{
+		Bridge:          b.srv,
+		Pages:           pages,
+		Hook:            cdpendpoint.UnsupportedHook{},
+		MaxMessageBytes: int64(p.Limits.MaxFrameBytes),
+		Log:             logger.Ctx(ctx),
+	})
+	b.srv.AddBrowserListener(endpoints)
 	mux := http.NewServeMux()
-	controlapi.New(b.srv, pages, token, logger.Ctx(ctx)).Register(mux)
+	mux.Handle(cdpendpoint.PathPrefix, endpoints)
+	controlapi.New(b.srv, pages, endpoints, token, logger.Ctx(ctx)).Register(mux)
 
 	// cago 同步调用 StartCancel,server 类组件须起 goroutine 后立即返回,否则 Start()
 	// 的信号注册跑不到、SIGINT 会死锁(对齐 cago 的 mux.HTTP 写法)。
