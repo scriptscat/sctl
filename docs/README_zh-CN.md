@@ -86,6 +86,14 @@ Chrome DevTools Protocol 驱动页面时,Chrome 会在浏览器顶部显示"sctl
 还必须使用相同的 `--listen-address <host:port>`。客户端 JSON、验证方式、
 安全说明和故障排查参见[完整 MCP 安装指南](./mcp.md)。
 
+若想让 AI agent 直接使用 `sctl` 命令行而不是 MCP，可以安装 [`skills/sctl/`](../skills/sctl/SKILL.md) 里的 agent skill。
+它说明了如何选择浏览器与标签页、退出码、确认与批准、页面内容不可信，以及各组命令。在 Claude Code 中，于本仓库的克隆目录里
+把它链接到 skills 目录：
+
+```sh
+ln -s "$PWD/skills/sctl" ~/.claude/skills/sctl
+```
+
 ## 命令
 
 | 命令 | 用途 |

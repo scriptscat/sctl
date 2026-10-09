@@ -18,6 +18,7 @@ verification method are in [`doc-maintenance.md`](./doc-maintenance.md).
 | [`development.md`](./development.md) | Build commands, test design and commands, static analysis, environment variables, branches / CI / releases. **Read before writing code.** |
 | [`verification.md`](./verification.md) | How to confirm a change "actually works": evidence, one-shot scripts under `e2e/scratch/`, reproduction discipline. **Read before claiming something is fixed.** |
 | [`doc-maintenance.md`](./doc-maintenance.md) | Documentation ownership rules, truth discipline, and the per-claim verification table. **Read before changing docs.** |
+| [`../skills/sctl/`](../skills/sctl/SKILL.md) | The agent skill for driving the `sctl` command line: when to use which command group, targeting, confirmations, and error handling. It restates CLI facts for agents, so a change to a command, flag, exit code, or error code updates it in the same change. |
 
 Readers who want to *write* user scripts should go to [docs.scriptcat.org](https://docs.scriptcat.org/)
 instead; this directory targets sctl contributors and maintainers only.
