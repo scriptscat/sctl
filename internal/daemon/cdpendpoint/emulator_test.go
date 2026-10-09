@@ -252,7 +252,7 @@ func TestBrowserCommands(t *testing.T) {
 		So(r.Error, ShouldBeNil)
 		<-c.done
 		So(websocket.CloseStatus(c.readErr), ShouldEqual, websocket.StatusNormalClosure)
-		So(h.log.waitFor("reclaim inst-work", 1), ShouldBeTrue)
+		So(h.waitClientGone("inst-work"), ShouldBeTrue)
 		So(h.log.count("debugger.close 5"), ShouldEqual, 0)
 		So(h.log.count("debugger.close 6"), ShouldEqual, 0)
 		So(h.log.count("debugger.detach 5"), ShouldEqual, 1)
@@ -603,7 +603,7 @@ func TestEmulatorConcurrency(t *testing.T) {
 		So(h.log.waitFor(`debugger.send 5 Runtime.evaluate {"expression":"new Promise(function () {})","awaitPromise":true}`, 1), ShouldBeTrue)
 		So(c.conn.Close(websocket.StatusNormalClosure, ""), ShouldBeNil)
 		So(h.log.waitFor("canceled Runtime.evaluate", 1), ShouldBeTrue)
-		So(h.log.waitFor("reclaim inst-work", 1), ShouldBeTrue)
+		So(h.waitClientGone("inst-work"), ShouldBeTrue)
 	})
 
 	Convey("sctl cdp close 时进行中的命令被取消,会话结束", t, func() {
@@ -631,6 +631,6 @@ func TestEmulatorConcurrency(t *testing.T) {
 		So(c.conn.Write(ctx, websocket.MessageText, []byte(`not json`)), ShouldBeNil)
 		<-c.done
 		So(websocket.CloseStatus(c.readErr), ShouldEqual, websocket.StatusUnsupportedData)
-		So(h.log.waitFor("reclaim inst-work", 1), ShouldBeTrue)
+		So(h.waitClientGone("inst-work"), ShouldBeTrue)
 	})
 }

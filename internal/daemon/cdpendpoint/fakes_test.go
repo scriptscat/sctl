@@ -355,6 +355,26 @@ func newHarnessWithHook(t *testing.T, hook Hook) *harness {
 	return h.start(t, hook)
 }
 
+// waitClientGone 等到客户端断开后的收尾全部结束:runSession 先 Reclaim(记下 reclaim)再结束占用、重新开始失效计时,
+// 只等到 reclaim 时端点可能仍报告有客户端,重连会得到 409,推进时钟也不会让它失效。
+func (h *harness) waitClientGone(instanceID string) bool {
+	if !h.log.waitFor("reclaim "+instanceID, 1) {
+		return false
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		h.m.mu.Lock()
+		ep := h.m.byInstance[instanceID]
+		busy := ep != nil && ep.client != nil
+		h.m.mu.Unlock()
+		if !busy {
+			return true
+		}
+		time.Sleep(time.Millisecond)
+	}
+	return false
+}
+
 func (h *harness) start(t *testing.T, hook Hook) *harness {
 	t.Helper()
 	return h.startWithPages(t, h.pages, hook)
