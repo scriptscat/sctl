@@ -467,27 +467,6 @@ func TestNotificationOverflowEndsSession(t *testing.T) {
 	})
 }
 
-func TestUnsupportedHook(t *testing.T) {
-	Convey("默认会话对每个 CDP 请求回答不支持,带上原请求的 id 与 sessionId", t, func() {
-		h := newHarnessWithHook(t, UnsupportedHook{})
-		info := h.create(t)
-		conn, status, _ := dial(t, info.WSURL, nil)
-		So(status, ShouldEqual, http.StatusSwitchingProtocols)
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		So(conn.Write(ctx, websocket.MessageText, []byte(`{"id":1,"method":"Browser.getVersion"}`)), ShouldBeNil)
-		_, msg, err := conn.Read(ctx)
-		So(err, ShouldBeNil)
-		So(string(msg), ShouldEqualJSON, `{"id":1,"error":{"code":-32601,"message":"Browser.getVersion is not supported"}}`)
-		So(conn.Write(ctx, websocket.MessageText, []byte(`{"id":2,"sessionId":"S1","method":"Page.enable","params":{}}`)), ShouldBeNil)
-		_, msg, err = conn.Read(ctx)
-		So(err, ShouldBeNil)
-		So(string(msg), ShouldEqualJSON, `{"id":2,"sessionId":"S1","error":{"code":-32601,"message":"Page.enable is not supported"}}`)
-		So(conn.Close(websocket.StatusNormalClosure, ""), ShouldBeNil)
-		So(h.log.waitFor("reclaim inst-work", 1), ShouldBeTrue)
-	})
-}
-
 func TestConcurrentClients(t *testing.T) {
 	Convey("同时到达的几个客户端只有一个连上,其余都被告知已有客户端", t, func() {
 		h := newHarness(t)

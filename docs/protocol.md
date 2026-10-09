@@ -592,8 +592,10 @@ the browser's tabs over (architecture.md, [Raw CDP endpoint](./architecture.md#r
 for example the browser is offline — the request is refused with `503` and the reason, and nothing changes. Then the
 connection is upgraded; a client message may be at most `limits.maxFrameBytes`. Before the first command the client's
 session sends to a tab, the daemon marks the tab endpoint-owned with `debugger.own`; a tab opened through
-`debugger.open` is already marked. Until the CDP emulation lands, the endpoint answers every CDP request with the CDP
-error `{code: -32601, message: "<method> is not supported"}`.
+`debugger.open` is already marked. The daemon answers the client's CDP itself for browser-level
+commands (`Browser.*`, `Target.*`), forwards commands sent on an attached tab's session to that tab and returns the
+tab's events on the same session, and answers a feature it cannot provide (new browser contexts, permissions, window
+size and position, ignoring certificate errors) with a CDP error that names the unsupported feature.
 
 The client is disconnected when it closes the connection or the connection drops, when the session ends itself, on
 `sctl cdp close`, when the endpoint expires, when the browser instance disconnects, and when the daemon exits. The

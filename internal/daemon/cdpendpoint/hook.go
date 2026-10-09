@@ -16,9 +16,6 @@ type Hook interface {
 	Serve(ctx context.Context, conn *websocket.Conn, b *Browser) error
 }
 
-// UnsupportedHook 对每个 CDP 请求回答 -32601,说明这条命令不被支持。
-type UnsupportedHook struct{}
-
 type cdpRequest struct {
 	ID        json.RawMessage `json:"id"`
 	SessionID string          `json:"sessionId,omitempty"`
@@ -40,23 +37,3 @@ type cdpError struct {
 
 // cdpMethodNotFound 是 CDP 对不认识的命令回答的错误码。
 const cdpMethodNotFound = -32601
-
-func (UnsupportedHook) Serve(ctx context.Context, conn *websocket.Conn, _ *Browser) error {
-	for {
-		_, data, err := conn.Read(ctx)
-		if err != nil {
-			return err
-		}
-		var req cdpRequest
-		if err := json.Unmarshal(data, &req); err != nil || len(req.ID) == 0 {
-			return conn.Close(websocket.StatusUnsupportedData, "not a CDP request")
-		}
-		resp, err := json.Marshal(cdpErrorResponse{ID: req.ID, SessionID: req.SessionID, Error: cdpError{Code: cdpMethodNotFound, Message: req.Method + " is not supported"}})
-		if err != nil {
-			return err
-		}
-		if err := conn.Write(ctx, websocket.MessageText, resp); err != nil {
-			return err
-		}
-	}
-}

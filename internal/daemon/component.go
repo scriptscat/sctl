@@ -91,7 +91,7 @@ func (b *daemonComponent) StartCancel(ctx context.Context, cancel context.Cancel
 	endpoints := cdpendpoint.New(ctx, cdpendpoint.Deps{
 		Bridge:          b.srv,
 		Pages:           pages,
-		Hook:            cdpendpoint.UnsupportedHook{},
+		Hook:            cdpendpoint.Emulator{},
 		MaxMessageBytes: int64(p.Limits.MaxFrameBytes),
 		Log:             logger.Ctx(ctx),
 	})
