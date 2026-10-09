@@ -664,6 +664,56 @@
       "level": "L0",
       "peer": "browser",
       "internal": true
+    },
+    "debugger.targets": {
+      "params": "DebuggerTargetsParams",
+      "result": "DebuggerTargetsResult",
+      "scope": "debugger:targets",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "internal": true
+    },
+    "debugger.userAgent": {
+      "params": "DebuggerUserAgentParams",
+      "result": "DebuggerUserAgentResult",
+      "scope": "debugger:userAgent",
+      "effect": "read",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "internal": true
+    },
+    "debugger.open": {
+      "params": "DebuggerOpenParams",
+      "result": "DebuggerOpenResult",
+      "scope": "debugger:open",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "internal": true
+    },
+    "debugger.close": {
+      "params": "DebuggerCloseParams",
+      "result": "DebuggerCloseResult",
+      "scope": "debugger:close",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "internal": true
+    },
+    "debugger.own": {
+      "params": "DebuggerOwnParams",
+      "result": "DebuggerOwnResult",
+      "scope": "debugger:own",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "internal": true
     }
   },
   "notifications": {
@@ -673,6 +723,18 @@
     },
     "debugger.detached": {
       "params": "DebuggerDetachedNotification",
+      "peer": "browser"
+    },
+    "debugger.tabCreated": {
+      "params": "DebuggerTabNotification",
+      "peer": "browser"
+    },
+    "debugger.tabUpdated": {
+      "params": "DebuggerTabNotification",
+      "peer": "browser"
+    },
+    "debugger.tabRemoved": {
+      "params": "DebuggerTabRemovedNotification",
       "peer": "browser"
     }
   },
@@ -3640,6 +3702,190 @@
         "reason"
       ],
       "additionalProperties": false
+    },
+    "DebuggerTargetsParams": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "DebuggerTargetsResult": {
+      "type": "object",
+      "properties": {
+        "targets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "tabId": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "targetId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "tabId",
+              "targetId",
+              "title",
+              "url"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "targets"
+      ],
+      "additionalProperties": false
+    },
+    "DebuggerUserAgentParams": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "DebuggerUserAgentResult": {
+      "type": "object",
+      "properties": {
+        "userAgent": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "userAgent"
+      ],
+      "additionalProperties": false
+    },
+    "DebuggerOpenParams": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "background": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "DebuggerOpenResult": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "targetId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tabId",
+        "targetId"
+      ],
+      "additionalProperties": false
+    },
+    "DebuggerCloseParams": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "tabId"
+      ],
+      "additionalProperties": false
+    },
+    "DebuggerCloseResult": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "tabId"
+      ],
+      "additionalProperties": false
+    },
+    "DebuggerOwnParams": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "owned": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "tabId",
+        "owned"
+      ],
+      "additionalProperties": false
+    },
+    "DebuggerOwnResult": {
+      "type": "object",
+      "properties": {
+        "owned": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "owned"
+      ],
+      "additionalProperties": false
+    },
+    "DebuggerTabNotification": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "targetId": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tabId",
+        "targetId",
+        "title",
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "DebuggerTabRemovedNotification": {
+      "type": "object",
+      "properties": {
+        "tabId": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "tabId"
+      ],
+      "additionalProperties": false
     }
   },
   "errorCodes": [
@@ -3667,7 +3913,8 @@
     { "code": "DIALOG_OPEN", "peers": ["browser"] },
     { "code": "PAGE_UNRESPONSIVE", "peers": ["browser"] },
     { "code": "EVAL_ERROR", "peers": ["browser"] },
-    { "code": "NAVIGATION_FAILED", "peers": ["browser"] }
+    { "code": "NAVIGATION_FAILED", "peers": ["browser"] },
+    { "code": "ENDPOINT_CONNECTED", "peers": ["browser"] }
   ],
   "crypto": {
     "mac": "HMAC-SHA-256",

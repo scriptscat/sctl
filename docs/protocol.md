@@ -241,6 +241,11 @@ It is optional in the schema so that an unconfirmed call that reaches the extens
 | `debugger.detach` | browser, internal | detach the debugger from one tab, or from every tab | none | L0 |
 | `debugger.record` | browser, internal | mark a tab as recording, exempting it from the extension's idle fallback, or clear the mark | none | L0 |
 | `debugger.body` | browser, internal | read the request or response body of a recorded network request, cut at 1 MiB | none | L0 |
+| `debugger.targets` | browser, internal | list the tabs a debugger can attach to, with their DevTools target IDs | none | L0 |
+| `debugger.userAgent` | browser, internal | return the browser's real `navigator.userAgent` | none | L0 |
+| `debugger.open` | browser, internal | open a tab for the raw CDP endpoint, marked endpoint-owned, and return its tab and target IDs | none | L0 |
+| `debugger.close` | browser, internal | close a tab for the raw CDP endpoint | none | L0 |
+| `debugger.own` | browser, internal | mark a tab as endpoint-owned, exempting it from the extension's idle fallback, or clear the mark | none | L0 |
 | `tabs.move` | browser | move tabs to a window and position (`index` -1 is the end) | none | L0 |
 | `tabs.pin` | browser | pin tabs | none | L0 |
 | `tabs.unpin` | browser | unpin tabs | none | L0 |
@@ -507,6 +512,19 @@ debugger attached when the MV3 service worker restarts: after a restart it keeps
 still attached, and reports each one that no longer is as `debugger.detached` with reason `target_closed`. A tab that is still attached
 keeps its recording state across the restart; any detach of a tab clears it.
 
+The raw CDP endpoint uses five more internal methods. `debugger.targets` returns `{targets: [{tabId, targetId, title, url}]}`:
+the `page` targets that have a tab, from `chrome.debugger.getTargets`, without `chrome://` and other browser-internal
+pages, extension pages (`chrome-extension://`), DevTools pages, and the Chrome Web Store, none of which Chrome lets a
+debugger attach to; `targetId` is the DevTools target ID. `debugger.userAgent` returns `{userAgent}`. `debugger.open`
+takes `{url, background?}`, opens the tab in the last-focused window (not activated when `background` is true), marks it
+endpoint-owned before returning, and answers `{tabId, targetId}`; it exists apart from `tabs.open` because it must
+return the target ID and set the mark in one step, and `debugger.close` `{tabId}` is its counterpart, answering
+`NOT_FOUND` for a missing tab. `debugger.own` `{tabId, owned}` marks or unmarks any tab, attached or not, which the
+daemon uses for tabs the endpoint's client attaches to. The extension's 10-minute fallback never detaches an
+endpoint-owned tab, the same as a recording one; the mark is kept in `chrome.storage.session` and survives a
+service-worker restart for tabs that still exist. Any detach of the tab, closing it, or `debugger.own {owned: false}`
+clears the mark, and the fallback timer restarts.
+
 ### 3.3 Extension notifications
 
 An sctl Browser instance sends notifications to the daemon. They are the only business messages in that
@@ -516,6 +534,9 @@ there is no `input` wrapper or `clientId`:
 | Notification | Params | Sent when |
 |---|---|---|
 | `debugger.event` | `{tabId, sessionId?, method, params?}` | the debugger attached to `tabId` receives a CDP event; `sessionId` names the child session that produced it |
+| `debugger.tabCreated` | `{tabId, targetId, title, url}` | a tab is created and is already listed as an attachable target; a tab whose target is not listed yet is reported by `debugger.tabUpdated` once it is |
+| `debugger.tabUpdated` | `{tabId, targetId, title, url}` | an attachable tab's URL, title or load status changes; a tab that is not attachable is never reported, including one that navigates to such a page |
+| `debugger.tabRemoved` | `{tabId}` | any tab is closed, including tabs that were never reported |
 | `debugger.detached` | `{tabId, reason}` | Chrome detaches the debugger from `tabId` (`chrome.debugger.onDetach`), where `reason` is Chrome's detach reason, such as `target_closed` or `canceled_by_user`; or the extension's 10-minute fallback detaches it, with reason `idle_timeout`; or, after a service-worker restart, a tab it had attached is no longer attached, with reason `target_closed` |
 
 The daemon validates a notification against its schema like any other frame; a notification that carries an
@@ -575,6 +596,7 @@ These codes are reserved for page automation on a browser instance:
 | `PAGE_UNRESPONSIVE` | the page did not answer within 5 seconds while the debugger was being attached, possibly because of a JavaScript dialog left open after an earlier debugger detached; reloading or navigating the page recovers it |
 | `EVAL_ERROR` | an evaluated expression threw in the page |
 | `NAVIGATION_FAILED` | a navigation failed with a network error |
+| `ENDPOINT_CONNECTED` | a raw CDP endpoint client is connected and owns the browser's tabs, so sctl's own page, debug and `cdp send` commands are refused until it disconnects |
 
 `USER_REJECTED` and `PAYLOAD_TOO_LARGE` are registered for both peers. For the browser, `USER_REJECTED` is
 reserved for a rejected L2 approval (including an uninstall cancelled in Chrome's own dialog, §5) and `PAYLOAD_TOO_LARGE` answers a result that would exceed the frame limit

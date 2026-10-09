@@ -4,6 +4,7 @@ import {
   validateDebuggerBodyResult,
   validateDebuggerDetachResult,
   validateDebuggerSendResult,
+  validateDebuggerTargetsResult,
 } from "@/protocol/generated/validators.generated";
 import type { NotificationMethod, NotificationParams } from "@/protocol/generated/protocol.generated";
 import { DebuggerRelay, type AttachedTabsStorage } from "./debugger";
@@ -21,7 +22,11 @@ interface DebuggerMock {
 }
 
 // 模拟 chrome.storage.session:service worker 重启后仍在,浏览器重启后清空。
-function memoryStore(): AttachedTabsStorage & { tabIds: () => unknown; recordingTabIds: () => unknown } {
+function memoryStore(): AttachedTabsStorage & {
+  tabIds: () => unknown;
+  recordingTabIds: () => unknown;
+  ownedTabIds: () => unknown;
+} {
   const items: Record<string, unknown> = {};
   return {
     get: (keys) => Promise.resolve(Object.fromEntries(keys.filter((k) => k in items).map((k) => [k, items[k]]))),
@@ -31,12 +36,15 @@ function memoryStore(): AttachedTabsStorage & { tabIds: () => unknown; recording
     },
     tabIds: () => items.debuggerTabs,
     recordingTabIds: () => items.debuggerRecording,
+    ownedTabIds: () => items.debuggerOwned,
   };
 }
 
 describe("debugger relay", () => {
   let dbg: DebuggerMock;
   let tabsGet: ReturnType<typeof vi.fn>;
+  let tabsCreate: ReturnType<typeof vi.fn>;
+  let tabsRemove: ReturnType<typeof vi.fn>;
   let notices: Notice[];
   let relay: DebuggerRelay;
   let registry: HandlerRegistry;
@@ -51,7 +59,13 @@ describe("debugger relay", () => {
       getTargets: vi.fn<AsyncFn>().mockResolvedValue([]),
     };
     tabsGet = vi.fn().mockResolvedValue({ id: 5 });
-    vi.stubGlobal("chrome", { debugger: dbg, tabs: { get: tabsGet } });
+    tabsCreate = vi.fn().mockResolvedValue({ id: 9 });
+    tabsRemove = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("chrome", {
+      debugger: dbg,
+      tabs: { get: tabsGet, create: tabsCreate, remove: tabsRemove },
+      windows: { getLastFocused: vi.fn().mockResolvedValue({ id: 3 }) },
+    });
     notices = [];
     store = memoryStore();
     relay = new DebuggerRelay((method, params) => {
@@ -670,6 +684,201 @@ describe("debugger relay", () => {
       await next.detachAll();
 
       expect(handled()).toEqual([[{ tabId: 5 }, "Page.handleJavaScriptDialog", { accept: false }]]);
+    });
+  });
+
+  describe("endpoint support", () => {
+    const IDLE = 10 * 60_000;
+    const page = (tabId: number, url: string, title = "") => ({
+      type: "page",
+      id: `T${tabId}`,
+      tabId,
+      attached: false,
+      title,
+      url,
+    });
+
+    it("lists attachable tabs with their DevTools target IDs and leaves out chrome://, extension pages and the web store", async () => {
+      dbg.getTargets.mockResolvedValue([
+        page(1, "https://a.test/", "A"),
+        page(2, "chrome://settings/"),
+        page(3, "chrome-extension://abc/popup.html"),
+        page(4, "https://chromewebstore.google.com/detail/x"),
+        page(5, "https://chrome.google.com/webstore/detail/x"),
+        page(6, "about:blank"),
+        { type: "service_worker", id: "SW", attached: false, title: "", url: "https://a.test/sw.js" },
+        { type: "background_page", id: "BG", tabId: 7, attached: false, title: "", url: "https://a.test/bg" },
+      ]);
+
+      const outcome = await registry.dispatch("debugger.targets", {});
+
+      expect(outcome).toEqual({
+        ok: true,
+        result: {
+          targets: [
+            { tabId: 1, targetId: "T1", title: "A", url: "https://a.test/" },
+            { tabId: 6, targetId: "T6", title: "", url: "about:blank" },
+          ],
+        },
+      });
+      if (outcome.ok) {
+        expect(validateDebuggerTargetsResult(outcome.result)).toBe(true);
+      }
+    });
+
+    it("returns the browser's real User-Agent", async () => {
+      vi.stubGlobal("navigator", { userAgent: "Mozilla/5.0 Chrome/125.0.0.0" });
+
+      expect(await registry.dispatch("debugger.userAgent", {})).toEqual({
+        ok: true,
+        result: { userAgent: "Mozilla/5.0 Chrome/125.0.0.0" },
+      });
+    });
+
+    it("opens a tab in the last-focused window, in the background when asked, and returns its target ID", async () => {
+      dbg.getTargets.mockResolvedValue([page(9, "about:blank")]);
+
+      expect(await registry.dispatch("debugger.open", { url: "about:blank", background: true })).toEqual({
+        ok: true,
+        result: { tabId: 9, targetId: "T9" },
+      });
+      expect(tabsCreate).toHaveBeenCalledWith({ url: "about:blank", windowId: 3, active: false });
+    });
+
+    it("keeps a tab it opened for the endpoint attached past the idle backstop, and remembers it in the store", async () => {
+      dbg.getTargets.mockResolvedValue([page(9, "about:blank")]);
+      await registry.dispatch("debugger.open", { url: "about:blank" });
+      expect(store.ownedTabIds()).toEqual([9]);
+
+      await registry.dispatch("debugger.send", { tabId: 9, method: "Page.enable" });
+      await vi.advanceTimersByTimeAsync(IDLE + 1);
+
+      expect(dbg.detach).not.toHaveBeenCalled();
+      expect(notices).toEqual([]);
+    });
+
+    it("exempts an existing tab from the idle backstop once the endpoint owns it, and re-arms it when released", async () => {
+      await registry.dispatch("debugger.send", { tabId: 5, method: "Page.enable" });
+      expect(await registry.dispatch("debugger.own", { tabId: 5, owned: true })).toEqual({
+        ok: true,
+        result: { owned: true },
+      });
+      await vi.advanceTimersByTimeAsync(IDLE + 1);
+      expect(dbg.detach).not.toHaveBeenCalled();
+
+      expect(await registry.dispatch("debugger.own", { tabId: 5, owned: false })).toEqual({
+        ok: true,
+        result: { owned: false },
+      });
+      expect(store.ownedTabIds()).toEqual([]);
+      await vi.advanceTimersByTimeAsync(IDLE);
+
+      expect(dbg.detach).toHaveBeenCalledWith({ tabId: 5 });
+      expect(notices).toEqual([{ method: "debugger.detached", params: { tabId: 5, reason: "idle_timeout" } }]);
+    });
+
+    it("keeps a tab owned across a service worker restart and still exempts it", async () => {
+      await registry.dispatch("debugger.send", { tabId: 5, method: "Page.enable" });
+      await registry.dispatch("debugger.own", { tabId: 5, owned: true });
+      dbg.getTargets.mockResolvedValue([{ ...page(5, "https://a.test/"), attached: true }]);
+
+      new DebuggerRelay((method, params) => {
+        notices.push({ method, params } as Notice);
+      }, store);
+      await vi.advanceTimersByTimeAsync(IDLE + 1);
+
+      expect(dbg.detach).not.toHaveBeenCalled();
+      expect(store.ownedTabIds()).toEqual([5]);
+    });
+
+    it("drops ownership of a tab that no longer exists after a service worker restart", async () => {
+      await registry.dispatch("debugger.own", { tabId: 5, owned: true });
+      dbg.getTargets.mockResolvedValue([]);
+
+      const next = new DebuggerRelay(() => undefined, store);
+      registry = new HandlerRegistry();
+      registerHandlers(registry, next);
+      await registry.dispatch("debugger.detach", {});
+
+      expect(store.ownedTabIds()).toEqual([]);
+    });
+
+    it("drops ownership when the debugger is detached from the tab or the tab is removed", async () => {
+      await registry.dispatch("debugger.send", { tabId: 5, method: "Page.enable" });
+      await registry.dispatch("debugger.own", { tabId: 5, owned: true });
+      await registry.dispatch("debugger.detach", { tabId: 5 });
+      expect(store.ownedTabIds()).toEqual([]);
+
+      await registry.dispatch("debugger.own", { tabId: 6, owned: true });
+      relay.onTabRemoved(6);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.ownedTabIds()).toEqual([]);
+    });
+
+    it("closes the tabs the endpoint asks for and forgets their ownership", async () => {
+      await registry.dispatch("debugger.own", { tabId: 5, owned: true });
+
+      expect(await registry.dispatch("debugger.close", { tabId: 5 })).toEqual({ ok: true, result: { tabId: 5 } });
+      expect(tabsRemove).toHaveBeenCalledWith(5);
+      expect(store.ownedTabIds()).toEqual([]);
+    });
+
+    it("answers NOT_FOUND when closing a tab that does not exist", async () => {
+      tabsGet.mockRejectedValue(new Error("No tab with id: 8"));
+
+      expect(await registry.dispatch("debugger.close", { tabId: 8 })).toEqual({
+        ok: false,
+        code: "NOT_FOUND",
+        message: "no tab 8",
+      });
+      expect(tabsRemove).not.toHaveBeenCalled();
+    });
+
+    describe("tab notifications", () => {
+      it("reports a created attachable tab with its target ID", async () => {
+        dbg.getTargets.mockResolvedValue([page(7, "https://b.test/", "B")]);
+
+        relay.onTabCreated({ id: 7, url: "", pendingUrl: "https://b.test/" } as chrome.tabs.Tab);
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(notices).toEqual([
+          {
+            method: "debugger.tabCreated",
+            params: { tabId: 7, targetId: "T7", title: "B", url: "https://b.test/" },
+          },
+        ]);
+      });
+
+      it("reports a title, URL or load-status change of an attachable tab, and ignores other changes", async () => {
+        dbg.getTargets.mockResolvedValue([page(7, "https://b.test/next", "Next")]);
+
+        relay.onTabUpdated(7, { audible: true });
+        relay.onTabUpdated(7, { url: "https://b.test/next" });
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(notices).toEqual([
+          {
+            method: "debugger.tabUpdated",
+            params: { tabId: 7, targetId: "T7", title: "Next", url: "https://b.test/next" },
+          },
+        ]);
+      });
+
+      it("does not report tabs that cannot be attached", async () => {
+        dbg.getTargets.mockResolvedValue([page(7, "chrome://settings/")]);
+
+        relay.onTabCreated({ id: 7, url: "chrome://settings/" } as chrome.tabs.Tab);
+        relay.onTabUpdated(7, { status: "complete" });
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(notices).toEqual([]);
+      });
+
+      it("reports a removed tab", () => {
+        relay.onTabRemoved(7);
+
+        expect(notices).toEqual([{ method: "debugger.tabRemoved", params: { tabId: 7 } }]);
+      });
     });
   });
 });

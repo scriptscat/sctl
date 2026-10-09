@@ -83,6 +83,10 @@ chrome.management.onUninstalled.addListener((id) => {
 // chrome.debugger 的监听器同样必须在顶层同步注册，事件才能唤醒 service worker。
 chrome.debugger.onEvent.addListener((source, method, params) => relay.onEvent(source, method, params));
 chrome.debugger.onDetach.addListener((source, reason) => relay.onDetach(source, reason));
+// 标签页的创建、变化与关闭同样要在顶层同步注册，端点才能在 service worker 休眠后仍收到新标签页。
+chrome.tabs.onCreated.addListener((tab) => relay.onTabCreated(tab));
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => relay.onTabUpdated(tabId, changeInfo));
+chrome.tabs.onRemoved.addListener((tabId) => relay.onTabRemoved(tabId));
 
 // 连接住在 offscreen 文档里；浏览器启动、扩展安装或 service worker 被唤醒时都确保它存在。
 function keepConnection(): void {

@@ -183,7 +183,7 @@ func TestGenerateKeepsScriptCatTypeScriptByteIdenticalWhenBrowserMethodsExist(t 
 		"validators.generated.ts": scriptCatValidatorsSHA256,
 	} {
 		content := readFile(t, filepath.Join(out, name))
-		for _, browserOnly := range []string{"tabs.list", "TabsListParams", "BROWSER_OFFLINE", "browserSessionExt", "CONFIRMATION_REQUIRED", "UNSUPPORTED", "level", "$/approvalPending", "debugger.", "Notification", "STALE_REF"} {
+		for _, browserOnly := range []string{"tabs.list", "TabsListParams", "BROWSER_OFFLINE", "browserSessionExt", "CONFIRMATION_REQUIRED", "UNSUPPORTED", "level", "$/approvalPending", "debugger.", "Notification", "STALE_REF", "ENDPOINT_CONNECTED"} {
 			if strings.Contains(content, browserOnly) {
 				t.Errorf("ScriptCat %s contains browser-owned %q", name, browserOnly)
 			}
@@ -472,7 +472,7 @@ func TestGenerateEmitsDebuggerRelayAndNotificationsOnlyForGoAndBrowser(t *testin
 		`"debugger.send": { params: DebuggerSendParams; result: DebuggerSendResult };`,
 		"export interface DebuggerSendParams {\n  method: string;\n  params?: Record<string, unknown>;\n  sessionId?: string;\n  tabId: number;\n}",
 		"export interface DebuggerEventNotification {",
-		"export interface NotificationMap {\n  \"debugger.detached\": DebuggerDetachedNotification;\n  \"debugger.event\": DebuggerEventNotification;\n}",
+		"export interface NotificationMap {\n  \"debugger.detached\": DebuggerDetachedNotification;\n  \"debugger.event\": DebuggerEventNotification;\n  \"debugger.tabCreated\": DebuggerTabNotification;\n  \"debugger.tabRemoved\": DebuggerTabRemovedNotification;\n  \"debugger.tabUpdated\": DebuggerTabNotification;\n}",
 		"export type NotificationMethod = keyof NotificationMap;",
 		`"STALE_REF"`,
 		`"PAYLOAD_TOO_LARGE"`,
