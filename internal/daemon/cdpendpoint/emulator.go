@@ -884,22 +884,33 @@ func (e *emulation) attachSession(tab int) (string, error) {
 	info := e.targetInfoLocked(ts)
 	info["attached"] = true
 	e.mu.Unlock()
+	// 写协程决定是否报告附加;没报告时这个会话不存在,不能把它的 ID 交给客户端。
+	registered := make(chan bool, 1)
 	attached := outbound{
 		msg: cdpEvent{Method: "Target.attachedToTarget", Params: map[string]any{"sessionId": sessionID, "targetInfo": info, "waitingForDebugger": false}},
 		register: func() bool {
 			e.mu.Lock()
 			defer e.mu.Unlock()
-			if e.tabs[tab] != ts || ts.attach == nil {
-				return false
+			ok := e.tabs[tab] == ts && ts.attach != nil
+			if ok {
+				e.sessions[sessionID] = tab
 			}
-			e.sessions[sessionID] = tab
-			return true
+			registered <- ok
+			return ok
 		},
 	}
 	if !e.enqueue(attached) {
 		return "", e.ctx.Err()
 	}
-	return sessionID, nil
+	select {
+	case ok := <-registered:
+		if !ok {
+			return "", &cdpError{Code: cdpServerError, Message: "the debugger detached from the tab while sctl was attaching it"}
+		}
+		return sessionID, nil
+	case <-e.ctx.Done():
+		return "", e.ctx.Err()
+	}
 }
 
 // attachTab 附加标签页的调试器并做好准备,同一标签页上同时只做一次:先开焦点模拟,再读 Chrome 自己的目标信息。

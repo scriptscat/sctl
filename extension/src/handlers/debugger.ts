@@ -155,6 +155,9 @@ export class DebuggerRelay {
     this.persist();
     const target = (await chrome.debugger.getTargets()).find((t) => t.tabId === tabId);
     if (target === undefined) {
+      // 守护进程拿不到这个标签页的 ID，清理不到它的标记：留着它，之后附加的这个标签页就永远免于兜底断开。
+      this.owned.delete(tabId);
+      this.persist();
       throw new HandlerError("NOT_FOUND", `no debuggable target for tab ${tabId}`);
     }
     return { tabId, targetId: target.id };
@@ -218,6 +221,11 @@ export class DebuggerRelay {
     await this.restored;
     await Promise.allSettled([...this.attaching.values()]);
     await Promise.all([...this.idle.keys()].map((tabId) => this.release(tabId)));
+    // 端点的客户端随连接一起断开，守护进程也无法再清除标记；没附加的标签页不经 release，要在这里清掉。
+    if (this.owned.size > 0) {
+      this.owned.clear();
+      this.persist();
+    }
   }
 
   onEvent(source: chrome.debugger.DebuggerSession, method: string, params?: object): void {

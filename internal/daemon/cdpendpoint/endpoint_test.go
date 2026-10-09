@@ -59,6 +59,22 @@ func TestCreateEndpoint(t *testing.T) {
 			So(be.Code, ShouldEqual, generated.ErrorCodeNoBrowserConnected)
 		})
 
+		Convey("调用方经主机名连到 daemon 时不给出必被 Host 检查拒绝的地址:INVALID_REQUEST,不创建端点", func() {
+			_, err := h.m.Create("work", "devbox.lan:8643")
+			var be *bridge.Error
+			So(errors.As(err, &be), ShouldBeTrue)
+			So(be.Code, ShouldEqual, generated.ErrorCodeInvalidRequest)
+			So(be.Message, ShouldContainSubstring, "devbox.lan:8643")
+			snap, err := h.m.Status("work", h.host)
+			So(err, ShouldBeNil)
+			So(snap.Endpoint, ShouldBeNil)
+
+			h.create(t)
+			_, err = h.m.Status("work", "devbox.lan:8643")
+			So(errors.As(err, &be), ShouldBeTrue)
+			So(be.Code, ShouldEqual, generated.ErrorCodeInvalidRequest)
+		})
+
 		Convey("status 在没有端点时如实说明,有端点时给出同一地址", func() {
 			snap, err := h.m.Status("work", h.host)
 			So(err, ShouldBeNil)
@@ -232,7 +248,6 @@ func TestClientSession(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(opened, ShouldResemble, OpenedTab{TabID: 100, TargetID: "T100"})
 			So(b.CloseTab(ctx, 100), ShouldBeNil)
-			So(b.InstanceID(), ShouldEqual, "inst-work")
 		})
 
 		Convey("会话自己分离或关闭的标签页,断开客户端时不再处理", func() {

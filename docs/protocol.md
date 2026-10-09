@@ -530,13 +530,14 @@ the `page` targets that have a tab, from `chrome.debugger.getTargets`, without `
 pages, extension pages (`chrome-extension://`), DevTools pages, and the Chrome Web Store, none of which Chrome lets a
 debugger attach to; `targetId` is the DevTools target ID. `debugger.userAgent` returns `{userAgent}`. `debugger.open`
 takes `{url, background?}`, opens the tab in the last-focused window (not activated when `background` is true), marks it
-endpoint-owned before returning, and answers `{tabId, targetId}`; it exists apart from `tabs.open` because it must
+endpoint-owned before returning, and answers `{tabId, targetId}` (or `NOT_FOUND`, leaving the opened tab unmarked, when
+Chrome lists no target for it); it exists apart from `tabs.open` because it must
 return the target ID and set the mark in one step, and `debugger.close` `{tabId}` is its counterpart, answering
 `NOT_FOUND` for a missing tab. `debugger.own` `{tabId, owned}` marks or unmarks any tab, attached or not, which the
 daemon uses for tabs the endpoint's client attaches to. The extension's 10-minute fallback never detaches an
 endpoint-owned tab, the same as a recording one; the mark is kept in `chrome.storage.session` and survives a
-service-worker restart for tabs that still exist. Any detach of the tab, closing it, or `debugger.own {owned: false}`
-clears the mark, and the fallback timer restarts.
+service-worker restart for tabs that still exist. Any detach of the tab, closing it, `debugger.own {owned: false}`, or
+the connection to the daemon closing clears the mark, and the fallback timer restarts.
 
 ### 3.3 Extension notifications
 
@@ -570,7 +571,9 @@ addresses:
 | `http://<host>/cdp/<secret>` | Playwright `chromium.connectOverCDP` |
 | `ws://<host>/cdp/<secret>/devtools/browser/<id>` | Puppeteer `connect({browserWSEndpoint})` |
 
-`<host>` is the address the requester used to reach the daemon. `<secret>` is 128 random bits from `crypto/rand`,
+`<host>` is the address the requester used to reach the daemon; when that is a host name rather than an IP literal or
+`localhost`, `sctl cdp endpoint` and `sctl cdp status` answer `INVALID_REQUEST` instead of an address the `Host` check
+below would refuse. `<secret>` is 128 random bits from `crypto/rand`,
 hex-encoded, kept only in the daemon's memory; `<id>` is a random ID in the shape of a Chrome browser target ID. The
 address is the credential: a client presents nothing else. `GET /cdp/<secret>/json/version`, with or without a trailing
 slash, answers Chrome's JSON shape — `Browser` (the `Chrome/<version>` product from the User-Agent), `Protocol-Version`

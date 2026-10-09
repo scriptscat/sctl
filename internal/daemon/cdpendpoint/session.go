@@ -83,9 +83,6 @@ func newBrowser(m *Manager, ep *endpoint, c *client) *Browser {
 	}
 }
 
-// InstanceID 是端点所属浏览器实例的 ID。
-func (b *Browser) InstanceID() string { return b.instanceID }
-
 // BrowserID 是端点 WS 地址最后一段的浏览器目标 ID,客户端查询浏览器自己的目标信息时用它。
 func (b *Browser) BrowserID() string { return b.browserID }
 

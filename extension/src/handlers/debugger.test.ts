@@ -745,6 +745,32 @@ describe("debugger relay", () => {
       expect(tabsCreate).toHaveBeenCalledWith({ url: "about:blank", windowId: 3, active: false });
     });
 
+    it("answers NOT_FOUND and leaves no endpoint mark when Chrome lists no target for the tab it opened", async () => {
+      dbg.getTargets.mockResolvedValue([]);
+
+      expect(await registry.dispatch("debugger.open", { url: "about:blank" })).toEqual({
+        ok: false,
+        code: "NOT_FOUND",
+        message: "no debuggable target for tab 9",
+      });
+      expect(store.ownedTabIds()).toEqual([]);
+
+      await registry.dispatch("debugger.send", { tabId: 9, method: "Page.enable" });
+      await vi.advanceTimersByTimeAsync(IDLE);
+      expect(dbg.detach).toHaveBeenCalledWith({ tabId: 9 });
+    });
+
+    it("drops every endpoint mark when the connection to the daemon closes, so later attaches get the idle backstop", async () => {
+      await registry.dispatch("debugger.own", { tabId: 6, owned: true });
+
+      await relay.detachAll();
+      expect(store.ownedTabIds()).toEqual([]);
+
+      await registry.dispatch("debugger.send", { tabId: 6, method: "Page.enable" });
+      await vi.advanceTimersByTimeAsync(IDLE);
+      expect(dbg.detach).toHaveBeenCalledWith({ tabId: 6 });
+    });
+
     it("keeps a tab it opened for the endpoint attached past the idle backstop, and remembers it in the store", async () => {
       dbg.getTargets.mockResolvedValue([page(9, "about:blank")]);
       await registry.dispatch("debugger.open", { url: "about:blank" });

@@ -18,6 +18,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/scriptscat/sctl/internal/daemon/bridge"
+	"github.com/scriptscat/sctl/internal/pkg/protocol/generated"
 )
 
 // idleExpiry 是端点连续没有客户端连着多久后失效(spec 设计决策 6)。
@@ -150,6 +151,9 @@ type Snapshot struct {
 // Create 返回 browser 的端点,没有时创建一个;重复调用返回同一地址。host 是调用方连到 daemon 用的地址,写进返回的地址里。
 // browser 按 sctl 的目标规则解析,浏览器不在线时返回 bridge 的 BROWSER_OFFLINE / NO_BROWSER_CONNECTED 等错误。
 func (m *Manager) Create(browser, host string) (Snapshot, error) {
+	if err := checkHost(host); err != nil {
+		return Snapshot{}, err
+	}
 	info, err := m.deps.Bridge.ResolveBrowser(browser)
 	if err != nil {
 		return Snapshot{}, err
@@ -180,6 +184,9 @@ func (m *Manager) Create(browser, host string) (Snapshot, error) {
 
 // Status 返回 browser 的端点状态,不创建端点。点名的浏览器离线时同样回答。
 func (m *Manager) Status(browser, host string) (Snapshot, error) {
+	if err := checkHost(host); err != nil {
+		return Snapshot{}, err
+	}
 	info, err := m.deps.Bridge.ResolvePairedBrowser(browser)
 	if err != nil {
 		return Snapshot{}, err
@@ -220,6 +227,18 @@ func (m *Manager) Close(ctx context.Context, browser string) (ref BrowserRef, cl
 		}
 	}
 	return ref, true, nil
+}
+
+// checkHost 拒绝用 host 拼出端点地址:那个地址的每个请求都会被 Host 检查拒绝(--listen-address 用了主机名时)。
+func checkHost(host string) error {
+	if hostAllowed(host) {
+		return nil
+	}
+	return &bridge.Error{
+		Code: generated.ErrorCodeInvalidRequest,
+		Message: "the CDP endpoint accepts only an IP address or localhost as its host, but the daemon was reached at " + host +
+			"; run sctl serve and this command with an IP address in --listen-address",
+	}
 }
 
 // infoLocked 生成端点视图,调用方持有 m.mu。

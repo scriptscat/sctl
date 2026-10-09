@@ -417,6 +417,28 @@ func TestAttachWithoutAutoAttach(t *testing.T) {
 	})
 }
 
+func TestAttachInterruptedByDetach(t *testing.T) {
+	Convey("附加准备期间 Chrome 断开了调试器:attachToTarget 返回错误,不给出一个从未报告附加、命令都找不到的会话", t, func() {
+		h, chrome := newEmulatorHarness(t, tabFive)
+		info := h.create(t)
+		c := dialCDP(t, info.WSURL)
+		So(c.call("", "Target.setDiscoverTargets", `{"discover":true}`).Error, ShouldBeNil)
+		targetInfo := make(chan struct{})
+		chrome.setBlock("Target.getTargetInfo", targetInfo)
+		attach := c.send("", "Target.attachToTarget", `{"targetId":"T5","flatten":true}`)
+		So(h.log.waitFor("debugger.send 5 Target.getTargetInfo", 1), ShouldBeTrue)
+		h.notify(generated.NotificationDebuggerDetached, generated.DebuggerDetachedNotification{TabId: 5, Reason: "canceled_by_user"})
+		// 写协程写出这条应答之前已处理完上面的断开通知。
+		So(c.call("", "Target.getBrowserContexts", `{}`).Error, ShouldBeNil)
+		close(targetInfo)
+
+		r, _ := c.response(attach)
+		So(r.Error, ShouldNotBeNil)
+		So(r.Error.Message, ShouldContainSubstring, "detached")
+		So(c.events("Target.attachedToTarget", -1), ShouldBeEmpty)
+	})
+}
+
 func TestTabLifecycle(t *testing.T) {
 	Convey("客户端连着时标签页的打开、变化与关闭", t, func() {
 		h, chrome := newEmulatorHarness(t, tabFive)
