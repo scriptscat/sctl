@@ -63,6 +63,8 @@ type Server struct {
 	pending    map[string]*pendingCall
 	enrollment *pendingEnrollment
 	listener   BrowserListener
+	// extraListeners 是 AddBrowserListener 追加的监听者,与 listener 一同受 mu 保护。
+	extraListeners []BrowserListener
 
 	httpServer   *http.Server
 	baseCtx      context.Context

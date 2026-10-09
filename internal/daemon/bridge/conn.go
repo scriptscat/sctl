@@ -252,7 +252,8 @@ func (c *conn) readLoop() {
 			}
 		case methodApprovalPending:
 			c.srv.handleApprovalPending(c, message)
-		case string(generated.NotificationDebuggerEvent), string(generated.NotificationDebuggerDetached):
+		case string(generated.NotificationDebuggerEvent), string(generated.NotificationDebuggerDetached),
+			string(generated.NotificationDebuggerTabCreated), string(generated.NotificationDebuggerTabUpdated), string(generated.NotificationDebuggerTabRemoved):
 			c.srv.deliverNotification(c, message)
 		default:
 			c.log.Debug("ignoring unexpected JSON-RPC method", zap.String("method", message.Method))
