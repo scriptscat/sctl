@@ -254,6 +254,8 @@ type Manager struct {
 
 	mu    sync.Mutex
 	slots map[tabKey]*slot
+	// owners 是每个浏览器实例上正在执行的命令与是否已交给端点(handover.go)。
+	owners map[string]*ownership
 }
 
 // NewManager 构造页面自动化组件并注册全部动作。
@@ -270,6 +272,7 @@ func newManager(cdp CDP, log *zap.Logger, refStart uint64) *Manager {
 		actions: map[string]action{},
 		events:  map[string][]eventHandler{},
 		slots:   map[tabKey]*slot{},
+		owners:  map[string]*ownership{},
 
 		childSetupTimeout:     cleanupTimeout,
 		recordBudget:          debugBufferBytes,
@@ -406,6 +409,19 @@ func (m *Manager) dispatch(ctx context.Context, a action, req Request) (any, err
 	if err != nil {
 		return nil, err
 	}
+	ctx, leave, err := m.enter(ctx, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	defer leave()
+	result, err := m.dispatchOn(ctx, a, instanceID, req)
+	if err != nil {
+		return nil, causeOf(ctx, err)
+	}
+	return result, nil
+}
+
+func (m *Manager) dispatchOn(ctx context.Context, a action, instanceID string, req Request) (any, error) {
 	if a.browser != nil {
 		return a.browser(ctx, instanceID, req)
 	}

@@ -32,8 +32,10 @@ type fakeCDP struct {
 	selected    []int
 	sent        []sentCommand
 	detaches    [][]int // 每次 Detach 的目标;nil 表示全部
-	records     []recordCall
-	bodies      []BodyQuery
+	// detachErr 非 nil 时 Detach 记下调用后返回它,不断开任何标签页。
+	detachErr error
+	records   []recordCall
+	bodies    []BodyQuery
 	// body 为 nil 时取体返回空文本。
 	body     func(ctx context.Context, q BodyQuery) (Body, error)
 	attached map[int]bool
@@ -127,6 +129,14 @@ func (f *fakeCDP) Detach(ctx context.Context, instanceID string, tabID *int) ([]
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var detached []int
+	if f.detachErr != nil {
+		if tabID == nil {
+			f.detaches = append(f.detaches, nil)
+		} else {
+			f.detaches = append(f.detaches, []int{*tabID})
+		}
+		return nil, f.detachErr
+	}
 	if tabID == nil {
 		f.detaches = append(f.detaches, nil)
 		for id := range f.attached {

@@ -44,7 +44,7 @@ is when the CLI prints its waiting line and `sctl mcp` starts its progress notif
 
 ### Page automation
 
-`sctl page` and `sctl debug` commands and the `page_*` and `debug_*` MCP tools reach the daemon through `/control/page`, not `/control/call`: a
+`sctl page`, `sctl debug`, and `sctl cdp send` commands and the `page_*`, `debug_*`, and `cdp_send` MCP tools reach the daemon through `/control/page`, not `/control/call`: a
 page action is not one extension method but a sequence of Chrome DevTools Protocol (CDP) commands decided in Go.
 The page automation component (`internal/daemon/page`) resolves the browser and tab, then drives the tab through
 the extension's internal relay methods ([protocol.md](./protocol.md#32-internal-methods)):
@@ -84,6 +84,16 @@ queue and re-arms the idle timer, with a sequence number discarding a timer that
 extension through `debugger.record` so its own idle fallback leaves the tab alone too. Because recording lives in the
 per-tab state, every detach path ends it.
 
+A raw CDP endpoint client and sctl never drive the same browser's tabs at once, because all users of a tab share its
+one debugger session. `page.Manager.HandOver` hands one browser instance's tabs over to an endpoint client: it
+cancels sctl's commands running on that instance with `ENDPOINT_CONNECTED` and waits for them and for any idle detach
+or recording expiry in progress, then detaches as `page detach --all` does — ending recording, dismissing known
+dialogs first, and dropping the debug records. From then on every `/control/page` action on that instance (`page`,
+`debug`, `cdp send`) fails with `ENDPOINT_CONNECTED` before anything is sent to the browser, until
+`page.Manager.Reclaim` gives the tabs back. Only `/control/page` goes through the page component, so `/control/call`
+methods (`tabs`, `windows`, bookmarks and the other browser control verbs) keep working on that browser by
+construction.
+
 ## Directory layout
 
 `internal/` is grouped by **process role**: `daemon/` is the guard side (`sctl serve`), `client/` is the
@@ -106,6 +116,7 @@ internal/cli/               # subcommand definitions; spans both sides, hence to
   page*.go                  #   sctl page snapshot|click|hover|fill|type|press|select|upload|scroll|goto|back|forward|
                             #   reload|wait|screenshot|eval|dialog|detach (reach /control/page through dispatchPage)
   debug.go                  #   sctl debug start|stop|status|console|network|request|clear (also through dispatchPage)
+  cdp.go                    #   sctl cdp send (also through dispatchPage)
   resource.go               #   the optional scripts|script|sc resource word shared by those verbs
   dispatch.go               #   action forwarding and bridge error → exit code mapping
 
