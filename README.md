@@ -99,6 +99,15 @@ overriding the default listener, use the same `--listen-address <host:port>`. Se
 [complete MCP installation guide](./docs/mcp.md) for client JSON, verification, security notes, and
 troubleshooting.
 
+To have an agent drive the `sctl` command line instead of MCP, install the agent skill in
+[`skills/sctl/`](./skills/sctl/SKILL.md). It covers choosing the browser and tab,
+exit codes, confirmations, page-controlled content, and every command group. For Claude Code, link it into your
+skills directory from a clone of this repository:
+
+```sh
+ln -s "$PWD/skills/sctl" ~/.claude/skills/sctl
+```
+
 ## Commands
 
 | Command | Purpose |
