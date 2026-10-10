@@ -9,12 +9,13 @@ verification method are in [`doc-maintenance.md`](./doc-maintenance.md).
 
 | Doc | Owns |
 |---|---|
-| [`../README.md`](../README.md) / [`README_zh-CN.md`](./README_zh-CN.md) | End-user project overview and quick start in English and Simplified Chinese. |
+| [`../README.md`](../README.md) / [`README_zh-CN.md`](./README_zh-CN.md) | End-user project overview and quick start in English and Simplified Chinese. Kept short: command behavior belongs in `cli.md`, setup detail in `mcp.md`. |
 | [`../AGENTS.md`](../AGENTS.md) | Engineering principles and the architecture quick-map. Single source of truth relative to `CLAUDE.md`, which only `@`-imports it. |
 | [`architecture.md`](./architecture.md) | Process model, directory layout, per-package responsibilities, dependency direction. **Read before changing package structure or dependency direction.** |
 | [`protocol.md`](./protocol.md) | The extension ↔ daemon JSON-RPC 2.0 protocol: handshake, methods, cancellation, limits, and errors. **Read before changing the protocol.** |
 | [`threat-model.md`](./threat-model.md) | Security boundaries, attack surface and trade-offs, credentials on disk, daemon-side auditing. **Read before touching auth, keys, pairing, or auditing.** |
-| [`mcp.md`](./mcp.md) | End-user installation, first enrollment, generic MCP client configuration, verification, and troubleshooting. |
+| [`cli.md`](./cli.md) | The command-line reference: the command list, choosing a browser and tab, exit codes, confirmations and approvals, and the behavior of the `page`, `debug`, and `cdp` commands. `--help` owns the flags. |
+| [`mcp.md`](./mcp.md) | End-user installation, first enrollment, generic MCP client configuration, verification, the MCP tool reference (arguments, results, error codes), and troubleshooting. The dialog lifecycle, raw CDP side effects, and the Playwright and Puppeteer examples are the same for both and live in `cli.md`. |
 | [`development.md`](./development.md) | Build commands, test design and commands, static analysis, environment variables, branches / CI / releases. **Read before writing code.** |
 | [`verification.md`](./verification.md) | How to confirm a change "actually works": evidence, one-shot scripts under `e2e/scratch/`, reproduction discipline. **Read before claiming something is fixed.** |
 | [`doc-maintenance.md`](./doc-maintenance.md) | Documentation ownership rules, truth discipline, and the per-claim verification table. **Read before changing docs.** |
