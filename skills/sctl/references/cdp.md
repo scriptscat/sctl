@@ -1,57 +1,63 @@
-# 原始 CDP 与 Playwright/Puppeteer 端点
+# Raw CDP and the Playwright/Puppeteer endpoint
 
-## 单条命令 `sctl cdp send`
+## One command: `sctl cdp send`
 
 ```sh
-sctl cdp send <Domain.method> [--params '<JSON 对象>'] [--tab N] [--browser B] [--timeout 10s]
+sctl cdp send <Domain.method> [--params '<JSON object>'] [--tab N] [--browser B] [--timeout 10s]
 sctl cdp send Page.getNavigationHistory --tab $TAB
 sctl cdp send Runtime.evaluate --params '{"expression":"document.title","returnByValue":true}' --tab $TAB
 ```
 
-- **发送方式**：走 sctl 自己的调试会话，只发给顶层页面（不发给跨进程 iframe），不返回事件。附加、排队、空闲断开都与 `page` 命令相同。
-- **结果**：Chrome 的原始结果，外加 `tabId` 和 `contentTrust`；默认是缩进的 JSON。
-- **错误**：
-  - 方法名不是 `Domain.method` 形式，或 `--params` 不是 JSON 对象：`INVALID_REQUEST`。
-  - Chrome 拒绝或不认识这条命令：`INVALID_REQUEST`，带 Chrome 自己的错误。
-  - 结果超过 4 MiB：`PAYLOAD_TOO_LARGE`。
-  - 超时：`TIMEOUT`。
-- **会被拒绝、不发给 Chrome 的命令**：`Page.disable`、`Runtime.disable`、`Network.disable`、`Log.disable`、`Emulation.setFocusEmulationEnabled`、`Target.setAutoAttach`、`Target.detachFromTarget`。
-- **其余命令的副作用由你负责还原**：
-  - 持续生效的设置（如 `Emulation.setDeviceMetricsOverride`、`Network.setExtraHTTPHeaders`）会影响之后的 page 命令，用完要撤销。
-  - `Fetch.enable` 之后，这个标签页的所有请求都会挂住，因为原始命令收不到事件，没有人处理被暂停的请求。用 `Fetch.disable` 恢复。
-  - `Debugger.enable` 加 `Debugger.pause` 会冻结页面，用 `Debugger.resume` 恢复。
-  - 也可以 `sctl page detach --tab N`，之后重新附加。
-- **弹框期间照常发送**，所以可以用 `Page.handleJavaScriptDialog`。弹框期间被 Chrome 阻塞的命令会等到超时。
+Reach for it only when no `page` or `debug` command does the job.
 
-先查是否已有 `page`/`debug` 命令能做到；只有缺失的能力才用 `cdp send`。
+- **How it is sent:** on sctl's own debugger session, to the top-level page only (not to cross-process iframes),
+  and the events a command causes are not returned. Attaching, queuing and the idle detach work as for `page`.
+- **Result:** Chrome's raw result object plus `tabId` and `contentTrust`, as indented JSON.
+- **Errors:**
+  - a method that is not `Domain.method`, or `--params` that is not a JSON object → `INVALID_REQUEST`;
+  - Chrome rejecting or not knowing the command → `INVALID_REQUEST` carrying Chrome's own error;
+  - a result over 4 MiB → `PAYLOAD_TOO_LARGE`; running out of time → `TIMEOUT`.
+- **Refused without being sent**, because they would break state sctl depends on: `Page.disable`,
+  `Runtime.disable`, `Network.disable`, `Log.disable`, `Emulation.setFocusEmulationEnabled`,
+  `Target.setAutoAttach`, `Target.detachFromTarget`.
+- **Everything else is sent as is, and undoing its effects is your job:**
+  - A persistent setting such as `Emulation.setDeviceMetricsOverride` or `Network.setExtraHTTPHeaders` keeps
+    affecting later page commands. Restore it when you are done.
+  - After `Fetch.enable` every request of the tab hangs: events are not returned, so nothing answers the paused
+    requests. Recover with `Fetch.disable`.
+  - `Debugger.enable` plus `Debugger.pause` freezes the page. Recover with `Debugger.resume`.
+  - Or run `sctl page detach --tab N` and let the next command attach again.
+- **Dialogs do not block it**, so `Page.handleJavaScriptDialog` works. A command Chrome itself blocks while a
+  dialog is open waits until the time limit.
 
-## 端点（给 Playwright / Puppeteer）
+## Endpoint for Playwright and Puppeteer
 
 ```sh
-sctl cdp endpoint            # 创建或显示：打印两个地址、是否有客户端、何时失效
-sctl cdp endpoint -o json    # 取 .endpoint.httpUrl / .endpoint.wsUrl
-sctl cdp status              # 查看
-sctl cdp close               # 立即失效并断开客户端；没有端点时也成功
+sctl cdp endpoint            # create or show: both addresses, client state, expiry
+sctl cdp endpoint -o json    # read .endpoint.httpUrl and .endpoint.wsUrl
+sctl cdp status              # show it, or say there is none
+sctl cdp close               # expire it now and disconnect the client; fine when there is none
 ```
 
-**安全**：
+**The address is a password.** It carries a random secret, and whoever has it gets unapproved, full control of
+every tab Chrome lets a debugger attach to in that browser: reading pages and cookies, running scripts, sending
+requests as the signed-in user. Pass it to the script through an environment variable, keep it out of committed
+or shared files, and run `sctl cdp close` when the work is done.
 
-- 地址里带随机密钥，地址本身就是凭据。连上的客户端不需要审批，就能完全控制这个浏览器所有可附加的标签页（读页面、读 Cookie、执行脚本、以用户身份发请求）。
-- 不要把地址写进会被提交或分享的文件，也不要发到外部。
-- 用完运行 `sctl cdp close`。
-
-**连接**：Playwright 用 `httpUrl`，使用浏览器自带的上下文（用户的配置和登录状态），不要新建上下文：
+With Playwright, connect to `httpUrl` and use the browser's own context — the user's profile and logins — instead
+of creating one:
 
 ```js
 const { chromium } = require("playwright");
 const browser = await chromium.connectOverCDP(process.env.SCTL_CDP_HTTP); // http://127.0.0.1:8643/cdp/<secret>
 const context = browser.contexts()[0];
-const page = await context.newPage();          // 或从 context.pages() 里挑一个
+const page = await context.newPage();          // or pick one of context.pages()
 await page.goto("https://example.com");
-await browser.close();                         // 只断开：浏览器和标签页都保留
+await browser.close();                         // disconnects only: the browser and every tab stay open
 ```
 
-Puppeteer 用 `wsUrl`，并且必须传 `defaultViewport: null`，否则会改变用户标签页的尺寸：
+With Puppeteer, connect to `wsUrl` and pass `defaultViewport: null`, or it resizes the user's tabs to its default
+viewport:
 
 ```js
 const puppeteer = require("puppeteer-core");
@@ -61,15 +67,23 @@ await page.goto("https://example.com");
 await browser.disconnect();
 ```
 
-**行为**：
+What to expect:
 
-- **独占**：同一时间只能有一个客户端，第二个连接得到 409。客户端连着时，这个浏览器上的 `sctl page`/`debug`/`cdp send` 返回 `ENDPOINT_CONNECTED`；`tabs`、书签等其他命令照常可用。
-- **连上时**：sctl 先结束录制、关闭已知的弹框，再断开自己附加的标签页，把它们交给客户端。
-- **客户端看到的标签页**：所有可附加的标签页，不含 `chrome://`、扩展页和应用商店；连接期间新开的标签页也会出现。后台标签页开了焦点模拟，行为与前台一致。
-- **断开时**（包括 `browser.close()`、进程退出、`cdp close`）：sctl 关闭弹框、断开调试器，标签页（包括客户端新开的）全部保留，sctl 命令恢复可用。失效之前，同一个地址可以再次连接。
-- **失效**：`cdp close`、daemon 退出、连续 60 分钟没有客户端、浏览器被 `sctl browsers forget`。
-- **不支持**（返回点名该功能的 CDP 错误）：新建浏览器上下文（`browser.newContext()` / `createBrowserContext()`）、授予权限、窗口尺寸与位置、忽略证书错误、Service Worker 目标。
-- **其他限制**：
-  - 下载事件收不到，下载按浏览器自己的设置进行。
-  - Chrome 125 上读取 Cookie 会被 Chrome 拒绝，较新的版本可以。
-  - 超过 4 MiB 的单个事件会被丢弃。
+- **Exclusive.** One client at a time; a second connection gets HTTP 409. While a client is connected,
+  `sctl page`, `debug` and `cdp send` on that browser fail with `ENDPOINT_CONNECTED`; `tabs`, `bookmarks` and the
+  other groups keep working.
+- **On connect,** sctl ends its recordings, dismisses dialogs it knows about and detaches its own tabs, then hands
+  the tabs to the client.
+- **Visible tabs:** every attachable tab — not `chrome://` pages, extension pages or the Chrome Web Store —
+  including ones opened while connected. Attached tabs get focus emulation, so background tabs behave like the
+  active one.
+- **On disconnect** (`browser.close()`, the process exiting, `sctl cdp close`), sctl dismisses open dialogs and
+  detaches; every tab stays open, including ones the client opened, and sctl's own commands work again. The same
+  address can reconnect until it expires.
+- **Expiry:** `sctl cdp close`, the daemon exiting, 60 minutes without a connected client, or
+  `sctl browsers forget`.
+- **Not supported** (answered with a CDP error naming the feature): new browser contexts
+  (`browser.newContext()`, `createBrowserContext()`), granting permissions, window size and position, ignoring
+  certificate errors, Service Worker targets.
+- **Other limits:** no download events (downloads follow the browser's own settings); on Chrome 125 Chrome itself
+  refuses cookie reads; a single event over 4 MiB is dropped.

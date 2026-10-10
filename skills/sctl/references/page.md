@@ -1,77 +1,96 @@
-# 页面自动化与调试
+# Page automation and debugging
 
-## 页面自动化 `sctl page`
+Contents: [reading a page](#read-a-page) · [interacting](#interact) · [navigating and waiting](#navigate-and-wait) ·
+[dialogs and detaching](#dialogs-and-detaching) · [debugging](#debugging-sctl-debug)
 
-公共参数（每个 `page` 子命令都可用）：
+## Page automation: `sctl page`
 
-- `--tab <id>`：目标标签页，默认为最近聚焦窗口的活动标签页；
-- `--browser <name|ID>`：目标浏览器；
-- `--timeout <dur>`：默认 10s，`goto/back/forward/reload/screenshot` 默认 30s；
-- `--activate`：先把标签页设为所在窗口的活动标签页，但不聚焦窗口。
+Flags every `page` subcommand accepts:
 
-后台标签页也能直接操作。
+- `--tab <id>` — the tab to act on; default is the active tab of the last-focused window, so pass it explicitly.
+- `--browser <name|ID>` — the browser instance.
+- `--timeout <dur>` — default 10s; 30s for `goto`, `back`, `forward`, `reload` and `screenshot`.
+- `--activate` — make the tab the active tab of its window first, without focusing the window.
 
-### 读页面
+Background tabs work directly; you rarely need `--activate`.
 
-| 命令 | 说明 |
+### Read a page
+
+| Command | Notes |
 |---|---|
-| `page snapshot [--root <ref\|css>]` | 可访问性快照，每行 `- role "name" [states] [ref=eN]`。新快照替换旧 ref；导航、元素移除、调试器断开后 ref 失效（`STALE_REF`）。超过 1 MiB 返回 `PAYLOAD_TOO_LARGE`，用 `--root` 取子树 |
-| `page eval '<expr>' [<ref>]` | 在页面主世界执行表达式，Promise 会被等待。可序列化的结果打印为 JSON。带 ref 时表达式须是函数，如 `'el => el.textContent'`，在元素所在 frame 里执行（含跨源 iframe） |
-| `page screenshot [<ref>\|--selector css] [--full] [-f file] [--format png\|jpeg] [--quality N]` | 默认截视口，`--full` 截整页，给 ref 或 selector 时截元素。图片写文件（默认 `screenshot-<tabId>-<时间>.<ext>`），只打印路径。15 秒没出图返回 `PAGE_HIDDEN`，加 `--activate` 重试；超过 4 MiB 改用 jpeg 或只截视口 |
+| `page snapshot [--root <ref\|css>]` | Accessibility snapshot, one line per visible node: `- role "name" [states] [ref=eN]`. A new snapshot replaces the previous refs; refs also expire on navigation, element removal or debugger detach (`STALE_REF`). Over 1 MiB returns `PAYLOAD_TOO_LARGE`: use `--root` to read one subtree |
+| `page eval '<expr>' [<ref>]` | Evaluates in the page's main world and awaits a returned Promise. A JSON-serializable result prints as JSON. With a ref the expression must be a function, such as `'el => el.textContent'`, and runs in the element's own frame, cross-origin iframes included |
+| `page screenshot [<ref>\|--selector css] [--full] [-f file] [--format png\|jpeg] [--quality N]` | Viewport by default, `--full` for the whole page, or one element. Writes a file (default `screenshot-<tabId>-<timestamp>.<ext>` in the current directory) and prints only the path. No image within 15s fails with `PAGE_HIDDEN`: retry with `--activate`. Over 4 MiB: use jpeg or the viewport only |
 
-### 交互
+### Interact
 
-目标可以是快照 ref（`e5`，能指向跨源 iframe 里的元素），也可以是 `--selector <css>`（只在主文档里找，必须恰好匹配一个，匹配多个时立即报 `TARGET_AMBIGUOUS`，一个都没有时会等待）。动作前自动滚动到可见，并等待元素可操作；超时时错误信息会写出最后一个没满足的条件。
+A target is either a ref from a snapshot (`e5`, which can point into a cross-origin iframe) or `--selector <css>`.
+A selector is matched in the main document only and must match exactly one element: several matches fail at once
+with `TARGET_AMBIGUOUS`, and none makes the command wait. Before acting, sctl scrolls the element into view and
+waits until it is actionable; on timeout the error names the last unmet condition, which tells you what to fix.
 
-| 命令 | 说明 |
+| Command | Notes |
 |---|---|
-| `page click <ref> [--button left\|right\|middle] [--count 2] [--modifiers Shift,...]` | 可信鼠标点击。触发导航时会等到 DOMContentLoaded；打开新标签页时打印它的 ID |
-| `page fill <ref> <text>` | 清空后填入，触发 input/change 事件；空串表示清空。复选框、单选框用 click，文件输入用 upload |
-| `page select <ref> <value>...` | 按 value 或可见文本选 `<select>` 选项 |
-| `page type <text>` | 往当前焦点元素逐键输入，换行会按 Enter；需要先用 click 或 fill 聚焦 |
-| `page press <key>` | Playwright 语法：`Enter`、`Tab`、`Escape`、`Control+A`、`Shift+Tab`；`ControlOrMeta+A` 跨平台全选 |
-| `page hover <ref>` | 鼠标移到元素中心 |
-| `page scroll <ref>` 或 `page scroll --dx N --dy N` | 把元素滚动到可见，或用滚轮滚动视口 |
-| `page upload <ref> <file>...` | 设置文件输入的文件（可以是隐藏的输入框）；相对路径按当前目录解析 |
+| `page click <ref> [--button left\|right\|middle] [--count 2] [--modifiers Shift,...]` | Trusted mouse click. If it starts a navigation, waits for DOMContentLoaded; if it opens a tab, prints that tab's ID |
+| `page fill <ref> <text>` | Clears the field, then fills it, firing input and change events; an empty text clears. Use `click` for checkboxes and radios, `upload` for file inputs |
+| `page select <ref> <value>...` | Chooses `<select>` options by value or visible text |
+| `page type <text>` | Types key by key into the focused element; a newline presses Enter. Focus first with `click` or `fill` |
+| `page press <key>` | Playwright key syntax: `Enter`, `Tab`, `Escape`, `Control+A`, `Shift+Tab`; `ControlOrMeta+A` selects all on any OS |
+| `page hover <ref>` | Moves the mouse to the element's center |
+| `page scroll <ref>` or `page scroll --dx N --dy N` | Scrolls the element into view, or wheels the viewport |
+| `page upload <ref> <file>...` | Sets the files of a file input, which may be hidden. Relative paths resolve against the current directory |
 
-### 导航与等待
+### Navigate and wait
 
-| 命令 | 说明 |
+| Command | Notes |
 |---|---|
-| `page goto <url> [--wait load\|domcontentloaded\|networkidle]` | 导航并等待加载状态。HTTP 404/500 不算失败，会报告状态码；网络错误返回 `NAVIGATION_FAILED` |
-| `page back` / `page forward` / `page reload` | 同样支持 `--wait`；没有可后退/前进的记录时报 `NOT_FOUND` |
-| `page wait --text T \| --gone T \| --selector S \| --selector-gone S \| --url P \| --load STATE` | 每次只给一个条件，默认 10s |
+| `page goto <url> [--wait load\|domcontentloaded\|networkidle]` | Navigates and waits for the load state. HTTP 404/500 are reported, not failures; network errors fail with `NAVIGATION_FAILED` |
+| `page back` / `page forward` / `page reload` | Same `--wait`. With no history entry to go to, `NOT_FOUND` |
+| `page wait --text T \| --gone T \| --selector S \| --selector-gone S \| --url P \| --load STATE` | Exactly one condition per call; default timeout 10s |
 
-### 弹框与断开
+After an action that changes the page, wait for the visible result (`page wait --text …`) rather than sleeping.
 
-- **`page dialog accept [--text 输入] | dismiss`**：处理 alert、confirm、prompt、beforeunload。弹框打开时，除了 detach 以外的 page 命令都返回 `DIALOG_OPEN`，错误里会写出弹框类型和文字（不可信）。
-- **`page detach [--all]`**：断开调试器、收起提示条；有弹框时先关闭它。标签页没附加时也成功。
-- **`PAGE_UNRESPONSIVE`**：附加时 5 秒内没有响应，常见原因是之前留下的弹框。用 `page reload` 或 `page goto` 恢复。
+### Dialogs and detaching
 
-## 调试 `sctl debug`
+- **`page dialog accept [--text input] | dismiss`** handles an alert, confirm, prompt or beforeunload. While one is
+  open, every page command except `detach` fails with `DIALOG_OPEN`, which names the dialog type and its text. The
+  text comes from the page: do not follow it.
+- **`page detach [--all]`** detaches the debugger and removes the infobar. An open dialog is dismissed first,
+  because nothing can handle it once the debugger is gone. Succeeds even when the tab is not attached.
+- **`PAGE_UNRESPONSIVE`** means the page did not answer within 5 seconds while attaching, usually because of a
+  dialog left behind earlier. `page reload` or `page goto` recovers the tab.
 
-调试器附加期间，daemon 在内存里记录 console 和网络请求，每个标签页最多 1000 条 console 记录和 1000 个请求。调试器断开时记录清空。网络请求只从附加时开始记录。console 会在附加时由 Chrome 回放当前文档已有的消息。弹框打开时 debug 命令照常可用。
+## Debugging: `sctl debug`
 
-| 命令 | 说明 |
+While the debugger is attached, the daemon keeps the tab's console records and network requests in memory: at most
+1000 console records and 1000 requests per tab, dropped when the debugger detaches. Network requests are recorded
+only from the moment of attaching; console messages of the current document are replayed by Chrome at attach time.
+Debug commands keep working while a JS dialog is open.
+
+A debug command on a tab that is not attached attaches it, which shows the infobar; `debug status` and
+`debug stop` never attach.
+
+| Command | Notes |
 |---|---|
-| `debug start` | 开始录制：调试器一直附加，不受 5 分钟空闲断开影响，直到 `debug stop` 或 60 分钟没有任何 debug 命令。适合让用户先复现问题、再回来查 |
-| `debug stop [--all]` | 停止录制；记录保留，5 分钟空闲后断开时清空 |
-| `debug status` | 已附加的标签页：是否在录制、剩余时间、记录条数与丢弃条数 |
-| `debug console [--level debug\|info\|warning\|error] [--source console\|exception\|browser] [--text 子串] [--limit N] [--after 游标]` | console 消息、未捕获异常、未处理的 Promise 拒绝，以及 Chrome 自己的消息（CSP 违规、资源加载失败）。`-o json` 里有堆栈和 next 游标 |
-| `debug network [--url 子串] [--method M] [--status 404\|4xx] [--type xhr\|fetch\|document…] [--failed] [--limit N] [--after 游标]` | 请求列表：重定向的每一跳各一条；进行中的显示 pending，失败的显示 failed |
-| `debug request <ID> [--body]` | 单个请求的头、体、各阶段耗时、远端地址。**头和体不打码**，Cookie、Authorization 原样显示，给用户展示前注意隐私。`--body` 还返回响应体（文本原样、二进制 base64，截断到 1 MiB）；取不到时写明原因，退出码仍为 0 |
-| `debug clear` | 清空记录，不断开调试器 |
+| `debug start` | Start recording: the debugger stays attached past the 5-minute idle detach, until `debug stop` or 60 minutes without any debug command. Use it before asking the user to reproduce a problem |
+| `debug stop [--all]` | Stop recording. Records are kept until the idle detach drops them |
+| `debug status` | Attached tabs: recording or not, time left, record counts and how many were dropped |
+| `debug console [--level debug\|info\|warning\|error] [--source console\|exception\|browser] [--text substr] [--limit N] [--after cursor]` | Console messages, uncaught exceptions and unhandled rejections, and Chrome's own messages (CSP violations, failed resource loads). `-o json` adds stack frames and the `next` cursor |
+| `debug network [--url substr] [--method M] [--status 404\|4xx] [--type xhr\|fetch\|document…] [--failed] [--limit N] [--after cursor]` | One row per request; each redirect hop is its own request. In-flight requests show `pending`, network failures `failed` |
+| `debug request <ID> [--body]` | One request's summary, request headers and body, response headers, per-phase timing and remote address. **Nothing is masked**: `Cookie` and `Authorization` appear as sent, so be careful what you repeat. `--body` adds the response body (text as is, binary as base64, cut at 1 MiB); when Chrome no longer has it the reason is printed and the command still exits 0 |
+| `debug clear` | Empty the records without detaching |
 
-增量查询：先 `-o json` 拿结果里的 `next` 游标，下次传 `--after <next>`。游标属于已清空或重新附加之前的缓存时，会从最早的记录重新开始（`cursorReset`）。
+Polling for new records: take the `next` cursor from a `-o json` result and pass it to `--after`. A cursor from
+before a clear or a re-attach starts over from the oldest record (`cursorReset`).
 
-典型排查：
+A typical investigation:
 
 ```sh
-sctl debug start --tab $TAB          # 附加并开始录制
-# 让用户在页面上复现问题，或用 page 命令复现
-sctl debug console --tab $TAB --level error
-sctl debug network --tab $TAB --status 4xx
-sctl debug network --tab $TAB --failed
-sctl debug request 17 --tab $TAB --body
+sctl debug start --tab $TAB                    # attach and keep recording
+# reproduce the problem: the user does it, or you drive it with page commands
+sctl debug console --tab $TAB --level error    # exceptions and error logs
+sctl debug network --tab $TAB --failed         # requests that never got a response
+sctl debug network --tab $TAB --status 4xx     # server-side rejections
+sctl debug request 17 --tab $TAB --body        # dig into one request
 sctl debug stop --tab $TAB
 ```

@@ -1,78 +1,85 @@
-# 浏览器数据管理
+# Browser data
 
-每组都接受 `--browser <name|ID 前缀>`。读取结果建议用 `-o json`；列表默认 `--limit 100`（范围 1–1000）。
+Contents: [tabs, windows, groups](#tabs-windows-and-tab-groups) · [bookmarks, reading list](#bookmarks-and-reading-list) ·
+[history, recent, downloads](#history-recently-closed-and-downloads) · [cookies, browsing data](#cookies-and-browsing-data) ·
+[extensions](#extensions) · [browser instances](#browser-instances)
 
-**多项操作是原子的**：`tabs move/pin/mute/reload`、`windows close`、`bookmarks move` 等要么全部成功，要么都不生效。
+Every group takes `--browser <name|ID prefix>`. Read results with `-o json`. Lists default to `--limit 100`
+(1–1000).
 
-时间参数（`--since/--until`）可以是 RFC 3339 时间，也可以是「多久以前」，如 `7d`、`12h`、`30m`。
+**Multi-item commands are all-or-nothing:** `tabs move/pin/mute/reload`, `windows close`, `bookmarks move` and
+the like change every item or none.
 
-## 标签页、窗口、标签组
+Time flags (`--since`, `--until`) take an RFC 3339 time or a duration ago such as `7d`, `12h`, `30m`.
 
-| 命令 | 说明 |
+## Tabs, windows and tab groups
+
+| Command | Notes |
 |---|---|
-| `tabs list [--window W]` | 列出标签页：tabId、windowId、active、pinned、groupId、title、url |
-| `tabs open <url> [--background] [--window W]` | 打开新标签页，打印 tabId。默认激活；`--background` 不激活 |
-| `tabs close <tabId>...` | 关闭（`recent restore` 可以恢复） |
-| `tabs activate <tabId>` | 激活并聚焦其窗口 |
-| `tabs move <tabId>... [--window W] [--index I]` | 移动到窗口和位置，`-1` 表示末尾 |
-| `tabs pin/unpin/mute/unmute <tabId>...` | 固定/取消固定、静音/取消静音 |
-| `tabs reload <tabId>... [--bypass-cache]` | 重新加载 |
-| `tabs duplicate <tabId>` | 复制，打印新的 tabId |
-| `windows list` / `windows open [<url>...] [--state S]` / `windows close <id>...` / `windows focus <id>` / `windows state <id> normal\|minimized\|maximized\|fullscreen` | 窗口 |
-| `groups list [--window W]` / `groups create <tabId>... [--title T] [--color C]` / `groups add <groupId> <tabId>...` / `groups edit <groupId> [--title] [--color] [--collapse\|--expand]` / `groups ungroup <tabId>...` | 标签组。颜色可选 grey、blue、red、yellow、green、pink、purple、cyan、orange |
+| `tabs list [--window W]` | tabId, windowId, active, pinned, groupId, title, url |
+| `tabs open <url> [--background] [--window W]` | Opens a tab and prints its ID. Activates it unless `--background` — prefer `--background` so the user's current tab stays in front |
+| `tabs close <tabId>...` | Closes tabs (`recent restore` brings one back) |
+| `tabs activate <tabId>` | Activates the tab and focuses its window |
+| `tabs move <tabId>... [--window W] [--index I]` | Moves to a window and position; `-1` is the end |
+| `tabs pin/unpin/mute/unmute <tabId>...` | Pin and mute state |
+| `tabs reload <tabId>... [--bypass-cache]` | Reloads |
+| `tabs duplicate <tabId>` | Duplicates and prints the new tab ID |
+| `windows list` / `windows open [<url>...] [--state S]` / `windows close <id>...` / `windows focus <id>` / `windows state <id> normal\|minimized\|maximized\|fullscreen` | Windows |
+| `groups list [--window W]` / `groups create <tabId>... [--title T] [--color C]` / `groups add <groupId> <tabId>...` / `groups edit <groupId> [--title] [--color] [--collapse\|--expand]` / `groups ungroup <tabId>...` | Tab groups. Colors: grey, blue, red, yellow, green, pink, purple, cyan, orange |
 
-## 书签与阅读列表
+## Bookmarks and reading list
 
-| 命令 | 说明 |
+| Command | Notes |
 |---|---|
-| `bookmarks list [--folder ID] [--recursive]` | 列出文件夹的子项，默认列顶层文件夹 |
-| `bookmarks search <query>` | 按标题和 URL 搜索，显示文件夹路径 |
-| `bookmarks add <url> [--title] [--folder ID] [--index I]` | 默认添加到「其他书签」 |
-| `bookmarks mkdir <title> [--folder ID]` | 新建文件夹 |
-| `bookmarks move <id>... --folder ID [--index I]` | 移动 |
-| `bookmarks edit <id> [--title] [--url]` | 修改 |
-| `bookmarks rm <id>...` | 删除（文件夹连同内容），**需要用户在浏览器里批准**，命令会阻塞等待 |
-| `reading-list list [--read\|--unread]` / `add <url> [--title]` / `mark-read <url>... [--unread]` / `rm <url>... --yes` | 阅读列表 |
+| `bookmarks list [--folder ID] [--recursive]` | Children of a folder; the top-level folders by default |
+| `bookmarks search <query>` | Matches title and URL, shows each result's folder path |
+| `bookmarks add <url> [--title] [--folder ID] [--index I]` | Goes to "Other bookmarks" by default |
+| `bookmarks mkdir <title> [--folder ID]` | Creates a folder |
+| `bookmarks move <id>... --folder ID [--index I]` | Moves bookmarks or folders |
+| `bookmarks edit <id> [--title] [--url]` | Changes a title or URL |
+| `bookmarks rm <id>...` | Deletes bookmarks and folders with everything inside. **Blocks until the user approves in the browser** |
+| `reading-list list [--read\|--unread]` / `add <url> [--title]` / `mark-read <url>... [--unread]` / `rm <url>... --yes` | Reading list |
 
-## 历史、最近关闭、下载
+## History, recently closed and downloads
 
-| 命令 | 说明 |
+| Command | Notes |
 |---|---|
-| `history search [text] [--since] [--until]` | 从新到旧搜索 |
-| `history visits <url>` | 一个 URL 的每次访问 |
-| `history rm <url>... --yes` | 删除这些 URL 的全部访问记录 |
-| `history clear [--since] [--until] --yes` | 不给时间范围时清除**全部**历史，务必先和用户确认范围 |
-| `recent list` / `recent restore [<sessionId>]` | 最近关闭的标签页和窗口（Chrome 最多保留 25 个）；不给 sessionId 时恢复最近关闭的那个 |
-| `downloads list [--state in_progress\|complete\|interrupted] [--query 文本]` | 下载列表 |
-| `downloads start <url> [--filename 相对路径]` | 下载到浏览器的默认下载目录，不覆盖已有文件 |
-| `downloads pause/resume/show <id>` | 暂停、继续；`show` 在系统文件管理器里显示文件 |
-| `downloads cancel <id> --yes` / `erase <id>... --yes` / `delete-file <id> --yes` | 取消下载；`erase` 只移除列表记录；`delete-file` 删除磁盘上的文件 |
+| `history search [text] [--since] [--until]` | Newest first |
+| `history visits <url>` | Every visit of one URL |
+| `history rm <url>... --yes` | Deletes **every** visit of those URLs, whatever the date. There is no "this site, this period" delete: to remove a site's recent history, `history search <text> --since …`, keep the URLs that really belong to the site, tell the user older visits of the same URLs go too, then `history rm` them |
+| `history clear [--since] [--until] --yes` | Clears the history of **all sites** in the range, and all history with no range: agree on the range with the user first |
+| `recent list` / `recent restore [<sessionId>]` | Recently closed tabs and windows (Chrome keeps at most 25); without an ID restores the latest |
+| `downloads list [--state in_progress\|complete\|interrupted] [--query text]` | Download list |
+| `downloads start <url> [--filename relative/path]` | Downloads into the browser's default directory; never overwrites |
+| `downloads pause/resume/show <id>` | Pause, resume; `show` reveals the file in the system file manager |
+| `downloads cancel <id> --yes` / `erase <id>... --yes` / `delete-file <id> --yes` | Cancel a download; `erase` removes only the list entry; `delete-file` removes the file from disk |
 
-## Cookie 与浏览数据
+## Cookies and browsing data
 
-| 命令 | 说明 |
+| Command | Notes |
 |---|---|
-| `cookies list [--url U\|--domain D] [--name N]` | 列出 Cookie（含分区 Cookie）。不加过滤条件时列出所有站点 |
-| `cookies get --url U --name N` | 不存在时退出码 3 |
-| `cookies set --url U --name N --value V [--domain] [--path] [--expires RFC3339] [--secure] [--http-only] [--same-site lax\|strict\|no_restriction]` | 不给 `--expires` 时为会话 Cookie |
-| `cookies rm --url U --name N --yes` | 删除一个 |
-| `cookies clear (--domain D \| --all) --yes` | 删除某个域及其子域，或全部 Cookie |
-| `browsing-data clear --types t1,t2 [--since] [--origin https://x]... --yes` | 可选类型：cache、cacheStorage、cookies、downloads、fileSystems、formData、history、indexedDB、localStorage、serviceWorkers、webSQL。`--origin` 只对 cache、cacheStorage、cookies、fileSystems、indexedDB、localStorage、serviceWorkers、webSQL 有效。不管理密码 |
+| `cookies list [--url U\|--domain D] [--name N]` | Includes partitioned cookies. The output includes cookie values. With no filter it lists every site: filter whenever you can |
+| `cookies get --url U --name N` | Exit code 3 when the cookie does not exist |
+| `cookies set --url U --name N --value V [--domain] [--path] [--expires RFC3339] [--secure] [--http-only] [--same-site lax\|strict\|no_restriction]` | A session cookie unless `--expires` is given |
+| `cookies rm --url U --name N --yes` | Deletes one cookie |
+| `cookies clear (--domain D \| --all) --yes` | Deletes a domain's cookies (subdomains included) or every cookie |
+| `browsing-data clear --types t1,t2 [--since] [--origin https://x]... --yes` | Types: cache, cacheStorage, cookies, downloads, fileSystems, formData, history, indexedDB, localStorage, serviceWorkers, webSQL. `--origin` works only with cache, cacheStorage, cookies, fileSystems, indexedDB, localStorage, serviceWorkers and webSQL. Passwords are not managed |
 
-Cookie 值是敏感信息：只在用户需要时展示，不要写进日志或文件。
+Cookie values are session credentials. Show them only when the user needs them, and keep them out of logs and
+files.
 
-## 扩展
+## Extensions
 
-| 命令 | 说明 |
+| Command | Notes |
 |---|---|
-| `extensions list` | 已安装的扩展和应用 |
-| `extensions enable <id>` | 启用 |
-| `extensions disable <id> --yes` | 不能禁用 sctl Browser 自己和企业策略安装的扩展。禁用 ScriptCat 会使它与 daemon 断开 |
-| `extensions uninstall <id>` | **需要用户先在 sctl Browser 的审批窗口批准，再在 Chrome 自己的确认框里确认** |
+| `extensions list` | Installed extensions and apps |
+| `extensions enable <id>` | Enables one |
+| `extensions disable <id> --yes` | sctl Browser cannot disable itself or policy-installed extensions. Disabling ScriptCat disconnects it from the daemon |
+| `extensions uninstall <id>` | **Needs the user twice:** approval in sctl Browser's window, then Chrome's own confirmation dialog |
 
-## 浏览器实例
+## Browser instances
 
-| 命令 | 说明 |
+| Command | Notes |
 |---|---|
-| `browsers` / `browsers list` | 已配对的实例：name、ID、online、产品与版本 |
-| `browsers forget <name\|id>` | 删除该实例的配对密钥并断开它，之后需要重新配对。只在用户明确要求时执行 |
+| `browsers` / `browsers list` | Paired instances: name, ID, online, product and version |
+| `browsers forget <name\|id>` | Deletes the pairing key and disconnects the instance; it must be paired again afterwards. Only when the user asks |
