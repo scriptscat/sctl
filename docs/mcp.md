@@ -33,6 +33,14 @@ verifies its sha256 against `checksums.txt`, installs `sctl` into `~/.local/bin`
 not on it — it never edits your shell profile or user PATH for you.
 `SCTL_VERSION` pins a specific version; `SCTL_INSTALL_DIR` overrides the install directory.
 
+With Homebrew, install from the [scriptscat/tap](https://github.com/scriptscat/homebrew-tap) tap instead; the
+formula builds sctl from the release's source tarball and installs shell completions, and `brew upgrade sctl`
+picks up new releases. Prereleases are not published to the tap.
+
+```bash
+brew install scriptscat/tap/sctl
+```
+
 To install manually instead, download the matching `sctl-<version>-<os>-<arch>.<ext>` archive from
 [GitHub Releases](https://github.com/scriptscat/sctl/releases), extract it, and put the `sctl` executable on
 `PATH`. If no published release is available, contributors can build sctl from source.
