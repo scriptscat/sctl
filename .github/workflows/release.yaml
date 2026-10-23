@@ -180,3 +180,39 @@ jobs:
             echo
             echo "Release 已自动发布。"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  homebrew:
+    name: Bump Homebrew tap
+    needs: release
+    # 预发布不进 tap:brew install 拿到的应当始终是正式版。
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    permissions: {} # 写 tap 走 deploy key,不需要本仓库 GITHUB_TOKEN 的任何权限
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: scriptscat/homebrew-tap
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+      - name: 更新 sctl formula
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          URL="https://github.com/scriptscat/sctl/archive/refs/tags/${TAG}.tar.gz"
+          # formula 从源码构建,校验的是 GitHub 生成的源码包,不是 release 里的二进制归档。
+          SHA256=$(curl -fsSL "$URL" | sha256sum | cut -d' ' -f1)
+          sed -i -E \
+            -e "s|^  url \".*\"$|  url \"${URL}\"|" \
+            -e "s|^  sha256 \".*\"$|  sha256 \"${SHA256}\"|" \
+            Formula/sctl.rb
+          grep -qF "$URL" Formula/sctl.rb && grep -qF "$SHA256" Formula/sctl.rb
+          # 重跑同一个 tag 时 formula 已是最新,不再产生空提交。
+          if git diff --quiet; then
+            echo "Formula/sctl.rb 已是 ${VERSION},跳过。"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "sctl ${VERSION}"
+          git push

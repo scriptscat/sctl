@@ -153,6 +153,11 @@ via `-ldflags` and are visible through `sctl version`.
 
 Cross-compilation, packaging, checksums, and the GitHub Release upload all happen inside that workflow.
 
+For a non-prerelease tag, the `homebrew` job then points `Formula/sctl.rb` in
+[scriptscat/homebrew-tap](https://github.com/scriptscat/homebrew-tap) at the tag's source tarball and pushes the
+commit. It authenticates with the `HOMEBREW_TAP_DEPLOY_KEY` secret, the private half of a write-enabled deploy key
+on the tap repository.
+
 ## Browser extension
 
 The sctl Browser extension lives in `extension/` (pnpm, Vite, React, TypeScript, Tailwind CSS v4, shadcn/ui,
