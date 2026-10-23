@@ -101,6 +101,7 @@ function setup(storage = new MemoryStorage()) {
       version: "129.0.2792.65",
     }),
     extensionVersion: "0.1.0",
+    bundle: Promise.resolve("cd".repeat(32)),
   });
   return {
     background,
@@ -143,7 +144,7 @@ describe("instance identity and configuration", () => {
     expect(storage.items.get("instanceId")).toBe((a as { instanceId: string }).instanceId);
   });
 
-  it("hands the offscreen document the stored pairing, the default address and the declared methods", async () => {
+  it("hands the offscreen document the stored pairing, the default address, the declared methods and the bundle digest", async () => {
     const { background, storage } = setup();
     await storage.set({ key: "ab".repeat(32) });
 
@@ -154,6 +155,7 @@ describe("instance identity and configuration", () => {
       product: "Edge",
       productVersion: "129.0.2792.65",
       extensionVersion: "0.1.0",
+      bundle: "cd".repeat(32),
     });
   });
 

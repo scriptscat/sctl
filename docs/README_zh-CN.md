@@ -64,8 +64,9 @@ irm https://raw.githubusercontent.com/scriptscat/sctl/main/scripts/install.ps1 |
 2. **配对扩展。** `sctl connect` 打印一次性配对码；一个码只能配对一个扩展，每个扩展各运行一次。
 
    - **ScriptCat：** 在选项页启用 **External Access** 并输入配对码。
-   - **sctl Browser：** 从 [GitHub Releases](https://github.com/scriptscat/sctl/releases) 下载
-     `sctl-browser-extension-<version>.zip` 并解压，把解压后的目录作为“已解压的扩展程序”加载，在其弹窗里输入配对码。
+   - **sctl Browser：** 运行 `sctl browsers install`，把它打印的目录作为“已解压的扩展程序”加载
+     （`chrome://extensions` → 开发者模式 → 加载已解压的扩展程序），在其弹窗里输入配对码。sctl 会保持这个目录为最新，
+     升级后自动重新加载扩展。
      要求 **Chrome 125 或更高版本**（或同版本的 Chromium 内核浏览器）。
 
 3. **检查连接：**
@@ -110,7 +111,7 @@ ln -s "$PWD/skills/sctl" ~/.claude/skills/sctl
 |---|---|
 | `sctl serve` / `connect` / `status` / `mcp` | 运行 daemon、配对扩展、查看连接状态、通过 stdio 提供 MCP。 |
 | `sctl get` / `grep` / `install` / `edit` / `enable` / `disable` / `delete` | 管理 ScriptCat 用户脚本。 |
-| `sctl browsers` | 列出已配对的 sctl Browser 实例，或忘记其中一个。 |
+| `sctl browsers` | 列出已配对的 sctl Browser 实例、忘记其中一个，或安装内嵌的扩展。 |
 | `sctl tabs` / `windows` / `groups` | 标签页、窗口和标签组。 |
 | `sctl bookmarks` / `reading-list` | 书签和阅读列表。 |
 | `sctl history` / `recent` / `downloads` | 历史记录、最近关闭的标签页和窗口、下载。 |

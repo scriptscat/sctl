@@ -104,6 +104,8 @@ type capabilitiesPeer struct {
 	Product          string `json:"product,omitempty"`
 	ProductVersion   string `json:"productVersion,omitempty"`
 	ExtensionVersion string `json:"extensionVersion,omitempty"`
+	// Bundle 是 sctl 管理的扩展目录里标记文件记录的内容摘要(见 internal/pkg/browserext);手动加载的扩展不上报。
+	Bundle string `json:"bundle,omitempty"`
 }
 
 type cancelParams struct {

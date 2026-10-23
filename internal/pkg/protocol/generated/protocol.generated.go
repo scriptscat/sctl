@@ -396,6 +396,12 @@ type DownloadsStartResult struct {
 	Id int `json:"id"`
 }
 
+type ExtensionReloadParams struct {
+}
+
+type ExtensionReloadResult struct {
+}
+
 type ExtensionsDisableParams struct {
 	Confirm *bool  `json:"confirm,omitempty"`
 	Id      string `json:"id"`
@@ -899,6 +905,7 @@ const (
 	MethodDownloadsResume       Method = "downloads.resume"
 	MethodDownloadsShow         Method = "downloads.show"
 	MethodDownloadsStart        Method = "downloads.start"
+	MethodExtensionReload       Method = "extension.reload"
 	MethodExtensionsDisable     Method = "extensions.disable"
 	MethodExtensionsEnable      Method = "extensions.enable"
 	MethodExtensionsList        Method = "extensions.list"
@@ -982,6 +989,7 @@ var Methods = map[string]MethodMetadata{
 	"downloads.resume":        {Params: "DownloadsResumeParams", Result: "DownloadsResumeResult", Scope: "downloads:resume", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: false},
 	"downloads.show":          {Params: "DownloadsShowParams", Result: "DownloadsShowResult", Scope: "downloads:show", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: false},
 	"downloads.start":         {Params: "DownloadsStartParams", Result: "DownloadsStartResult", Scope: "downloads:start", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: false},
+	"extension.reload":        {Params: "ExtensionReloadParams", Result: "ExtensionReloadResult", Scope: "extension:reload", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: true},
 	"extensions.disable":      {Params: "ExtensionsDisableParams", Result: "ExtensionsSetEnabledResult", Scope: "extensions:disable", Effect: "write", Blocking: "none", Level: "L1", Peer: "browser", MergeField: "", Internal: false},
 	"extensions.enable":       {Params: "ExtensionsEnableParams", Result: "ExtensionsSetEnabledResult", Scope: "extensions:enable", Effect: "write", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "", Internal: false},
 	"extensions.list":         {Params: "ExtensionsListParams", Result: "ExtensionsListResult", Scope: "extensions:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "items", Internal: false},

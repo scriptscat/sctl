@@ -266,6 +266,14 @@ export function validateDownloadsStartResult(value: unknown): value is Protocol.
   return (isRecord(value) && hasOnlyKeys(value, ["id"]) && typeof value["id"] === "number" && Number.isInteger(value["id"]) && value["id"] >= 0);
 }
 
+export function validateExtensionReloadParams(value: unknown): value is Protocol.ExtensionReloadParams {
+  return (isRecord(value) && hasOnlyKeys(value, []));
+}
+
+export function validateExtensionReloadResult(value: unknown): value is Protocol.ExtensionReloadResult {
+  return (isRecord(value) && hasOnlyKeys(value, []));
+}
+
 export function validateExtensionsDisableParams(value: unknown): value is Protocol.ExtensionsDisableParams {
   return (isRecord(value) && hasOnlyKeys(value, ["confirm", "id"]) && (value["confirm"] === undefined || (value["confirm"] === true)) && typeof value["id"] === "string");
 }
@@ -549,6 +557,7 @@ export const RPC_PARAM_VALIDATORS = {
   "downloads.resume": validateDownloadsResumeParams,
   "downloads.show": validateDownloadsShowParams,
   "downloads.start": validateDownloadsStartParams,
+  "extension.reload": validateExtensionReloadParams,
   "extensions.disable": validateExtensionsDisableParams,
   "extensions.enable": validateExtensionsEnableParams,
   "extensions.list": validateExtensionsListParams,
@@ -619,6 +628,7 @@ export const RPC_RESULT_VALIDATORS = {
   "downloads.resume": validateDownloadsResumeResult,
   "downloads.show": validateDownloadsShowResult,
   "downloads.start": validateDownloadsStartResult,
+  "extension.reload": validateExtensionReloadResult,
   "extensions.disable": validateExtensionsSetEnabledResult,
   "extensions.enable": validateExtensionsSetEnabledResult,
   "extensions.list": validateExtensionsListResult,

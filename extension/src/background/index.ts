@@ -6,6 +6,7 @@ import type { BackgroundMessage, OffscreenCommand } from "@/shared/messages";
 import { broadcast, listen, request } from "@/shared/messaging";
 import { Approvals } from "./approvals";
 import { readBrowserInfo } from "./browser-info";
+import { BUNDLE_MARKER, readBundleDigest } from "./bundle";
 import { Background } from "./controller";
 import { createOffscreenKeeper } from "./offscreen-document";
 import { HandlerRegistry } from "./registry";
@@ -62,6 +63,7 @@ const background = new Background({
   onConnectionClosed: () => relay.detachAll(),
   browser: readBrowserInfo(),
   extensionVersion: chrome.runtime.getManifest().version,
+  bundle: readBundleDigest(fetch, chrome.runtime.getURL(BUNDLE_MARKER), chrome.storage.session),
 });
 
 // 监听器必须在顶层同步注册，service worker 被消息唤醒时才能收到这条消息。

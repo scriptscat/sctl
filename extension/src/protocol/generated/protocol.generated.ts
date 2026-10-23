@@ -330,6 +330,8 @@ export interface DownloadsStartParams {
 export interface DownloadsStartResult {
   id: number;
 }
+export type ExtensionReloadParams = Record<string, never>;
+export type ExtensionReloadResult = Record<string, never>;
 export interface ExtensionsDisableParams {
   confirm?: true;
   id: string;
@@ -589,6 +591,7 @@ export interface RpcMethodMap {
   "downloads.resume": { params: DownloadsResumeParams; result: DownloadsResumeResult };
   "downloads.show": { params: DownloadsShowParams; result: DownloadsShowResult };
   "downloads.start": { params: DownloadsStartParams; result: DownloadsStartResult };
+  "extension.reload": { params: ExtensionReloadParams; result: ExtensionReloadResult };
   "extensions.disable": { params: ExtensionsDisableParams; result: ExtensionsSetEnabledResult };
   "extensions.enable": { params: ExtensionsEnableParams; result: ExtensionsSetEnabledResult };
   "extensions.list": { params: ExtensionsListParams; result: ExtensionsListResult };
@@ -867,6 +870,14 @@ export const RPC_METHODS = {
     params: "DownloadsStartParams",
     result: "DownloadsStartResult",
     scope: "downloads:start",
+    effect: "write",
+    blocking: "none",
+    level: "L0",
+  },
+  "extension.reload": {
+    params: "ExtensionReloadParams",
+    result: "ExtensionReloadResult",
+    scope: "extension:reload",
     effect: "write",
     blocking: "none",
     level: "L0",

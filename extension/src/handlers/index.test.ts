@@ -99,7 +99,7 @@ describe("browser method handlers", () => {
     vi.unstubAllGlobals();
   });
 
-  it("declares capabilities for exactly the tab, window, page-target helper, debugger, reading list, bookmark, tab management, history, browsing data, recently closed, downloads, cookies and extensions methods", () => {
+  it("declares capabilities for exactly the tab, window, page-target helper, debugger, reading list, bookmark, tab management, history, browsing data, recently closed, downloads, cookies and extensions methods, and extension.reload", () => {
     expect(new Set(registry.methods())).toEqual(
       new Set([
         "tabs.list",
@@ -169,6 +169,7 @@ describe("browser method handlers", () => {
         "debugger.open",
         "debugger.close",
         "debugger.own",
+        "extension.reload",
       ]),
     );
   });

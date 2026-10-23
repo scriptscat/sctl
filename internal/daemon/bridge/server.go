@@ -242,6 +242,9 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("extension completed the handshake and is connected", zap.String("peer", string(c.kind)))
+	if c.kind == protocol.PeerBrowser {
+		s.instanceConnected(c)
+	}
 	go c.heartbeatLoop()
 	c.readLoop()
 }

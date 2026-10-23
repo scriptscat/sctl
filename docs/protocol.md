@@ -163,7 +163,10 @@ A browser instance also declares its name and self-reported product details:
 ```
 
 `name` is 1–32 lowercase letters, digits, and `-`; the other fields are optional printable text of at most 64
-bytes. A missing or invalid `peer` closes the connection. On its first pairing an instance proposes its default
+bytes, except the optional `bundle`: 64 lowercase hex digits, the content digest recorded in the `sctl-bundle.json`
+marker that sctl writes into the extension directory it manages, read once after the extension loads and kept in
+`chrome.storage.session` so it describes the running code even after the directory on disk changes. An extension
+loaded from anywhere else has no marker and omits `bundle`. A missing or invalid `peer` closes the connection. On its first pairing an instance proposes its default
 name, the browser brand followed by `-` and the first four hex digits of its instance ID; renaming means
 reconnecting with the new name. The daemon's registry is authoritative: names are unique across every paired
 instance, online or offline. When another paired instance holds the name, the daemon answers the capabilities
@@ -445,7 +448,16 @@ answers it with `INVALID_REQUEST` exactly as for an unknown method, and `sctl mc
 so a control-token holder cannot send it directly. The `debugger.*` methods are internal because they relay raw
 Chrome DevTools Protocol (CDP) traffic with the user's signed-in browser state. `tabs.current` and `tabs.select`
 are internal because they exist only to serve the daemon's page automation, which reaches callers through
-`/control/page` instead.
+`/control/page` instead. `extension.reload` is internal because only the daemon's extension updater uses it.
+
+`extension.reload` takes and returns an empty object. The extension answers first and then calls
+`chrome.runtime.reload()`, which for an unpacked extension reads every file from disk again; storage stays with the
+extension ID, so the instance ID and session key survive. The daemon sends it right after the handshake of an
+instance whose reported `bundle` differs from the extension bundled in the daemon, and only after writing that bundle
+into its own extension directory (`<data dir>/browser-extension`). Once it has reached an instance (answered, or the
+connection closed because the extension was already reloading), the daemon does not send it to that instance again
+until the daemon restarts; a failure before that is retried at the instance's next handshake. A daemon built
+without a bundled extension never sends it.
 
 `debugger.send` input is `{tabId, sessionId?, method, params?}`: `method` and `params` are the CDP command, sent to
 the tab's top-level debugger session, or to the child session `sessionId` — the `sessionId` of a CDP

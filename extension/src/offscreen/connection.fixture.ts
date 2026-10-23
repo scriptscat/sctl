@@ -21,6 +21,7 @@ export function config(overrides: Partial<ConnectionConfig> = {}): ConnectionCon
     product: "Chrome",
     productVersion: "129.0.6668.58",
     extensionVersion: "0.1.0",
+    bundle: null,
     ...overrides,
   };
 }

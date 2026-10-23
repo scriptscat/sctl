@@ -20,7 +20,8 @@ jobs:
       contents: read
 
   build:
-    needs: test
+    # 二进制内嵌浏览器扩展(internal/pkg/browserext),要等扩展构建完成。
+    needs: [test, extension]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -56,6 +57,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: extension-dist
+          path: internal/pkg/browserext/dist
       - name: 构建并打包
         env:
           GOOS: ${{ matrix.goos }}
@@ -126,6 +131,12 @@ jobs:
         with:
           name: release-extension
           path: dist/*.zip
+          if-no-files-found: error
+      # 同一份产物供 build 任务内嵌进二进制;不带 release- 前缀,不会被当成发布产物上传。
+      - uses: actions/upload-artifact@v7
+        with:
+          name: extension-dist
+          path: extension/dist/
           if-no-files-found: error
 
   release:
@@ -207,6 +218,19 @@ jobs:
             -e "s|^  sha256 \".*\"$|  sha256 \"${SHA256}\"|" \
             Formula/sctl.rb
           grep -qF "$URL" Formula/sctl.rb && grep -qF "$SHA256" Formula/sctl.rb
+          # 源码包没有 Node 构建产物:formula 以 resource 下载同版本的扩展 zip,放进内嵌目录再编译。
+          # 只改这个 resource 块里的行;tap 还没有这个块时照常更新源码包,只是装出的 sctl 不带扩展。
+          if grep -q '^  resource "browser-extension" do$' Formula/sctl.rb; then
+            EXT_URL="https://github.com/scriptscat/sctl/releases/download/${TAG}/sctl-browser-extension-${VERSION}.zip"
+            EXT_SHA256=$(curl -fsSL "$EXT_URL" | sha256sum | cut -d' ' -f1)
+            sed -i -E '/^  resource "browser-extension" do$/,/^  end$/ {
+              s|^    url ".*"$|    url "'"${EXT_URL}"'"|
+              s|^    sha256 ".*"$|    sha256 "'"${EXT_SHA256}"'"|
+            }' Formula/sctl.rb
+            grep -qF "$EXT_URL" Formula/sctl.rb && grep -qF "$EXT_SHA256" Formula/sctl.rb
+          else
+            echo "::warning::Formula/sctl.rb has no browser-extension resource; brew installs will not bundle the extension"
+          fi
           # 重跑同一个 tag 时 formula 已是最新,不再产生空提交。
           if git diff --quiet; then
             echo "Formula/sctl.rb 已是 ${VERSION},跳过。"

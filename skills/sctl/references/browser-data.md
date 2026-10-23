@@ -82,4 +82,5 @@ files.
 | Command | Notes |
 |---|---|
 | `browsers` / `browsers list` | Paired instances: name, ID, online, product and version |
+| `browsers install` | Writes the extension bundled in sctl to a fixed directory and prints how to load it; loading and pairing need the user |
 | `browsers forget <name\|id>` | Deletes the pairing key and disconnects the instance; it must be paired again afterwards. Only when the user asks |

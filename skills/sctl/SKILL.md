@@ -52,7 +52,8 @@ sctl browsers -o json  # paired sctl Browser instances: name, online, product
   the launchd/systemd service that runs it). Do not start one yourself in the background: it dies with your session
   and can fight the user's service for the port.
 - **`NO_BROWSER_CONNECTED`:** no browser is paired or it is closed. Pairing needs the user: they run `sctl connect`
-  and type the one-time code into the sctl Browser popup.
+  and type the one-time code into the sctl Browser popup. If the extension is not installed yet, `sctl browsers
+  install` prints the directory for them to load as an unpacked extension.
 - **ScriptCat commands fail as not connected:** the user enables external access in ScriptCat's settings and pairs
   it with a code from `sctl connect`.
 

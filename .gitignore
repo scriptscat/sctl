@@ -1,6 +1,10 @@
 /sctl
 /bin/
 dist/
+# 内嵌扩展的产物由 make extension-embed 拷入,只提交占位文件(见 internal/pkg/browserext)
+!/internal/pkg/browserext/dist/
+/internal/pkg/browserext/dist/*
+!/internal/pkg/browserext/dist/.gitkeep
 .dev-kit
 # 一次性端到端验证脚本与证据(见 docs/verification.md),永远不进版本库
 /e2e/scratch/

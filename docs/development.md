@@ -146,6 +146,9 @@ It produces 7 artifacts — 6 sctl archives (darwin/linux/windows × amd64/arm64
 `sctl-browser-extension-<version>.zip` — plus `checksums.txt`, generates build provenance for the checksum file,
 and publishes the GitHub Release automatically after the full test gate passes. The extension zip holds one
 `sctl-browser-extension-<version>/` directory for "Load unpacked"; its manifest version is the release version.
+The `extension` job also hands its build output to the six binary builds, which copy it into
+`internal/pkg/browserext/dist/` before `go build`, so every released binary carries the same extension for
+`sctl browsers install`.
 
 Artifacts are built with `-trimpath` and use the commit time as the archive member timestamp, so rebuilding
 the same tag is byte-for-byte reproducible. Version, commit, and build time are injected into `internal/cli`
@@ -155,7 +158,9 @@ Cross-compilation, packaging, checksums, and the GitHub Release upload all happe
 
 For a non-prerelease tag, the `homebrew` job then points `Formula/sctl.rb` in
 [scriptscat/homebrew-tap](https://github.com/scriptscat/homebrew-tap) at the tag's source tarball and pushes the
-commit. It authenticates with the `HOMEBREW_TAP_DEPLOY_KEY` secret, the private half of a write-enabled deploy key
+commit. The formula builds from source without Node, so it also downloads the tag's extension zip as its
+`browser-extension` resource and puts it into `internal/pkg/browserext/dist/`; the job updates that resource's URL and
+SHA-256 too, and only warns when the formula has no such resource. It authenticates with the `HOMEBREW_TAP_DEPLOY_KEY` secret, the private half of a write-enabled deploy key
 on the tap repository.
 
 ## Browser extension
@@ -172,6 +177,10 @@ pnpm typecheck       # tsc -b
 pnpm test            # Vitest, with chrome.* and WebSocket replaced by fakes
 pnpm build           # writes dist/, loadable through "Load unpacked"
 ```
+
+A plain `go build` leaves `internal/pkg/browserext/dist/` holding only its placeholder, so the binary has no
+bundled extension: `sctl browsers install` exits 3 and the daemon skips extension updates. `make extension-embed`
+builds the extension and copies it there (it needs pnpm), after which `make build` or `go build` bundles it.
 
 `SCTL_EXTENSION_VERSION` sets the manifest version for a build (the release workflow passes the tag version; a
 prerelease suffix such as `-rc.1` goes into `version_name`, because Chrome versions are numeric only). Without it,
