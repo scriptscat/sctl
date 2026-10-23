@@ -54,7 +54,8 @@ irm https://raw.githubusercontent.com/scriptscat/sctl/main/scripts/install.ps1 |
 1. **启动 daemon** 并保持运行：
 
    ```bash
-   sctl serve
+   sctl serve              # 在终端里运行，或者
+   sctl service install    # 在后台运行，登录后自动启动
    ```
 
 2. **配对扩展。** `sctl connect` 打印一次性配对码；一个码只能配对一个扩展，每个扩展各运行一次。
@@ -105,6 +106,7 @@ ln -s "$PWD/skills/sctl" ~/.claude/skills/sctl
 | 命令组 | 用途 |
 |---|---|
 | `sctl serve` / `connect` / `status` / `mcp` | 运行 daemon、配对扩展、查看连接状态、通过 stdio 提供 MCP。 |
+| `sctl service` | 以用户服务的形式在后台运行 daemon（launchd、systemd、任务计划程序）。 |
 | `sctl get` / `grep` / `install` / `edit` / `enable` / `disable` / `delete` | 管理 ScriptCat 用户脚本。 |
 | `sctl browsers` | 列出已配对的 sctl Browser 实例，或忘记其中一个。 |
 | `sctl tabs` / `windows` / `groups` | 标签页、窗口和标签组。 |

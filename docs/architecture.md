@@ -18,7 +18,9 @@ CLI verbs (sctl get / edit / install / browsers / tabs / windows / page / debug 
 `/control/*` HTTP/JSON control API on the daemon's listener — same port as the extensions' WS surface, separate
 path, authenticated with the control token described in [threat-model.md](./threat-model.md#4-the-control-channel-internal-local-connection-in-detail).
 Frontends never start `serve`: run it
-explicitly in the foreground or let an external system service manager own its lifecycle.
+explicitly in the foreground or let the user's system service manager own its lifecycle — `sctl service`
+(`internal/client/service`) writes that service definition and drives the manager's own commands, without
+talking to the daemon.
 
 The daemon accepts two kinds of extension connection at once: exactly one active ScriptCat connection (a new
 one replaces the previous one), and any number of paired `sctl Browser` instances connecting simultaneously,
@@ -140,6 +142,7 @@ cmd/sctl/main.go            # cobra entry point (unwraps ExitError → os.Exit)
 internal/cli/               # subcommand definitions; spans both sides, hence top level
   cli.go                    #   root command, global flags (-o/--output, --log-level), output helpers
   serve.go                  #   bootstraps the cago app and mounts the daemon Component
+  service.go                #   sctl service install|uninstall|start|stop|restart|status
   mcp.go                    #   sctl mcp (serves all tools; --name is an audit label)
   connect.go status.go version.go
   get.go grep.go            #   read verbs
@@ -175,6 +178,7 @@ internal/daemon/            # ── sctl serve side ──
 internal/client/            # ── sctl mcp / CLI verb side ──
   control/                  #   control API client, shared DTOs, control token
   mcpserver/                #   go-sdk stdio MCP server: all tools (flat trust), progress while waiting
+  service/                  #   user service definitions (launchd, systemd --user, Task Scheduler) and their commands
 
 internal/pkg/               # ── shared by both sides ──
   protocol/                 #   protocol.json authority plus generated language and business-schema artifacts
