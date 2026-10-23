@@ -1,15 +1,17 @@
 // Package daemon 是 sctl serve 的组装层:一个 cago Component,把可配置监听地址的
 // 桥接 WS server(internal/daemon/bridge)、本机控制 API(internal/daemon/controlapi)、
 // 页面自动化组件(internal/daemon/page)、原始 CDP 端点(internal/daemon/cdpendpoint)与持久化存储(internal/daemon/store)
-// 接到同一个 listener 上。
+// 接到同一个 listener 上;带内嵌扩展的构建还挂上扩展自动更新(internal/daemon/extupdate)。
 // 扩展 ↔ daemon 协议见 docs/protocol.md。
 package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"path/filepath"
 
 	"github.com/cago-frame/cago/configs"
 	"github.com/cago-frame/cago/pkg/gogo"
@@ -20,8 +22,10 @@ import (
 	"github.com/scriptscat/sctl/internal/daemon/bridge"
 	"github.com/scriptscat/sctl/internal/daemon/cdpendpoint"
 	"github.com/scriptscat/sctl/internal/daemon/controlapi"
+	"github.com/scriptscat/sctl/internal/daemon/extupdate"
 	"github.com/scriptscat/sctl/internal/daemon/page"
 	"github.com/scriptscat/sctl/internal/daemon/store"
+	"github.com/scriptscat/sctl/internal/pkg/browserext"
 	"github.com/scriptscat/sctl/internal/pkg/paths"
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
 )
@@ -96,6 +100,18 @@ func (b *daemonComponent) StartCancel(ctx context.Context, cancel context.Cancel
 		Log:             logger.Ctx(ctx),
 	})
 	b.srv.AddBrowserListener(endpoints)
+	// 带内嵌扩展的构建才做自动更新;没有内嵌时 sctl 管理的扩展目录也无从更新。
+	if bundle, err := browserext.Embedded(); err == nil {
+		// 与 sctl browsers install 一样用绝对路径:相对的 --data-dir 在服务管理器下会按另一个工作目录解析。
+		dir, err := filepath.Abs(paths.BrowserExtensionDir())
+		if err != nil {
+			return err
+		}
+		b.srv.AddBrowserListener(extupdate.New(ctx, b.srv, bundle, dir, logger.Ctx(ctx)))
+	} else if !errors.Is(err, browserext.ErrNotEmbedded) {
+		logger.Ctx(ctx).Error("failed to load the embedded sctl Browser extension", zap.Error(err))
+		return err
+	}
 	mux := http.NewServeMux()
 	mux.Handle(cdpendpoint.PathPrefix, endpoints)
 	controlapi.New(b.srv, pages, endpoints, token, logger.Ctx(ctx)).Register(mux)

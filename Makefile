@@ -9,8 +9,9 @@ VERSION_PACKAGE := github.com/scriptscat/sctl/internal/cli
 SCRIPTCAT_DIR ?= ../scriptcat
 BROWSER_PROTOCOL_DIR := extension/src/protocol/generated
 PROTOCOL_GENERATED_DIRS := internal/pkg/protocol/generated $(BROWSER_PROTOCOL_DIR)
+EMBED_DIR := internal/pkg/browserext/dist
 
-.PHONY: help build test lint dev protocol-generate protocol-sync-scriptcat protocol-check clean
+.PHONY: help build test lint dev extension-embed protocol-generate protocol-sync-scriptcat protocol-check clean
 
 help: ## 显示可用命令
 	@awk 'BEGIN {FS = ":.*## "; printf "用法: make <命令>\n\n命令:\n"} /^[a-zA-Z_-]+:.*## / {printf "  %-10s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -24,6 +25,12 @@ test: ## 运行竞态检测测试
 
 lint: ## 运行静态检查
 	$(GOLANGCI_LINT) run ./...
+
+extension-embed: ## 构建浏览器扩展并拷进内嵌目录，之后的 build 带上扩展（需要 pnpm）
+	pnpm --dir extension install --frozen-lockfile
+	pnpm --dir extension build
+	find $(EMBED_DIR) -mindepth 1 ! -name .gitkeep -exec rm -rf {} +
+	cp -R extension/dist/. $(EMBED_DIR)/
 
 dev: ## 构建并启动本地 daemon（DEV_VERSION=0.1.0）
 	mkdir -p $(BUILD_DIR)

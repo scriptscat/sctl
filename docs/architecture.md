@@ -144,7 +144,7 @@ internal/cli/               # subcommand definitions; spans both sides, hence to
   connect.go status.go version.go
   get.go grep.go            #   read verbs
   edit.go write.go          #   write verbs (edit / install / enable / disable / delete)
-  browsers.go               #   sctl browsers [list] / sctl browsers forget <name|id>
+  browsers.go               #   sctl browsers [list] / sctl browsers forget <name|id> / sctl browsers install
   tabs.go windows.go        #   sctl tabs list|open|close|activate, sctl windows list
   page*.go                  #   sctl page snapshot|click|hover|fill|type|press|select|upload|scroll|goto|back|forward|
                             #   reload|wait|screenshot|eval|dialog|detach (reach /control/page through dispatchPage)
@@ -166,6 +166,8 @@ internal/daemon/            # ── sctl serve side ──
                              #     page actions, per-tab debug record buffers, the bridge-backed CDP implementation
   cdpendpoint/              #   raw CDP endpoint: per-browser endpoints, /cdp/ HTTP and WS, Host/Origin/secret checks,
                              #     expiry, hand-over to and from page, the per-client Hook and Browser
+  extupdate/                #   keeps the sctl-managed extension directory on the bundled extension: on a handshake
+                             #     reporting an older bundle, rewrites the directory and calls extension.reload
   auth/                     #   mutual HMAC handshake, enrollment-code derivation (HKDF), key delivery (AES-GCM)
   store/                    #   persistence (repository role): ScriptCat's long-term key K, plus the
                              #     browsers.json registry of paired sctl Browser instances and their own
@@ -183,6 +185,8 @@ internal/pkg/               # ── shared by both sides ──
   paths/                    #   data directory and derived paths
   logging/                  #   unified zap logging (stderr + <dataDir>/logs/*.log, never stdout)
   fsutil/                   #   atomic file writes
+  browserext/               #   the sctl Browser extension embedded in the binary (dist/ is filled before go build)
+                             #     and writing it into the sctl-managed extension directory
 
 extension/                  # ── sctl Browser, the second extension kind (MV3, pnpm/Vite/React) ──
   src/background/           #   service worker: identity and settings storage, message routing, method dispatch

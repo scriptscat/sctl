@@ -714,6 +714,16 @@
       "level": "L0",
       "peer": "browser",
       "internal": true
+    },
+    "extension.reload": {
+      "params": "ExtensionReloadParams",
+      "result": "ExtensionReloadResult",
+      "scope": "extension:reload",
+      "effect": "write",
+      "blocking": "none",
+      "level": "L0",
+      "peer": "browser",
+      "internal": true
     }
   },
   "notifications": {
@@ -3885,6 +3895,16 @@
       "required": [
         "tabId"
       ],
+      "additionalProperties": false
+    },
+    "ExtensionReloadParams": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "ExtensionReloadResult": {
+      "type": "object",
+      "properties": {},
       "additionalProperties": false
     }
   },

@@ -67,10 +67,10 @@ The install script verifies the release archive's sha256 and installs `sctl` int
    per extension.
 
    - **ScriptCat:** enable **External Access** in its options and enter the code.
-   - **sctl Browser:** download `sctl-browser-extension-<version>.zip` from
-     [GitHub Releases](https://github.com/scriptscat/sctl/releases), unzip it, load the folder as an unpacked
-     extension, and enter a code in its popup. It needs **Chrome 125 or newer** (or a Chromium browser of that
-     version).
+   - **sctl Browser:** run `sctl browsers install`, load the directory it prints as an unpacked extension
+     (`chrome://extensions` → Developer mode → Load unpacked), and enter a code in its popup. sctl keeps that
+     directory up to date and reloads the extension after upgrades. It needs **Chrome 125 or newer** (or a
+     Chromium browser of that version).
 
 3. **Check the connection:**
 
@@ -116,7 +116,7 @@ browser's logins; see [`docs/cli.md`](./docs/cli.md#endpoint-for-playwright-and-
 |---|---|
 | `sctl serve` / `connect` / `status` / `mcp` | Run the daemon, pair an extension, show connection status, serve MCP over stdio. |
 | `sctl get` / `grep` / `install` / `edit` / `enable` / `disable` / `delete` | Manage ScriptCat userscripts. |
-| `sctl browsers` | List paired sctl Browser instances, or forget one. |
+| `sctl browsers` | List paired sctl Browser instances, forget one, or install the bundled extension. |
 | `sctl tabs` / `windows` / `groups` | Tabs, windows, and tab groups. |
 | `sctl bookmarks` / `reading-list` | Bookmarks and the reading list. |
 | `sctl history` / `recent` / `downloads` | History, recently closed tabs and windows, downloads. |

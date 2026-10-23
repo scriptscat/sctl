@@ -8,6 +8,7 @@ import { registerExtensionsHandlers } from "./extensions";
 import { registerHistoryHandlers } from "./history";
 import { registerReadingListHandlers } from "./readingList";
 import { registerRecentlyClosedHandlers } from "./recentlyClosed";
+import { registerRuntimeHandlers } from "./runtime";
 import { requireTab, requireWindow } from "./targets";
 import { registerTabGroupHandlers } from "./tabGroups";
 import { registerTabsManageHandlers } from "./tabsManage";
@@ -126,4 +127,5 @@ export function registerHandlers(registry: HandlerRegistry, relay: DebuggerRelay
   registry.register("debugger.open", relay.open);
   registry.register("debugger.close", relay.close);
   registry.register("debugger.own", relay.own);
+  registerRuntimeHandlers(registry);
 }

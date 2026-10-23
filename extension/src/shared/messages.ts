@@ -42,6 +42,8 @@ export interface ConnectionConfig {
   product: string;
   productVersion: string;
   extensionVersion: string;
+  // sctl 管理的扩展目录里标记文件记录的摘要；手动加载的扩展为 null（见 background/bundle.ts）。
+  bundle: string | null;
 }
 
 // 同一条 chrome.runtime 消息会送达除发送者外的所有扩展页面，target 决定由谁处理。

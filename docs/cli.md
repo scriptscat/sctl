@@ -32,6 +32,7 @@ command line can use the skill in [`../skills/sctl/`](../skills/sctl/SKILL.md).
 | Command | Purpose |
 |---|---|
 | `sctl browsers [list]` / `sctl browsers forget <name\|id>` | List paired sctl Browser instances, or forget one. |
+| `sctl browsers install` | Write the sctl Browser extension bundled in the binary to a fixed directory to load in the browser; see [Installing sctl Browser](#installing-sctl-browser-sctl-browsers-install). |
 | `sctl tabs list\|open\|close\|activate` | List, open, close, or activate tabs on a paired sctl Browser instance. |
 | `sctl tabs move\|pin\|unpin\|mute\|unmute\|reload\|duplicate` | Move, pin, mute, reload, or duplicate tabs (several IDs are all-or-nothing). |
 | `sctl windows list` | List windows on a paired sctl Browser instance. |
@@ -80,6 +81,25 @@ command line can use the skill in [`../skills/sctl/`](../skills/sctl/SKILL.md).
 |---|---|
 | `sctl cdp send <Method> [--params '<JSON object>'] [--tab N] [--timeout D]` | Send one raw Chrome DevTools Protocol command to a tab's page and print Chrome's result. |
 | `sctl cdp endpoint` / `sctl cdp status` / `sctl cdp close` | Create or show a browser's CDP endpoint addresses for Playwright `connectOverCDP` and Puppeteer `connect`, show whether a client is connected and when the endpoint expires, or close it. |
+
+## Installing sctl Browser: `sctl browsers install`
+
+`sctl browsers install` writes the extension bundled in the binary to `<data dir>/browser-extension` and prints that
+path, the extension version, and how to load it: open `chrome://extensions`, turn on Developer mode, choose
+**Load unpacked**, and select the directory (the macOS dialog hides `~/Library`; press Cmd+Shift+G and paste the
+path). Then pair it with a `sctl connect` code in its popup. It does not need the daemon, leaves the directory alone
+when it already holds the same extension, and prints `{dir, version, changed}` with `-o json`. A binary built without
+a bundled extension (a plain `go build`) exits 3; download the extension zip from the release instead.
+
+The directory holds a `sctl-bundle.json` marker with the extension's content digest, which the extension reports when
+it connects. When a daemon whose bundled extension differs sees that report — after you upgrade sctl and restart the
+daemon — it rewrites the directory with its own bundle and has the extension reload itself from disk; the pairing
+survives. Once the reload has reached an instance the daemon does not ask that instance again until it restarts (a
+failure before that, such as the instance going offline, is retried at its next connection), and it never touches an
+extension loaded from a release zip, which has no marker. The extension reports the digest of the code it is running,
+read once after it loads, so a directory rewritten under a running extension (for example by `sctl browsers install`)
+is caught the next time that extension connects. The directory always ends up with the daemon's bundle, even when the `sctl` that
+ran `install` is a different version.
 
 ## Conventions
 

@@ -17,6 +17,8 @@ var (
 	// instanceIDPattern 限定实例 ID 为定长小写 hex:它直接拼进握手 MAC 输入,定长保证拼接无歧义。
 	instanceIDPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 	namePattern       = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
+	// bundlePattern 是扩展内容摘要(SHA-256 的小写 hex),daemon 拿它与内嵌扩展的摘要比较。
+	bundlePattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
 // maxPeerTextBytes 限制实例自报的产品与版本文本,它们会原样出现在 CLI 输出里。
@@ -155,7 +157,8 @@ func (s *Server) registerOnline(c *conn) (replaced bool, err error) {
 
 func validCapabilitiesPeer(p *capabilitiesPeer) bool {
 	return p != nil && namePattern.MatchString(p.Name) &&
-		validPeerText(p.Product) && validPeerText(p.ProductVersion) && validPeerText(p.ExtensionVersion)
+		validPeerText(p.Product) && validPeerText(p.ProductVersion) && validPeerText(p.ExtensionVersion) &&
+		(p.Bundle == "" || bundlePattern.MatchString(p.Bundle))
 }
 
 func validPeerText(s string) bool {

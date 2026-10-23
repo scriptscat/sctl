@@ -51,6 +51,22 @@ describe("session handshake", () => {
     expect(h.states.at(-1)).toEqual(h.state());
   });
 
+  it("declares the bundle digest when the extension was loaded from an sctl-managed directory", async () => {
+    const bundle = "ab".repeat(32);
+    const h = harness({ bundle });
+    const socket = h.socket();
+    socket.open();
+    await authenticate(socket, { auth: { mode: "session", key: SESSION_KEY } });
+    const capabilities = await hello(socket);
+    expect(capabilities.params?.peer).toEqual({
+      name: "chrome-3f2a",
+      product: "Chrome",
+      productVersion: "129.0.6668.58",
+      extensionVersion: "0.1.0",
+      bundle,
+    });
+  });
+
   it("stops retrying and reports rejected when the daemon cannot prove it holds the session key", async () => {
     const h = harness();
     const socket = h.socket();

@@ -550,6 +550,7 @@ export class Connection {
           product: config.product,
           productVersion: config.productVersion,
           extensionVersion: config.extensionVersion,
+          ...(config.bundle === null ? {} : { bundle: config.bundle }),
         },
       },
     });

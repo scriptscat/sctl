@@ -124,14 +124,17 @@ independently, but both use the same one-time-code flow against the same running
 3. Enter the displayed one-time code:
    - For ScriptCat: open its options page, enable **External Access**, and enter the code in the enrollment
      dialog.
-   - For sctl Browser: download `sctl-browser-extension-<version>.zip` from
-     [GitHub Releases](https://github.com/scriptscat/sctl/releases) (its version matches the sctl release),
-     unzip it, open your browser's extensions page, enable developer mode, choose "Load unpacked", and select
-     the unzipped folder. Open the extension's popup and enter the same code.
+   - For sctl Browser: run `sctl browsers install`, which writes the extension bundled in sctl to a fixed directory
+     and prints it. Open your browser's extensions page, enable developer mode, choose "Load unpacked", and select
+     that directory. Open the extension's popup and enter the same code. After you upgrade sctl and restart the
+     daemon, it updates that directory and reloads the extension for you
+     (see [`cli.md`](./cli.md#installing-sctl-browser-sctl-browsers-install)). Alternatively, download
+     `sctl-browser-extension-<version>.zip` from [GitHub Releases](https://github.com/scriptscat/sctl/releases)
+     (its version matches the sctl release) and load the unzipped folder the same way; such a copy is not updated
+     automatically, so reload it from the extensions page after replacing its files.
 
-     sctl Browser requires Chrome 125 or newer and the `debugger` permission. When you update an unpacked copy,
-     reload it from the extensions page; Chrome will not load a build whose minimum version is above the running
-     browser's. While the extension has the debugger attached to a page, Chrome shows a "sctl Browser started
+     sctl Browser requires Chrome 125 or newer and the `debugger` permission; Chrome will not load a build whose
+     minimum version is above the running browser's. While the extension has the debugger attached to a page, Chrome shows a "sctl Browser started
      debugging this browser" infobar at the top of the window; the extension cannot hide it, and dismissing it
      detaches the debugger. Launch Chrome with `--silent-debugger-extension-api` to suppress the infobar.
 4. Run `sctl connect` again for the second extension if you want to pair both — the code is valid only for a

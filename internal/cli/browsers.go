@@ -3,25 +3,28 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"text/tabwriter"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/scriptscat/sctl/internal/client/control"
+	"github.com/scriptscat/sctl/internal/pkg/browserext"
+	"github.com/scriptscat/sctl/internal/pkg/paths"
 )
 
-// newBrowsersCmd 构造 `sctl browsers`:裸调用等价于 `browsers list`,另挂 forget 子命令。
+// newBrowsersCmd 构造 `sctl browsers`:裸调用等价于 `browsers list`,另挂 forget 与 install 子命令。
 func newBrowsersCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "browsers [list]",
-		Short: "List paired sctl Browser instances (default), or forget one with the forget subcommand",
+		Short: "List paired sctl Browser instances (default), forget one, or install the extension",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runBrowsersList(cmd)
 		},
 	}
-	cmd.AddCommand(newBrowsersListCmd(), newBrowsersForgetCmd())
+	cmd.AddCommand(newBrowsersListCmd(), newBrowsersForgetCmd(), newBrowsersInstallCmd())
 	return cmd
 }
 
@@ -73,6 +76,56 @@ func newBrowsersForgetCmd() *cobra.Command {
 				return printValueJSON(map[string]string{"forgot": ref})
 			}
 			fmt.Fprintf(os.Stdout, "forgot browser instance: %s\n", ref)
+			return nil
+		},
+	}
+}
+
+// embeddedExtension 是测试替换点:真实实现读取二进制内嵌的扩展。
+var embeddedExtension = browserext.Embedded
+
+// newBrowsersInstallCmd 构造 `sctl browsers install`:把内嵌的 sctl Browser 扩展写进数据目录下的固定目录,
+// 用户在浏览器里加载这个目录一次。不经过 daemon;之后由 daemon 的自动更新让扩展跟着 sctl 升级。
+func newBrowsersInstallCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "install",
+		Short: "Write the sctl Browser extension bundled in this binary to a fixed directory to load in the browser",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			bundle, err := embeddedExtension()
+			if err != nil {
+				return &ExitError{Code: exitError, Message: err.Error()}
+			}
+			dir, err := filepath.Abs(paths.BrowserExtensionDir())
+			if err != nil {
+				return &ExitError{Code: exitError, Message: err.Error()}
+			}
+			changed, err := bundle.Install(dir)
+			if err != nil {
+				return &ExitError{Code: exitError, Message: err.Error()}
+			}
+			if outputFormat == outputJSON {
+				return printValueJSON(struct {
+					Dir     string `json:"dir"`
+					Version string `json:"version"`
+					Changed bool   `json:"changed"`
+				}{dir, bundle.Version(), changed})
+			}
+			state := "written to"
+			if !changed {
+				state = "already up to date in"
+			}
+			fmt.Fprintf(os.Stdout, `sctl Browser %s %s
+  %s
+
+To load it once in Chrome (125 or newer) or another Chromium browser:
+  1. Open chrome://extensions and turn on Developer mode.
+  2. Click "Load unpacked" and choose the directory above
+     (macOS hides ~/Library in that dialog: press Cmd+Shift+G and paste the path).
+  3. Run "sctl connect" and enter the code in the extension's popup.
+
+The daemon keeps this directory up to date and reloads the extension after sctl upgrades.
+`, bundle.Version(), state, dir)
 			return nil
 		},
 	}

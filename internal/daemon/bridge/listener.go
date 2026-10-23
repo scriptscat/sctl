@@ -27,6 +27,13 @@ type InstanceForgottenListener interface {
 	OnInstanceForgotten(instanceID string)
 }
 
+// InstanceConnectedListener 是 BrowserListener 的可选扩展:实现它的监听者在浏览器实例完成握手(daemon 已回复
+// 能力声明)后收到实例 ID 和它上报的扩展摘要(未上报时为空)。回调在连接的读循环开始之前、不持有任何服务锁时调用,
+// 必须立即返回:要调用这个实例时另起 goroutine,否则回复永远读不到。
+type InstanceConnectedListener interface {
+	OnInstanceConnected(instanceID, bundle string)
+}
+
 // SetBrowserListener 设置主浏览器监听者,替换先前通过它设置的那个(不影响 AddBrowserListener 追加的);传 nil 取消。
 func (s *Server) SetBrowserListener(l BrowserListener) {
 	s.mu.Lock()
@@ -81,6 +88,15 @@ func (s *Server) deliverNotification(c *conn, message Message) {
 func (s *Server) instanceGone(instanceID string) {
 	for _, l := range s.browserListeners() {
 		l.OnInstanceGone(instanceID)
+	}
+}
+
+// instanceConnected 通知实现了 InstanceConnectedListener 的监听者实例已完成握手;调用方须已释放全部锁。
+func (s *Server) instanceConnected(c *conn) {
+	for _, l := range s.browserListeners() {
+		if cl, ok := l.(InstanceConnectedListener); ok {
+			cl.OnInstanceConnected(c.instanceID, c.peer.Bundle)
+		}
 	}
 }
 

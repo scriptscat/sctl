@@ -32,6 +32,7 @@ export interface BackgroundDeps {
   // 浏览器的完整版本号只能异步取得（navigator.userAgentData.getHighEntropyValues）。
   browser: Promise<BrowserInfo>;
   extensionVersion: string;
+  bundle: Promise<string | null>;
 }
 
 export interface BrowserInfo {
@@ -153,6 +154,7 @@ export class Background {
       product: browser.product.product,
       productVersion: browser.version,
       extensionVersion: this.deps.extensionVersion,
+      bundle: await this.deps.bundle,
     };
   }
 
