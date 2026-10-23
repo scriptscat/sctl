@@ -37,6 +37,12 @@ macOS 和 Linux：
 curl -fsSL https://raw.githubusercontent.com/scriptscat/sctl/main/scripts/install.sh | sh
 ```
 
+Homebrew：
+
+```bash
+brew install scriptscat/tap/sctl
+```
+
 Windows PowerShell：
 
 ```powershell

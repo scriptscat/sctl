@@ -43,13 +43,19 @@ macOS and Linux:
 curl -fsSL https://raw.githubusercontent.com/scriptscat/sctl/main/scripts/install.sh | sh
 ```
 
+Homebrew:
+
+```bash
+brew install scriptscat/tap/sctl
+```
+
 Windows PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/scriptscat/sctl/main/scripts/install.ps1 | iex
 ```
 
-The installer verifies the release archive's sha256 and installs `sctl` into `~/.local/bin` (macOS/Linux) or
+The install script verifies the release archive's sha256 and installs `sctl` into `~/.local/bin` (macOS/Linux) or
 `%LOCALAPPDATA%\sctl\bin` (Windows). Pinning a version, manual downloads, and building from source are covered in
 [`docs/mcp.md`](./docs/mcp.md#1-install-sctl).
 
