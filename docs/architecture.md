@@ -1,6 +1,6 @@
 # Architecture
 
-A one-picture overview is in [architecture.html](./architecture.html); open it in a browser.
+![sctl architecture overview](./images/architecture.svg)
 
 ## Process model
 

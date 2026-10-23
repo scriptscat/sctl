@@ -7,11 +7,7 @@ cross-platform binary runs a local bridge daemon that reaches
 [ScriptCat](https://github.com/scriptscat/scriptcat) for userscript management and its own **sctl Browser**
 extension for tabs, browser data, page automation, and debugging.
 
-```text
-sctl <command> ───────────────┐
-AI client ── MCP ── sctl mcp ──┴─ control API ─▶ sctl serve ─┬─ WebSocket ─▶ ScriptCat      userscripts
-Playwright / Puppeteer ────── CDP endpoint ────▶             └─ WebSocket ─▶ sctl Browser   tabs, data, pages, debugging
-```
+<p align="center"><img src="./docs/images/architecture.svg" alt="sctl architecture: the CLI, AI clients and Playwright reach sctl serve, which talks to ScriptCat and sctl Browser over WebSocket" width="860"></p>
 
 Who decides: ScriptCat stays the authority for its scripts, so reading source and every write wait for approval
 in the browser. Browser control, page automation, debugging, and raw CDP run immediately, by design; only

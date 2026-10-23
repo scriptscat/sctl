@@ -6,11 +6,7 @@ sctl 让命令行、AI 客户端和脚本控制你正在使用的浏览器。单
 [ScriptCat](https://github.com/scriptscat/scriptcat) 管理用户脚本，一边连接它自己的 **sctl Browser**
 扩展来控制标签页、浏览器数据、页面自动化与调试。
 
-```text
-sctl <命令> ─────────────────────┐
-AI 客户端 ── MCP ── sctl mcp ────┴─ 控制 API ─▶ sctl serve ─┬─ WebSocket ─▶ ScriptCat      用户脚本
-Playwright / Puppeteer ───── CDP 端点 ────────▶            └─ WebSocket ─▶ sctl Browser   标签页、数据、页面、调试
-```
+<p align="center"><img src="./images/architecture.zh-CN.svg" alt="sctl 架构：命令行、AI 客户端与 Playwright 连接 sctl serve，sctl serve 通过 WebSocket 连接 ScriptCat 与 sctl Browser" width="860"></p>
 
 谁说了算：脚本的控制权仍在 ScriptCat，读取源码和所有写操作都要在浏览器里批准。浏览器控制、页面自动化、调试和原始
 CDP 按设计立即执行；只有删除书签和卸载扩展需要批准，其他破坏性命令需要 `--yes`。把 sctl 暴露给任何不可信的对象之前，
