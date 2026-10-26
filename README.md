@@ -67,10 +67,12 @@ The install script verifies the release archive's sha256 and installs `sctl` int
    per extension.
 
    - **ScriptCat:** enable **External Access** in its options and enter the code.
-   - **sctl Browser:** download `sctl-browser-extension-<version>.zip` from
-     [GitHub Releases](https://github.com/scriptscat/sctl/releases), unzip it, load the folder as an unpacked
-     extension, and enter a code in its popup. It needs **Chrome 125 or newer** (or a Chromium browser of that
-     version).
+   - **sctl Browser:** install it from the
+     [Chrome Web Store](https://chromewebstore.google.com/detail/sctl-browser/biafbcaobbmcodfinffakgpdgaiodbgk) or
+     [Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/sctl-browser/nbmnkdfbjdhbdjjffgkocfdkemockepa) and
+     enter a code in its popup. It needs **Chrome 125 or newer** (or a Chromium browser of that version). You can
+     also load `sctl-browser-extension-<version>.zip` from
+     [GitHub Releases](https://github.com/scriptscat/sctl/releases) as an unpacked extension.
 
 3. **Check the connection:**
 

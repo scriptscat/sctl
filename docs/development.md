@@ -146,6 +146,8 @@ It produces 7 artifacts — 6 sctl archives (darwin/linux/windows × amd64/arm64
 `sctl-browser-extension-<version>.zip` — plus `checksums.txt`, generates build provenance for the checksum file,
 and publishes the GitHub Release automatically after the full test gate passes. The extension zip holds one
 `sctl-browser-extension-<version>/` directory for "Load unpacked"; its manifest version is the release version.
+The workflow does not publish to the Chrome Web Store or Microsoft Edge Add-ons: submit each release to both
+stores separately, repacking the zip first, because the stores require `manifest.json` at the archive root.
 
 Artifacts are built with `-trimpath` and use the commit time as the archive member timestamp, so rebuilding
 the same tag is byte-for-byte reproducible. Version, commit, and build time are injected into `internal/cli`

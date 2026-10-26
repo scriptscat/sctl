@@ -60,9 +60,11 @@ irm https://raw.githubusercontent.com/scriptscat/sctl/main/scripts/install.ps1 |
 2. **配对扩展。** `sctl connect` 打印一次性配对码；一个码只能配对一个扩展，每个扩展各运行一次。
 
    - **ScriptCat：** 在选项页启用 **External Access** 并输入配对码。
-   - **sctl Browser：** 从 [GitHub Releases](https://github.com/scriptscat/sctl/releases) 下载
-     `sctl-browser-extension-<version>.zip` 并解压，把解压后的目录作为“已解压的扩展程序”加载，在其弹窗里输入配对码。
-     要求 **Chrome 125 或更高版本**（或同版本的 Chromium 内核浏览器）。
+   - **sctl Browser：** 从 [Chrome 应用商店](https://chromewebstore.google.com/detail/sctl-browser/biafbcaobbmcodfinffakgpdgaiodbgk)
+     或 [Microsoft Edge 加载项](https://microsoftedge.microsoft.com/addons/detail/sctl-browser/nbmnkdfbjdhbdjjffgkocfdkemockepa)
+     安装，在其弹窗里输入配对码。要求 **Chrome 125 或更高版本**（或同版本的 Chromium 内核浏览器）。也可以从
+     [GitHub Releases](https://github.com/scriptscat/sctl/releases) 下载 `sctl-browser-extension-<version>.zip`
+     并解压，作为“已解压的扩展程序”加载。
 
 3. **检查连接：**
 
