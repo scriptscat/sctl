@@ -97,8 +97,8 @@ sctl serve
 ```
 
 `sctl serve` is the only process that owns the WebSocket connection to ScriptCat. CLI commands and `sctl mcp`
-never start it automatically. For long-running use, configure the operating system's user service manager to
-run this exact command; service-manager-specific installation is outside this guide.
+never start it automatically. For long-running use, `sctl service install` runs it in the background as a user
+service that starts at login; see [`cli.md`](./cli.md#background-service-sctl-service).
 
 Before enrollment, this command should reach the daemon and report that no extension is connected:
 

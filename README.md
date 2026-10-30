@@ -60,7 +60,8 @@ The install script verifies the release archive's sha256 and installs `sctl` int
 1. **Start the daemon** and leave it running:
 
    ```bash
-   sctl serve
+   sctl serve              # in a terminal, or
+   sctl service install    # in the background, starting at login
    ```
 
 2. **Pair the extensions.** `sctl connect` prints a one-time code; each code pairs one extension, so run it once
@@ -117,6 +118,7 @@ browser's logins; see [`docs/cli.md`](./docs/cli.md#endpoint-for-playwright-and-
 | Group | What it does |
 |---|---|
 | `sctl serve` / `connect` / `status` / `mcp` | Run the daemon, pair an extension, show connection status, serve MCP over stdio. |
+| `sctl service` | Run the daemon in the background as a user service (launchd, systemd, Task Scheduler). |
 | `sctl get` / `grep` / `install` / `edit` / `enable` / `disable` / `delete` | Manage ScriptCat userscripts. |
 | `sctl browsers` | List paired sctl Browser instances, or forget one. |
 | `sctl tabs` / `windows` / `groups` | Tabs, windows, and tab groups. |

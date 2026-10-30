@@ -65,15 +65,33 @@ func (c *Client) WithClientLabel(label string) *Client {
 	return &cp
 }
 
-func resolveBaseURL() (string, error) {
+// Address 返回前端连接的 daemon 地址(host:port):SetAddress 配置的地址,否则协议默认端口。
+func Address() (string, error) {
 	if configuredAddress != "" {
-		return "http://" + configuredAddress, nil
+		return configuredAddress, nil
 	}
 	p, err := protocol.Load()
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("http://127.0.0.1:%d", p.Transport.DefaultPort), nil
+	return fmt.Sprintf("127.0.0.1:%d", p.Transport.DefaultPort), nil
+}
+
+func resolveBaseURL() (string, error) {
+	address, err := Address()
+	if err != nil {
+		return "", err
+	}
+	return "http://" + address, nil
+}
+
+// Healthy 报告配置的地址上是否有 daemon 回答健康检查,不读控制令牌:令牌在别的数据目录时也算。
+func Healthy(ctx context.Context) bool {
+	base, err := resolveBaseURL()
+	if err != nil {
+		return false
+	}
+	return (&Client{http: &http.Client{}, base: base}).healthOK(ctx)
 }
 
 func (c *Client) healthOK(ctx context.Context) bool {

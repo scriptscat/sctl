@@ -11,7 +11,8 @@ command line can use the skill in [`../skills/sctl/`](../skills/sctl/SKILL.md).
 
 | Command | Purpose |
 |---|---|
-| `sctl serve` | Run the local bridge daemon. |
+| `sctl serve` | Run the local bridge daemon in the foreground. |
+| `sctl service install\|uninstall\|start\|stop\|restart\|status` | Run `sctl serve` in the background as a user service; see [Background service](#background-service-sctl-service). |
 | `sctl connect` | Open a one-time enrollment window for ScriptCat or sctl Browser. |
 | `sctl mcp [--name <label>]` | Serve ScriptCat and sctl Browser tools over stdio MCP. |
 | `sctl status` | Show daemon and extension connection status. |
@@ -126,6 +127,42 @@ Commands that take `--limit` return at most 100 items by default, and up to 1000
 Chrome's retention limit), and note on stderr when more remain.
 
 `--since` and `--until` accept an RFC 3339 time or a duration ago such as `7d`, `12h`, or `30m`.
+
+## Background service: `sctl service`
+
+`sctl service install` registers `sctl serve` with the current user's service manager, so the daemon starts at login;
+launchd and systemd also restart it after a crash. It needs no administrator rights and installs one service per user:
+
+| Platform | Service manager | Definition |
+|---|---|---|
+| macOS | launchd LaunchAgent | `~/Library/LaunchAgents/com.scriptscat.sctl.plist` |
+| Linux | systemd user instance | `~/.config/systemd/user/sctl.service` (under `$XDG_CONFIG_HOME` when set); runs while you are logged in |
+| Windows | Task Scheduler, triggered at your logon | task `\sctl`; a console window flashes briefly when it starts. Task Scheduler does not restart a daemon that crashes after starting: run `sctl service start` |
+
+- **`install`** writes the definition, enables it at login, and starts it. The service runs the `sctl` binary you ran
+  `install` with (the one on `PATH` when it is the same file, so a Homebrew upgrade keeps working) together with the
+  `--data-dir` (as an absolute path, also when it comes from `SCTL_DATA_DIR`), `--listen-address`, and a non-default
+  `--log-level` in effect for that command, so pass the same ones you use with the other commands. Running it again
+  rewrites the definition and restarts the service, which is how to pick up a new binary, path, or flag. It refuses
+  when the service is not installed yet but a daemon answers at the address, even one using another data directory:
+  stop that daemon first, or the service keeps failing on the busy port.
+- **`start`** and **`restart`** start the installed service; **`stop`** stops it until you start it again or log in
+  next. All three exit 3 when the service is not installed. `start` does nothing when a daemon is already reachable
+  at the address, whether it is the service or one you started yourself.
+- **`install`**, **`start`**, and **`restart`** wait up to 10 seconds for the newly started daemon to become reachable
+  (recognized by the fresh control token it writes, so another daemon holding the port does not count) and exit 3,
+  naming the log directory, when it does not.
+- **`uninstall`** stops the service and removes the definition; it succeeds when nothing is installed.
+- **`status`** reports whether the service is installed, where its definition is, and whether a daemon is reachable
+  at the address. It exits 0 either way; add `-o json` for scripts.
+
+On macOS, a process started by launchd cannot read `~/Documents`, `~/Desktop`, or `~/Downloads` without a privacy
+permission and hangs there instead of starting, so keep the `sctl` binary and the data directory outside those folders
+(the install script's `~/.local/bin` and Homebrew's prefix are fine).
+
+Under the service, the daemon writes its log only to the files in `<data dir>/logs/`; the service manager receives
+nothing but crash output (macOS: `<data dir>/logs/service.stderr.log`, Linux: the user journal). Use either the
+service or `brew services`, not both: they run the same daemon on the same port.
 
 ## Page automation: `sctl page`
 
