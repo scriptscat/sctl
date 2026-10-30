@@ -137,7 +137,7 @@ launchd and systemd also restart it after a crash. It needs no administrator rig
 |---|---|---|
 | macOS | launchd LaunchAgent | `~/Library/LaunchAgents/com.scriptscat.sctl.plist` |
 | Linux | systemd user instance | `~/.config/systemd/user/sctl.service` (under `$XDG_CONFIG_HOME` when set); runs while you are logged in |
-| Windows | Task Scheduler, triggered at your logon | task `\sctl`; a console window flashes briefly when it starts. Task Scheduler's retry is not known to cover a daemon that crashes after starting: run `sctl service start` |
+| Windows | Task Scheduler, triggered at your logon | task `\sctl`; a console window flashes briefly when it starts. Task Scheduler does not restart a daemon that crashes after starting: run `sctl service start` |
 
 - **`install`** writes the definition, enables it at login, and starts it. The service runs the `sctl` binary you ran
   `install` with (the one on `PATH` when it is the same file, so a Homebrew upgrade keeps working) together with the

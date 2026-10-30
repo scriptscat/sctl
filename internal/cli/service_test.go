@@ -105,7 +105,7 @@ func stubServiceEnv(t *testing.T) (*fakeServiceManager, *atomic.Bool) {
 		ready.Store(true)
 	}}
 	oldNew, oldExe, oldTimeout := newServiceManager, resolveServiceExecutable, serviceReadyTimeout
-	newServiceManager = func() (service.Manager, error) { return m, nil }
+	newServiceManager = func(string) (service.Manager, error) { return m, nil }
 	resolveServiceExecutable = func() (string, error) { return "/opt/bin/sctl", nil }
 	serviceReadyTimeout = 300 * time.Millisecond
 	t.Cleanup(func() {

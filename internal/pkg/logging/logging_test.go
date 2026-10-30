@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	. "github.com/smartystreets/goconvey/convey"
@@ -12,21 +13,39 @@ import (
 )
 
 // captureStderr 在 fn 执行期间把 os.Stderr 换成管道,返回写进去的内容。stderr core 在 Setup 时绑定
-// os.Stderr,所以 Setup 必须在 fn 里调用。
+// os.Stderr,所以 Setup 必须在 fn 里调用。读端必须与 fn 并行:Windows 上对管道 Sync(FlushFileBuffers)
+// 会阻塞到读端读完为止。
 func captureStderr(fn func()) string {
 	old := os.Stderr
 	r, w, _ := os.Pipe()
+	out := make(chan string)
+	go func() {
+		b, _ := io.ReadAll(r)
+		out <- string(b)
+	}()
 	os.Stderr = w
 	fn()
 	os.Stderr = old
 	_ = w.Close()
-	b, _ := io.ReadAll(r)
-	return string(b)
+	return <-out
+}
+
+// logDataDir 返回测试用的数据目录。Setup 打开的日志文件在进程生命周期内不关闭(cago 的 NewFileCore 不暴露
+// 关闭入口),而 Windows 不允许删除打开着的文件,t.TempDir 的清理会因此失败;那里留给系统清理临时目录。
+func logDataDir(t *testing.T) string {
+	if runtime.GOOS != "windows" {
+		return t.TempDir()
+	}
+	dir, err := os.MkdirTemp("", "sctl-logging-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
 }
 
 func TestSetupStderr(t *testing.T) {
 	Convey("日志出口", t, func() {
-		dir := t.TempDir()
+		dir := logDataDir(t)
 		paths.SetDataDir(dir)
 		Reset(func() { paths.SetDataDir("") })
 

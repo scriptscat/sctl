@@ -5,10 +5,12 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf16"
 
 	. "github.com/smartystreets/goconvey/convey"
@@ -86,7 +88,7 @@ func TestLaunchd(t *testing.T) {
 			So(body, ShouldContainSubstring, "<string>/Users/a b/d&amp;&lt;x&gt;</string>")
 			So(body, ShouldContainSubstring, "<key>RunAtLoad</key>\n\t<true/>")
 			So(body, ShouldContainSubstring, "<key>SuccessfulExit</key>\n\t\t<false/>")
-			So(body, ShouldContainSubstring, "<string>/Users/a b/d/logs/service.stderr.log</string>")
+			So(body, ShouldContainSubstring, "<string>"+filepath.Join(prog.LogDir, "service.stderr.log")+"</string>")
 			So(body, ShouldContainSubstring, "<key>StandardOutPath</key>\n\t<string>/dev/null</string>")
 			// Background 会让 macOS 节流 CPU 和 I/O,而 daemon 服务的是交互请求。
 			So(body, ShouldNotContainSubstring, "ProcessType")
@@ -283,19 +285,34 @@ func TestSystemd(t *testing.T) {
 func TestSchtasks(t *testing.T) {
 	Convey("Windows 任务计划程序", t, func() {
 		dir := t.TempDir()
-		// /Create 执行时读出它拿到的 XML 文件:Install 返回后临时文件已被删除。
+		// /Create 执行时读出它拿到的 XML 文件:Install 返回后临时文件已被删除。onEnd 模拟旧实例对 /End 的反应,
+		// freeAtRun 记下 /Run 那一刻地址是否已经放开。
 		var created string
+		var onEnd func()
+		freeAtRun := []bool{}
+		address := freeAddress()
 		runner := &fakeRunner{fail: map[string]error{}, onRun: func(args []string) {
-			if len(args) > 0 && args[0] == "/Create" {
+			switch {
+			case len(args) > 0 && args[0] == "/Create":
 				b, err := os.ReadFile(args[len(args)-1])
 				So(err, ShouldBeNil)
 				created = decodeUTF16(b)
+			case len(args) > 0 && args[0] == "/End" && onEnd != nil:
+				onEnd()
+			case len(args) > 0 && args[0] == "/Run":
+				freeAtRun = append(freeAtRun, !addressHeld(address))
 			}
 		}}
-		w := &schtasks{runner: runner, tempDir: dir, user: `PC\a&b`}
+		w := &schtasks{runner: runner, tempDir: dir, user: `PC\a&b`, address: address, releaseTimeout: 5 * time.Second}
+		// holdUntilEnd 模拟正在运行的旧实例:占着地址,收到 /End 后约 300ms 才退出,和真机上的表现一致。
+		holdUntilEnd := func() {
+			ln, err := net.Listen("tcp", address)
+			So(err, ShouldBeNil)
+			onEnd = func() { time.AfterFunc(300*time.Millisecond, func() { _ = ln.Close() }) }
+		}
 		prog := Program{Executable: `C:\Program Files\sctl\sctl.exe`, Args: []string{"--data-dir", `C:\Users\a b\d`, "serve", "--service"}}
 
-		Convey("任务 XML 只对当前用户的登录触发,取消运行上限,失败重试,参数按 Windows 规则加引号", func() {
+		Convey("任务 XML 只对当前用户的登录触发,取消运行上限,参数按 Windows 规则加引号", func() {
 			body := schtasksXML(prog, `PC\a&b`)
 			So(body, ShouldStartWith, `<?xml version="1.0" encoding="UTF-16"?>`)
 			So(strings.Count(body, `<UserId>PC\a&amp;b</UserId>`), ShouldEqual, 2)
@@ -304,19 +321,20 @@ func TestSchtasks(t *testing.T) {
 			So(body, ShouldContainSubstring, "<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>")
 			So(body, ShouldContainSubstring, "<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>")
 			So(body, ShouldContainSubstring, "<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>")
-			// /Run 遇到正在运行的实例时先停掉它再启动,重启和覆盖安装都靠它,不必先 /End 再赌时序。
-			So(body, ShouldContainSubstring, "<MultipleInstancesPolicy>StopExisting</MultipleInstancesPolicy>")
-			So(body, ShouldContainSubstring, "<RestartOnFailure>")
+			// StopExisting 停掉旧实例后立刻启动新实例,新实例因端口还被占着而退出;/Run 不能碰正在运行的实例。
+			So(body, ShouldContainSubstring, "<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>")
+			// 实测 RestartOnFailure 不会拉起启动后崩溃的 daemon,写上只会让人误以为能自愈。
+			So(body, ShouldNotContainSubstring, "RestartOnFailure")
 			So(body, ShouldContainSubstring, `<Command>C:\Program Files\sctl\sctl.exe</Command>`)
 			So(body, ShouldContainSubstring, `<Arguments>--data-dir "C:\Users\a b\d" serve --service</Arguments>`)
 		})
 
-		Convey("安装:以 UTF-16 XML 创建(或覆盖)任务后立即运行,临时文件删除", func() {
+		Convey("安装:以 UTF-16 XML 创建(或覆盖)任务,结束旧实例并等它放开端口后再运行,临时文件删除", func() {
 			So(w.Install(context.Background(), prog), ShouldBeNil)
 			So(created, ShouldEqual, schtasksXML(prog, `PC\a&b`))
-			So(len(runner.calls), ShouldEqual, 2)
+			So(len(runner.calls), ShouldEqual, 3)
 			So(runner.calls[0], ShouldStartWith, "schtasks /Create /TN sctl /F /XML "+dir)
-			So(runner.calls[1], ShouldEqual, "schtasks /Run /TN sctl")
+			So(runner.calls[1:], ShouldResemble, []string{"schtasks /End /TN sctl", "schtasks /Run /TN sctl"})
 			entries, err := os.ReadDir(dir)
 			So(err, ShouldBeNil)
 			So(entries, ShouldBeEmpty)
@@ -339,7 +357,7 @@ func TestSchtasks(t *testing.T) {
 			So(existed, ShouldBeFalse)
 		})
 
-		Convey("已安装时 stop 结束、restart 直接 /Run(由 StopExisting 先停旧实例),uninstall 结束后删除(结束失败不影响)", func() {
+		Convey("已安装时 stop 结束、restart 结束后等旧实例放开端口再运行,uninstall 结束后删除(结束以非零码退出不影响)", func() {
 			runner.fail["schtasks /End"] = exitErr{}
 			So(w.Start(context.Background()), ShouldBeNil)
 			So(w.Stop(context.Background()), ShouldNotBeNil)
@@ -350,9 +368,68 @@ func TestSchtasks(t *testing.T) {
 			So(runner.calls, ShouldResemble, []string{
 				"schtasks /Query /TN sctl", "schtasks /Run /TN sctl",
 				"schtasks /Query /TN sctl", "schtasks /End /TN sctl",
-				"schtasks /Query /TN sctl", "schtasks /Run /TN sctl",
+				"schtasks /Query /TN sctl", "schtasks /End /TN sctl", "schtasks /Run /TN sctl",
 				"schtasks /Query /TN sctl", "schtasks /End /TN sctl", "schtasks /Delete /TN sctl /F",
 			})
+		})
+
+		Convey("restart 和覆盖安装等旧实例退出、放开地址后才 /Run,新实例不会绑定失败", func() {
+			holdUntilEnd()
+			So(w.Restart(context.Background()), ShouldBeNil)
+			holdUntilEnd()
+			So(w.Install(context.Background(), prog), ShouldBeNil)
+			So(freeAtRun, ShouldResemble, []bool{true, true})
+		})
+
+		Convey("stop 和 uninstall 返回时旧实例已放开地址,紧接着的 start / install 不会把它当成还在运行", func() {
+			holdUntilEnd()
+			So(w.Stop(context.Background()), ShouldBeNil)
+			So(addressHeld(address), ShouldBeFalse)
+			holdUntilEnd()
+			_, err := w.Uninstall(context.Background())
+			So(err, ShouldBeNil)
+			So(addressHeld(address), ShouldBeFalse)
+		})
+
+		Convey("地址一直被别的进程占着时 restart / install 报错,不再 /Run 一个注定绑定失败的实例", func() {
+			w.releaseTimeout = 300 * time.Millisecond
+			ln, err := net.Listen("tcp", address)
+			So(err, ShouldBeNil)
+			defer ln.Close()
+			So(w.Restart(context.Background()), ShouldNotBeNil)
+			So(w.Install(context.Background(), prog), ShouldNotBeNil)
+			So(runner.calls, ShouldNotContain, "schtasks /Run /TN sctl")
+		})
+	})
+}
+
+// freeAddress 返回一个此刻空着的本机地址。
+func freeAddress() string {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	So(err, ShouldBeNil)
+	So(ln.Close(), ShouldBeNil)
+	return ln.Addr().String()
+}
+
+func TestWaitAddressFree(t *testing.T) {
+	Convey("等监听地址放开", t, func() {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		So(err, ShouldBeNil)
+		address := ln.Addr().String()
+
+		Convey("地址一直被占着时超时报错", func() {
+			defer ln.Close()
+			err := waitAddressFree(context.Background(), address, 300*time.Millisecond)
+			So(err, ShouldNotBeNil)
+			So(err.Error(), ShouldContainSubstring, address)
+		})
+
+		Convey("占用方中途放开后返回,且没有留下自己的监听", func() {
+			time.AfterFunc(200*time.Millisecond, func() { _ = ln.Close() })
+			So(waitAddressFree(context.Background(), address, 5*time.Second), ShouldBeNil)
+			again, err := net.Listen("tcp", address)
+			So(err, ShouldBeNil)
+			So(again.Close(), ShouldBeNil)
 		})
 	})
 }

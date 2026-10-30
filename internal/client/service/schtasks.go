@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 	"unicode/utf16"
 )
 
@@ -15,6 +16,9 @@ type schtasks struct {
 	runner  Runner
 	tempDir string
 	user    string // DOMAIN\user:非管理员只能为自己创建登录触发的任务,触发器必须写明用户
+	// address 是 daemon 的监听地址。/End 立即返回,旧进程约一秒后才退出、放开地址,所以结束实例后要等地址放开。
+	address        string
+	releaseTimeout time.Duration
 }
 
 func (w *schtasks) Location() string { return `Task Scheduler \` + schtasksName }
@@ -62,7 +66,30 @@ func (w *schtasks) Install(ctx context.Context, p Program) error {
 	if err := run(ctx, w.runner, "schtasks", "/Create", "/TN", schtasksName, "/F", "/XML", f.Name()); err != nil {
 		return err
 	}
-	// StopExisting 让 /Run 先停掉正在运行的旧进程,覆盖安装后新定义随之生效。
+	// /Create /F 不会停掉正在运行的旧实例,要重启它新定义才生效。
+	return w.rerun(ctx)
+}
+
+// end 结束正在运行的实例,并等它放开监听地址:不等的话,紧接着 /Run 的新实例会绑定失败退出,紧接着的
+// start / install 会把还没退出的旧实例当成在运行。/End 之前地址就空着时没有实例要等。
+func (w *schtasks) end(ctx context.Context) error {
+	held := addressHeld(w.address)
+	if err := run(ctx, w.runner, "schtasks", "/End", "/TN", schtasksName); err != nil {
+		return err
+	}
+	if !held {
+		return nil
+	}
+	return waitAddressFree(ctx, w.address, w.releaseTimeout)
+}
+
+// rerun 结束正在运行的实例,等它放开地址后再启动。不能只靠 /Run 配 StopExisting:任务计划程序停掉旧实例后
+// 立刻启动新实例,新实例绑定地址失败就退出了。
+func (w *schtasks) rerun(ctx context.Context) error {
+	// 任务没在运行时 /End 可能以非零码退出;其他失败照样报。
+	if err := w.end(ctx); err != nil && !exited(err) {
+		return err
+	}
 	return run(ctx, w.runner, "schtasks", "/Run", "/TN", schtasksName)
 }
 
@@ -71,8 +98,8 @@ func (w *schtasks) Uninstall(ctx context.Context) (bool, error) {
 	if err != nil || !ok {
 		return false, err
 	}
-	// 任务没在运行时 /End 以非零码退出;其他失败照样报。
-	if err := run(ctx, w.runner, "schtasks", "/End", "/TN", schtasksName); err != nil && !exited(err) {
+	// 任务没在运行时 /End 可能以非零码退出;其他失败照样报。
+	if err := w.end(ctx); err != nil && !exited(err) {
 		return true, err
 	}
 	return true, run(ctx, w.runner, "schtasks", "/Delete", "/TN", schtasksName, "/F")
@@ -89,20 +116,19 @@ func (w *schtasks) Stop(ctx context.Context) error {
 	if err := w.requireInstalled(ctx); err != nil {
 		return err
 	}
-	return run(ctx, w.runner, "schtasks", "/End", "/TN", schtasksName)
+	return w.end(ctx)
 }
 
-// Restart 只需 /Run:MultipleInstancesPolicy=StopExisting 让它先停掉正在运行的实例。先 /End 再 /Run 反而有竞态,
-// 旧实例还没结束时 /Run 可能被丢弃。
 func (w *schtasks) Restart(ctx context.Context) error {
 	if err := w.requireInstalled(ctx); err != nil {
 		return err
 	}
-	return run(ctx, w.runner, "schtasks", "/Run", "/TN", schtasksName)
+	return w.rerun(ctx)
 }
 
-// schtasksXML 生成计划任务定义。schtasks /Create 的命令行参数无法表达运行上限、电池条件和失败重试,
-// 只能用 XML:默认的 72 小时运行上限会杀掉 daemon,默认的电池条件会让笔记本拔电后停掉它。
+// schtasksXML 生成计划任务定义。schtasks /Create 的命令行参数无法表达运行上限和电池条件,只能用 XML:
+// 默认的 72 小时运行上限会杀掉 daemon,默认的电池条件会让笔记本拔电后停掉它。不写 RestartOnFailure:
+// 实测它不会拉起启动后崩溃的 daemon。IgnoreNew 让 /Run 不碰正在运行的实例,重启由 rerun 负责。
 func schtasksXML(p Program, user string) string {
 	args := make([]string, 0, len(p.Args))
 	for _, a := range p.Args {
@@ -128,7 +154,7 @@ func schtasksXML(p Program, user string) string {
     </Principal>
   </Principals>
   <Settings>
-    <MultipleInstancesPolicy>StopExisting</MultipleInstancesPolicy>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
     <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
     <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
     <AllowHardTerminate>true</AllowHardTerminate>
@@ -144,10 +170,6 @@ func schtasksXML(p Program, user string) string {
     <RunOnlyIfIdle>false</RunOnlyIfIdle>
     <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
     <Priority>7</Priority>
-    <RestartOnFailure>
-      <Interval>PT1M</Interval>
-      <Count>999</Count>
-    </RestartOnFailure>
   </Settings>
   <Actions Context="Author">
     <Exec>

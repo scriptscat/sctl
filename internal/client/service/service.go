@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"os/user"
@@ -75,8 +76,8 @@ func run(ctx context.Context, r Runner, name string, args ...string) error {
 	return nil
 }
 
-// New 返回当前操作系统的 Manager;不支持的系统返回错误。
-func New() (Manager, error) {
+// New 返回当前操作系统的 Manager;不支持的系统返回错误。address 是 daemon 的监听地址。
+func New(address string) (Manager, error) {
 	r := execRunner{}
 	switch runtime.GOOS {
 	case "darwin":
@@ -101,7 +102,7 @@ func New() (Manager, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &schtasks{runner: r, tempDir: os.TempDir(), user: u.Username}, nil
+		return &schtasks{runner: r, tempDir: os.TempDir(), user: u.Username, address: address, releaseTimeout: 10 * time.Second}, nil
 	default:
 		return nil, fmt.Errorf("sctl service is not supported on %s", runtime.GOOS)
 	}
@@ -132,6 +133,32 @@ func resolveExecutable(self string, lookPath func(string) (string, error)) strin
 		return self
 	}
 	return found
+}
+
+// addressHeld 报告 address 此刻能不能被绑定:直接试着绑定,这正是新 daemon 启动时要过的那一关。
+func addressHeld(address string) bool {
+	ln, err := net.Listen("tcp", address)
+	if err != nil {
+		return true
+	}
+	_ = ln.Close()
+	return false
+}
+
+// waitAddressFree 等到 address 能被绑定为止。
+func waitAddressFree(ctx context.Context, address string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for addressHeld(address) {
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%s is still in use after %s; another process may hold it", address, timeout)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	return nil
 }
 
 // exited 报告 err 是不是外部命令以非零码退出(*exec.ExitError)。只有这种失败能当作“不存在”“未加载”的回答;

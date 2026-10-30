@@ -88,7 +88,11 @@ func newServiceCmd() *cobra.Command {
 
 func withServiceManager(fn func(*cobra.Command, service.Manager) error) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, _ []string) error {
-		m, err := newServiceManager()
+		address, err := control.Address()
+		if err != nil {
+			return &ExitError{Code: exitError, Message: err.Error()}
+		}
+		m, err := newServiceManager(address)
 		if err != nil {
 			return &ExitError{Code: exitError, Message: err.Error()}
 		}
