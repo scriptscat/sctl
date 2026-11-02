@@ -89,7 +89,9 @@ func startTestServer(t *testing.T) *testHarness {
 	keys := store.NewKeyStore(filepath.Join(dir, "pairing.key"))
 	browsers, err := store.LoadBrowserRegistry(filepath.Join(dir, "browsers.json"))
 	So(err, ShouldBeNil)
-	srv := bridge.NewServer(testVersion, p, keys, browsers, zap.NewNop())
+	scriptcats, err := store.LoadScriptCatRegistry(filepath.Join(dir, "scriptcats.json"))
+	So(err, ShouldBeNil)
+	srv := bridge.NewServer(testVersion, p, keys, browsers, scriptcats, zap.NewNop())
 	// daemon 首次校验帧时才编译 schema,这笔一次性开销在高负载下能拖过读消息的 3s 时限;先在时限外付掉。
 	So(protocolschema.ValidateWireFrame([]byte(`{"jsonrpc":"2.0","id":"warm-up","method":"$session.ping","params":{}}`)), ShouldBeNil)
 

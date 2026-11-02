@@ -45,11 +45,9 @@ func (s *Server) Call(ctx context.Context, req Request) (Response, error) {
 		if req.Browser != "" {
 			return Response{}, &Error{Code: CodeInvalidRequest, Message: "a target browser does not apply to " + req.Action}
 		}
-		s.mu.Lock()
-		active := s.scriptCat
-		s.mu.Unlock()
-		if active == nil {
-			return Response{}, ErrNotConnected
+		active, err := s.soleScriptCat()
+		if err != nil {
+			return Response{}, err
 		}
 		return s.callConn(ctx, active, req)
 	case protocol.PeerBrowser:
@@ -63,6 +61,28 @@ func (s *Server) Call(ctx context.Context, req Request) (Response, error) {
 		return s.callMerged(ctx, targets, req, action.MergeField)
 	default:
 		panic("bridge: method " + req.Action + " has no owning peer " + string(action.Peer))
+	}
+}
+
+// soleScriptCat 返回唯一在线的 ScriptCat 连接(老版或新版实例)。调用还不能指定 ScriptCat 实例,
+// 多个同时在线时任选一个会把脚本操作发到用户没想到的浏览器里,因此拒绝而不是猜。
+func (s *Server) soleScriptCat() (*conn, error) {
+	s.mu.Lock()
+	online := make([]*conn, 0, len(s.scriptCats)+1)
+	if s.legacyScriptCat != nil {
+		online = append(online, s.legacyScriptCat)
+	}
+	for _, c := range s.scriptCats {
+		online = append(online, c)
+	}
+	s.mu.Unlock()
+	switch len(online) {
+	case 0:
+		return nil, ErrNotConnected
+	case 1:
+		return online[0], nil
+	default:
+		return nil, &Error{Code: CodeConflict, Message: "several ScriptCat instances are connected; disconnect all but one"}
 	}
 }
 

@@ -56,7 +56,8 @@ The daemon starts authentication with a request:
 }
 ```
 
-For an enrolled session, the extension answers the same `id`:
+For an enrolled session, a legacy ScriptCat — one that declares no `peer`, see
+[ScriptCat instances](#scriptcat-instances) — answers the same `id`:
 
 ```json
 {
@@ -91,9 +92,11 @@ within `limits.authTimeoutMs`. Nonces are fresh for every connection.
 The extension stores the session key in extension-local storage. The daemon stores its copy in a user-only file.
 Disabling External Access deletes the extension copy and closes the connection, requiring enrollment again.
 
+Every handshake failure — including the instance failures below — closes the connection with 1008 and no reason.
+
 #### Browser instances
 
-An sctl Browser instance identifies itself in the authentication response; a response without `peer` is
+An sctl Browser instance identifies itself in the authentication response; a response without `peer` is a legacy
 ScriptCat. The instance ID is 32 lowercase hex digits, generated randomly when the extension is installed:
 
 ```json
@@ -114,6 +117,24 @@ verifies as another. An unknown `kind` or a malformed `instanceId` fails the han
 Each instance has its own session key, issued by its pairing; pairing a browser never touches ScriptCat's key.
 The daemon selects the key by `instanceId`, so a session handshake from an instance that is not paired — or that
 has been forgotten on the daemon side — fails like any other handshake failure.
+
+#### ScriptCat instances
+
+A current ScriptCat identifies itself the same way, with `"peer": {"kind": "scriptcat", "instanceId": "<32
+lowercase hex>"}`, one instance per ScriptCat installation. It uses `context.scriptcatSessionExt` /
+`context.scriptcatSessionDaemon` for sessions and `context.scriptcatPairExt` / `context.scriptcatPairDaemon` for
+pairing, with the same `instanceId` term, nonce order, key derivation and delivery as a browser instance. These
+contexts differ from the legacy ScriptCat and `browser*` contexts, so a MAC recorded for a ScriptCat instance never
+verifies for another instance, for a legacy ScriptCat, or for a browser instance. An unknown `kind`, a malformed
+`instanceId`, or a MAC that does not verify fails the handshake.
+
+Each ScriptCat instance has its own session key, issued by its pairing; pairing one never touches the legacy key,
+another ScriptCat instance's key, or any browser instance's key. A session handshake from a ScriptCat instance
+that is not paired fails.
+
+A ScriptCat that declares no `peer` is a legacy ScriptCat: it authenticates with the formulas at the top of this
+section and the single legacy key, and has no instance ID. Any number of ScriptCat instances and one legacy
+ScriptCat may be connected at once.
 
 ### 2.2 Hello and capabilities
 
@@ -144,10 +165,10 @@ The extension then declares the generated schema it uses and the business method
 
 The daemon registers the connection before it answers with an empty result, so business requests may follow that
 result immediately. A connection is usable only after this request is accepted.
-A new ScriptCat connection replaces the previous ScriptCat connection; a browser instance's new connection
-replaces only that instance's previous connection.
+A ScriptCat instance's or browser instance's new connection replaces only that instance's previous connection; a
+new legacy ScriptCat connection replaces only the previous legacy ScriptCat connection.
 
-A browser instance also declares its name and self-reported product details:
+A browser instance or ScriptCat instance also declares its name and self-reported product details:
 
 ```json
 "params": {
@@ -166,9 +187,10 @@ A browser instance also declares its name and self-reported product details:
 bytes. A missing or invalid `peer` closes the connection. On its first pairing an instance proposes its default
 name, the browser brand followed by `-` and the first four hex digits of its instance ID; renaming means
 reconnecting with the new name. The daemon's registry is authoritative: names are unique across every paired
-instance, online or offline. When another paired instance holds the name, the daemon answers the capabilities
-request with application error `CONFLICT`, keeps the instance's previous name, and closes the connection; a
-first pairing refused this way is not persisted.
+instance of the same kind, online or offline — browser and ScriptCat names are separate namespaces — and a ScriptCat
+instance may not take `scriptcat`, the name reserved for the legacy ScriptCat. When the name is taken, the daemon
+answers the capabilities request with application error `CONFLICT`, keeps the instance's previous name, and closes
+the connection; a first pairing refused this way is not persisted.
 
 ### 2.3 Liveness and shutdown
 
@@ -407,8 +429,10 @@ still redirect a complete source file.
 ### 3.1 Routing and target selection
 
 The daemon routes each call by the method's `peer`, not by which methods a connection declared: `scripts.*`
-calls go to the ScriptCat connection, browser methods go to a browser instance. A connection must still have
-declared the method, otherwise the call fails with `METHOD_NOT_FOUND`.
+calls go to the ScriptCat connection, browser methods go to a browser instance. A `scripts.*` call cannot yet
+name a ScriptCat instance: it goes to the only connected ScriptCat, legacy or instance, and fails with `CONFLICT`
+while several are connected. A connection must still have declared the method, otherwise the call fails with
+`METHOD_NOT_FOUND`.
 
 A browser call carries an optional target, either an instance name or an instance-ID prefix; the daemon resolves
 it because only the daemon knows which instances are online. A target is first matched against names exactly, and
@@ -744,7 +768,8 @@ The sctl Browser extension gates its L2 methods the same way, in its own approva
 `protocol.json` annotates ownership: each method and each entry of `notifications` has one `peer` (`scriptcat`
 or `browser`), and each `sessionMethods` entry, each `errorCodes` entry and each `crypto.context` entry lists the
 `peers` that use it. The `browser*` context strings are reserved for browser-instance handshakes, so a MAC computed
-for one peer kind never verifies as the other; the pairing KDF strings are shared. A notification's name may not
+for one peer kind never verifies as the other, and the `scriptcat*` context strings are reserved for ScriptCat-instance
+handshakes, distinct from the legacy ScriptCat strings; the pairing KDF strings are shared. A notification's name may not
 start with `$` or reuse a method name, because both travel in the JSON-RPC `method` field. `internal` on a method is
 daemon-side metadata and does not reach the TypeScript output. The generator emits one set of bindings per peer:
 

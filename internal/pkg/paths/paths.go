@@ -53,6 +53,11 @@ func BrowsersFile() string {
 	return filepath.Join(DataDir(), "browsers.json")
 }
 
+// ScriptCatsFile 返回已配对新版 ScriptCat 实例登记表(含每实例密钥)的落盘路径(0600)。
+func ScriptCatsFile() string {
+	return filepath.Join(DataDir(), "scriptcats.json")
+}
+
 // ControlTokenFile 返回本机内部控制通道凭据的落盘路径(0600)。daemon 绑定端口后写入,
 // 同用户的前端(sctl mcp / CLI 动词)读取后作为控制 API 的鉴权凭据。
 func ControlTokenFile() string {

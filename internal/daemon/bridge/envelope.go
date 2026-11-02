@@ -69,10 +69,13 @@ type authResponseResult struct {
 	Peer   *authPeer `json:"peer,omitempty"`
 }
 
-// peerKindBrowser 是浏览器实例在认证响应里声明的对端类型;不声明 peer 的连接是 ScriptCat。
-const peerKindBrowser = string(protocol.PeerBrowser)
+// peerKindBrowser 与 peerKindScriptCat 是实例在认证响应里声明的对端类型;不声明 peer 的连接是老版 ScriptCat。
+const (
+	peerKindBrowser   = string(protocol.PeerBrowser)
+	peerKindScriptCat = string(protocol.PeerScriptCat)
+)
 
-// authPeer 是浏览器实例在认证响应里声明的身份,参与握手 MAC 计算并决定选用哪把实例密钥。
+// authPeer 是浏览器实例或新版 ScriptCat 在认证响应里声明的身份,参与握手 MAC 计算并决定选用哪把实例密钥。
 type authPeer struct {
 	Kind       string `json:"kind"`
 	InstanceID string `json:"instanceId"`
@@ -98,7 +101,7 @@ type capabilitiesParams struct {
 	Peer          *capabilitiesPeer `json:"peer,omitempty"`
 }
 
-// capabilitiesPeer 是浏览器实例在能力声明里给出的名称与自报信息;名称以 daemon 登记为准。
+// capabilitiesPeer 是实例(浏览器或新版 ScriptCat)在能力声明里给出的名称与自报信息;名称以 daemon 登记为准。
 type capabilitiesPeer struct {
 	Name             string `json:"name"`
 	Product          string `json:"product,omitempty"`

@@ -8,10 +8,18 @@ import (
 	"github.com/coder/websocket"
 
 	"github.com/scriptscat/sctl/internal/daemon/store"
+	"github.com/scriptscat/sctl/internal/pkg/protocol"
 )
 
 // ErrInstanceNotFound 表示引用不匹配任何已配对的浏览器实例。
 var ErrInstanceNotFound = store.ErrInstanceNotFound
+
+// instanceRegistry 是 bridge 对一类实例登记表所需的操作,BrowserRegistry 与 ScriptCatRegistry 都满足。
+type instanceRegistry interface {
+	Get(id string) (store.Instance, bool)
+	Pair(inst store.Instance) error
+	Update(inst store.Instance) error
+}
 
 var (
 	// instanceIDPattern 限定实例 ID 为定长小写 hex:它直接拼进握手 MAC 输入,定长保证拼接无歧义。
@@ -106,9 +114,7 @@ func (s *Server) resolveRegistered(ref string) (string, bool) {
 	return "", false
 }
 
-// registerBrowser 把完成能力声明的浏览器实例写入登记表并标记在线,替换同一实例的旧连接。
-// 新配对在此首次落盘(名称随能力声明才到达);会话连接只能更新仍以同一密钥登记的实例,
-// 与 ForgetInstance 由 regMu 串行,被忘记的实例无法借一条进行中的握手重新登记。
+// registerBrowser 把完成能力声明的浏览器实例登记为在线(见 registerOnline),并在替换了旧连接时通知监听者。
 func (s *Server) registerBrowser(c *conn) error {
 	replaced, err := s.registerOnline(c)
 	if err != nil {
@@ -121,11 +127,30 @@ func (s *Server) registerBrowser(c *conn) error {
 	return nil
 }
 
-// registerOnline 在 regMu 下完成登记并把 c 置为在线,报告是否替换了同一实例的旧连接。
+// registryFor 返回对端类型 kind 的实例登记表。
+func (s *Server) registryFor(kind protocol.Peer) instanceRegistry {
+	if kind == protocol.PeerBrowser {
+		return s.browsers
+	}
+	return s.scriptcats
+}
+
+// onlineFor 返回对端类型 kind 的在线实例表;调用方须持有 s.mu。
+func (s *Server) onlineFor(kind protocol.Peer) map[string]*conn {
+	if kind == protocol.PeerBrowser {
+		return s.online
+	}
+	return s.scriptCats
+}
+
+// registerOnline 在 regMu 下把完成能力声明的实例写入其登记表并置为在线,报告是否替换了同一实例的旧连接。
+// 新配对在此首次落盘(名称随能力声明才到达);会话连接只能更新仍以同一密钥登记的实例,
+// 与忘记操作由 regMu 串行,被忘记的实例无法借一条进行中的握手重新登记。
 func (s *Server) registerOnline(c *conn) (replaced bool, err error) {
 	s.regMu.Lock()
 	defer s.regMu.Unlock()
-	inst := store.BrowserInstance{
+	registry := s.registryFor(c.kind)
+	inst := store.Instance{
 		ID:               c.instanceID,
 		Name:             c.peer.Name,
 		Key:              c.key,
@@ -134,9 +159,9 @@ func (s *Server) registerOnline(c *conn) (replaced bool, err error) {
 		ExtensionVersion: c.peer.ExtensionVersion,
 	}
 	if c.paired {
-		err = s.browsers.Pair(inst)
+		err = registry.Pair(inst)
 	} else {
-		err = s.browsers.Update(inst)
+		err = registry.Update(inst)
 	}
 	if err != nil {
 		return false, err
@@ -144,8 +169,9 @@ func (s *Server) registerOnline(c *conn) (replaced bool, err error) {
 
 	c.connectedAt = time.Now()
 	s.mu.Lock()
-	old := s.online[c.instanceID]
-	s.online[c.instanceID] = c
+	online := s.onlineFor(c.kind)
+	old := online[c.instanceID]
+	online[c.instanceID] = c
 	s.mu.Unlock()
 	if old != nil && old != c {
 		old.closeInBackground(websocket.StatusNormalClosure, "replaced by new connection")
