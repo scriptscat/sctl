@@ -224,6 +224,15 @@ results, and error codes that span several tools. [cli.md](./cli.md) describes t
 command-line side, and three topics live only there and are linked from here: how sctl dismisses JS dialogs, the
 side effects of raw CDP commands, and the Playwright and Puppeteer connection examples.
 
+### ScriptCat instances
+
+Every ScriptCat tool (`scripts_*`) accepts an optional `scriptcat` argument (name or instance-ID prefix, as for
+`--scriptcat` in [cli.md](./cli.md)) to pick a paired ScriptCat instance; the browser tools do not take it, and the
+ScriptCat tools do not take `browser`. Without a target and with several instances online, `scripts_list` combines
+every online instance's scripts and tags each item with `scriptcat` (`name`, and `id` for upgraded instances), while
+the other ScriptCat tools return `SCRIPTCAT_AMBIGUOUS` listing the candidates. `SCRIPTCAT_OFFLINE` and
+`SCRIPTCAT_NOT_FOUND` are returned as tool errors.
+
 ### Browser instances, tabs, and windows
 
 `sctl mcp` always also exposes `browsers_list`, `tabs_list`, `tabs_open`, `tabs_close`, `tabs_activate`, and

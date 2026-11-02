@@ -12,7 +12,8 @@ import (
 // newInstallCmd 请求安装一个用户脚本。参数是 URL 或本地文件路径:URL 上送 {url},本地文件读出后
 // 上送 {code}(staged code)。阻塞至扩展批准/拒绝;Ctrl-C 即作废。install 不是资源词命令。
 func newInstallCmd() *cobra.Command {
-	return &cobra.Command{
+	var scriptCat string
+	cmd := &cobra.Command{
 		Use:   "install <url|file>",
 		Short: "Request installing a userscript (URL or local file); blocks until approved in the browser",
 		Args:  cobra.ExactArgs(1),
@@ -21,7 +22,7 @@ func newInstallCmd() *cobra.Command {
 			if err != nil {
 				return &ExitError{Code: exitError, Message: err.Error()}
 			}
-			return dispatchBlocking(cmd, "scripts.install.request", input, func(result json.RawMessage) error {
+			return dispatchBlocking(cmd, "scripts.install.request", scriptCat, input, func(result json.RawMessage) error {
 				if outputFormat == outputJSON {
 					return printResultJSON(result)
 				}
@@ -30,6 +31,8 @@ func newInstallCmd() *cobra.Command {
 			})
 		},
 	}
+	addScriptCatFlag(cmd, &scriptCat)
+	return cmd
 }
 
 // buildInstallInput 判定参数是远程 URL 还是本地文件,构造对应的 bridge input。
@@ -63,14 +66,15 @@ func newToggleCmd(enable bool) *cobra.Command {
 	if enable {
 		use, short = "enable [scripts|script|sc] <uuid>", "Request enabling a script; blocks until approved in the browser"
 	}
-	return &cobra.Command{
+	var scriptCat string
+	cmd := &cobra.Command{
 		Use:   use,
 		Short: short,
 		Args:  exactlyOneUUIDArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			uuid := stripResourceWord(args)[0]
 			input := mustInput(map[string]any{"uuid": uuid, "enable": enable})
-			return dispatchBlocking(cmd, "scripts.toggle.request", input, func(result json.RawMessage) error {
+			return dispatchBlocking(cmd, "scripts.toggle.request", scriptCat, input, func(result json.RawMessage) error {
 				if outputFormat == outputJSON {
 					return printResultJSON(result)
 				}
@@ -83,12 +87,15 @@ func newToggleCmd(enable bool) *cobra.Command {
 			})
 		},
 	}
+	addScriptCatFlag(cmd, &scriptCat)
+	return cmd
 }
 
 // newDeleteCmd 请求删除一个脚本,接受可省略的资源词和 del 别名。
 // 命令阻塞至扩展批准或拒绝;Ctrl-C 即作废。
 func newDeleteCmd() *cobra.Command {
-	return &cobra.Command{
+	var scriptCat string
+	cmd := &cobra.Command{
 		Use:     "delete [scripts|script|sc] <uuid>",
 		Aliases: []string{"del"},
 		Short:   "Request deleting a script; blocks until approved in the browser",
@@ -96,7 +103,7 @@ func newDeleteCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			uuid := stripResourceWord(args)[0]
 			input := mustInput(map[string]string{"uuid": uuid})
-			return dispatchBlocking(cmd, "scripts.delete.request", input, func(result json.RawMessage) error {
+			return dispatchBlocking(cmd, "scripts.delete.request", scriptCat, input, func(result json.RawMessage) error {
 				if outputFormat == outputJSON {
 					return printResultJSON(result)
 				}
@@ -105,4 +112,6 @@ func newDeleteCmd() *cobra.Command {
 			})
 		},
 	}
+	addScriptCatFlag(cmd, &scriptCat)
+	return cmd
 }

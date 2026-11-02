@@ -1,6 +1,8 @@
 # ScriptCat userscripts
 
-These commands go to the ScriptCat extension and take no `--browser`.
+These commands go to the ScriptCat extension and take no `--browser`. With several ScriptCat instances online (see
+`sctl scriptcats`), pass `--scriptcat <name|ID prefix>` or set `SCTL_SCRIPTCAT`; without it `get` lists every instance
+(adding a `SCRIPTCAT` column) and the other commands fail with `SCRIPTCAT_AMBIGUOUS`.
 
 **The user approves in the browser** every write, and the first read of a script's source. The command blocks
 until they decide:

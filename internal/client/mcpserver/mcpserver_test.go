@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -25,6 +26,7 @@ type fakeCaller struct {
 	actions       []string
 	inputs        []json.RawMessage
 	browserParams []string      // 记录每次 Call 的目标浏览器参数
+	scriptCats    []string      // 记录每次 Call 的目标 ScriptCat 参数
 	block         chan struct{} // 非 nil 则 Call 阻塞至其关闭或 ctx 取消
 	entered       chan struct{} // 非 nil 则每次 Call 进入时发送一次,让测试确知调用已抵达桥接侧
 	result        control.CallResult
@@ -43,10 +45,11 @@ type cdpCall struct {
 	req  control.CDPRequest
 }
 
-func (f *fakeCaller) Call(ctx context.Context, action, browser string, input json.RawMessage, onPending func()) (control.CallResult, error) {
+func (f *fakeCaller) Call(ctx context.Context, action string, target control.Target, input json.RawMessage, onPending func()) (control.CallResult, error) {
 	f.mu.Lock()
 	f.actions = append(f.actions, action)
-	f.browserParams = append(f.browserParams, browser)
+	f.browserParams = append(f.browserParams, target.Browser)
+	f.scriptCats = append(f.scriptCats, target.ScriptCat)
 	f.inputs = append(f.inputs, append(json.RawMessage(nil), input...))
 	block := f.block
 	f.mu.Unlock()
@@ -681,5 +684,49 @@ func TestToolsWithoutRequiredArgumentsAcceptAnOmittedArgumentsObject(t *testing.
 		for _, input := range caller.inputs {
 			So(string(input), ShouldEqual, `{}`)
 		}
+	})
+}
+
+func TestScriptsToolsForwardTheOptionalScriptCatArgument(t *testing.T) {
+	Convey("scripts 工具声明可选的 scriptcat 字符串参数,浏览器工具与 browsers_list 不声明", t, func() {
+		p := loadProto(t)
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: &fakeCaller{}}, nil)
+		res, err := session.ListTools(context.Background(), &mcp.ListToolsParams{})
+		So(err, ShouldBeNil)
+		found := 0
+		for _, tool := range res.Tools {
+			props := schemaPropsOf(tool)
+			if strings.HasPrefix(tool.Name, "scripts_") {
+				found++
+				So(props, ShouldContainKey, "scriptcat")
+				So(props, ShouldNotContainKey, "browser")
+				prop := props["scriptcat"].(map[string]any)
+				So(prop["type"], ShouldEqual, "string")
+				So(prop["description"], ShouldContainSubstring, "ScriptCat")
+				if tool.Name == "scripts_list" {
+					So(prop["description"], ShouldContainSubstring, "every online ScriptCat")
+				} else {
+					So(prop["description"], ShouldContainSubstring, "returns error")
+				}
+				continue
+			}
+			So(props, ShouldNotContainKey, "scriptcat")
+		}
+		So(found, ShouldEqual, 8)
+	})
+
+	Convey("scripts 工具把 scriptcat 参数作为目标转发,且不混入方法输入", t, func() {
+		p := loadProto(t)
+		caller := &fakeCaller{result: control.CallResult{OK: true, Result: json.RawMessage(`{"scripts":[]}`)}}
+		session := connect(t, Deps{Name: "s", Version: "v0", Proto: p, Caller: caller}, nil)
+
+		_, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "scripts_metadata_get", Arguments: map[string]any{"uuid": "u1", "scriptcat": "work"}})
+		So(err, ShouldBeNil)
+		_, err = session.CallTool(context.Background(), &mcp.CallToolParams{Name: "scripts_list", Arguments: map[string]any{}})
+		So(err, ShouldBeNil)
+
+		So(caller.scriptCats, ShouldResemble, []string{"work", ""})
+		So(caller.browserParams, ShouldResemble, []string{"", ""})
+		So(string(caller.inputs[0]), ShouldEqual, `{"uuid":"u1"}`)
 	})
 }

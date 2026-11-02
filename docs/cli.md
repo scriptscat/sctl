@@ -96,6 +96,17 @@ control commands run immediately with no approval step (see [`threat-model.md`](
 `cookies`, `extensions`, `page`, `debug`, and `cdp` accept `--browser <name|id>` (or `SCTL_BROWSER`) to pick an
 instance when more than one is online.
 
+### Choosing a ScriptCat instance
+
+`get`, `grep`, `edit`, `install`, `enable`, `disable`, and `delete` accept `--scriptcat <name|id>` (or
+`SCTL_SCRIPTCAT`) to pick a paired ScriptCat instance (see `sctl scriptcats`); an explicit `--scriptcat` wins over the
+environment variable. These names are a separate namespace from `--browser`. With exactly one instance online no
+target is needed. With several online and no target, `get` lists scripts from every online instance and adds a
+`SCRIPTCAT` column naming each script's source instance, while the other verbs fail with `SCRIPTCAT_AMBIGUOUS`
+(exit code 3) and the hint `pass --scriptcat <name> or set SCTL_SCRIPTCAT`. `SCRIPTCAT_OFFLINE` and
+`SCRIPTCAT_NOT_FOUND` also exit with code 3. With a single instance the `get` table has no extra column. Matching
+rules are in [`protocol.md`](./protocol.md) §3.1.
+
 ### Exit codes
 
 | Exit code | Meaning |

@@ -62,6 +62,8 @@ sctl browsers -o json  # paired sctl Browser instances: name, online, product
 
 - **Browser:** chosen automatically when exactly one instance is online; otherwise pass `--browser <name|ID prefix>`
   or set `SCTL_BROWSER` (else `BROWSER_AMBIGUOUS`).
+- **ScriptCat instance:** chosen automatically when exactly one is online; otherwise pass `--scriptcat <name|ID prefix>`
+  or set `SCTL_SCRIPTCAT` (else `SCRIPTCAT_AMBIGUOUS`). `sctl get` with several online lists them all with a source column.
 - **Output:** add `-o json` whenever you parse the result; the table form is for people. The shapes you need most:
 
   ```sh
@@ -127,6 +129,7 @@ sctl page detach --tab $TAB
 |---|---|
 | `NO_BROWSER_CONNECTED` / `BROWSER_OFFLINE` | The browser is not paired or not running: ask the user to open it or pair with `sctl connect` |
 | `BROWSER_AMBIGUOUS` / `BROWSER_NOT_FOUND` | Look up the name with `sctl browsers` and pass `--browser` |
+| `SCRIPTCAT_AMBIGUOUS` / `SCRIPTCAT_OFFLINE` / `SCRIPTCAT_NOT_FOUND` | Look up the name with `sctl scriptcats` and pass `--scriptcat` |
 | `STALE_REF` | Take a new `page snapshot` and use the new ref |
 | `TARGET_AMBIGUOUS` | `--selector` matched several elements: use a snapshot ref or a stricter selector |
 | `TIMEOUT` | The message names the last unmet condition (obscured, hidden, disabled…): fix that, or raise `--timeout` |

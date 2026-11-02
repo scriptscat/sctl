@@ -17,6 +17,7 @@ func newGrepCmd() *cobra.Command {
 		ignoreCase bool
 		contextN   int
 		maxMatches int
+		scriptCat  string
 	)
 	cmd := &cobra.Command{
 		Use:   "grep [scripts|script|sc] <uuid> <query>",
@@ -52,7 +53,7 @@ func newGrepCmd() *cobra.Command {
 			if cmd.Flags().Changed("max-count") {
 				input["maxMatches"] = maxMatches
 			}
-			return dispatch(cmd, "scripts.source.grep", mustInput(input), func(result json.RawMessage) error {
+			return dispatch(cmd, "scripts.source.grep", scriptCat, mustInput(input), func(result json.RawMessage) error {
 				if outputFormat == outputJSON {
 					return printResultJSON(result)
 				}
@@ -64,6 +65,7 @@ func newGrepCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&ignoreCase, "ignore-case", "i", false, "match case-insensitively")
 	cmd.Flags().IntVarP(&contextN, "context", "C", 0, "print N lines of context around each match")
 	cmd.Flags().IntVarP(&maxMatches, "max-count", "m", 0, "stop after N matches")
+	addScriptCatFlag(cmd, &scriptCat)
 	return cmd
 }
 

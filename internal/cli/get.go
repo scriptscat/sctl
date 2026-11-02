@@ -14,7 +14,7 @@ import (
 // newGetCmd 构造 `sctl get`:不带 uuid 打印已安装脚本表格;带 uuid 默认打印单行表格。
 // -o json 输出完整元数据;-o source 输出源码到 stdout,且仅在带 uuid 时合法。
 func newGetCmd() *cobra.Command {
-	var lines string
+	var lines, scriptCat string
 	cmd := &cobra.Command{
 		Use:   "get [scripts|script|sc] [<uuid>]",
 		Short: "List installed scripts, or show one script (-o json for full metadata, -o source for raw code)",
@@ -43,7 +43,7 @@ func newGetCmd() *cobra.Command {
 				return &ExitError{Code: exitError, Message: "--lines is only valid together with -o source"}
 			}
 			if len(args) == 0 {
-				return dispatch(cmd, "scripts.list", mustInput(struct{}{}), func(result json.RawMessage) error {
+				return dispatch(cmd, "scripts.list", scriptCat, mustInput(struct{}{}), func(result json.RawMessage) error {
 					if outputFormat == outputJSON {
 						return printResultJSON(result)
 					}
@@ -57,9 +57,9 @@ func newGetCmd() *cobra.Command {
 					input["startLine"] = startLine
 					input["endLine"] = endLine
 				}
-				return dispatch(cmd, "scripts.source.get", mustInput(input), printScriptSource)
+				return dispatch(cmd, "scripts.source.get", scriptCat, mustInput(input), printScriptSource)
 			}
-			return dispatch(cmd, "scripts.metadata.get", mustInput(map[string]string{"uuid": uuid}), func(result json.RawMessage) error {
+			return dispatch(cmd, "scripts.metadata.get", scriptCat, mustInput(map[string]string{"uuid": uuid}), func(result json.RawMessage) error {
 				if outputFormat == outputJSON {
 					return printResultJSON(result)
 				}
@@ -68,6 +68,7 @@ func newGetCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&lines, "lines", "", `read the inclusive 1-based line window "A-B" (only with -o source)`)
+	addScriptCatFlag(cmd, &scriptCat)
 	return cmd
 }
 
@@ -94,6 +95,15 @@ type scriptSummary struct {
 	Name    string `json:"name"`
 	Enabled bool   `json:"enabled"`
 	Version string `json:"version"`
+	// ScriptCat 只在多个 ScriptCat 实例的 scripts.list 合并结果里出现,标明条目来自哪个实例
+	// (docs/protocol.md §3.1);daemon 给每一项都标上,所以只要有一项带它,每一项都带。
+	ScriptCat *scriptCatRef `json:"scriptcat,omitempty"`
+}
+
+// scriptCatRef 镜像合并结果里每一项携带的 "scriptcat":{"id"?,"name"};老版实例没有 id。
+type scriptCatRef struct {
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name"`
 }
 
 func printScriptListTable(result json.RawMessage) error {
@@ -120,12 +130,34 @@ func printScriptTable(items []scriptSummary) error {
 		fmt.Fprintln(os.Stdout, "(no scripts installed)")
 		return nil
 	}
+	merged := anyScriptHasScriptCat(items)
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "UUID\tNAME\tENABLED\tVERSION")
+	header := "UUID\tNAME\tENABLED\tVERSION"
+	if merged {
+		header += "\tSCRIPTCAT"
+	}
+	fmt.Fprintln(tw, header)
 	for _, s := range items {
-		fmt.Fprintf(tw, "%s\t%s\t%v\t%s\n", s.UUID, s.Name, s.Enabled, s.Version)
+		fmt.Fprintf(tw, "%s\t%s\t%v\t%s", s.UUID, s.Name, s.Enabled, s.Version)
+		if merged {
+			source := ""
+			if s.ScriptCat != nil {
+				source = terminalSafe(s.ScriptCat.Name)
+			}
+			fmt.Fprintf(tw, "\t%s", source)
+		}
+		fmt.Fprintln(tw)
 	}
 	return tw.Flush()
+}
+
+func anyScriptHasScriptCat(items []scriptSummary) bool {
+	for _, s := range items {
+		if s.ScriptCat != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func printScriptSource(result json.RawMessage) error {

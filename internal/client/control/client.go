@@ -137,15 +137,21 @@ func (c *Client) newRequest(ctx context.Context, method, path string, body []byt
 	return req, nil
 }
 
-// Call 转发一次 bridge action 调用并阻塞至应答/作废。browser 是浏览器方法的可选目标
-// (名称或实例 ID 前缀),空串表示由 daemon 按在线实例选择;scripts.* 必须传空串。
+// Target 是一次 /control/call 的可选目标实例(名称或实例 ID 前缀),空串表示由 daemon 按在线实例选择。
+// Browser 只用于浏览器方法,ScriptCat 只用于 scripts.*;给错一类由 daemon 以 INVALID_REQUEST 拒绝。
+type Target struct {
+	Browser   string
+	ScriptCat string
+}
+
+// Call 转发一次 bridge action 调用并阻塞至应答/作废。target 指定要路由到的实例,见 Target。
 // onPending 非 nil 时请 daemon 报告请求进入人工审批,并在那时(结论到达之前)调用它,至多一次;审批前就得出结论的请求
 // 不会回调。ctx 取消(如 CLI Ctrl-C)会切断连接,daemon 侧据此发 $/cancelRequest 作废该操作。
-func (c *Client) Call(ctx context.Context, action, browser string, input json.RawMessage, onPending func()) (CallResult, error) {
+func (c *Client) Call(ctx context.Context, action string, target Target, input json.RawMessage, onPending func()) (CallResult, error) {
 	if input == nil {
 		input = json.RawMessage(`{}`)
 	}
-	return c.post(ctx, PathCall, CallRequest{Action: action, Browser: browser, Input: input, ReportPending: onPending != nil}, onPending)
+	return c.post(ctx, PathCall, CallRequest{Action: action, Browser: target.Browser, ScriptCat: target.ScriptCat, Input: input, ReportPending: onPending != nil}, onPending)
 }
 
 // Page 在浏览器标签页上执行一次页面动作并阻塞至完成。ctx 取消会切断连接,daemon 侧随之结束该动作。
