@@ -47,7 +47,7 @@ func TestScriptCatsListTable(t *testing.T) {
 		list := []control.ScriptCatInfo{
 			{ID: "0123456789abcdef0123456789abcdef", Name: "work", Online: true, Product: "Chrome", ProductVersion: "129.0", ExtensionVersion: "1.3.0", ConnectedAt: connectedAt},
 			{ID: "fedcba9876543210fedcba9876543210", Name: "home"},
-			{Name: "scriptcat", Online: true},
+			{Name: "scriptcat", Online: true, ConnectedAt: connectedAt},
 		}
 
 		Convey("表格含名称、ID、状态、品牌版本、扩展版本,老版一行没有 ID", func() {
@@ -85,7 +85,7 @@ func TestScriptCatsListTable(t *testing.T) {
 			So(got, ShouldHaveLength, 3)
 			So(got[2].Name, ShouldEqual, "scriptcat")
 			So(got[2].ID, ShouldBeBlank)
-			So(strings.Count(out, "connectedAt"), ShouldEqual, 1)
+			So(strings.Count(out, "connectedAt"), ShouldEqual, 2) // 只有两条在线的行带连接时间
 		})
 
 		Convey("没有已配对实例时给出提示", func() {

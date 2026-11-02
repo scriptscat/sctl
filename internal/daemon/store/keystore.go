@@ -3,6 +3,7 @@ package store
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,10 @@ import (
 
 	"github.com/scriptscat/sctl/internal/pkg/fsutil"
 )
+
+// ErrMalformedKey 表示密钥文件存在但内容不是合法的 hex 密钥。它认证不了任何人,但文件仍在,
+// 列表与忘记据此把它当作存在而不是报内部错误。
+var ErrMalformedKey = errors.New("malformed key file")
 
 // KeyStore 以 0600 权限持久化扩展配对的长期共享密钥 K。
 type KeyStore struct {
@@ -33,7 +38,7 @@ func (s *KeyStore) Load() (key []byte, ok bool, err error) {
 	}
 	k, err := hex.DecodeString(strings.TrimSpace(string(raw)))
 	if err != nil {
-		return nil, false, fmt.Errorf("parse key file: %w", err)
+		return nil, false, fmt.Errorf("parse key file: %w: %w", ErrMalformedKey, err)
 	}
 	return k, true, nil
 }

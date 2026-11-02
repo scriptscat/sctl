@@ -30,7 +30,7 @@ const maxFullSourceResponseBytes = 64 * 1024
 var progressInterval = 10 * time.Second
 
 // BridgeCaller 抽象「向 daemon 转发 bridge action 调用、页面动作、原始 CDP 端点请求与查询浏览器列表」,便于测试注入桩。
-// browser 是浏览器方法的可选目标,其余方法传空串。
+// Call 的 target 只为浏览器方法填 Browser、只为 scripts.* 填 ScriptCat(见 control.Target)。
 type BridgeCaller interface {
 	Call(ctx context.Context, action string, target control.Target, input json.RawMessage, onPending func()) (control.CallResult, error)
 	Page(ctx context.Context, req control.PageRequest) (control.CallResult, error)

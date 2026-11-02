@@ -202,6 +202,24 @@ func TestFailedPairingKeyDeleteIsRetried(t *testing.T) {
 			h.legacyHandshakeFails(key)
 			So(h.pairingKeyRemoved(), ShouldBeTrue)
 		})
+
+		Convey("忘记接管后的实例时一并删除残留:这把密钥此后既不能老版握手,也不能再被同一实例接管", func() {
+			So(h.srv.ForgetScriptCat("work"), ShouldBeNil)
+			a.closedByDaemon()
+			So(h.pairingKeyRemoved(), ShouldBeTrue)
+			ev := h.takeoverFails(instanceA, key)
+			So(ev.Reason, ShouldEqual, audit.ReasonUnknownInstance)
+			h.legacyHandshakeFails(key)
+		})
+
+		Convey("接管后的实例重新配对时一并删除残留:旧密钥此后不能老版握手", func() {
+			e, newKey := h.enrollScriptCatInstance(instanceA)
+			So(e.declare(scriptCatCapabilities("work")).Error, ShouldBeNil)
+			got, _ := h.scriptcats.Get(instanceA)
+			So(got.Key, ShouldResemble, newKey)
+			So(h.pairingKeyRemoved(), ShouldBeTrue)
+			h.legacyHandshakeFails(key)
+		})
 	})
 }
 
@@ -235,6 +253,13 @@ func TestTakenOverPairingKeyLeftOnDiskCountsAsAbsent(t *testing.T) {
 
 		Convey("忘记 scriptcat:ErrScriptCatNotFound", func() {
 			So(h.srv.ForgetScriptCat("scriptcat"), ShouldEqual, ErrScriptCatNotFound)
+		})
+
+		Convey("残留仍删不掉时忘记该实例报错且登记保留:否则这把密钥离开登记表,残留就重新成了老版的 pairing.key", func() {
+			So(h.srv.ForgetScriptCat("work"), ShouldNotBeNil)
+			_, ok := h.scriptcats.Get(instanceA)
+			So(ok, ShouldBeTrue)
+			h.legacyHandshakeFails(key)
 		})
 	})
 }

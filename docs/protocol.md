@@ -141,7 +141,9 @@ deletes `pairing.key` and closes a connected legacy ScriptCat. A name `CONFLICT`
 `pairing.key`. From then on a legacy handshake does not verify, and a legacy connection that authenticated before the
 takeover but had not yet declared capabilities is closed when it does. If the registry write succeeds but the
 delete fails, the registration stands, the leftover file is treated as absent, and the delete is retried at the next
-daemon start and at every later handshake that reads the legacy key.
+daemon start and at every later handshake that reads the legacy key. Forgetting or re-pairing the instance that took
+the key over deletes such a leftover first and fails, changing nothing, while it still cannot be deleted: once the
+key left `scriptcats.json` the leftover would authenticate as the legacy key again.
 
 A ScriptCat that declares no `peer` is a legacy ScriptCat: it authenticates with the formulas at the top of this
 section and the single legacy key, and has no instance ID. Any number of ScriptCat instances and one legacy
@@ -450,7 +452,8 @@ name matches is it treated as an instance-ID prefix over every paired instance o
 Browser and ScriptCat names are separate namespaces.
 
 A legacy ScriptCat ([§2.1](#21-authentication)) takes part as one instance under the reserved name `scriptcat`; it
-counts as paired while it is connected or `pairing.key` exists. It has no instance ID, so it is selected only by
+counts as paired while it is connected or `pairing.key` exists (an unparseable `pairing.key` still exists: it is
+listed offline and `forget scriptcat` deletes it). It has no instance ID, so it is selected only by
 that name and never by an ID prefix.
 
 The same table applies to both kinds; the codes differ:

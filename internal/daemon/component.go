@@ -68,7 +68,7 @@ func (b *daemonComponent) StartCancel(ctx context.Context, cancel context.Cancel
 	b.srv = bridge.NewServer(b.version, p, keys, browsers, scriptcats, logger.Ctx(ctx))
 	// 上次接管没删成的 pairing.key 在这里补删;仍删不掉不阻止启动,老版握手照样不成立,下次检查再删。
 	if err := b.srv.RetireTakenOverPairingKey(); err != nil {
-		logger.Ctx(ctx).Warn("failed to delete the pairing.key taken over by a ScriptCat instance", zap.Error(err))
+		logger.Ctx(ctx).Warn("failed to retire a pairing.key left over from a ScriptCat takeover", zap.Error(err))
 	}
 
 	// 同步 net.Listen 使绑定失败在启动阶段即暴露(cago 会 panic,符合 fail-fast 约定)。

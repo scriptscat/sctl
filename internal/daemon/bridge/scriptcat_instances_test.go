@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"encoding/json"
 	"os"
 	"testing"
 
@@ -8,6 +9,7 @@ import (
 
 	"github.com/scriptscat/sctl/internal/daemon/auth"
 	"github.com/scriptscat/sctl/internal/pkg/audit"
+	"github.com/scriptscat/sctl/internal/pkg/protocol/generated"
 )
 
 func scriptCatByName(list []InstanceInfo, name string) (InstanceInfo, bool) {
@@ -126,5 +128,27 @@ func TestForgetScriptCat(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(list, ShouldHaveLength, 2)
 		})
+	})
+}
+
+func TestMalformedPairingKeyIsListedAndForgettable(t *testing.T) {
+	Convey("pairing.key 内容损坏时:列表照常返回并列出离线的 scriptcat,点名它得到 SCRIPTCAT_OFFLINE,忘记它删除文件;新版实例照常忘记", t, func() {
+		h := startTestServer(t)
+		h.registerScriptCat(instanceA, "work")
+		So(os.WriteFile(h.keyPath, []byte("not a hex key"), 0o600), ShouldBeNil)
+
+		list, err := h.srv.ScriptCatInstances()
+		So(err, ShouldBeNil)
+		row, found := scriptCatByName(list, "scriptcat")
+		So(found, ShouldBeTrue)
+		So(row.Online, ShouldBeFalse)
+
+		_, err = h.call(Request{Action: "scripts.list", ScriptCat: "scriptcat", Input: json.RawMessage(`{}`)})
+		So(errorCode(err), ShouldEqual, generated.ErrorCodeScriptcatOffline)
+
+		So(h.srv.ForgetScriptCat("work"), ShouldBeNil)
+		So(h.srv.ForgetScriptCat("scriptcat"), ShouldBeNil)
+		_, statErr := os.Stat(h.keyPath)
+		So(os.IsNotExist(statErr), ShouldBeTrue)
 	})
 }

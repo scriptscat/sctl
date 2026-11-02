@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"crypto/subtle"
+	"errors"
 	"fmt"
 
 	"go.uber.org/zap"
@@ -44,8 +45,12 @@ func (s *Server) legacyKeyLocked() (key []byte, ok bool, err error) {
 
 // legacyPaired 报告 pairing.key 是否仍归老版 ScriptCat 所有,供列表、目标选择与忘记使用。已被接管却没删成的
 // pairing.key 视为不存在,但这里不补删:补删只在启动与握手时进行,删不掉也不应让这些只读或无关的操作报内部错误。
+// 内容损坏的 pairing.key 认证不了任何握手,但文件仍在:视为存在,status 照常可用,forget scriptcat 也能删掉它。
 func (s *Server) legacyPaired() (bool, error) {
 	key, ok, err := s.keys.Load()
+	if errors.Is(err, store.ErrMalformedKey) {
+		return true, nil
+	}
 	if err != nil {
 		return false, fmt.Errorf("load long-term key: %w", err)
 	}
@@ -61,6 +66,30 @@ func (s *Server) registeredScriptCatKey(key []byte) bool {
 		}
 	}
 	return false
+}
+
+// retireTakenOverCopyLocked 删除与 ScriptCat 实例 id 当前密钥相同的 pairing.key 残留(接管时没删成),在这把密钥
+// 离开登记表(忘记或重新配对)之前调用;调用方须持有 regMu。残留是否作废只凭登记表里还有没有这把密钥判断,密钥一离开
+// 登记表,残留就重新成了老版的 pairing.key,被忘记的实例可以借它再次握手或接管。删不掉时返回错误,调用方不得让密钥
+// 离开登记表。内容损坏的 pairing.key 不可能是这把密钥,原样保留。
+func (s *Server) retireTakenOverCopyLocked(id string) error {
+	inst, ok := s.scriptcats.Get(id)
+	if !ok {
+		return nil
+	}
+	key, ok, err := s.keys.Load()
+	switch {
+	case errors.Is(err, store.ErrMalformedKey):
+		return nil
+	case err != nil:
+		return fmt.Errorf("load long-term key: %w", err)
+	case !ok || subtle.ConstantTimeCompare(key, inst.Key) != 1:
+		return nil
+	}
+	if err := s.keys.Delete(); err != nil {
+		return fmt.Errorf("delete taken-over pairing.key: %w", err)
+	}
+	return nil
 }
 
 // saveLegacyKey 写入老版 ScriptCat 新接入的密钥;与接管的检查和补删由 regMu 串行。

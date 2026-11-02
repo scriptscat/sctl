@@ -3,8 +3,6 @@ package cli
 import (
 	"fmt"
 	"os"
-	"text/tabwriter"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -75,26 +73,9 @@ func newScriptCatsForgetCmd() *cobra.Command {
 }
 
 func printScriptCatsTable(list []control.ScriptCatInfo) error {
-	if len(list) == 0 {
-		fmt.Fprintln(os.Stdout, "(no paired ScriptCat instances)")
-		return nil
+	rows := make([]control.BrowserInfo, len(list))
+	for i, s := range list {
+		rows[i] = control.BrowserInfo(s)
 	}
-	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "NAME\tID\tSTATUS\tPRODUCT\tEXTENSION\tCONNECTED SINCE")
-	for _, s := range list {
-		status := "offline"
-		connected := "-"
-		if s.Online {
-			status = "online"
-			if !s.ConnectedAt.IsZero() {
-				connected = s.ConnectedAt.Local().Format(time.RFC3339)
-			}
-		}
-		id := s.ID
-		if id == "" {
-			id = "-"
-		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", s.Name, id, status, productLabel(control.BrowserInfo(s)), s.ExtensionVersion, connected)
-	}
-	return tw.Flush()
+	return printInstancesTable(rows, "(no paired ScriptCat instances)")
 }
