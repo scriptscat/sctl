@@ -25,6 +25,9 @@ var (
 	BuildDate = "unknown"
 )
 
+// defaultLogLevel 是 --log-level 的默认值;`sctl service install` 只固化与它不同的级别。
+const defaultLogLevel = "info"
+
 // 全局标志(绑定为包级变量,任意子命令直接读取)。
 var (
 	outputFormat  string
@@ -68,7 +71,8 @@ func NewRootCmd() *cobra.Command {
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			paths.SetDataDir(dataDir)
 			control.SetAddress(listenAddress)
-			logging.Setup(logLevel)
+			// 服务管理器托管的 serve 只写文件日志,见 internal/pkg/logging。
+			logging.Setup(logLevel, !serveAsService)
 			switch outputFormat {
 			case outputTable, outputJSON, outputSource:
 			default:
@@ -82,12 +86,13 @@ func NewRootCmd() *cobra.Command {
 			return nil
 		},
 	}
-	root.PersistentFlags().StringVar(&logLevel, "log-level", "info", "log level: debug|info|warn|error (always written to stderr)")
+	root.PersistentFlags().StringVar(&logLevel, "log-level", defaultLogLevel, "log level: debug|info|warn|error (written to stderr and <data dir>/logs; only to the files under sctl service)")
 	root.PersistentFlags().StringVar(&dataDir, "data-dir", os.Getenv("SCTL_DATA_DIR"), "data directory for keys, control token and logs (env: SCTL_DATA_DIR)")
 	root.PersistentFlags().StringVar(&listenAddress, "listen-address", "", "address used by sctl serve and commands that connect to it (default 127.0.0.1:8643)")
 	root.PersistentFlags().StringVarP(&outputFormat, "output", "o", outputTable, "output format: table|json|source (source only valid for \"get <uuid>\")")
 	root.AddCommand(
 		newServeCmd(),
+		newServiceCmd(),
 		newMcpCmd(),
 		newConnectCmd(),
 		newStatusCmd(),

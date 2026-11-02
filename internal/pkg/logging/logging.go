@@ -7,7 +7,8 @@
 //
 // 出口:持久文件日志(<dataDir>/logs/sctl.log 收 level+,sctl.err.log 只收 error+)
 // 外加 stderr console core —— sctl serve/connect 是前台命令,stderr 让用户实时看到日志,
-// 且 stderr 与 stdout 协议/JSON 输出互不干扰。
+// 且 stderr 与 stdout 协议/JSON 输出互不干扰。服务管理器托管的 serve 不要 stderr core:
+// launchd 把 stderr 写进一个不滚动的文件,再写一份会无限增长。
 package logging
 
 import (
@@ -21,13 +22,18 @@ import (
 	"github.com/scriptscat/sctl/internal/pkg/paths"
 )
 
-// Setup 构建并注入全局 logger。level 取 debug/info/warn/error。文件日志目录不可写时
-// 静默降级为仅 stderr(不因日志目录问题阻断命令)。返回构建出的 logger 供直接使用。
-func Setup(level string) *zap.Logger {
+// Setup 构建并注入全局 logger。level 取 debug/info/warn/error;toStderr 为 false 时只写文件。
+// 文件日志目录不可写时静默降级为仅 stderr(不因日志目录问题阻断命令,也不丢日志)。
+// 返回构建出的 logger 供直接使用。
+func Setup(level string, toStderr bool) *zap.Logger {
 	lvl := logger.ToLevel(level)
 
-	cores := []zapcore.Core{stderrCore(lvl)}
-	if fileCores, ok := fileCores(lvl); ok {
+	var cores []zapcore.Core
+	fileCores, ok := fileCores(lvl)
+	if toStderr || !ok {
+		cores = append(cores, stderrCore(lvl))
+	}
+	if ok {
 		cores = append(cores, fileCores...)
 	}
 
