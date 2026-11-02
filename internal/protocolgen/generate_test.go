@@ -167,7 +167,7 @@ func TestGenerateProducesStronglyTypedRPCContracts(t *testing.T) {
 // 这两个摘要是生成给 ScriptCat 的文件的逐字节身份,必须与 ScriptCat 固定版本(CI 的 SCRIPTCAT_REF)
 // 里的副本一致;只有 ScriptCat 协议真的变化(如新增 ScriptCat 实例握手上下文)并同步到 ScriptCat 时才允许改动。
 const (
-	scriptCatProtocolSHA256   = "7e4b47356310a28ae181a08260d294a57b5fc264deeb410b7d5847a01e7d0e2d"
+	scriptCatProtocolSHA256   = "3d901cbd9f024c0a15d703dd3b6f00e0a68aa9eef58f32931ffc30e14081b249"
 	scriptCatValidatorsSHA256 = "2b55453161a593907759c4be7d9a2caa09f71aed7155b3c840f93d33d04896bb"
 )
 
@@ -261,7 +261,7 @@ func TestGenerateGoBindingsCarryEveryPeer(t *testing.T) {
 		`{Params: "TabsListParams", Result: "TabsListResult", Scope: "tabs:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "browser", MergeField: "tabs", Internal: false}`,
 		`{Params: "ScriptUUIDParams", Result: "ScriptsDeleteResult", Scope: "scripts:delete:request", Effect: "write", Blocking: "approval", Level: "L2", Peer: "scriptcat", MergeField: "", Internal: false}`,
 		`{Params: "ScriptsSourceGetParams", Result: "ScriptSource", Scope: "scripts:source:read", Effect: "read", Blocking: "disclosure", Level: "L2", Peer: "scriptcat", MergeField: "", Internal: false}`,
-		`{Params: "ScriptsListParams", Result: "ScriptsListResult", Scope: "scripts:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "scriptcat", MergeField: "", Internal: false}`,
+		`{Params: "ScriptsListParams", Result: "ScriptsListResult", Scope: "scripts:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "scriptcat", MergeField: "scripts", Internal: false}`,
 		`ErrorCodeConfirmationRequired `,
 		`= "CONFIRMATION_REQUIRED"`,
 		`ErrorCodeUnsupported `,
@@ -307,8 +307,9 @@ func TestGenerateRejectsInvalidPeerAnnotations(t *testing.T) {
 			method(def, "tabs.list")["blocking"] = "approval"
 			method(def, "tabs.list")["level"] = "L2"
 		},
-		"merge field on a ScriptCat method": func(def map[string]any) {
-			method(def, "scripts.list")["mergeField"] = "scripts"
+		"ScriptCat merge field whose items already carry a scriptcat property": func(def map[string]any) {
+			items := resultProperty(def, "ScriptsListResult", "scripts")["items"].(map[string]any)
+			items["properties"].(map[string]any)["scriptcat"] = map[string]any{"type": "string"}
 		},
 		"error code without peers": func(def map[string]any) {
 			def["errorCodes"].([]any)[0].(map[string]any)["peers"] = []any{}

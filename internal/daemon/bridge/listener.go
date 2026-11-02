@@ -116,12 +116,12 @@ func (s *Server) ResolvePairedBrowser(target string) (InstanceInfo, error) {
 		return s.ResolveBrowser(target)
 	}
 	byID := map[string]InstanceInfo{}
-	var registered []browserTarget
+	var registered []instanceTarget
 	for _, info := range s.Instances() {
 		byID[info.ID] = info
-		registered = append(registered, browserTarget{id: info.ID, name: info.Name})
+		registered = append(registered, instanceTarget{id: info.ID, name: info.Name})
 	}
-	matched, err := matchOneTarget(registered, target)
+	matched, err := matchOneTarget(browserKind, registered, target)
 	if err != nil {
 		return InstanceInfo{}, err
 	}

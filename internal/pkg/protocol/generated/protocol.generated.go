@@ -999,7 +999,7 @@ var Methods = map[string]MethodMetadata{
 	"scripts.delete.request":  {Params: "ScriptUUIDParams", Result: "ScriptsDeleteResult", Scope: "scripts:delete:request", Effect: "write", Blocking: "approval", Level: "L2", Peer: "scriptcat", MergeField: "", Internal: false},
 	"scripts.edit.request":    {Params: "ScriptsEditParams", Result: "ScriptMutationResult", Scope: "scripts:edit:request", Effect: "write", Blocking: "approval", Level: "L2", Peer: "scriptcat", MergeField: "", Internal: false},
 	"scripts.install.request": {Params: "ScriptsInstallParams", Result: "ScriptMutationResult", Scope: "scripts:install:request", Effect: "write", Blocking: "approval", Level: "L2", Peer: "scriptcat", MergeField: "", Internal: false},
-	"scripts.list":            {Params: "ScriptsListParams", Result: "ScriptsListResult", Scope: "scripts:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "scriptcat", MergeField: "", Internal: false},
+	"scripts.list":            {Params: "ScriptsListParams", Result: "ScriptsListResult", Scope: "scripts:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "scriptcat", MergeField: "scripts", Internal: false},
 	"scripts.metadata.get":    {Params: "ScriptUUIDParams", Result: "ScriptMetadata", Scope: "scripts:metadata:read", Effect: "read", Blocking: "none", Level: "L0", Peer: "scriptcat", MergeField: "", Internal: false},
 	"scripts.source.get":      {Params: "ScriptsSourceGetParams", Result: "ScriptSource", Scope: "scripts:source:read", Effect: "read", Blocking: "disclosure", Level: "L2", Peer: "scriptcat", MergeField: "", Internal: false},
 	"scripts.source.grep":     {Params: "ScriptsSourceGrepParams", Result: "ScriptSourceGrepResult", Scope: "scripts:source:read", Effect: "read", Blocking: "disclosure", Level: "L2", Peer: "scriptcat", MergeField: "", Internal: false},
@@ -1060,6 +1060,9 @@ const (
 	ErrorCodeRateLimited          = "RATE_LIMITED"
 	ErrorCodePayloadTooLarge      = "PAYLOAD_TOO_LARGE"
 	ErrorCodeInternalError        = "INTERNAL_ERROR"
+	ErrorCodeScriptcatOffline     = "SCRIPTCAT_OFFLINE"
+	ErrorCodeScriptcatNotFound    = "SCRIPTCAT_NOT_FOUND"
+	ErrorCodeScriptcatAmbiguous   = "SCRIPTCAT_AMBIGUOUS"
 	ErrorCodeNoBrowserConnected   = "NO_BROWSER_CONNECTED"
 	ErrorCodeBrowserOffline       = "BROWSER_OFFLINE"
 	ErrorCodeBrowserNotFound      = "BROWSER_NOT_FOUND"

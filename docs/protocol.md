@@ -338,7 +338,7 @@ digest. Edit approval rechecks the staged digest and target identity before appl
 Tab titles and URLs, tab group titles, reading list titles, history titles and URLs, recently closed titles and URLs, download file names and URLs, cookie names and values, and bookmark titles and URLs are controlled by web pages, and extension names by their authors; `tabs.list`, `tabGroups.list`, `readingList.list`, `history.search`, `recent.list`, `downloads.list`, `cookies.list`, `cookies.get`, `cookies.set`, `bookmarks.list`, `bookmarks.search`, `extensions.list`, and `extensions.uninstall` mark
 their results with `contentTrust: "untrusted-page-content"` and the same handling rules apply. A list method
 declares a `mergeField`: the required array property in its result that holds the listed items, so results from
-several browser instances combine by concatenating that array. A list result may also declare a boolean `hasMore`,
+several instances of the method's peer combine by concatenating that array. A list result may also declare a boolean `hasMore`,
 meaning the instance has items it did not return. Methods without `mergeField` are never combined. A list method
 whose parameters declare `limit` returns at most that many items per instance: 100 when it is omitted, and a value
 above 1000 is rejected with `INVALID_REQUEST`.
@@ -440,38 +440,47 @@ still redirect a complete source file.
 ### 3.1 Routing and target selection
 
 The daemon routes each call by the method's `peer`, not by which methods a connection declared: `scripts.*`
-calls go to the ScriptCat connection, browser methods go to a browser instance. A `scripts.*` call cannot yet
-name a ScriptCat instance: it goes to the only connected ScriptCat, legacy or instance, and fails with `CONFLICT`
-while several are connected. A connection must still have declared the method, otherwise the call fails with
-`METHOD_NOT_FOUND`.
+calls go to a ScriptCat instance, browser methods go to a browser instance. A connection must still have declared
+the method, otherwise the call fails with `METHOD_NOT_FOUND`.
 
-A browser call carries an optional target, either an instance name or an instance-ID prefix; the daemon resolves
-it because only the daemon knows which instances are online. A target is first matched against names exactly, and
-only if no name matches is it treated as an instance-ID prefix over every paired instance, online or offline.
+A call carries an optional target of its own peer kind: a browser target on a browser method, a ScriptCat target on
+a `scripts.*` method. A target is either an instance name or an instance-ID prefix; the daemon resolves it because
+only the daemon knows which instances are online. A target is first matched against names exactly, and only if no
+name matches is it treated as an instance-ID prefix over every paired instance of that kind, online or offline.
+Browser and ScriptCat names are separate namespaces.
 
-| Target | Result |
-|---|---|
-| none, no instance online | `NO_BROWSER_CONNECTED` |
-| none, exactly one instance online | that instance |
-| none, several online, method with `mergeField` | every online instance; results are combined |
-| none, several online, method without `mergeField` | `BROWSER_AMBIGUOUS`; the message lists the online instances |
-| matches no paired instance | `BROWSER_NOT_FOUND` |
-| ID prefix matches several paired instances | `BROWSER_AMBIGUOUS`; the message lists the matching instances |
-| matches one paired instance that is not connected | `BROWSER_OFFLINE` |
-| matches one online instance | that instance |
+A legacy ScriptCat ([§2.1](#21-authentication)) takes part as one instance under the reserved name `scriptcat`; it
+counts as paired while it is connected or `pairing.key` exists. It has no instance ID, so it is selected only by
+that name and never by an ID prefix.
+
+The same table applies to both kinds; the codes differ:
+
+| Target | Browser method | `scripts.*` method |
+|---|---|---|
+| none, no instance online | `NO_BROWSER_CONNECTED` | unchanged from a single ScriptCat: `/control/call` answers `INTERNAL_ERROR` "extension not connected" |
+| none, exactly one instance online | that instance | that instance |
+| none, several online, method with `mergeField` | every online instance; results are combined | every online instance; results are combined |
+| none, several online, method without `mergeField` | `BROWSER_AMBIGUOUS`; the message lists the online instances | `SCRIPTCAT_AMBIGUOUS`; the message lists the online instances |
+| matches no paired instance | `BROWSER_NOT_FOUND` | `SCRIPTCAT_NOT_FOUND` |
+| ID prefix matches several paired instances | `BROWSER_AMBIGUOUS`; the message lists the matching instances | `SCRIPTCAT_AMBIGUOUS`; the message lists the matching instances |
+| matches one paired instance that is not connected | `BROWSER_OFFLINE` | `SCRIPTCAT_OFFLINE` |
+| matches one online instance | that instance | that instance |
 
 A combined call is sent to every online instance at once. The result is the first instance's result with its
 `mergeField` array replaced by the concatenation of every instance's array, in instance-name order, and each
-item gains a `browser` object naming its source: `{"id": "<instance ID>", "name": "<instance name>"}`. An
-instance that answers `NOT_FOUND` — for example, it has no window with the requested ID — contributes no items;
+item gains an object named after the method's peer kind that names its source: `browser` for browser methods,
+`scriptcat` for `scripts.list`, each `{"id": "<instance ID>", "name": "<instance name>"}`; a legacy ScriptCat's
+items carry `{"name": "scriptcat"}` without `id`. An instance that answers `NOT_FOUND` — for example, it has no window with the requested ID — contributes no items;
 the call fails with `NOT_FOUND` only when every instance answers it. Any other failing instance fails the whole
 call; partial results are never returned. A call routed to a single instance returns that instance's result
 unchanged. If any combined result carries `hasMore`, the combined result's `hasMore` is `true` when at least one
 instance answered `true`.
 
-A target on a `scripts.*` call is rejected with `INVALID_REQUEST`; otherwise `scripts.*` routing and its errors do
-not depend on browser instances. If the target connection closes while a call is in flight — for a combined
-call, any of its instances — the call is voided and the requester receives `OPERATION_EXPIRED`, as for ScriptCat.
+A browser target on a `scripts.*` call and a ScriptCat target on a browser method are rejected with
+`INVALID_REQUEST`; otherwise routing for one kind does not depend on instances of the other. If the target
+connection closes while a call is in flight — for a combined call, any of its instances — the call is voided and
+the requester receives `OPERATION_EXPIRED`. Write and source-disclosure approvals are raised and decided by the
+ScriptCat instance that received the request.
 
 ### 3.2 Internal methods
 
@@ -688,6 +697,16 @@ These codes are reserved for browser target selection failures ([§3.1](#31-rout
 | `BROWSER_NOT_FOUND` | the target matches no paired browser instance; `/control/browsers/forget` returns it too when the name or ID matches none |
 | `BROWSER_AMBIGUOUS` | the target instance-ID prefix matches more than one paired instance, or a method without `mergeField` was called without a target while several instances are online |
 
+These codes are reserved for ScriptCat target selection failures on `scripts.*` calls
+([§3.1](#31-routing-and-target-selection)); with no ScriptCat online and no target, the call keeps the
+`INTERNAL_ERROR` "extension not connected" answer instead:
+
+| Code | Meaning |
+|---|---|
+| `SCRIPTCAT_OFFLINE` | the target names a paired ScriptCat instance, or the legacy `scriptcat` while `pairing.key` exists, that is not connected |
+| `SCRIPTCAT_NOT_FOUND` | the target matches no paired ScriptCat instance |
+| `SCRIPTCAT_AMBIGUOUS` | the target instance-ID prefix matches more than one paired ScriptCat instance, or a `scripts.*` method without `mergeField` was called without a target while several ScriptCat instances are online |
+
 These codes are browser-only too:
 
 | Code | Meaning |
@@ -792,12 +811,15 @@ daemon-side metadata and does not reach the TypeScript output. The generator emi
 
 The ScriptCat TypeScript must stay byte-identical to the copy in the paired ScriptCat revision, because ScriptCat
 declares every generated method as a capability and its conformance test compares the method and error-code
-lists exactly. Adding browser-owned definitions therefore never changes ScriptCat's files or `schemaVersion`.
+lists exactly. Adding browser-owned definitions therefore never changes ScriptCat's files or `schemaVersion`;
+a definition listing `scriptcat`, such as the `SCRIPTCAT_*` error codes, does, and lands together with a paired
+ScriptCat commit carrying the regenerated files.
 
 The generator rejects a method whose `level` is missing or not `L0`/`L1`/`L2`, an L2 method without a human gate
 (`blocking` is `none`) or a human-gated method that is not L2, an L1 method whose parameters do not declare the
-optional `confirm: {"const": true}`, a `mergeField` on a method that waits for a human, and a list result whose
-`hasMore` is not a boolean. The ScriptCat TypeScript does not carry `level`, so it stays byte-identical.
+optional `confirm: {"const": true}`, a `mergeField` on a method that waits for a human, a `mergeField` whose items
+already declare the property named after the method's peer (`browser` or `scriptcat`) that the merge adds, and a
+list result whose `hasMore` is not a boolean. `mergeField` does not reach the TypeScript output. The ScriptCat TypeScript does not carry `level`, so it stays byte-identical.
 
 Run `make protocol-generate` after editing `protocol.json`, and `make protocol-sync-scriptcat` to update the
 adjacent ScriptCat checkout. `make protocol-check` regenerates all artifacts and fails if the checked-in output

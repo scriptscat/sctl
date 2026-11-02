@@ -10,9 +10,9 @@ import (
 // 当前协议里还没有带 hasMore 的列表方法,这里直接用合成结果驱动汇总逻辑。
 func TestMergedListReportsHasMoreWhenAnyInstanceHasMore(t *testing.T) {
 	Convey("汇总列表结果时 hasMore 取各实例的或", t, func() {
-		targets := []browserTarget{{id: instanceA, name: "chrome-0123"}, {id: instanceB, name: "edge-fedc"}}
+		targets := []instanceTarget{{id: instanceA, name: "chrome-0123"}, {id: instanceB, name: "edge-fedc"}}
 		merge := func(a, b string) map[string]json.RawMessage {
-			merged, err := mergeResults(targets, []Response{{OK: true, Result: json.RawMessage(a)}, {OK: true, Result: json.RawMessage(b)}}, "items")
+			merged, err := mergeResults(targets, []Response{{OK: true, Result: json.RawMessage(a)}, {OK: true, Result: json.RawMessage(b)}}, "items", "browser")
 			So(err, ShouldBeNil)
 			var fields map[string]json.RawMessage
 			So(json.Unmarshal(merged, &fields), ShouldBeNil)

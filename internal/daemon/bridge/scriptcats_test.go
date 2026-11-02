@@ -25,7 +25,7 @@ func scriptCatPeer(id string) *authPeer {
 func scriptCatCapabilities(name string) capabilitiesParams {
 	return capabilitiesParams{
 		SchemaVersion: "1.0.0",
-		Methods:       []string{"scripts.list", "scripts.get"},
+		Methods:       []string{"scripts.list", "scripts.metadata.get"},
 		Peer:          &capabilitiesPeer{Name: name, Product: "Chrome", ProductVersion: "129.0", ExtensionVersion: "1.3.0"},
 	}
 }
@@ -140,13 +140,6 @@ func TestScriptCatInstancesCoexist(t *testing.T) {
 		a.closedByDaemon()
 		a2.alive()
 		b.alive()
-
-		Convey("多个 ScriptCat 同时在线时 scripts 调用不随意选一个发出,而是报错", func() {
-			_, err := h.srv.Call(context.Background(), Request{Action: "scripts.list", Input: json.RawMessage(`{}`)})
-			var bridgeErr *Error
-			So(errors.As(err, &bridgeErr), ShouldBeTrue)
-			So(bridgeErr.Code, ShouldEqual, CodeConflict)
-		})
 
 		Convey("只剩一个 ScriptCat 在线时 scripts 调用发给它", func() {
 			b.ws.CloseNow()

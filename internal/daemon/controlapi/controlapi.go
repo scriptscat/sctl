@@ -189,10 +189,11 @@ func (h *Handler) call(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bridgeReq := bridge.Request{
-		ClientID: clientID,
-		Action:   req.Action,
-		Browser:  req.Browser,
-		Input:    req.Input,
+		ClientID:  clientID,
+		Action:    req.Action,
+		Browser:   req.Browser,
+		ScriptCat: req.ScriptCat,
+		Input:     req.Input,
 	}
 	if req.ReportPending {
 		// 请求方据此才提示「等待批准」:审批前的校验失败时不会有这一行。必须立刻冲刷,否则它会和结论一起到达。

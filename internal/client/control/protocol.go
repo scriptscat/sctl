@@ -49,8 +49,10 @@ const CLIClientID = "sctl-cli"
 type CallRequest struct {
 	Action string `json:"action"`
 	// Browser 是浏览器方法的可选目标:实例名称或实例 ID 前缀,由 daemon 解析(docs/protocol.md §3.1)。
-	Browser string          `json:"browser,omitempty"`
-	Input   json.RawMessage `json:"input"`
+	Browser string `json:"browser,omitempty"`
+	// ScriptCat 是 scripts.* 方法的可选目标:ScriptCat 实例名称或实例 ID 前缀,由 daemon 解析(docs/protocol.md §3.1)。
+	ScriptCat string          `json:"scriptcat,omitempty"`
+	Input     json.RawMessage `json:"input"`
 	// ReportPending 请 daemon 在对端报告请求进入人工审批时先写出一行 CallResult{Pending: true},
 	// 结论随后另起一行。不带时响应体只有结论一行。
 	ReportPending bool `json:"reportPending,omitempty"`
@@ -69,8 +71,9 @@ type PageRequest struct {
 }
 
 // CallResult 是 /control/call 的响应体,映射桥接的 JSON-RPC result/error。
-// 列表类浏览器方法未指定目标且多个浏览器在线时,Result 是各实例结果按 mergeField 拼接后的汇总,
-// 该数组的每一项多一个 "browser": {"id","name"} 字段;其余情况 Result 是单个对端的原始结果。
+// 列表类方法未指定目标且多个同类实例在线时,Result 是各实例结果按 mergeField 拼接后的汇总,
+// 该数组的每一项多一个来源字段:浏览器方法是 "browser": {"id","name"},scripts.list 是
+// "scriptcat": {"id","name"}(老版 ScriptCat 没有 id);其余情况 Result 是单个对端的原始结果。
 type CallResult struct {
 	OK     bool            `json:"ok"`
 	Result json.RawMessage `json:"result,omitempty"`

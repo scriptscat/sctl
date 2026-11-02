@@ -285,3 +285,63 @@ func TestScriptsRoutingUnchangedWithBrowsers(t *testing.T) {
 		})
 	})
 }
+
+func scriptsListResult(uuid string) json.RawMessage {
+	return json.RawMessage(`{"scripts":[{"uuid":"` + uuid + `","name":"s","namespace":"ns","type":"normal","enabled":true,"updatedAt":"2026-11-02T00:00:00Z","hasUpdateUrl":false}],"contentTrust":"untrusted-user-script-metadata"}`)
+}
+
+func TestControlCallCarriesScriptCatTarget(t *testing.T) {
+	Convey("/control/call 把 scriptcat 目标交给 daemon 的 ScriptCat 目标选择", t, func() {
+		h := startTestServer(t)
+		a := h.connectScriptCatInstance(instanceA, "work")
+		b := h.connectScriptCatInstance(instanceB, "home")
+
+		Convey("按名称指定目标:只发给该实例,结果原样返回", func() {
+			ch := h.goCall(control.CallRequest{Action: "scripts.list", ScriptCat: "home", Input: json.RawMessage(`{}`)})
+			b.answer("scripts.list", scriptsListResult("from-home"))
+			res := <-ch
+			So(res.OK, ShouldBeTrue)
+			So(string(res.Result), ShouldEqual, string(scriptsListResult("from-home")))
+			a.idle()
+		})
+
+		Convey("未指定目标的 scripts.list 汇总在线实例,每项带 scriptcat 来源", func() {
+			ch := h.goCall(control.CallRequest{Action: "scripts.list", Input: json.RawMessage(`{}`)})
+			a.answer("scripts.list", scriptsListResult("from-work"))
+			b.answer("scripts.list", scriptsListResult("from-home"))
+			res := <-ch
+			So(res.OK, ShouldBeTrue)
+			var merged struct {
+				Scripts []struct {
+					UUID      string `json:"uuid"`
+					ScriptCat struct {
+						ID   string `json:"id"`
+						Name string `json:"name"`
+					} `json:"scriptcat"`
+				} `json:"scripts"`
+			}
+			So(json.Unmarshal(res.Result, &merged), ShouldBeNil)
+			So(merged.Scripts, ShouldHaveLength, 2)
+			So(merged.Scripts[0].UUID, ShouldEqual, "from-home")
+			So(merged.Scripts[0].ScriptCat.ID, ShouldEqual, instanceB)
+			So(merged.Scripts[1].ScriptCat.Name, ShouldEqual, "work")
+		})
+
+		Convey("目标不匹配任何已配对实例:响应带 SCRIPTCAT_NOT_FOUND", func() {
+			So(errCode(h.callControl(control.CallRequest{Action: "scripts.list", ScriptCat: "nope", Input: json.RawMessage(`{}`)})), ShouldEqual, generated.ErrorCodeScriptcatNotFound)
+		})
+
+		Convey("汇总中的一个实例断开时整次调用作废:OPERATION_EXPIRED", func() {
+			ch := h.goCall(control.CallRequest{Action: "scripts.list", Input: json.RawMessage(`{}`)})
+			a.answer("scripts.list", scriptsListResult("from-work"))
+			So(b.read().Method, ShouldEqual, "scripts.list")
+			b.ws.CloseNow()
+			So(errCode(<-ch), ShouldEqual, generated.ErrorCodeOperationExpired)
+		})
+
+		Convey("浏览器方法带 ScriptCat 目标被拒为 INVALID_REQUEST", func() {
+			h.connectBrowser(instanceC, "chrome-0123")
+			So(errCode(h.callControl(control.CallRequest{Action: "tabs.list", ScriptCat: "work", Input: json.RawMessage(`{}`)})), ShouldEqual, generated.ErrorCodeInvalidRequest)
+		})
+	})
+}
