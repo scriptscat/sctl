@@ -204,3 +204,39 @@ func TestCallRejectsPendingLinesOutsideItsContract(t *testing.T) {
 		})
 	})
 }
+
+func TestClientScriptCatsRoundTrip(t *testing.T) {
+	Convey("ScriptCats 与 ForgetScriptCat 走 /control/scriptcats 系列路径", t, func() {
+		var gotPaths []string
+		var gotBody ForgetScriptCatRequest
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotPaths = append(gotPaths, r.URL.Path)
+			switch r.URL.Path {
+			case PathScriptCats:
+				_ = json.NewEncoder(w).Encode(ScriptCatsResult{ScriptCats: []ScriptCatInfo{{ID: "abc", Name: "work", Online: true}}})
+			case PathScriptCatForget:
+				_ = json.NewDecoder(r.Body).Decode(&gotBody)
+				if gotBody.Ref == "nope" {
+					_ = json.NewEncoder(w).Encode(CallResult{Error: &CallError{Code: "SCRIPTCAT_NOT_FOUND", Message: "no match"}})
+					return
+				}
+				_ = json.NewEncoder(w).Encode(CallResult{OK: true})
+			}
+		}))
+		t.Cleanup(srv.Close)
+		c := &Client{http: srv.Client(), base: srv.URL, controlToken: "t"}
+
+		list, err := c.ScriptCats(context.Background())
+		So(err, ShouldBeNil)
+		So(list, ShouldHaveLength, 1)
+		So(list[0].Name, ShouldEqual, "work")
+
+		So(c.ForgetScriptCat(context.Background(), "work"), ShouldBeNil)
+		So(gotBody.Ref, ShouldEqual, "work")
+		So(gotPaths, ShouldResemble, []string{PathScriptCats, PathScriptCatForget})
+
+		err = c.ForgetScriptCat(context.Background(), "nope")
+		So(err, ShouldNotBeNil)
+		So(err.Error(), ShouldContainSubstring, "SCRIPTCAT_NOT_FOUND")
+	})
+}

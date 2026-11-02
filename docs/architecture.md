@@ -149,6 +149,7 @@ internal/cli/               # subcommand definitions; spans both sides, hence to
   get.go grep.go            #   read verbs
   edit.go write.go          #   write verbs (edit / install / enable / disable / delete)
   browsers.go               #   sctl browsers [list] / sctl browsers forget <name|id>
+  scriptcats.go             #   sctl scriptcats [list] / sctl scriptcats forget <name|id>
   tabs.go windows.go        #   sctl tabs list|open|close|activate, sctl windows list
   page*.go                  #   sctl page snapshot|click|hover|fill|type|press|select|upload|scroll|goto|back|forward|
                             #   reload|wait|screenshot|eval|dialog|detach (reach /control/page through dispatchPage)

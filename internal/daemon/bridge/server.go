@@ -337,6 +337,7 @@ func (s *Server) registerLegacy(c *conn) error {
 	if !held {
 		return store.ErrInstanceNotFound
 	}
+	c.connectedAt = time.Now()
 	s.mu.Lock()
 	old := s.legacyScriptCat
 	s.legacyScriptCat = c

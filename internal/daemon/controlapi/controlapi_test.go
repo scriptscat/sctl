@@ -15,6 +15,8 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 
 	"github.com/scriptscat/sctl/internal/client/control"
+	"github.com/scriptscat/sctl/internal/daemon/auth"
+	"github.com/scriptscat/sctl/internal/daemon/store"
 	"github.com/scriptscat/sctl/internal/pkg/protocol/generated"
 )
 
@@ -347,5 +349,102 @@ func TestControlBrowserForgetLogsRegistryFailure(t *testing.T) {
 		logged := logs.FilterFieldKey("error").All()
 		So(logged, ShouldHaveLength, 1)
 		So(logged[0].ContextMap()["error"], ShouldEqual, cause.Error())
+	})
+}
+
+func decodeScriptCats(resp *http.Response) control.ScriptCatsResult {
+	defer resp.Body.Close()
+	var res control.ScriptCatsResult
+	So(json.NewDecoder(resp.Body).Decode(&res), ShouldBeNil)
+	return res
+}
+
+func TestControlScriptCatsList(t *testing.T) {
+	Convey("控制 API 列出已配对 ScriptCat 实例(在线与离线),老版以保留名出现", t, func() {
+		h := startTestServer(t)
+		base := h.httpBase()
+		h.connectScriptCatInstance(instanceA, "work")
+		key, err := auth.NewLongTermKey()
+		So(err, ShouldBeNil)
+		So(h.scriptcats.Pair(store.ScriptCatInstance{ID: instanceB, Name: "home", Key: key}), ShouldBeNil)
+		legacyKey, err := auth.NewLongTermKey()
+		So(err, ShouldBeNil)
+		So(h.keys.Save(legacyKey), ShouldBeNil)
+
+		resp, err := postControl(context.Background(), base, control.PathScriptCats, testControlToken, "", nil)
+		So(err, ShouldBeNil)
+		So(resp.StatusCode, ShouldEqual, http.StatusOK)
+		res := decodeScriptCats(resp)
+
+		names := map[string]control.ScriptCatInfo{}
+		for _, s := range res.ScriptCats {
+			names[s.Name] = s
+		}
+		So(names["work"].Online, ShouldBeTrue)
+		So(names["work"].ID, ShouldEqual, instanceA)
+		So(names["home"].Online, ShouldBeFalse)
+		So(names, ShouldContainKey, "scriptcat")
+		So(names["scriptcat"].ID, ShouldBeBlank)
+
+		Convey("缺少控制令牌时被 401 拒绝", func() {
+			resp, err := postControl(context.Background(), base, control.PathScriptCats, "", "", nil)
+			So(err, ShouldBeNil)
+			resp.Body.Close()
+			So(resp.StatusCode, ShouldEqual, http.StatusUnauthorized)
+		})
+	})
+}
+
+func TestControlScriptCatForget(t *testing.T) {
+	Convey("控制 API 忘记 ScriptCat 实例", t, func() {
+		h := startTestServer(t)
+		base := h.httpBase()
+		forget := func(ref string) control.CallResult {
+			resp, err := postControl(context.Background(), base, control.PathScriptCatForget, testControlToken, "", control.ForgetScriptCatRequest{Ref: ref})
+			So(err, ShouldBeNil)
+			return decodeCall(resp)
+		}
+
+		Convey("按名称忘记在线实例:断开连接并从登记里移除", func() {
+			e := h.connectScriptCatInstance(instanceA, "work")
+
+			So(forget("work").OK, ShouldBeTrue)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			_, _, err := e.ws.Read(ctx)
+			So(err, ShouldNotBeNil)
+			_, ok := h.scriptcats.Get(instanceA)
+			So(ok, ShouldBeFalse)
+		})
+
+		Convey("无匹配 → SCRIPTCAT_NOT_FOUND", func() {
+			res := forget("nope")
+			So(res.OK, ShouldBeFalse)
+			So(res.Error.Code, ShouldEqual, generated.ErrorCodeScriptcatNotFound)
+		})
+
+		Convey("缺少 ref → INVALID_REQUEST", func() {
+			res := forget("")
+			So(res.Error.Code, ShouldEqual, "INVALID_REQUEST")
+		})
+	})
+}
+
+func TestControlStatusIncludesScriptCats(t *testing.T) {
+	Convey("status 的 extConnected 在任一 ScriptCat 实例在线时为 true,并附 scriptcats 列表", t, func() {
+		h := startTestServer(t)
+		h.connectScriptCatInstance(instanceA, "work")
+
+		resp, err := postControl(context.Background(), h.httpBase(), control.PathStatus, testControlToken, "", nil)
+		So(err, ShouldBeNil)
+		defer resp.Body.Close()
+		var st control.StatusResult
+		So(json.NewDecoder(resp.Body).Decode(&st), ShouldBeNil)
+
+		So(st.ExtConnected, ShouldBeTrue)
+		So(st.ScriptCats, ShouldHaveLength, 1)
+		So(st.ScriptCats[0].Name, ShouldEqual, "work")
+		So(st.ScriptCats[0].Online, ShouldBeTrue)
 	})
 }

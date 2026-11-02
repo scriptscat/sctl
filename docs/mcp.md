@@ -144,18 +144,19 @@ independently, but both use the same one-time-code flow against the same running
 
    ```bash
    sctl status
+   sctl scriptcats
    sctl browsers
    ```
 
-`sctl status` reports whether ScriptCat is connected; `sctl browsers` lists every paired sctl Browser instance
+`sctl status` reports whether the daemon is up and which ScriptCat and sctl Browser instances are connected; `sctl scriptcats` lists every paired ScriptCat instance and `sctl browsers` lists every paired sctl Browser instance
 with its online/offline state. The one-time code must not be pasted into an AI conversation, issue, log, or MCP
 configuration. After enrollment, each extension and the daemon use their own persisted long-term pairing state;
 each AI client does not enroll separately, and multiple sctl Browser instances can stay paired and connected at
 the same time.
 
 Disabling External Access in ScriptCat, or removing the sctl Browser extension, revokes that extension's side
-of the relationship. `sctl browsers forget <name|id>` removes a paired sctl Browser instance from the daemon
-side and disconnects it if online. Run `connect` again if you intentionally revoke a pairing and later want to
+of the relationship. `sctl browsers forget <name|id>` and `sctl scriptcats forget <name|id>` remove a paired sctl
+Browser or ScriptCat instance from the daemon side and disconnect it if online. Run `connect` again if you intentionally revoke a pairing and later want to
 reconnect.
 
 ## 5. Configure the MCP client

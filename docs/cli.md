@@ -15,7 +15,8 @@ command line can use the skill in [`../skills/sctl/`](../skills/sctl/SKILL.md).
 | `sctl service install\|uninstall\|start\|stop\|restart\|enable\|disable\|status` | Run `sctl serve` in the background as a user service; see [Background service](#background-service-sctl-service). |
 | `sctl connect` | Open a one-time enrollment window for ScriptCat or sctl Browser. |
 | `sctl mcp [--name <label>]` | Serve ScriptCat and sctl Browser tools over stdio MCP. |
-| `sctl status` | Show daemon and extension connection status. |
+| `sctl status` | Show daemon status and every paired ScriptCat and sctl Browser instance with its online state. `-o json` keeps `extConnected` (true when any ScriptCat instance is online) and adds a `scriptcats` list. |
+| `sctl scriptcats [list]` / `sctl scriptcats forget <name\|id>` | List paired ScriptCat instances (name, ID, status, product, versions; a legacy ScriptCat appears as `scriptcat` with no ID while `pairing.key` exists), or forget one. Forgetting deletes its key and disconnects it; `forget scriptcat` deletes `pairing.key`. |
 
 ### ScriptCat scripts
 

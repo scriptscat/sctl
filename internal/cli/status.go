@@ -44,6 +44,21 @@ func newStatusCmd() *cobra.Command {
 					fmt.Fprintf(os.Stdout, "  %s (%s): %s\n", b.Name, b.ID, state)
 				}
 			}
+			if len(st.ScriptCats) > 0 {
+				fmt.Fprintln(os.Stdout, "scriptcats:")
+				for _, sc := range st.ScriptCats {
+					state := "offline"
+					if sc.Online {
+						state = "online"
+					}
+					// 老版没有实例 ID,只有保留名。
+					if sc.ID == "" {
+						fmt.Fprintf(os.Stdout, "  %s: %s\n", sc.Name, state)
+						continue
+					}
+					fmt.Fprintf(os.Stdout, "  %s (%s): %s\n", sc.Name, sc.ID, state)
+				}
+			}
 			// 人读输出只给一行摘要,完整事件走 -o json,避免刷屏淹没状态本身。
 			if summary := formatSecuritySummary(st.Security); summary != "" {
 				fmt.Fprintf(os.Stdout, "recent security events: %s\n", summary)

@@ -79,6 +79,7 @@ The install script verifies the release archive's sha256 and installs `sctl` int
 
    ```bash
    sctl status      # daemon and ScriptCat
+   sctl scriptcats  # paired ScriptCat instances
    sctl browsers    # paired sctl Browser instances
    ```
 
@@ -120,6 +121,7 @@ browser's logins; see [`docs/cli.md`](./docs/cli.md#endpoint-for-playwright-and-
 | `sctl serve` / `connect` / `status` / `mcp` | Run the daemon, pair an extension, show connection status, serve MCP over stdio. |
 | `sctl service` | Run the daemon in the background as a user service (launchd, systemd, Task Scheduler). |
 | `sctl get` / `grep` / `install` / `edit` / `enable` / `disable` / `delete` | Manage ScriptCat userscripts. |
+| `sctl scriptcats` | List paired ScriptCat instances, or forget one. |
 | `sctl browsers` | List paired sctl Browser instances, or forget one. |
 | `sctl tabs` / `windows` / `groups` | Tabs, windows, and tab groups. |
 | `sctl bookmarks` / `reading-list` | Bookmarks and the reading list. |

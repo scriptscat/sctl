@@ -44,7 +44,8 @@ Keep these in mind and the rest follows:
 ## Before the first command
 
 ```sh
-sctl status            # daemon version, whether the extensions are connected
+sctl status            # daemon version, which ScriptCat and sctl Browser instances are connected
+sctl scriptcats -o json # paired ScriptCat instances: name, online, product
 sctl browsers -o json  # paired sctl Browser instances: name, online, product
 ```
 

@@ -222,20 +222,8 @@ func (c *Client) Status(ctx context.Context) (StatusResult, error) {
 
 // Browsers 列出所有已配对的浏览器实例(在线与离线)。
 func (c *Client) Browsers(ctx context.Context) ([]BrowserInfo, error) {
-	req, err := c.newRequest(ctx, http.MethodGet, PathBrowsers, nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, statusError(resp)
-	}
 	var res BrowsersResult
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+	if err := c.getJSON(ctx, PathBrowsers, &res); err != nil {
 		return nil, err
 	}
 	return res.Browsers, nil
@@ -244,11 +232,47 @@ func (c *Client) Browsers(ctx context.Context) ([]BrowserInfo, error) {
 // ForgetBrowser 删除一个已配对浏览器实例的密钥与登记(按精确名称或精确实例 ID),
 // 若它在线则断开其连接;之后该实例的握手会失败。ref 不匹配任何已配对实例时返回错误。
 func (c *Client) ForgetBrowser(ctx context.Context, ref string) error {
-	body, err := json.Marshal(ForgetBrowserRequest{Ref: ref})
+	return c.forget(ctx, PathBrowserForget, ForgetBrowserRequest{Ref: ref}, "browser", ref)
+}
+
+// ScriptCats 列出所有已配对的 ScriptCat 实例(在线与离线);存在 pairing.key 时含保留名 scriptcat 的老版一行。
+func (c *Client) ScriptCats(ctx context.Context) ([]ScriptCatInfo, error) {
+	var res ScriptCatsResult
+	if err := c.getJSON(ctx, PathScriptCats, &res); err != nil {
+		return nil, err
+	}
+	return res.ScriptCats, nil
+}
+
+// ForgetScriptCat 删除一个已配对 ScriptCat 实例的密钥与登记(按精确名称或精确实例 ID;scriptcat 删除老版的
+// pairing.key),若它在线则断开其连接;之后该实例的握手会失败。ref 不匹配任何实例时返回错误。
+func (c *Client) ForgetScriptCat(ctx context.Context, ref string) error {
+	return c.forget(ctx, PathScriptCatForget, ForgetScriptCatRequest{Ref: ref}, "ScriptCat", ref)
+}
+
+func (c *Client) getJSON(ctx context.Context, path string, out any) error {
+	req, err := c.newRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return err
 	}
-	req, err := c.newRequest(ctx, http.MethodPost, PathBrowserForget, body)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return statusError(resp)
+	}
+	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+// forget 向 path 发送 request;kind 与 ref 只用于 daemon 未给出结构化错误时的报错文字。
+func (c *Client) forget(ctx context.Context, path string, request any, kind, ref string) error {
+	body, err := json.Marshal(request)
+	if err != nil {
+		return err
+	}
+	req, err := c.newRequest(ctx, http.MethodPost, path, body)
 	if err != nil {
 		return err
 	}
@@ -268,7 +292,7 @@ func (c *Client) ForgetBrowser(ctx context.Context, ref string) error {
 		if res.Error != nil {
 			return res.Error
 		}
-		return fmt.Errorf("forget browser %q failed", ref)
+		return fmt.Errorf("forget %s %q failed", kind, ref)
 	}
 	return nil
 }

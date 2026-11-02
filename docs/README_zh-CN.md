@@ -71,6 +71,7 @@ irm https://raw.githubusercontent.com/scriptscat/sctl/main/scripts/install.ps1 |
 
    ```bash
    sctl status      # daemon 与 ScriptCat
+   sctl scriptcats  # 已配对的 ScriptCat 实例
    sctl browsers    # 已配对的 sctl Browser 实例
    ```
 
@@ -110,6 +111,7 @@ ln -s "$PWD/skills/sctl" ~/.claude/skills/sctl
 | `sctl serve` / `connect` / `status` / `mcp` | 运行 daemon、配对扩展、查看连接状态、通过 stdio 提供 MCP。 |
 | `sctl service` | 以用户服务的形式在后台运行 daemon（launchd、systemd、任务计划程序）。 |
 | `sctl get` / `grep` / `install` / `edit` / `enable` / `disable` / `delete` | 管理 ScriptCat 用户脚本。 |
+| `sctl scriptcats` | 列出已配对的 ScriptCat 实例，或忘记其中一个。 |
 | `sctl browsers` | 列出已配对的 sctl Browser 实例，或忘记其中一个。 |
 | `sctl tabs` / `windows` / `groups` | 标签页、窗口和标签组。 |
 | `sctl bookmarks` / `reading-list` | 书签和阅读列表。 |

@@ -97,6 +97,7 @@ func NewRootCmd() *cobra.Command {
 		newConnectCmd(),
 		newStatusCmd(),
 		newBrowsersCmd(),
+		newScriptCatsCmd(),
 		newTabsCmd(),
 		newWindowsCmd(),
 		newGroupsCmd(),

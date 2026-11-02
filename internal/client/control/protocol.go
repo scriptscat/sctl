@@ -20,13 +20,15 @@ import (
 
 // 控制 API 路径。健康检查故意不鉴权(仅暴露「端口开着」这一威胁模型已接受的信息)。
 const (
-	PathHealth        = "/control/health"
-	PathCall          = "/control/call"
-	PathEnroll        = "/control/enroll"
-	PathStatus        = "/control/status"
-	PathBrowsers      = "/control/browsers"
-	PathBrowserForget = "/control/browsers/forget"
-	PathPage          = "/control/page"
+	PathHealth          = "/control/health"
+	PathCall            = "/control/call"
+	PathEnroll          = "/control/enroll"
+	PathStatus          = "/control/status"
+	PathBrowsers        = "/control/browsers"
+	PathBrowserForget   = "/control/browsers/forget"
+	PathScriptCats      = "/control/scriptcats"
+	PathScriptCatForget = "/control/scriptcats/forget"
+	PathPage            = "/control/page"
 	// 原始 CDP 端点:创建或查看、只查看、关闭。请求体都是 CDPRequest。
 	PathCDPEndpoint = "/control/cdp/endpoint"
 	PathCDPStatus   = "/control/cdp/status"
@@ -108,6 +110,8 @@ type StatusResult struct {
 	SecurityCount int           `json:"securityCount"`
 	Security      []audit.Event `json:"security,omitempty"`
 	Browsers      []BrowserInfo `json:"browsers,omitempty"`
+	// ExtConnected 为 true 当且仅当 ScriptCats 中有实例在线;ScriptCats 逐个列出实例,含老版的保留名一行。
+	ScriptCats []ScriptCatInfo `json:"scriptcats,omitempty"`
 }
 
 // EnrollResult 是 /control/enroll 的响应体:打开接入窗口后返回展示形配对码。
@@ -130,6 +134,20 @@ type BrowserInfo struct {
 // BrowsersResult 是 /control/browsers 的响应体:全部已配对浏览器实例(在线与离线)。
 type BrowsersResult struct {
 	Browsers []BrowserInfo `json:"browsers"`
+}
+
+// ScriptCatInfo 是一个已配对 ScriptCat 实例的当前视图,字段与 BrowserInfo 相同。不带实例 ID 的老版 ScriptCat
+// 以保留名 scriptcat 出现,ID 为空,产品与版本为空。
+type ScriptCatInfo BrowserInfo
+
+// ScriptCatsResult 是 /control/scriptcats 的响应体:全部已配对 ScriptCat 实例(在线与离线)。
+type ScriptCatsResult struct {
+	ScriptCats []ScriptCatInfo `json:"scriptcats"`
+}
+
+// ForgetScriptCatRequest 是 /control/scriptcats/forget 的请求体:Ref 是实例名称、完整实例 ID,或老版的保留名 scriptcat。
+type ForgetScriptCatRequest struct {
+	Ref string `json:"ref"`
 }
 
 // ForgetBrowserRequest 是 /control/browsers/forget 的请求体:Ref 是实例名称或完整实例 ID。
