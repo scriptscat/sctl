@@ -129,10 +129,18 @@ extensionVersion}`，字段格式与 sctl Browser 相同（名称 1–32 位小�
 `docs/threat-model.md` 的凭据清单与审计说明、`docs/protocol.md` 的握手、能力声明与路由章节、`docs/cli.md` 的目标
 选择与退出码、`skills/sctl/` 的相应说明在同一变更中更新。
 
+## 与 ScriptCat 的协议同步
+
+新增的 ScriptCat 实例握手上下文和 `SCRIPTCAT_*` 错误码在 `protocol.json` 中标注 `peers: ["scriptcat"]`（生成器不接受
+空 `peers`），因此生成给 ScriptCat 的 TypeScript 会变化。sctl CI 要求它与固定 ScriptCat 版本中的副本逐字节一致，
+ScriptCat 的一致性测试要求其错误码列表与生成结果完全一致。本变更因此包含一个配对的 ScriptCat 提交：只含
+`make protocol-sync-scriptcat` 的生成文件和错误码列表中新增的三个码，不改变 ScriptCat 的任何行为；sctl 中钉住
+ScriptCat 版本与生成摘要的地方指向这个提交。合并顺序为先 ScriptCat 同步提交，后 sctl。
+
 ## 不在范围内
 
-- ScriptCat 一侧的实现：声明实例身份、名称设置界面、隐身进程不连接、重连退避调整。分别在 ScriptCat 仓库中完成；
-  其中“隐身进程不连接”可独立先行发布，用于修复 issue #14。
+- ScriptCat 一侧的行为实现：声明实例身份、名称设置界面、隐身进程不连接、重连退避调整。分别在 ScriptCat 仓库中完成；
+  其中“隐身进程不连接”可独立先行发布，用于修复 issue #14。上一节的协议同步提交除外。
 - 把 ScriptCat 实例与同一浏览器中的 sctl Browser 实例关联为同一个目标。
 - 修改审计事件的日志级别或环形缓冲区容量（issue #14 中提到的 `handshake.ok` 占满缓冲区问题另行处理）。
 
