@@ -15,7 +15,7 @@ var ErrScriptCatNotFound = store.ErrInstanceNotFound
 // ScriptCatInstances 列出所有已配对的 ScriptCat 实例(在线与离线),按名称排序。pairing.key 仍归老版所有时
 // 多出一行保留名 scriptcat(没有实例 ID),与目标选择看到的集合一致。
 func (s *Server) ScriptCatInstances() ([]InstanceInfo, error) {
-	_, legacyPaired, err := s.legacyKey()
+	legacyPaired, err := s.legacyPaired()
 	if err != nil {
 		return nil, err
 	}
@@ -96,10 +96,10 @@ func (s *Server) forgetScriptCatInstanceLocked(id string) (*conn, error) {
 	return c, nil
 }
 
-// forgetLegacyLocked 删除 pairing.key 并把老版连接移出;调用方须持有 regMu。pairing.key 不存在且没有老版连接时
+// forgetLegacyLocked 删除 pairing.key 并把老版连接移出;调用方须持有 regMu。pairing.key 不归老版所有(不存在或已被接管)且没有老版连接时
 // 保留名并不对应任何实例,按未找到处理。
 func (s *Server) forgetLegacyLocked() (*conn, error) {
-	_, paired, err := s.legacyKeyLocked()
+	paired, err := s.legacyPaired()
 	if err != nil {
 		return nil, err
 	}

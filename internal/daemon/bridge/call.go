@@ -250,11 +250,10 @@ func (s *Server) resolveScriptCats(target string, mergeable bool) ([]instanceTar
 	// 只有点名老版时才需要知道离线的老版是否已配对;其余调用不读 pairing.key,它损坏也不妨碍新版实例。
 	paired := legacy != nil
 	if !paired && target == store.ReservedScriptCatName {
-		_, ok, err := s.keys.Load()
-		if err != nil {
+		var err error
+		if paired, err = s.legacyPaired(); err != nil {
 			return nil, err
 		}
-		paired = ok
 	}
 	if paired {
 		registered = append(registered, instanceTarget{name: store.ReservedScriptCatName, conn: legacy})

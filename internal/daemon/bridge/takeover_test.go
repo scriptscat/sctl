@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/scriptscat/sctl/internal/daemon/auth"
 	"github.com/scriptscat/sctl/internal/pkg/audit"
+	"github.com/scriptscat/sctl/internal/pkg/protocol/generated"
 )
 
 // legacyKey 读出当前 pairing.key 中的老版密钥。
@@ -199,6 +201,40 @@ func TestFailedPairingKeyDeleteIsRetried(t *testing.T) {
 		Convey("下次老版握手检查时删除", func() {
 			h.legacyHandshakeFails(key)
 			So(h.pairingKeyRemoved(), ShouldBeTrue)
+		})
+	})
+}
+
+func TestTakenOverPairingKeyLeftOnDiskCountsAsAbsent(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("relies on a read-only POSIX directory blocking file removal")
+	}
+	Convey("接管后 pairing.key 删不掉时,列表、目标选择与忘记都视它为不存在,而不是报内部错误", t, func() {
+		dir := t.TempDir()
+		keyDir := filepath.Join(dir, "keys")
+		So(os.Mkdir(keyDir, 0o700), ShouldBeNil)
+		h := startTestServerAt(t, dir, filepath.Join(keyDir, "pairing.key"))
+		key, _ := auth.NewLongTermKey()
+		So(h.keys.Save(key), ShouldBeNil)
+		So(os.Chmod(keyDir, 0o500), ShouldBeNil)
+		defer func() { _ = os.Chmod(keyDir, 0o700) }()
+		h.connectScriptCatInstance(instanceA, key, "work")
+		So(h.pairingKeyRemoved(), ShouldBeFalse)
+
+		Convey("实例列表没有老版一行", func() {
+			list, err := h.srv.ScriptCatInstances()
+			So(err, ShouldBeNil)
+			So(list, ShouldHaveLength, 1)
+			So(list[0].ID, ShouldEqual, instanceA)
+		})
+
+		Convey("目标 scriptcat:SCRIPTCAT_NOT_FOUND", func() {
+			_, err := h.call(Request{Action: "scripts.list", ScriptCat: "scriptcat", Input: json.RawMessage(`{}`)})
+			So(errorCode(err), ShouldEqual, generated.ErrorCodeScriptcatNotFound)
+		})
+
+		Convey("忘记 scriptcat:ErrScriptCatNotFound", func() {
+			So(h.srv.ForgetScriptCat("scriptcat"), ShouldEqual, ErrScriptCatNotFound)
 		})
 	})
 }

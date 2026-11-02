@@ -42,6 +42,16 @@ func (s *Server) legacyKeyLocked() (key []byte, ok bool, err error) {
 	return nil, false, nil
 }
 
+// legacyPaired 报告 pairing.key 是否仍归老版 ScriptCat 所有,供列表、目标选择与忘记使用。已被接管却没删成的
+// pairing.key 视为不存在,但这里不补删:补删只在启动与握手时进行,删不掉也不应让这些只读或无关的操作报内部错误。
+func (s *Server) legacyPaired() (bool, error) {
+	key, ok, err := s.keys.Load()
+	if err != nil {
+		return false, fmt.Errorf("load long-term key: %w", err)
+	}
+	return ok && !s.registeredScriptCatKey(key), nil
+}
+
 // registeredScriptCatKey 报告 key 是否已登记为某个新版 ScriptCat 实例的密钥。老版重新接入总是生成新的随机密钥,
 // 因此 pairing.key 与登记表里的密钥相同只可能来自一次接管。
 func (s *Server) registeredScriptCatKey(key []byte) bool {
