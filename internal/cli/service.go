@@ -25,6 +25,7 @@ var (
 // serviceStatus 是 `sctl service status -o json` 的输出。
 type serviceStatus struct {
 	Installed bool   `json:"installed"`
+	Enabled   bool   `json:"enabled"`
 	Location  string `json:"location"`
 	Address   string `json:"address"`
 	Running   bool   `json:"running"`
@@ -58,7 +59,7 @@ func newServiceCmd() *cobra.Command {
 		},
 		&cobra.Command{
 			Use:   "stop",
-			Short: "Stop the installed service (it starts again at the next login)",
+			Short: "Stop the installed service (it starts again at the next login; use disable to keep it off)",
 			Args:  cobra.NoArgs,
 			RunE: withServiceManager(func(cmd *cobra.Command, m service.Manager) error {
 				if err := m.Stop(cmd.Context()); err != nil {
@@ -73,8 +74,23 @@ func newServiceCmd() *cobra.Command {
 			Short: "Restart the installed service",
 			Args:  cobra.NoArgs,
 			RunE: withServiceManager(func(cmd *cobra.Command, m service.Manager) error {
+				if err := requireEnabledService(cmd.Context(), m); err != nil {
+					return err
+				}
 				return serviceAction(cmd, m.Restart, "restarted")
 			}),
+		},
+		&cobra.Command{
+			Use:   "enable",
+			Short: "Start the service at login again, and start it now",
+			Args:  cobra.NoArgs,
+			RunE:  withServiceManager(runServiceEnable),
+		},
+		&cobra.Command{
+			Use:   "disable",
+			Short: "Stop the service and keep it from starting at login until enable",
+			Args:  cobra.NoArgs,
+			RunE:  withServiceManager(runServiceDisable),
 		},
 		&cobra.Command{
 			Use:   "status",
@@ -88,11 +104,7 @@ func newServiceCmd() *cobra.Command {
 
 func withServiceManager(fn func(*cobra.Command, service.Manager) error) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, _ []string) error {
-		address, err := control.Address()
-		if err != nil {
-			return &ExitError{Code: exitError, Message: err.Error()}
-		}
-		m, err := newServiceManager(address)
+		m, err := newServiceManager()
 		if err != nil {
 			return &ExitError{Code: exitError, Message: err.Error()}
 		}
@@ -144,24 +156,78 @@ func runServiceUninstall(cmd *cobra.Command, m service.Manager) error {
 	return nil
 }
 
-// runServiceStart 启动服务。已经有 daemon 能连上时什么都不做:它要么就是服务本身,要么是占着端口的
-// 前台 daemon——这时再启动服务只会让它因为端口冲突反复重启。
 func runServiceStart(cmd *cobra.Command, m service.Manager) error {
-	ctx := cmd.Context()
+	if err := requireEnabledService(cmd.Context(), m); err != nil {
+		return err
+	}
+	return startService(cmd, m)
+}
+
+// startService 启动服务。已经有 daemon 能连上时什么都不做:它要么就是服务本身,要么是占着端口的
+// 前台 daemon——这时再启动服务只会让它因为端口冲突反复重启。
+func startService(cmd *cobra.Command, m service.Manager) error {
 	address, err := control.Address()
 	if err != nil {
 		return &ExitError{Code: exitError, Message: err.Error()}
 	}
-	if installed, err := m.Installed(ctx); err != nil {
-		return &ExitError{Code: exitError, Message: err.Error()}
-	} else if !installed {
-		return &ExitError{Code: exitError, Message: service.ErrNotInstalled.Error()}
-	}
-	if control.Healthy(ctx) {
+	if control.Healthy(cmd.Context()) {
 		fmt.Fprintf(os.Stdout, "a daemon is already running at %s; nothing started\n", address)
 		return nil
 	}
 	return serviceAction(cmd, m.Start, "started")
+}
+
+func runServiceEnable(cmd *cobra.Command, m service.Manager) error {
+	if err := requireInstalledService(cmd.Context(), m); err != nil {
+		return err
+	}
+	if err := m.Enable(cmd.Context()); err != nil {
+		return &ExitError{Code: exitError, Message: err.Error()}
+	}
+	fmt.Fprintln(os.Stdout, "service enabled: it starts at login again")
+	return startService(cmd, m)
+}
+
+func runServiceDisable(cmd *cobra.Command, m service.Manager) error {
+	ctx := cmd.Context()
+	if err := requireInstalledService(ctx, m); err != nil {
+		return err
+	}
+	if err := m.Disable(ctx); err != nil {
+		return &ExitError{Code: exitError, Message: err.Error()}
+	}
+	if err := m.Stop(ctx); err != nil {
+		return &ExitError{Code: exitError, Message: err.Error()}
+	}
+	fmt.Fprintln(os.Stdout, "service disabled and stopped: it does not start at login until `sctl service enable`")
+	return nil
+}
+
+func requireInstalledService(ctx context.Context, m service.Manager) error {
+	installed, err := m.Installed(ctx)
+	if err != nil {
+		return &ExitError{Code: exitError, Message: err.Error()}
+	}
+	if !installed {
+		return &ExitError{Code: exitError, Message: service.ErrNotInstalled.Error()}
+	}
+	return nil
+}
+
+// requireEnabledService 拒绝启动被禁用的服务:launchd 和任务计划程序本来就不让手动启动它,systemd 允许,
+// 统一在这里拒绝,disable 的含义在各平台一致。
+func requireEnabledService(ctx context.Context, m service.Manager) error {
+	if err := requireInstalledService(ctx, m); err != nil {
+		return err
+	}
+	enabled, err := m.Enabled(ctx)
+	if err != nil {
+		return &ExitError{Code: exitError, Message: err.Error()}
+	}
+	if !enabled {
+		return &ExitError{Code: exitError, Message: "the sctl service is disabled; run `sctl service enable` to start it again"}
+	}
+	return nil
 }
 
 // serviceAction 执行 start / restart,并等新启动的 daemon 能连上。
@@ -193,12 +259,20 @@ func runServiceStatus(cmd *cobra.Command, m service.Manager) error {
 		return &ExitError{Code: exitError, Message: err.Error()}
 	}
 	st := serviceStatus{Installed: installed, Location: m.Location(), Address: address, Running: control.Healthy(ctx)}
+	if installed {
+		if st.Enabled, err = m.Enabled(ctx); err != nil {
+			return &ExitError{Code: exitError, Message: err.Error()}
+		}
+	}
 	if outputFormat == outputJSON {
 		return printValueJSON(st)
 	}
-	if installed {
-		fmt.Fprintf(os.Stdout, "service: installed (%s)\n", st.Location)
-	} else {
+	switch {
+	case installed && st.Enabled:
+		fmt.Fprintf(os.Stdout, "service: installed (%s), starts at login\n", st.Location)
+	case installed:
+		fmt.Fprintf(os.Stdout, "service: installed (%s), disabled: does not start at login\n", st.Location)
+	default:
 		fmt.Fprintln(os.Stdout, "service: not installed")
 	}
 	if st.Running {
@@ -210,22 +284,24 @@ func runServiceStatus(cmd *cobra.Command, m service.Manager) error {
 }
 
 // serviceProgram 固化本次调用实际生效的全局参数:服务管理器不继承用户 shell 的 SCTL_DATA_DIR,
-// 相对路径也会相对于服务管理器的工作目录解析。
+// 相对路径也会相对于服务管理器的工作目录解析。监听地址总是写上且放在最前:Windows 上要从任务定义里读回它,
+// 而 schtasks 按系统代码页输出定义,只有排在非 ASCII 路径之前的内容能可靠读回。
 func serviceProgram() (service.Program, error) {
 	exe, err := resolveServiceExecutable()
 	if err != nil {
 		return service.Program{}, err
 	}
-	var args []string
+	address, err := control.Address()
+	if err != nil {
+		return service.Program{}, err
+	}
+	args := []string{"--listen-address", address}
 	if dataDir != "" {
 		abs, err := filepath.Abs(dataDir)
 		if err != nil {
 			return service.Program{}, err
 		}
 		args = append(args, "--data-dir", abs)
-	}
-	if listenAddress != "" {
-		args = append(args, "--listen-address", listenAddress)
 	}
 	if logLevel != defaultLogLevel {
 		args = append(args, "--log-level", logLevel)

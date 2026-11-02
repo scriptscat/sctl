@@ -19,12 +19,27 @@ import (
 	"github.com/scriptscat/sctl/internal/client/service"
 )
 
-// fakeServiceManager 记录安装的命令行;onInstall / onStart 模拟服务启动后 daemon 变得可连。
+// fakeServiceManager 记录安装的命令行;onStart 模拟服务启动后 daemon 变得可连。
 type fakeServiceManager struct {
 	installed bool
+	disabled  bool
 	program   *service.Program
 	calls     []string
 	onStart   func()
+}
+
+func (f *fakeServiceManager) Enabled(context.Context) (bool, error) { return !f.disabled, nil }
+
+func (f *fakeServiceManager) Enable(context.Context) error {
+	f.calls = append(f.calls, "enable")
+	f.disabled = false
+	return nil
+}
+
+func (f *fakeServiceManager) Disable(context.Context) error {
+	f.calls = append(f.calls, "disable")
+	f.disabled = true
+	return nil
 }
 
 func (f *fakeServiceManager) Location() string { return "/fake/sctl.plist" }
@@ -34,6 +49,7 @@ func (f *fakeServiceManager) Installed(context.Context) (bool, error) { return f
 func (f *fakeServiceManager) Install(_ context.Context, p service.Program) error {
 	f.calls = append(f.calls, "install")
 	f.installed = true
+	f.disabled = false
 	f.program = &p
 	if f.onStart != nil {
 		f.onStart()
@@ -105,7 +121,7 @@ func stubServiceEnv(t *testing.T) (*fakeServiceManager, *atomic.Bool) {
 		ready.Store(true)
 	}}
 	oldNew, oldExe, oldTimeout := newServiceManager, resolveServiceExecutable, serviceReadyTimeout
-	newServiceManager = func(string) (service.Manager, error) { return m, nil }
+	newServiceManager = func() (service.Manager, error) { return m, nil }
 	resolveServiceExecutable = func() (string, error) { return "/opt/bin/sctl", nil }
 	serviceReadyTimeout = 300 * time.Millisecond
 	t.Cleanup(func() {
@@ -133,14 +149,26 @@ func TestServiceInstall(t *testing.T) {
 			So(code, ShouldEqual, exitOK)
 			So(m.program, ShouldNotBeNil)
 			So(m.program.Executable, ShouldEqual, "/opt/bin/sctl")
+			// 监听地址总在最前:Windows 上要从任务定义里读回它,而定义的输出编码随系统语言变化,只有 ASCII 可靠。
 			So(m.program.Args, ShouldResemble, []string{
-				"--data-dir", filepath.Join(wd, "rel-data"),
 				"--listen-address", address,
+				"--data-dir", filepath.Join(wd, "rel-data"),
 				"serve", "--service",
 			})
 			So(m.program.LogDir, ShouldEqual, filepath.Join(wd, "rel-data", "logs"))
 			So(out, ShouldContainSubstring, "/fake/sctl.plist")
 			So(out, ShouldContainSubstring, address)
+		})
+
+		Convey("没给 --listen-address 时也固化实际生效的默认地址", func() {
+			control.SetAddress("")
+			t.Cleanup(func() { control.SetAddress("") })
+			listenAddress = ""
+			def, err := control.Address()
+			So(err, ShouldBeNil)
+			prog, err := serviceProgram()
+			So(err, ShouldBeNil)
+			So(prog.Args[:2], ShouldResemble, []string{"--listen-address", def})
 		})
 
 		Convey("非默认的日志级别一并固化", func() {
@@ -219,11 +247,59 @@ func TestServiceLifecycleCommands(t *testing.T) {
 			So(out, ShouldContainSubstring, os.Getenv("SCTL_BRIDGE_ADDR"))
 		})
 
-		Convey("已安装时 stop 成功", func() {
+		Convey("已安装时 stop 只停止服务,登录自启不变", func() {
 			m.installed = true
 			code, _ := runCLI("service", "stop")
 			So(code, ShouldEqual, exitOK)
 			So(m.calls, ShouldResemble, []string{"stop"})
+			So(m.disabled, ShouldBeFalse)
+		})
+
+		Convey("disable 取消登录自启并停止服务", func() {
+			m.installed = true
+			code, out := runCLI("service", "disable")
+			So(code, ShouldEqual, exitOK)
+			So(m.calls, ShouldResemble, []string{"disable", "stop"})
+			So(out, ShouldContainSubstring, "disabled")
+		})
+
+		Convey("已禁用时 start / restart 退出码 3 并提示 enable,不启动服务", func() {
+			m.installed = true
+			m.disabled = true
+			for _, verb := range []string{"start", "restart"} {
+				code, _, _, err := runCLIResult(strings.NewReader(""), "service", verb)
+				So(code, ShouldEqual, exitError)
+				So(err.Error(), ShouldContainSubstring, "sctl service enable")
+			}
+			So(m.calls, ShouldBeEmpty)
+		})
+
+		Convey("enable 恢复登录自启并启动,等 daemon 能连上", func() {
+			m.installed = true
+			m.disabled = true
+			code, out := runCLI("service", "enable")
+			So(code, ShouldEqual, exitOK)
+			So(m.calls, ShouldResemble, []string{"enable", "start"})
+			So(out, ShouldContainSubstring, os.Getenv("SCTL_BRIDGE_ADDR"))
+		})
+
+		Convey("enable 时 daemon 已经能连上:只恢复登录自启,不再启动服务", func() {
+			m.installed = true
+			m.disabled = true
+			ready.Store(true)
+			code, out := runCLI("service", "enable")
+			So(code, ShouldEqual, exitOK)
+			So(m.calls, ShouldResemble, []string{"enable"})
+			So(out, ShouldContainSubstring, "already running")
+		})
+
+		Convey("未安装时 enable / disable 退出码 3,提示先 install", func() {
+			for _, verb := range []string{"enable", "disable"} {
+				code, _, _, err := runCLIResult(strings.NewReader(""), "service", verb)
+				So(code, ShouldEqual, exitError)
+				So(err.Error(), ShouldContainSubstring, "sctl service install")
+			}
+			So(m.calls, ShouldBeEmpty)
 		})
 
 		Convey("未安装时 uninstall 成功并如实说明", func() {
@@ -259,7 +335,16 @@ func TestServiceStatus(t *testing.T) {
 			code, out := runCLI("service", "status")
 			So(code, ShouldEqual, exitOK)
 			So(out, ShouldContainSubstring, "/fake/sctl.plist")
+			So(out, ShouldContainSubstring, "starts at login")
 			So(out, ShouldContainSubstring, "running at "+address)
+		})
+
+		Convey("已禁用时如实说明登录不会启动", func() {
+			m.installed = true
+			m.disabled = true
+			code, out := runCLI("service", "status")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldContainSubstring, "disabled")
 		})
 
 		Convey("-o json 输出结构化结果", func() {
@@ -268,7 +353,7 @@ func TestServiceStatus(t *testing.T) {
 			So(code, ShouldEqual, exitOK)
 			var got serviceStatus
 			So(json.Unmarshal([]byte(out), &got), ShouldBeNil)
-			So(got, ShouldResemble, serviceStatus{Installed: true, Location: "/fake/sctl.plist", Address: address, Running: false})
+			So(got, ShouldResemble, serviceStatus{Installed: true, Enabled: true, Location: "/fake/sctl.plist", Address: address, Running: false})
 		})
 	})
 }

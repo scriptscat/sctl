@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,19 +27,44 @@ func (s *systemd) Install(ctx context.Context, p Program) error {
 	if err := p.validate(); err != nil {
 		return err
 	}
-	if err := writeDefinition(s.Location(), systemdUnit(p)); err != nil {
+	return installDefinition(s.Location(), systemdUnit(p), func() error {
+		if err := s.systemctl(ctx, "daemon-reload"); err != nil {
+			return err
+		}
+		if err := s.systemctl(ctx, "enable", s.Location()); err != nil {
+			return err
+		}
+		// restart 在服务未运行时等同于 start,重复安装时让新定义生效。
+		return s.systemctl(ctx, "restart", systemdUnitName)
+	})
+}
+
+// Enabled 看 is-enabled 的退出码:未启用时以非零码退出;systemctl 本身无法运行时如实报错。
+func (s *systemd) Enabled(ctx context.Context) (bool, error) {
+	_, err := s.runner.Run(ctx, "systemctl", "--user", "is-enabled", systemdUnitName)
+	if err == nil {
+		return true, nil
+	}
+	if exited(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("systemctl --user is-enabled: %w", err)
+}
+
+// Enable 按绝对路径 enable:单元写在调用者 shell 的 XDG_CONFIG_HOME 下,systemd 用户实例的环境可能不同,
+// 按名字会找不到它。
+func (s *systemd) Enable(ctx context.Context) error {
+	if err := s.requireInstalled(ctx); err != nil {
 		return err
 	}
-	if err := s.systemctl(ctx, "daemon-reload"); err != nil {
+	return s.systemctl(ctx, "enable", s.Location())
+}
+
+func (s *systemd) Disable(ctx context.Context) error {
+	if err := s.requireInstalled(ctx); err != nil {
 		return err
 	}
-	// 按绝对路径 enable:单元写在调用者 shell 的 XDG_CONFIG_HOME 下,systemd 用户实例的环境可能不同,
-	// 按名字会找不到它。
-	if err := s.systemctl(ctx, "enable", s.Location()); err != nil {
-		return err
-	}
-	// restart 在服务未运行时等同于 start,重复安装时让新定义生效。
-	return s.systemctl(ctx, "restart", systemdUnitName)
+	return s.systemctl(ctx, "disable", systemdUnitName)
 }
 
 func (s *systemd) Uninstall(ctx context.Context) (bool, error) {
@@ -62,6 +88,13 @@ func (s *systemd) Stop(ctx context.Context) error { return s.verb(ctx, "stop") }
 func (s *systemd) Restart(ctx context.Context) error { return s.verb(ctx, "restart") }
 
 func (s *systemd) verb(ctx context.Context, verb string) error {
+	if err := s.requireInstalled(ctx); err != nil {
+		return err
+	}
+	return s.systemctl(ctx, verb, systemdUnitName)
+}
+
+func (s *systemd) requireInstalled(ctx context.Context) error {
 	ok, err := s.Installed(ctx)
 	if err != nil {
 		return err
@@ -69,7 +102,7 @@ func (s *systemd) verb(ctx context.Context, verb string) error {
 	if !ok {
 		return ErrNotInstalled
 	}
-	return s.systemctl(ctx, verb, systemdUnitName)
+	return nil
 }
 
 // systemdUnit 生成用户单元。stderr 由 journal 接收,daemon 在服务模式下只把 Go 运行时的崩溃信息写到那里。

@@ -58,24 +58,55 @@ func (l *launchd) Install(ctx context.Context, p Program) error {
 	if err := p.validate(); err != nil {
 		return err
 	}
-	if err := writeDefinition(l.Location(), launchdPlist(p)); err != nil {
-		return err
-	}
-	// 已加载的旧定义不会因为文件被覆盖而生效,必须先卸下再重新加载。
-	loaded, err := l.loaded(ctx)
-	if err != nil {
-		return err
-	}
-	if loaded {
-		if err := run(ctx, l.runner, "launchctl", "bootout", l.target()); err != nil {
+	return installDefinition(l.Location(), launchdPlist(p), func() error {
+		// 已加载的旧定义不会因为文件被覆盖而生效,必须先卸下再重新加载。
+		loaded, err := l.loaded(ctx)
+		if err != nil {
 			return err
 		}
+		if loaded {
+			if err := run(ctx, l.runner, "launchctl", "bootout", l.target()); err != nil {
+				return err
+			}
+		}
+		// 被 disable 过时 bootstrap 会被拒绝;install 表达的就是要启用。
+		if err := run(ctx, l.runner, "launchctl", "enable", l.target()); err != nil {
+			return err
+		}
+		return l.bootstrap(ctx)
+	})
+}
+
+// Enabled 读 print-disabled 里本服务的记录:新版 macOS 写 enabled / disabled,旧版写 false / true(是否禁用)。
+// 没有记录时服务是启用的。
+func (l *launchd) Enabled(ctx context.Context) (bool, error) {
+	out, err := l.runner.Run(ctx, "launchctl", "print-disabled", l.domain())
+	if err != nil {
+		return false, fmt.Errorf("launchctl print-disabled %s: %w", l.domain(), err)
 	}
-	// 用户曾 `launchctl disable` 过时 bootstrap 会被拒绝;install 表达的就是要启用。
-	if err := run(ctx, l.runner, "launchctl", "enable", l.target()); err != nil {
+	prefix := `"` + launchdLabel + `" =>`
+	for _, line := range strings.Split(string(out), "\n") {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(line), prefix); ok {
+			v = strings.TrimSpace(v)
+			return v != "disabled" && v != "true", nil
+		}
+	}
+	return true, nil
+}
+
+// Enable / Disable 用 launchctl 的持久禁用标记:被禁用的 LaunchAgent 登录时不会加载,也不能手动 bootstrap。
+func (l *launchd) Enable(ctx context.Context) error {
+	if err := l.requireInstalled(ctx); err != nil {
 		return err
 	}
-	return l.bootstrap(ctx)
+	return run(ctx, l.runner, "launchctl", "enable", l.target())
+}
+
+func (l *launchd) Disable(ctx context.Context) error {
+	if err := l.requireInstalled(ctx); err != nil {
+		return err
+	}
+	return run(ctx, l.runner, "launchctl", "disable", l.target())
 }
 
 func (l *launchd) Uninstall(ctx context.Context) (bool, error) {

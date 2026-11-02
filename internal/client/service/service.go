@@ -43,13 +43,20 @@ type Manager interface {
 	Location() string
 	// Installed 报告服务定义是否存在。
 	Installed(ctx context.Context) (bool, error)
+	// Enabled 报告服务是否在登录时启动。被禁用的服务也不能手动启动(launchd 与任务计划程序如此),
+	// 调用方在 start / restart 前检查它。
+	Enabled(ctx context.Context) (bool, error)
 	// Install 写入(或覆盖)服务定义,启用登录自启并立即(重新)启动。
 	Install(ctx context.Context, p Program) error
 	// Uninstall 停止服务并删除定义;existed 为 false 表示本来就没装。
 	Uninstall(ctx context.Context) (existed bool, err error)
 	Start(ctx context.Context) error
+	// Stop 停止正在运行的服务,登录自启不变。
 	Stop(ctx context.Context) error
 	Restart(ctx context.Context) error
+	// Enable / Disable 只切换登录自启,不启停服务。
+	Enable(ctx context.Context) error
+	Disable(ctx context.Context) error
 }
 
 // Runner 执行一条外部命令并返回合并后的输出。
@@ -76,8 +83,8 @@ func run(ctx context.Context, r Runner, name string, args ...string) error {
 	return nil
 }
 
-// New 返回当前操作系统的 Manager;不支持的系统返回错误。address 是 daemon 的监听地址。
-func New(address string) (Manager, error) {
+// New 返回当前操作系统的 Manager;不支持的系统返回错误。
+func New() (Manager, error) {
 	r := execRunner{}
 	switch runtime.GOOS {
 	case "darwin":
@@ -102,7 +109,7 @@ func New(address string) (Manager, error) {
 		if err != nil {
 			return nil, err
 		}
-		return &schtasks{runner: r, tempDir: os.TempDir(), user: u.Username, address: address, releaseTimeout: 10 * time.Second}, nil
+		return &schtasks{runner: r, tempDir: os.TempDir(), user: u.Username, releaseTimeout: 10 * time.Second}, nil
 	default:
 		return nil, fmt.Errorf("sctl service is not supported on %s", runtime.GOOS)
 	}
@@ -177,6 +184,26 @@ func fileExists(path string) (bool, error) {
 		return false, nil
 	}
 	return false, err
+}
+
+// installDefinition 写服务定义并交给服务管理器启用。启用失败时删掉首次安装刚写的定义(例如没有用户总线、
+// 没有图形登录会话):留着它,status 会报告已安装,下次 install 也会跳过对端口占用的检查。覆盖安装失败时
+// 原定义已被改写,保留新定义。
+func installDefinition(path, body string, activate func() error) error {
+	existed, err := fileExists(path)
+	if err != nil {
+		return err
+	}
+	if err := writeDefinition(path, body); err != nil {
+		return err
+	}
+	if err := activate(); err != nil {
+		if !existed {
+			return errors.Join(err, os.Remove(path))
+		}
+		return err
+	}
+	return nil
 }
 
 // writeDefinition 写服务定义。定义里没有任何秘密,且服务管理器要求所有者以外不可写,0644 即可。

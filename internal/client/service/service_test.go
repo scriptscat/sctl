@@ -16,10 +16,12 @@ import (
 	. "github.com/smartystreets/goconvey/convey"
 )
 
-// fakeRunner 记录收到的命令,按「命令行前缀 → 错误」表返回失败,其余成功;onRun 在每条命令执行时被调用。
+// fakeRunner 记录收到的命令,按「命令行前缀 → 错误」表返回失败,按「命令行前缀 → 输出」表返回成功时的输出;
+// onRun 在每条命令执行时被调用。
 type fakeRunner struct {
 	calls []string
 	fail  map[string]error
+	out   map[string]string
 	onRun func(args []string)
 }
 
@@ -32,6 +34,11 @@ func (f *fakeRunner) Run(_ context.Context, name string, args ...string) ([]byte
 	for prefix, err := range f.fail {
 		if strings.HasPrefix(line, prefix) {
 			return []byte("boom"), err
+		}
+	}
+	for prefix, out := range f.out {
+		if strings.HasPrefix(line, prefix) {
+			return []byte(out), nil
 		}
 	}
 	return nil, nil
@@ -132,18 +139,49 @@ func TestLaunchd(t *testing.T) {
 			So(attempts, ShouldEqual, 3)
 		})
 
-		Convey("bootstrap 一直失败时返回带输出的错误", func() {
+		Convey("bootstrap 一直失败时返回带输出的错误,并删掉首次安装刚写的 plist,不留下“已安装”的假象", func() {
+			runner.fail["launchctl print"] = exitErr{}
 			runner.fail["launchctl bootstrap"] = errors.New("exit status 5")
 			err := l.Install(context.Background(), prog)
 			So(err, ShouldNotBeNil)
 			So(err.Error(), ShouldContainSubstring, "boom")
+			installed, err := l.Installed(context.Background())
+			So(err, ShouldBeNil)
+			So(installed, ShouldBeFalse)
 		})
 
-		Convey("未安装时 start / stop / restart 返回 ErrNotInstalled", func() {
+		Convey("覆盖安装失败时保留定义:服务原本就装着", func() {
+			So(os.WriteFile(plist, []byte("old"), 0o644), ShouldBeNil)
+			runner.fail["launchctl bootstrap"] = errors.New("exit status 5")
+			So(l.Install(context.Background(), prog), ShouldNotBeNil)
+			installed, err := l.Installed(context.Background())
+			So(err, ShouldBeNil)
+			So(installed, ShouldBeTrue)
+		})
+
+		Convey("未安装时 start / stop / restart / enable / disable 返回 ErrNotInstalled", func() {
 			So(errors.Is(l.Start(context.Background()), ErrNotInstalled), ShouldBeTrue)
 			So(errors.Is(l.Stop(context.Background()), ErrNotInstalled), ShouldBeTrue)
 			So(errors.Is(l.Restart(context.Background()), ErrNotInstalled), ShouldBeTrue)
+			So(errors.Is(l.Enable(context.Background()), ErrNotInstalled), ShouldBeTrue)
+			So(errors.Is(l.Disable(context.Background()), ErrNotInstalled), ShouldBeTrue)
 			So(runner.calls, ShouldBeEmpty)
+		})
+
+		Convey("是否登录自启看 print-disabled 里本服务的记录,没有记录时算启用", func() {
+			key := "launchctl print-disabled gui/501"
+			for out, want := range map[string]bool{
+				"\tdisabled services = {\n\t\t\"com.other\" => disabled\n\t\t\"com.scriptscat.sctl\" => disabled\n\t}\n": false,
+				// 旧版 macOS 用 true / false 表示是否禁用。
+				"\tdisabled services = {\n\t\t\"com.scriptscat.sctl\" => true\n\t}\n":           false,
+				"\tdisabled services = {\n\t\t\"com.scriptscat.sctl\" => enabled\n\t}\n":        true,
+				"\tdisabled services = {\n\t\t\"com.scriptscat.sctl.other\" => disabled\n\t}\n": true,
+			} {
+				runner.out = map[string]string{key: out}
+				enabled, err := l.Enabled(context.Background())
+				So(err, ShouldBeNil)
+				So(enabled, ShouldEqual, want)
+			}
 		})
 
 		Convey("已安装", func() {
@@ -174,6 +212,15 @@ func TestLaunchd(t *testing.T) {
 					"launchctl print gui/501/com.scriptscat.sctl",
 					"launchctl bootstrap gui/501 " + plist,
 					"launchctl print gui/501/com.scriptscat.sctl",
+				})
+			})
+
+			Convey("disable / enable 只切换登录自启,不启停服务", func() {
+				So(l.Disable(context.Background()), ShouldBeNil)
+				So(l.Enable(context.Background()), ShouldBeNil)
+				So(runner.calls, ShouldResemble, []string{
+					"launchctl disable gui/501/com.scriptscat.sctl",
+					"launchctl enable gui/501/com.scriptscat.sctl",
 				})
 			})
 
@@ -244,17 +291,55 @@ func TestSystemd(t *testing.T) {
 			})
 		})
 
-		Convey("systemctl 失败时返回带输出的错误", func() {
+		Convey("systemctl 失败时返回带输出的错误,并删掉首次安装刚写的单元文件(例如没有用户总线时)", func() {
 			runner.fail["systemctl --user daemon-reload"] = errors.New("exit status 1")
 			err := s.Install(context.Background(), prog)
 			So(err, ShouldNotBeNil)
 			So(err.Error(), ShouldContainSubstring, "boom")
+			installed, err := s.Installed(context.Background())
+			So(err, ShouldBeNil)
+			So(installed, ShouldBeFalse)
 		})
 
-		Convey("未安装时 start / stop / restart 返回 ErrNotInstalled,uninstall 报告不存在", func() {
+		Convey("覆盖安装失败时保留定义:服务原本就装着", func() {
+			So(os.WriteFile(unit, []byte("old"), 0o644), ShouldBeNil)
+			runner.fail["systemctl --user daemon-reload"] = errors.New("exit status 1")
+			So(s.Install(context.Background(), prog), ShouldNotBeNil)
+			installed, err := s.Installed(context.Background())
+			So(err, ShouldBeNil)
+			So(installed, ShouldBeTrue)
+		})
+
+		Convey("是否登录自启看 is-enabled 的退出码;systemctl 本身无法运行时如实报错", func() {
+			enabled, err := s.Enabled(context.Background())
+			So(err, ShouldBeNil)
+			So(enabled, ShouldBeTrue)
+			runner.fail["systemctl --user is-enabled"] = exitErr{}
+			enabled, err = s.Enabled(context.Background())
+			So(err, ShouldBeNil)
+			So(enabled, ShouldBeFalse)
+			runner.fail["systemctl --user is-enabled"] = errors.New("exec: systemctl: not found")
+			_, err = s.Enabled(context.Background())
+			So(err, ShouldNotBeNil)
+			So(runner.calls[0], ShouldEqual, "systemctl --user is-enabled sctl.service")
+		})
+
+		Convey("disable / enable 只切换登录自启,不启停服务;enable 按绝对路径", func() {
+			So(os.WriteFile(unit, []byte(systemdUnit(prog)), 0o644), ShouldBeNil)
+			So(s.Disable(context.Background()), ShouldBeNil)
+			So(s.Enable(context.Background()), ShouldBeNil)
+			So(runner.calls, ShouldResemble, []string{
+				"systemctl --user disable sctl.service",
+				"systemctl --user enable " + unit,
+			})
+		})
+
+		Convey("未安装时 start / stop / restart / enable / disable 返回 ErrNotInstalled,uninstall 报告不存在", func() {
 			So(errors.Is(s.Start(context.Background()), ErrNotInstalled), ShouldBeTrue)
 			So(errors.Is(s.Stop(context.Background()), ErrNotInstalled), ShouldBeTrue)
 			So(errors.Is(s.Restart(context.Background()), ErrNotInstalled), ShouldBeTrue)
+			So(errors.Is(s.Enable(context.Background()), ErrNotInstalled), ShouldBeTrue)
+			So(errors.Is(s.Disable(context.Background()), ErrNotInstalled), ShouldBeTrue)
 			existed, err := s.Uninstall(context.Background())
 			So(err, ShouldBeNil)
 			So(existed, ShouldBeFalse)
@@ -285,13 +370,19 @@ func TestSystemd(t *testing.T) {
 func TestSchtasks(t *testing.T) {
 	Convey("Windows 任务计划程序", t, func() {
 		dir := t.TempDir()
-		// /Create 执行时读出它拿到的 XML 文件:Install 返回后临时文件已被删除。onEnd 模拟旧实例对 /End 的反应,
-		// freeAtRun 记下 /Run 那一刻地址是否已经放开。
+		address := freeAddress()
+		prog := Program{Executable: `C:\Program Files\sctl\sctl.exe`, Args: []string{"--listen-address", address, "--data-dir", `C:\Users\a b\d`, "serve", "--service"}}
+		const queryXML, queryCSV = "schtasks /Query /TN sctl /XML", "schtasks /Query /TN sctl /V /FO CSV /NH"
+		// 假的 schtasks:/XML 回显已安装的定义;/V /FO CSV 的第 7 列是上次运行结果,267009 表示正在运行。
+		// /Create 执行时读出它拿到的 XML 文件(Install 返回后临时文件已被删除);onEnd 模拟实例对 /End 的反应;
+		// freeAtRun 记下每次 /Run 那一刻地址是否已经放开。
 		var created string
 		var onEnd func()
 		freeAtRun := []bool{}
-		address := freeAddress()
-		runner := &fakeRunner{fail: map[string]error{}, onRun: func(args []string) {
+		runner := &fakeRunner{fail: map[string]error{}, out: map[string]string{
+			queryXML: schtasksXML(prog, `PC\a&b`),
+			queryCSV: schtasksCSV("267014"),
+		}, onRun: func(args []string) {
 			switch {
 			case len(args) > 0 && args[0] == "/Create":
 				b, err := os.ReadFile(args[len(args)-1])
@@ -303,14 +394,14 @@ func TestSchtasks(t *testing.T) {
 				freeAtRun = append(freeAtRun, !addressHeld(address))
 			}
 		}}
-		w := &schtasks{runner: runner, tempDir: dir, user: `PC\a&b`, address: address, releaseTimeout: 5 * time.Second}
-		// holdUntilEnd 模拟正在运行的旧实例:占着地址,收到 /End 后约 300ms 才退出,和真机上的表现一致。
-		holdUntilEnd := func() {
+		w := &schtasks{runner: runner, tempDir: dir, user: `PC\a&b`, releaseTimeout: 5 * time.Second}
+		// runningInstance 模拟正在运行的实例:占着地址,收到 /End 后约 300ms 才退出,和真机上的表现一致。
+		runningInstance := func() {
+			runner.out[queryCSV] = schtasksCSV("267009")
 			ln, err := net.Listen("tcp", address)
 			So(err, ShouldBeNil)
 			onEnd = func() { time.AfterFunc(300*time.Millisecond, func() { _ = ln.Close() }) }
 		}
-		prog := Program{Executable: `C:\Program Files\sctl\sctl.exe`, Args: []string{"--data-dir", `C:\Users\a b\d`, "serve", "--service"}}
 
 		Convey("任务 XML 只对当前用户的登录触发,取消运行上限,参数按 Windows 规则加引号", func() {
 			body := schtasksXML(prog, `PC\a&b`)
@@ -326,18 +417,100 @@ func TestSchtasks(t *testing.T) {
 			// 实测 RestartOnFailure 不会拉起启动后崩溃的 daemon,写上只会让人误以为能自愈。
 			So(body, ShouldNotContainSubstring, "RestartOnFailure")
 			So(body, ShouldContainSubstring, `<Command>C:\Program Files\sctl\sctl.exe</Command>`)
-			So(body, ShouldContainSubstring, `<Arguments>--data-dir "C:\Users\a b\d" serve --service</Arguments>`)
+			So(body, ShouldContainSubstring, `<Arguments>--listen-address `+address+` --data-dir "C:\Users\a b\d" serve --service</Arguments>`)
 		})
 
-		Convey("安装:以 UTF-16 XML 创建(或覆盖)任务,结束旧实例并等它放开端口后再运行,临时文件删除", func() {
+		Convey("首次安装:以 UTF-16 XML 创建任务后立即运行,临时文件删除", func() {
+			runner.fail[queryCSV] = exitErr{}
 			So(w.Install(context.Background(), prog), ShouldBeNil)
 			So(created, ShouldEqual, schtasksXML(prog, `PC\a&b`))
 			So(len(runner.calls), ShouldEqual, 3)
-			So(runner.calls[0], ShouldStartWith, "schtasks /Create /TN sctl /F /XML "+dir)
-			So(runner.calls[1:], ShouldResemble, []string{"schtasks /End /TN sctl", "schtasks /Run /TN sctl"})
+			So(runner.calls[0], ShouldEqual, queryCSV)
+			So(runner.calls[1], ShouldStartWith, "schtasks /Create /TN sctl /F /XML "+dir)
+			So(runner.calls[2], ShouldEqual, "schtasks /Run /TN sctl")
 			entries, err := os.ReadDir(dir)
 			So(err, ShouldBeNil)
 			So(entries, ShouldBeEmpty)
+		})
+
+		Convey("restart 和覆盖安装等旧实例退出、放开地址后才 /Run,新实例不会绑定失败", func() {
+			runningInstance()
+			So(w.Restart(context.Background()), ShouldBeNil)
+			runningInstance()
+			So(w.Install(context.Background(), prog), ShouldBeNil)
+			So(freeAtRun, ShouldResemble, []bool{true, true})
+		})
+
+		Convey("覆盖安装等的是旧定义里的地址,不是新定义的", func() {
+			runningInstance()
+			newProg := Program{Executable: prog.Executable, Args: []string{"--listen-address", freeAddress(), "serve", "--service"}}
+			So(w.Install(context.Background(), newProg), ShouldBeNil)
+			So(freeAtRun, ShouldResemble, []bool{true})
+		})
+
+		Convey("stop 和 uninstall 返回时实例已放开地址,紧接着的 start / install 不会把它当成还在运行", func() {
+			runningInstance()
+			So(w.Stop(context.Background()), ShouldBeNil)
+			So(addressHeld(address), ShouldBeFalse)
+			runningInstance()
+			_, err := w.Uninstall(context.Background())
+			So(err, ShouldBeNil)
+			So(addressHeld(address), ShouldBeFalse)
+		})
+
+		Convey("任务没在运行时 stop / uninstall 不结束也不等,地址被服务以外的 daemon 占着也照常完成", func() {
+			ln, err := net.Listen("tcp", address)
+			So(err, ShouldBeNil)
+			defer ln.Close()
+			start := time.Now()
+			So(w.Stop(context.Background()), ShouldBeNil)
+			existed, err := w.Uninstall(context.Background())
+			So(err, ShouldBeNil)
+			So(existed, ShouldBeTrue)
+			So(time.Since(start), ShouldBeLessThan, time.Second)
+			So(runner.calls, ShouldResemble, []string{
+				"schtasks /Query /TN sctl", queryCSV,
+				"schtasks /Query /TN sctl", queryCSV, "schtasks /Delete /TN sctl /F",
+			})
+		})
+
+		Convey("实例迟迟不放开地址时 restart / install 报错,不再 /Run 一个注定绑定失败的实例", func() {
+			w.releaseTimeout = 300 * time.Millisecond
+			runner.out[queryCSV] = schtasksCSV("267009")
+			ln, err := net.Listen("tcp", address)
+			So(err, ShouldBeNil)
+			defer ln.Close()
+			So(w.Restart(context.Background()), ShouldNotBeNil)
+			So(w.Install(context.Background(), prog), ShouldNotBeNil)
+			So(runner.calls, ShouldNotContain, "schtasks /Run /TN sctl")
+		})
+
+		Convey("正在运行的任务定义里读不到监听地址时报错并提示重新安装,不盲目重启", func() {
+			runner.out[queryCSV] = schtasksCSV("267009")
+			runner.out[queryXML] = schtasksXML(Program{Executable: prog.Executable, Args: []string{"serve", "--service"}}, `PC\a&b`)
+			err := w.Restart(context.Background())
+			So(err, ShouldNotBeNil)
+			So(err.Error(), ShouldContainSubstring, "sctl service install")
+			So(runner.calls, ShouldNotContain, "schtasks /End /TN sctl")
+		})
+
+		Convey("是否登录自启看定义里 Settings 的 Enabled;disable / enable 只切换它", func() {
+			enabled, err := w.Enabled(context.Background())
+			So(err, ShouldBeNil)
+			So(enabled, ShouldBeTrue)
+			// 触发器里也有 Enabled,只有 Settings 里的才表示任务被禁用。
+			runner.out[queryXML] = strings.Replace(schtasksXML(prog, `PC\a&b`),
+				"<Enabled>true</Enabled>\n    <Hidden>", "<Enabled>false</Enabled>\n    <Hidden>", 1)
+			enabled, err = w.Enabled(context.Background())
+			So(err, ShouldBeNil)
+			So(enabled, ShouldBeFalse)
+			runner.calls = nil
+			So(w.Disable(context.Background()), ShouldBeNil)
+			So(w.Enable(context.Background()), ShouldBeNil)
+			So(runner.calls, ShouldResemble, []string{
+				"schtasks /Query /TN sctl", "schtasks /Change /TN sctl /DISABLE",
+				"schtasks /Query /TN sctl", "schtasks /Change /TN sctl /ENABLE",
+			})
 		})
 
 		Convey("schtasks 本身无法运行时如实报错,不当作未安装", func() {
@@ -347,60 +520,24 @@ func TestSchtasks(t *testing.T) {
 			So(errors.Is(w.Start(context.Background()), ErrNotInstalled), ShouldBeFalse)
 		})
 
-		Convey("未安装时 start / stop / restart 返回 ErrNotInstalled,uninstall 报告不存在", func() {
+		Convey("未安装时 start / stop / restart / enable / disable 返回 ErrNotInstalled,uninstall 报告不存在", func() {
 			runner.fail["schtasks /Query"] = exitErr{}
 			So(errors.Is(w.Start(context.Background()), ErrNotInstalled), ShouldBeTrue)
 			So(errors.Is(w.Stop(context.Background()), ErrNotInstalled), ShouldBeTrue)
 			So(errors.Is(w.Restart(context.Background()), ErrNotInstalled), ShouldBeTrue)
+			So(errors.Is(w.Enable(context.Background()), ErrNotInstalled), ShouldBeTrue)
+			So(errors.Is(w.Disable(context.Background()), ErrNotInstalled), ShouldBeTrue)
 			existed, err := w.Uninstall(context.Background())
 			So(err, ShouldBeNil)
 			So(existed, ShouldBeFalse)
 		})
-
-		Convey("已安装时 stop 结束、restart 结束后等旧实例放开端口再运行,uninstall 结束后删除(结束以非零码退出不影响)", func() {
-			runner.fail["schtasks /End"] = exitErr{}
-			So(w.Start(context.Background()), ShouldBeNil)
-			So(w.Stop(context.Background()), ShouldNotBeNil)
-			So(w.Restart(context.Background()), ShouldBeNil)
-			existed, err := w.Uninstall(context.Background())
-			So(err, ShouldBeNil)
-			So(existed, ShouldBeTrue)
-			So(runner.calls, ShouldResemble, []string{
-				"schtasks /Query /TN sctl", "schtasks /Run /TN sctl",
-				"schtasks /Query /TN sctl", "schtasks /End /TN sctl",
-				"schtasks /Query /TN sctl", "schtasks /End /TN sctl", "schtasks /Run /TN sctl",
-				"schtasks /Query /TN sctl", "schtasks /End /TN sctl", "schtasks /Delete /TN sctl /F",
-			})
-		})
-
-		Convey("restart 和覆盖安装等旧实例退出、放开地址后才 /Run,新实例不会绑定失败", func() {
-			holdUntilEnd()
-			So(w.Restart(context.Background()), ShouldBeNil)
-			holdUntilEnd()
-			So(w.Install(context.Background(), prog), ShouldBeNil)
-			So(freeAtRun, ShouldResemble, []bool{true, true})
-		})
-
-		Convey("stop 和 uninstall 返回时旧实例已放开地址,紧接着的 start / install 不会把它当成还在运行", func() {
-			holdUntilEnd()
-			So(w.Stop(context.Background()), ShouldBeNil)
-			So(addressHeld(address), ShouldBeFalse)
-			holdUntilEnd()
-			_, err := w.Uninstall(context.Background())
-			So(err, ShouldBeNil)
-			So(addressHeld(address), ShouldBeFalse)
-		})
-
-		Convey("地址一直被别的进程占着时 restart / install 报错,不再 /Run 一个注定绑定失败的实例", func() {
-			w.releaseTimeout = 300 * time.Millisecond
-			ln, err := net.Listen("tcp", address)
-			So(err, ShouldBeNil)
-			defer ln.Close()
-			So(w.Restart(context.Background()), ShouldNotBeNil)
-			So(w.Install(context.Background(), prog), ShouldNotBeNil)
-			So(runner.calls, ShouldNotContain, "schtasks /Run /TN sctl")
-		})
 	})
+}
+
+// schtasksCSV 模拟 `schtasks /Query /V /FO CSV /NH` 的一行:状态等列随系统语言变化,运行命令里的引号不转义。
+func schtasksCSV(lastResult string) string {
+	return `"PC","\sctl","N/A","正在运行","只使用交互方式","2026/11/2 10:15:17","` + lastResult +
+		`","N/A","C:\sctl.exe --data-dir "C:\a b" serve --service","N/A"` + "\r\n"
 }
 
 // freeAddress 返回一个此刻空着的本机地址。

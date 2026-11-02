@@ -19,8 +19,8 @@ CLI verbs (sctl get / edit / install / browsers / tabs / windows / page / debug 
 path, authenticated with the control token described in [threat-model.md](./threat-model.md#4-the-control-channel-internal-local-connection-in-detail).
 Frontends never start `serve`: run it
 explicitly in the foreground or let the user's system service manager own its lifecycle — `sctl service`
-(`internal/client/service`) writes that service definition and drives the manager's own commands, without
-talking to the daemon.
+(`internal/client/service`) writes that service definition and drives the manager's own commands; it talks to the
+daemon only through the health check and the control token, to tell whether the service's daemon came up.
 
 The daemon accepts two kinds of extension connection at once: exactly one active ScriptCat connection (a new
 one replaces the previous one), and any number of paired `sctl Browser` instances connecting simultaneously,
@@ -142,7 +142,7 @@ cmd/sctl/main.go            # cobra entry point (unwraps ExitError → os.Exit)
 internal/cli/               # subcommand definitions; spans both sides, hence top level
   cli.go                    #   root command, global flags (-o/--output, --log-level), output helpers
   serve.go                  #   bootstraps the cago app and mounts the daemon Component
-  service.go                #   sctl service install|uninstall|start|stop|restart|status
+  service.go                #   sctl service install|uninstall|start|stop|restart|enable|disable|status
   mcp.go                    #   sctl mcp (serves all tools; --name is an audit label)
   connect.go status.go version.go
   get.go grep.go            #   read verbs
@@ -185,7 +185,7 @@ internal/pkg/               # ── shared by both sides ──
   protocolschema/           #   JSON-RPC parsing and business-schema validation at the untrusted WS boundary
   audit/                    #   daemon-side security events (the Event type crosses the control API, hence shared)
   paths/                    #   data directory and derived paths
-  logging/                  #   unified zap logging (stderr + <dataDir>/logs/*.log, never stdout)
+  logging/                  #   unified zap logging (stderr + <dataDir>/logs/*.log; files only under sctl service; never stdout)
   fsutil/                   #   atomic file writes
 
 extension/                  # ── sctl Browser, the second extension kind (MV3, pnpm/Vite/React) ──
