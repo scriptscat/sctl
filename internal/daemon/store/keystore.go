@@ -45,3 +45,11 @@ func (s *KeyStore) Save(key []byte) error {
 	}
 	return fsutil.WriteFileAtomic(s.path, []byte(hex.EncodeToString(key)), 0o600)
 }
+
+// Delete 删除长期密钥文件;文件本就不存在不算错误,使删除可以安全地重试。
+func (s *KeyStore) Delete() error {
+	if err := os.Remove(s.path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("delete key file: %w", err)
+	}
+	return nil
+}

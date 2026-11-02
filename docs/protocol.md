@@ -130,7 +130,18 @@ verifies for another instance, for a legacy ScriptCat, or for a browser instance
 
 Each ScriptCat instance has its own session key, issued by its pairing; pairing one never touches the legacy key,
 another ScriptCat instance's key, or any browser instance's key. A session handshake from a ScriptCat instance
-that is not paired fails.
+that is not paired fails, unless it is an upgrade takeover.
+
+**Upgrade takeover.** A ScriptCat that was paired as a legacy ScriptCat keeps the legacy key after it upgrades. When
+a ScriptCat instance whose `instanceId` is not paired sends a session handshake while `<dataDir>/pairing.key` exists,
+the daemon verifies its MAC with the legacy key under the `scriptcat*` session contexts above (never the legacy
+contexts). A MAC that does not verify fails the handshake and leaves `pairing.key` untouched. Once the instance's
+capabilities are accepted, the daemon registers the legacy key as that instance's key in `scriptcats.json`, then
+deletes `pairing.key` and closes a connected legacy ScriptCat. A name `CONFLICT` registers nothing and keeps
+`pairing.key`. From then on a legacy handshake does not verify, and a legacy connection that authenticated before the
+takeover but had not yet declared capabilities is closed when it does. If the registry write succeeds but the
+delete fails, the registration stands, the leftover file is treated as absent, and the delete is retried at the next
+daemon start and at every later handshake that reads the legacy key.
 
 A ScriptCat that declares no `peer` is a legacy ScriptCat: it authenticates with the formulas at the top of this
 section and the single legacy key, and has no instance ID. Any number of ScriptCat instances and one legacy

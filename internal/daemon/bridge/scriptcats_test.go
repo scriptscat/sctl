@@ -318,8 +318,10 @@ func TestScriptCatInstanceHandshakeFailures(t *testing.T) {
 		})
 
 		Convey("实例的 MAC 去掉身份声明后不能以老版 ScriptCat 身份通过", func() {
-			So(h.keys.Save(key), ShouldBeNil)
-			ev := fail(nil, instanceMAC(instanceA, key))
+			// pairing.key 与已登记实例的密钥相同意味着它已被接管(见 takeover_test.go),这里用只在 pairing.key 里的密钥。
+			legacyKey, _ := auth.NewLongTermKey()
+			So(h.keys.Save(legacyKey), ShouldBeNil)
+			ev := fail(nil, instanceMAC(instanceA, legacyKey))
 			So(ev.Reason, ShouldEqual, audit.ReasonHMACMismatch)
 			So(ev.Client, ShouldBeBlank)
 		})

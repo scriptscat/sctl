@@ -36,10 +36,15 @@ type testHarness struct {
 
 func startTestServer(t *testing.T) *testHarness {
 	t.Helper()
+	dir := t.TempDir()
+	return startTestServerAt(t, dir, filepath.Join(dir, "pairing.key"))
+}
+
+// startTestServerAt 以 dir 下的实例登记表与 keyPath 处的 pairing.key 启动 daemon。
+func startTestServerAt(t *testing.T, dir, keyPath string) *testHarness {
+	t.Helper()
 	p, err := protocol.Load()
 	So(err, ShouldBeNil)
-	dir := t.TempDir()
-	keyPath := filepath.Join(dir, "pairing.key")
 	keys := store.NewKeyStore(keyPath)
 	browsers, err := store.LoadBrowserRegistry(filepath.Join(dir, "browsers.json"))
 	So(err, ShouldBeNil)

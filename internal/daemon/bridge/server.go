@@ -260,8 +260,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 func (s *Server) register(c *conn) error {
 	switch {
 	case !c.isInstance():
-		s.setLegacyScriptCat(c)
-		return nil
+		return s.registerLegacy(c)
 	case c.kind == protocol.PeerBrowser:
 		return s.registerBrowser(c)
 	default:
@@ -326,8 +325,18 @@ func (s *Server) removeConn(c *conn) {
 	}
 }
 
-// setLegacyScriptCat 将 c 设为唯一的老版 ScriptCat 连接,替换并断开旧的老版连接;新版实例的连接不受影响。
-func (s *Server) setLegacyScriptCat(c *conn) {
+// registerLegacy 将 c 设为唯一的老版 ScriptCat 连接,替换并断开旧的老版连接;新版实例的连接不受影响。
+// 与接管由 regMu 串行:握手之后 pairing.key 已被接管或被重新接入替换时,这条连接的密钥已作废,不能上线。
+func (s *Server) registerLegacy(c *conn) error {
+	s.regMu.Lock()
+	defer s.regMu.Unlock()
+	held, err := s.holdsLegacyKeyLocked(c.key)
+	if err != nil {
+		return err
+	}
+	if !held {
+		return store.ErrInstanceNotFound
+	}
 	s.mu.Lock()
 	old := s.legacyScriptCat
 	s.legacyScriptCat = c
@@ -335,4 +344,5 @@ func (s *Server) setLegacyScriptCat(c *conn) {
 	if old != nil && old != c {
 		old.closeInBackground(websocket.StatusNormalClosure, "replaced by new connection")
 	}
+	return nil
 }

@@ -46,7 +46,10 @@ type conn struct {
 	kind       protocol.Peer
 	instanceID string
 	// paired 表示实例在本连接完成了首次配对,其登记在能力声明被接受时才落盘。
-	paired      bool
+	paired bool
+	// takeover 表示未登记的新版 ScriptCat 实例改用 pairing.key 的密钥做会话握手(升级接管),
+	// 接管在能力声明被接受时才落盘。
+	takeover    bool
 	peer        capabilitiesPeer
 	connectedAt time.Time
 }
@@ -166,17 +169,28 @@ func (c *conn) daemonMAC(mode auth.Mode, key []byte, nonceD, nonceE string) stri
 }
 
 // sessionKey 取会话握手所用的长期密钥:老版 ScriptCat 用 pairing.key,实例用其登记表里的实例密钥。
+// 未登记的新版 ScriptCat 实例在 pairing.key 存在时改用它的密钥:这是升级前以老版身份配对的同一个 ScriptCat,
+// 免去重新配对;MAC 仍按 ScriptCat 实例上下文校验,老版录下的 MAC 不能借此通过。
 func (c *conn) sessionKey() ([]byte, error) {
 	if c.isInstance() {
-		inst, ok := c.srv.registryFor(c.kind).Get(c.instanceID)
-		if !ok {
-			return nil, authFail(audit.TypeHandshakeFailed, audit.ReasonUnknownInstance, "%s instance is not paired", c.kind)
+		if inst, ok := c.srv.registryFor(c.kind).Get(c.instanceID); ok {
+			return inst.Key, nil
 		}
-		return inst.Key, nil
+		if c.kind == protocol.PeerScriptCat {
+			key, ok, err := c.srv.legacyKey()
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				c.takeover = true
+				return key, nil
+			}
+		}
+		return nil, authFail(audit.TypeHandshakeFailed, audit.ReasonUnknownInstance, "%s instance is not paired", c.kind)
 	}
-	key, ok, err := c.srv.keys.Load()
+	key, ok, err := c.srv.legacyKey()
 	if err != nil {
-		return nil, fmt.Errorf("load long-term key: %w", err)
+		return nil, err
 	}
 	if !ok {
 		return nil, errors.New("not paired yet, no long-term key")
@@ -240,7 +254,7 @@ func (c *conn) handshakePairing(ctx context.Context, nonceD string, resp authRes
 	// 一起写入登记表,名称随能力声明才到达,因此推迟到登记时;pairing.key 只属于老版 ScriptCat。
 	if c.isInstance() {
 		c.paired = true
-	} else if err := s.keys.Save(k); err != nil {
+	} else if err := s.saveLegacyKey(k); err != nil {
 		return fmt.Errorf("persist long-term key: %w", err)
 	}
 	c.key = k

@@ -1,0 +1,95 @@
+package bridge
+
+import (
+	"crypto/subtle"
+	"fmt"
+
+	"go.uber.org/zap"
+
+	"github.com/scriptscat/sctl/internal/daemon/store"
+)
+
+// RetireTakenOverPairingKey 补做一次没删成 pairing.key 的升级接管,daemon 启动时调用。仍删不掉时返回错误;
+// 在此期间老版握手照样不成立(见 legacyKeyLocked)。
+func (s *Server) RetireTakenOverPairingKey() error {
+	s.regMu.Lock()
+	defer s.regMu.Unlock()
+	_, _, err := s.legacyKeyLocked()
+	return err
+}
+
+// legacyKey 取仍归老版 ScriptCat 所有的 pairing.key 密钥,ok=false 表示没有。
+func (s *Server) legacyKey() (key []byte, ok bool, err error) {
+	s.regMu.Lock()
+	defer s.regMu.Unlock()
+	return s.legacyKeyLocked()
+}
+
+// legacyKeyLocked 同 legacyKey,调用方须持有 regMu。接管先登记再删 pairing.key,删除失败时文件留下、
+// 密钥却已属于一个新版实例:此时补删并视为没有老版密钥,这把密钥既不能再走老版握手,也不能被另一个实例再接管。
+// 补删与写 pairing.key 都在 regMu 下,不会删掉老版重新接入刚写入的新密钥。
+func (s *Server) legacyKeyLocked() (key []byte, ok bool, err error) {
+	key, ok, err = s.keys.Load()
+	if err != nil {
+		return nil, false, fmt.Errorf("load long-term key: %w", err)
+	}
+	if !ok || !s.registeredScriptCatKey(key) {
+		return key, ok, nil
+	}
+	if err := s.keys.Delete(); err != nil {
+		return nil, false, fmt.Errorf("delete taken-over pairing.key: %w", err)
+	}
+	return nil, false, nil
+}
+
+// registeredScriptCatKey 报告 key 是否已登记为某个新版 ScriptCat 实例的密钥。老版重新接入总是生成新的随机密钥,
+// 因此 pairing.key 与登记表里的密钥相同只可能来自一次接管。
+func (s *Server) registeredScriptCatKey(key []byte) bool {
+	for _, inst := range s.scriptcats.List() {
+		if subtle.ConstantTimeCompare(inst.Key, key) == 1 {
+			return true
+		}
+	}
+	return false
+}
+
+// saveLegacyKey 写入老版 ScriptCat 新接入的密钥;与接管的检查和补删由 regMu 串行。
+func (s *Server) saveLegacyKey(key []byte) error {
+	s.regMu.Lock()
+	defer s.regMu.Unlock()
+	return s.keys.Save(key)
+}
+
+// holdsLegacyKeyLocked 报告 key 是否仍是 pairing.key 中的老版密钥,调用方须持有 regMu。握手之后
+// pairing.key 可能已被接管或被老版重新接入替换,持有旧密钥的连接不能再据此上线或接管。
+func (s *Server) holdsLegacyKeyLocked(key []byte) (bool, error) {
+	current, ok, err := s.legacyKeyLocked()
+	if err != nil {
+		return false, err
+	}
+	return ok && subtle.ConstantTimeCompare(current, key) == 1, nil
+}
+
+// takeOverLocked 把这条连接用来握手的 pairing.key 密钥登记到实例 inst 名下,再删除 pairing.key;调用方须持有 regMu。
+// 实例可能在握手之后已另行配对或被另一条连接接管,这时它已有自己的密钥,不再接管。名称冲突时什么都不登记、
+// pairing.key 原样保留。先登记再删除:删除失败时登记保留,由 legacyKeyLocked 之后补删,不会出现两把密钥都失效的状态。
+func (s *Server) takeOverLocked(inst store.Instance) error {
+	if _, ok := s.scriptcats.Get(inst.ID); ok {
+		return store.ErrInstanceNotFound
+	}
+	held, err := s.holdsLegacyKeyLocked(inst.Key)
+	if err != nil {
+		return err
+	}
+	if !held {
+		return store.ErrInstanceNotFound
+	}
+	if err := s.scriptcats.Pair(inst); err != nil {
+		return err
+	}
+	if err := s.keys.Delete(); err != nil {
+		s.log.Warn("ScriptCat instance took over pairing.key but deleting it failed; retrying at the next check",
+			zap.String("instance", inst.ID), zap.Error(err))
+	}
+	return nil
+}

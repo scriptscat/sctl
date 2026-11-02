@@ -144,8 +144,9 @@ func (s *Server) onlineFor(kind protocol.Peer) map[string]*conn {
 }
 
 // registerOnline 在 regMu 下把完成能力声明的实例写入其登记表并置为在线,报告是否替换了同一实例的旧连接。
-// 新配对在此首次落盘(名称随能力声明才到达);会话连接只能更新仍以同一密钥登记的实例,
-// 与忘记操作由 regMu 串行,被忘记的实例无法借一条进行中的握手重新登记。
+// 新配对与升级接管在此首次落盘(名称随能力声明才到达);会话连接只能更新仍以同一密钥登记的实例,
+// 与忘记操作由 regMu 串行,被忘记的实例无法借一条进行中的握手重新登记。接管之后老版密钥作废,
+// 在线的老版连接随之断开。
 func (s *Server) registerOnline(c *conn) (replaced bool, err error) {
 	s.regMu.Lock()
 	defer s.regMu.Unlock()
@@ -158,9 +159,12 @@ func (s *Server) registerOnline(c *conn) (replaced bool, err error) {
 		ProductVersion:   c.peer.ProductVersion,
 		ExtensionVersion: c.peer.ExtensionVersion,
 	}
-	if c.paired {
+	switch {
+	case c.paired:
 		err = registry.Pair(inst)
-	} else {
+	case c.takeover:
+		err = s.takeOverLocked(inst)
+	default:
 		err = registry.Update(inst)
 	}
 	if err != nil {
@@ -168,13 +172,20 @@ func (s *Server) registerOnline(c *conn) (replaced bool, err error) {
 	}
 
 	c.connectedAt = time.Now()
+	var legacy *conn
 	s.mu.Lock()
 	online := s.onlineFor(c.kind)
 	old := online[c.instanceID]
 	online[c.instanceID] = c
+	if c.takeover {
+		legacy, s.legacyScriptCat = s.legacyScriptCat, nil
+	}
 	s.mu.Unlock()
 	if old != nil && old != c {
 		old.closeInBackground(websocket.StatusNormalClosure, "replaced by new connection")
+	}
+	if legacy != nil {
+		legacy.closeInBackground(websocket.StatusPolicyViolation, "")
 	}
 	return old != nil && old != c, nil
 }
