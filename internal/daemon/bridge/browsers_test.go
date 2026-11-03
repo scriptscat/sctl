@@ -337,7 +337,7 @@ func (h *testHarness) busyConnection(t *testing.T, instanceID string) *extClient
 	h.srv.mu.Lock()
 	defer h.srv.mu.Unlock()
 	if kind == protocol.PeerScriptCat {
-		h.srv.scriptCat = busy
+		h.srv.legacyScriptCat = busy
 	} else {
 		h.srv.online[instanceID] = busy
 	}
@@ -575,7 +575,7 @@ func TestBrowserPeerValidation(t *testing.T) {
 		for _, peer := range []*authPeer{
 			{Kind: peerKindBrowser, InstanceID: "0123456789ABCDEF0123456789ABCDEF"},
 			{Kind: peerKindBrowser, InstanceID: "0123"},
-			{Kind: "scriptcat", InstanceID: instanceA},
+			{Kind: "firefox", InstanceID: instanceA},
 		} {
 			e, challenge, nonceD := h.challenge()
 			nonceE, _ := auth.RandomNonceHex(h.proto.Crypto.NonceBytes)

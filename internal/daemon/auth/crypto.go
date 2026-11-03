@@ -112,6 +112,43 @@ func (c *Crypto) VerifyBrowserDaemonHMAC(mode Mode, instanceID string, key []byt
 	return constantTimeHexEqual(c.BrowserDaemonHMAC(mode, instanceID, key, nonceD, nonceE), got)
 }
 
+func (c *Crypto) scriptCatExtContext(mode Mode) string {
+	if mode == ModePairing {
+		return c.ctx[generated.CryptoContextScriptcatPairExt]
+	}
+	return c.ctx[generated.CryptoContextScriptcatSessionExt]
+}
+
+func (c *Crypto) scriptCatDaemonContext(mode Mode) string {
+	if mode == ModePairing {
+		return c.ctx[generated.CryptoContextScriptcatPairDaemon]
+	}
+	return c.ctx[generated.CryptoContextScriptcatSessionDaemon]
+}
+
+// ScriptCatExtHMAC 计算新版 ScriptCat 实例对 $session.authenticate 的应答 HMAC:
+// context=scriptcat*Ext || instanceID || nonceD || nonceE。上下文与老版 ScriptCat、浏览器实例都不同,
+// 绑定实例 ID 的理由与 BrowserExtHMAC 相同:一个实例录下的 MAC 不能冒充另一实例或老版连接重放。
+func (c *Crypto) ScriptCatExtHMAC(mode Mode, instanceID string, key []byte, nonceD, nonceE string) string {
+	return handshakeHMAC(key, c.scriptCatExtContext(mode)+instanceID, nonceD, nonceE)
+}
+
+// ScriptCatDaemonHMAC 计算 daemon 对新版 ScriptCat 实例的 $session.authenticated HMAC:
+// context=scriptcat*Daemon || instanceID || nonceE || nonceD。
+func (c *Crypto) ScriptCatDaemonHMAC(mode Mode, instanceID string, key []byte, nonceD, nonceE string) string {
+	return handshakeHMAC(key, c.scriptCatDaemonContext(mode)+instanceID, nonceE, nonceD)
+}
+
+// VerifyScriptCatExtHMAC 恒定时间校验新版 ScriptCat 实例应答的 HMAC。
+func (c *Crypto) VerifyScriptCatExtHMAC(mode Mode, instanceID string, key []byte, nonceD, nonceE, got string) bool {
+	return constantTimeHexEqual(c.ScriptCatExtHMAC(mode, instanceID, key, nonceD, nonceE), got)
+}
+
+// VerifyScriptCatDaemonHMAC 恒定时间校验 daemon 对新版 ScriptCat 实例的 HMAC(供扩展/测试使用)。
+func (c *Crypto) VerifyScriptCatDaemonHMAC(mode Mode, instanceID string, key []byte, nonceD, nonceE, got string) bool {
+	return constantTimeHexEqual(c.ScriptCatDaemonHMAC(mode, instanceID, key, nonceD, nonceE), got)
+}
+
 // VerifyExtHMAC 恒定时间校验扩展应答的 HMAC。
 func (c *Crypto) VerifyExtHMAC(mode Mode, key []byte, nonceD, nonceE, got string) bool {
 	return constantTimeHexEqual(c.ExtHMAC(mode, key, nonceD, nonceE), got)

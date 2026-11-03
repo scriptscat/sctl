@@ -144,18 +144,19 @@ independently, but both use the same one-time-code flow against the same running
 
    ```bash
    sctl status
+   sctl scriptcats
    sctl browsers
    ```
 
-`sctl status` reports whether ScriptCat is connected; `sctl browsers` lists every paired sctl Browser instance
+`sctl status` reports whether the daemon is up and which ScriptCat and sctl Browser instances are connected; `sctl scriptcats` lists every paired ScriptCat instance and `sctl browsers` lists every paired sctl Browser instance
 with its online/offline state. The one-time code must not be pasted into an AI conversation, issue, log, or MCP
 configuration. After enrollment, each extension and the daemon use their own persisted long-term pairing state;
 each AI client does not enroll separately, and multiple sctl Browser instances can stay paired and connected at
 the same time.
 
 Disabling External Access in ScriptCat, or removing the sctl Browser extension, revokes that extension's side
-of the relationship. `sctl browsers forget <name|id>` removes a paired sctl Browser instance from the daemon
-side and disconnects it if online. Run `connect` again if you intentionally revoke a pairing and later want to
+of the relationship. `sctl browsers forget <name|id>` and `sctl scriptcats forget <name|id>` remove a paired sctl
+Browser or ScriptCat instance from the daemon side and disconnect it if online. Run `connect` again if you intentionally revoke a pairing and later want to
 reconnect.
 
 ## 5. Configure the MCP client
@@ -222,6 +223,15 @@ Every tool has a typed input schema and a description the client can list; this 
 results, and error codes that span several tools. [cli.md](./cli.md) describes the same behavior from the
 command-line side, and three topics live only there and are linked from here: how sctl dismisses JS dialogs, the
 side effects of raw CDP commands, and the Playwright and Puppeteer connection examples.
+
+### ScriptCat instances
+
+Every ScriptCat tool (`scripts_*`) accepts an optional `scriptcat` argument (name or instance-ID prefix, as for
+`--scriptcat` in [cli.md](./cli.md)) to pick a paired ScriptCat instance; the browser tools do not take it, and the
+ScriptCat tools do not take `browser`. Without a target and with several instances online, `scripts_list` combines
+every online instance's scripts and tags each item with `scriptcat` (`name`, and `id` for upgraded instances), while
+the other ScriptCat tools return `SCRIPTCAT_AMBIGUOUS` listing the candidates. `SCRIPTCAT_OFFLINE` and
+`SCRIPTCAT_NOT_FOUND` are returned as tool errors.
 
 ### Browser instances, tabs, and windows
 

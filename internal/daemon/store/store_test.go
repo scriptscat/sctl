@@ -46,5 +46,19 @@ func TestKeyStore(t *testing.T) {
 			got, _, _ := ks.Load()
 			So(got, ShouldResemble, k2)
 		})
+
+		Convey("删除后读不到密钥;再删一次(文件已不存在)不算错误", func() {
+			k, _ := auth.NewLongTermKey()
+			So(ks.Save(k), ShouldBeNil)
+
+			So(ks.Delete(), ShouldBeNil)
+			_, ok, err := ks.Load()
+			So(err, ShouldBeNil)
+			So(ok, ShouldBeFalse)
+			_, statErr := os.Stat(path)
+			So(os.IsNotExist(statErr), ShouldBeTrue)
+
+			So(ks.Delete(), ShouldBeNil)
+		})
 	})
 }

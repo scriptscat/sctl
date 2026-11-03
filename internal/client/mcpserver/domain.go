@@ -12,6 +12,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 
+	"github.com/scriptscat/sctl/internal/client/control"
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
 )
 
@@ -368,7 +369,7 @@ func registerDomainTool(srv *mcp.Server, dt domainTool, proto *protocol.Protocol
 			return nil, err
 		}
 		method := methods[actionName]
-		return handleCall(ctx, req, method, input, progressFor(proto.Actions[method]), browser, caller)
+		return handleCall(ctx, req, method, input, progressFor(proto.Actions[method]), control.Target{Browser: browser}, caller)
 	})
 }
 

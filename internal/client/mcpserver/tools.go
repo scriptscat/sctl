@@ -59,6 +59,14 @@ const (
 		"used; if several browsers are online, returns error listing them."
 )
 
+// scriptcat 参数与 browser 对称:ScriptCat 实例有各自的名称与实例 ID,与 sctl Browser 是两套独立命名空间。
+const (
+	scriptCatParamList = "Name or instance ID prefix of the target ScriptCat instance. If not specified, lists from every online " +
+		"ScriptCat instance and tags each item with the instance it came from."
+	scriptCatParamAction = "Name or instance ID prefix of the target ScriptCat instance. If not specified, the only online " +
+		"ScriptCat instance is used; if several are online, returns error listing them."
+)
+
 // browserParamDescription 按方法是否声明 mergeField 选择 browser 参数的说明。
 func browserParamDescription(action protocol.Action) string {
 	if action.MergeField != "" {
@@ -67,27 +75,36 @@ func browserParamDescription(action protocol.Action) string {
 	return browserParamAction
 }
 
-// schemaWithOptionalBrowser 在既有 schema 基础上加一个可选 browser 参数,供浏览器方法的工具向 MCP 客户端声明。
-func schemaWithOptionalBrowser(baseSchema, browserDescription string) string {
+// scriptCatParamDescription 按方法是否声明 mergeField 选择 scriptcat 参数的说明(规则与 browser 对称)。
+func scriptCatParamDescription(action protocol.Action) string {
+	if action.MergeField != "" {
+		return scriptCatParamList
+	}
+	return scriptCatParamAction
+}
+
+// schemaWithOptionalString 在既有 schema 基础上加一个可选字符串参数 name,供工具向 MCP 客户端声明目标实例
+// (浏览器方法的 browser、scripts 方法的 scriptcat)。
+func schemaWithOptionalString(baseSchema, name, description string) string {
 	var parsed any
 	if err := json.Unmarshal([]byte(baseSchema), &parsed); err != nil {
-		panic(fmt.Sprintf("schemaWithOptionalBrowser: parse base schema: %v", err))
+		panic(fmt.Sprintf("schemaWithOptionalString: parse base schema: %v", err))
 	}
 	m, ok := parsed.(map[string]any)
 	if !ok {
-		panic("schemaWithOptionalBrowser: base schema is not a JSON object")
+		panic("schemaWithOptionalString: base schema is not a JSON object")
 	}
 	props, ok := m["properties"].(map[string]any)
 	if !ok {
-		panic("schemaWithOptionalBrowser: schema.properties is not a JSON object")
+		panic("schemaWithOptionalString: schema.properties is not a JSON object")
 	}
-	props["browser"] = map[string]any{
+	props[name] = map[string]any{
 		"type":        "string",
-		"description": browserDescription,
+		"description": description,
 	}
 	result, err := json.Marshal(m)
 	if err != nil {
-		panic(fmt.Sprintf("schemaWithOptionalBrowser: marshal modified schema: %v", err))
+		panic(fmt.Sprintf("schemaWithOptionalString: marshal modified schema: %v", err))
 	}
 	return string(result)
 }

@@ -40,6 +40,12 @@ type Bridge interface {
 	// ForgetInstance 按精确名称(优先,与目标选择一致)或精确实例 ID 删除一个已配对浏览器实例的密钥与登记,
 	// 若它在线则断开其连接;不匹配任何已配对实例时返回 bridge.ErrInstanceNotFound。
 	ForgetInstance(ref string) error
+	// ScriptCatInstances 列出所有已配对的 ScriptCat 实例(在线与离线),按名称排序;pairing.key 仍在时含保留名
+	// scriptcat 的老版一行。
+	ScriptCatInstances() ([]bridge.InstanceInfo, error)
+	// ForgetScriptCat 按名称或完整实例 ID 删除一个 ScriptCat 实例的密钥与登记(scriptcat 删除 pairing.key),
+	// 在线则断开;不匹配任何实例时返回 bridge.ErrScriptCatNotFound。
+	ForgetScriptCat(ref string) error
 }
 
 // Page 是控制 API 依赖的页面自动化能力面,由 *page.Manager 实现。
@@ -81,6 +87,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc(control.PathEnroll, h.guard(h.enroll))
 	mux.HandleFunc(control.PathBrowsers, h.guard(h.browsers))
 	mux.HandleFunc(control.PathBrowserForget, h.guard(h.forgetBrowser))
+	mux.HandleFunc(control.PathScriptCats, h.guard(h.scriptCats))
+	mux.HandleFunc(control.PathScriptCatForget, h.guard(h.forgetScriptCat))
 	mux.HandleFunc(control.PathPage, h.guard(h.pageAction))
 	mux.HandleFunc(control.PathCDPEndpoint, h.guard(h.cdpEndpoint))
 	mux.HandleFunc(control.PathCDPStatus, h.guard(h.cdpStatus))
@@ -112,13 +120,58 @@ func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
 
 func (h *Handler) status(w http.ResponseWriter, _ *http.Request) {
 	events := h.bridge.AuditSnapshot()
+	scriptCats, err := h.bridge.ScriptCatInstances()
+	if err != nil {
+		h.log.Error("failed to list ScriptCat instances", zap.Error(err))
+		writeControlError(w, bridge.CodeInternal, "internal error")
+		return
+	}
 	writeJSON(w, control.StatusResult{
 		DaemonVersion: h.bridge.Version(),
 		ExtConnected:  h.bridge.ExtConnected(),
 		SecurityCount: len(events),
 		Security:      events,
 		Browsers:      toBrowserInfos(h.bridge.Instances()),
+		ScriptCats:    toScriptCatInfos(scriptCats),
 	})
+}
+
+// scriptCats 列出所有已配对的 ScriptCat 实例(在线与离线),含老版的保留名一行。
+func (h *Handler) scriptCats(w http.ResponseWriter, _ *http.Request) {
+	list, err := h.bridge.ScriptCatInstances()
+	if err != nil {
+		h.log.Error("failed to list ScriptCat instances", zap.Error(err))
+		writeControlError(w, bridge.CodeInternal, "internal error")
+		return
+	}
+	writeJSON(w, control.ScriptCatsResult{ScriptCats: toScriptCatInfos(list)})
+}
+
+// forgetScriptCat 删除一个 ScriptCat 实例的密钥与登记,若在线则断开其连接(bridge.ForgetScriptCat)。
+func (h *Handler) forgetScriptCat(w http.ResponseWriter, r *http.Request) {
+	var req control.ForgetScriptCatRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Ref == "" {
+		writeControlError(w, bridge.CodeInvalidRequest, "missing ScriptCat reference")
+		return
+	}
+	switch err := h.bridge.ForgetScriptCat(req.Ref); {
+	case err == nil:
+		writeJSON(w, control.CallResult{OK: true})
+	case errors.Is(err, bridge.ErrScriptCatNotFound):
+		writeControlError(w, generated.ErrorCodeScriptcatNotFound, "no paired ScriptCat instance matches "+req.Ref)
+	default:
+		h.log.Error("failed to forget a ScriptCat instance", zap.String("ref", req.Ref), zap.Error(err))
+		writeControlError(w, bridge.CodeInternal, "internal error")
+	}
+}
+
+func toScriptCatInfos(instances []bridge.InstanceInfo) []control.ScriptCatInfo {
+	browsers := toBrowserInfos(instances)
+	out := make([]control.ScriptCatInfo, len(browsers))
+	for i, b := range browsers {
+		out[i] = control.ScriptCatInfo(b)
+	}
+	return out
 }
 
 // browsers 列出所有已配对的浏览器实例(在线与离线)。
@@ -189,10 +242,11 @@ func (h *Handler) call(w http.ResponseWriter, r *http.Request) {
 	}
 
 	bridgeReq := bridge.Request{
-		ClientID: clientID,
-		Action:   req.Action,
-		Browser:  req.Browser,
-		Input:    req.Input,
+		ClientID:  clientID,
+		Action:    req.Action,
+		Browser:   req.Browser,
+		ScriptCat: req.ScriptCat,
+		Input:     req.Input,
 	}
 	if req.ReportPending {
 		// 请求方据此才提示「等待批准」:审批前的校验失败时不会有这一行。必须立刻冲刷,否则它会和结论一起到达。

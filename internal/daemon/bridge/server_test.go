@@ -24,25 +24,33 @@ import (
 
 // testHarness 承载一个运行中的 daemon 与用于对拍的密码学助手/存储。
 type testHarness struct {
-	srv      *Server
-	crypto   *auth.Crypto
-	keys     *store.KeyStore
-	browsers *store.BrowserRegistry
-	keyPath  string
-	url      string
-	proto    *protocol.Protocol
+	srv        *Server
+	crypto     *auth.Crypto
+	keys       *store.KeyStore
+	browsers   *store.BrowserRegistry
+	scriptcats *store.ScriptCatRegistry
+	keyPath    string
+	url        string
+	proto      *protocol.Protocol
 }
 
 func startTestServer(t *testing.T) *testHarness {
 	t.Helper()
+	dir := t.TempDir()
+	return startTestServerAt(t, dir, filepath.Join(dir, "pairing.key"))
+}
+
+// startTestServerAt 以 dir 下的实例登记表与 keyPath 处的 pairing.key 启动 daemon。
+func startTestServerAt(t *testing.T, dir, keyPath string) *testHarness {
+	t.Helper()
 	p, err := protocol.Load()
 	So(err, ShouldBeNil)
-	dir := t.TempDir()
-	keyPath := filepath.Join(dir, "pairing.key")
 	keys := store.NewKeyStore(keyPath)
 	browsers, err := store.LoadBrowserRegistry(filepath.Join(dir, "browsers.json"))
 	So(err, ShouldBeNil)
-	srv := NewServer("0.1.0", p, keys, browsers, zap.NewNop())
+	scriptcats, err := store.LoadScriptCatRegistry(filepath.Join(dir, "scriptcats.json"))
+	So(err, ShouldBeNil)
+	srv := NewServer("0.1.0", p, keys, browsers, scriptcats, zap.NewNop())
 	// daemon 首次校验帧时才编译 schema,这笔一次性开销在高负载下能拖过读消息的 3s 时限;先在时限外付掉。
 	So(protocolschema.ValidateWireFrame([]byte(`{"jsonrpc":"2.0","id":"warm-up","method":"$session.ping","params":{}}`)), ShouldBeNil)
 
@@ -53,13 +61,14 @@ func startTestServer(t *testing.T) *testHarness {
 	go func() { _ = srv.Serve(ctx, ln, nil) }()
 
 	return &testHarness{
-		srv:      srv,
-		crypto:   auth.NewCrypto(p),
-		keys:     keys,
-		browsers: browsers,
-		keyPath:  keyPath,
-		url:      "ws://" + ln.Addr().String() + "/",
-		proto:    p,
+		srv:        srv,
+		crypto:     auth.NewCrypto(p),
+		keys:       keys,
+		browsers:   browsers,
+		scriptcats: scriptcats,
+		keyPath:    keyPath,
+		url:        "ws://" + ln.Addr().String() + "/",
+		proto:      p,
 	}
 }
 
@@ -177,7 +186,7 @@ func TestConnectionIsRegisteredBeforeCapabilitiesReply(t *testing.T) {
 
 		early, reply := h.declareWithRegistrationFrozen(e,
 			capabilitiesParams{SchemaVersion: "1.0.0", Methods: h.allMethods()},
-			func() bool { return h.srv.scriptCat != nil })
+			func() bool { return h.srv.legacyScriptCat != nil })
 		So(early, ShouldBeFalse)
 		So(reply.Error, ShouldBeNil)
 		So(reply.ID, ShouldNotBeBlank)
@@ -232,7 +241,7 @@ func TestSessionHandshakeFlow(t *testing.T) {
 			_, _, err := e.ws.Read(ctx)
 			So(err, ShouldNotBeNil)
 			h.srv.mu.Lock()
-			active := h.srv.scriptCat
+			active := h.srv.legacyScriptCat
 			h.srv.mu.Unlock()
 			So(active, ShouldBeNil)
 		})

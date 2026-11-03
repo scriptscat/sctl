@@ -114,6 +114,52 @@ func TestBrowserHandshakeBindsInstanceIdentity(t *testing.T) {
 	})
 }
 
+func TestScriptCatInstanceHandshakeBindsInstanceIdentity(t *testing.T) {
+	p, err := protocol.Load()
+	if err != nil {
+		t.Fatalf("加载协议失败: %v", err)
+	}
+	cfg := NewCrypto(p)
+
+	Convey("新版 ScriptCat 实例握手 MAC 绑定对端类型与实例 ID", t, func() {
+		key := make([]byte, 32)
+		_, _ = rand.Read(key)
+		nonceD, _ := RandomNonceHex(p.Crypto.NonceBytes)
+		nonceE, _ := RandomNonceHex(p.Crypto.NonceBytes)
+		const idA = "0123456789abcdef0123456789abcdef"
+		const idB = "fedcba9876543210fedcba9876543210"
+
+		Convey("两个方向的 MAC 按线上公式计算:ScriptCat 实例专用 context || instanceId || 两个 nonce", func() {
+			want := func(context, first, second string) string {
+				mac := hmac.New(sha256.New, key)
+				mac.Write([]byte(context + idA + first + second))
+				return hex.EncodeToString(mac.Sum(nil))
+			}
+			So(cfg.ScriptCatExtHMAC(ModeSession, idA, key, nonceD, nonceE), ShouldEqual, want("scriptcat-rpc-v1/instance-ext", nonceD, nonceE))
+			So(cfg.ScriptCatDaemonHMAC(ModeSession, idA, key, nonceD, nonceE), ShouldEqual, want("scriptcat-rpc-v1/instance-daemon", nonceE, nonceD))
+			So(cfg.ScriptCatExtHMAC(ModePairing, idA, key, nonceD, nonceE), ShouldEqual, want("scriptcat-rpc-v1/instance-pair-ext", nonceD, nonceE))
+			So(cfg.ScriptCatDaemonHMAC(ModePairing, idA, key, nonceD, nonceE), ShouldEqual, want("scriptcat-rpc-v1/instance-pair-daemon", nonceE, nonceD))
+		})
+
+		Convey("为实例 A 计算的 MAC 不能冒充实例 B 通过校验", func() {
+			macA := cfg.ScriptCatExtHMAC(ModeSession, idA, key, nonceD, nonceE)
+			So(cfg.VerifyScriptCatExtHMAC(ModeSession, idA, key, nonceD, nonceE, macA), ShouldBeTrue)
+			So(cfg.VerifyScriptCatExtHMAC(ModeSession, idB, key, nonceD, nonceE, macA), ShouldBeFalse)
+			okA := cfg.ScriptCatDaemonHMAC(ModeSession, idA, key, nonceD, nonceE)
+			So(cfg.VerifyScriptCatDaemonHMAC(ModeSession, idA, key, nonceD, nonceE, okA), ShouldBeTrue)
+			So(cfg.VerifyScriptCatDaemonHMAC(ModeSession, idB, key, nonceD, nonceE, okA), ShouldBeFalse)
+		})
+
+		Convey("ScriptCat 实例的 MAC 与老版 ScriptCat、浏览器实例的 MAC 互不通用", func() {
+			instanceMAC := cfg.ScriptCatExtHMAC(ModeSession, idA, key, nonceD, nonceE)
+			So(cfg.VerifyExtHMAC(ModeSession, key, nonceD, nonceE, instanceMAC), ShouldBeFalse)
+			So(cfg.VerifyBrowserExtHMAC(ModeSession, idA, key, nonceD, nonceE, instanceMAC), ShouldBeFalse)
+			So(cfg.VerifyScriptCatExtHMAC(ModeSession, idA, key, nonceD, nonceE, cfg.ExtHMAC(ModeSession, key, nonceD, nonceE)), ShouldBeFalse)
+			So(cfg.VerifyScriptCatExtHMAC(ModeSession, idA, key, nonceD, nonceE, cfg.BrowserExtHMAC(ModeSession, idA, key, nonceD, nonceE)), ShouldBeFalse)
+		})
+	})
+}
+
 func TestPairingKeyDelivery(t *testing.T) {
 	p, _ := protocol.Load()
 	cfg := NewCrypto(p)

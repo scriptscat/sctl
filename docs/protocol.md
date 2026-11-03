@@ -56,7 +56,8 @@ The daemon starts authentication with a request:
 }
 ```
 
-For an enrolled session, the extension answers the same `id`:
+For an enrolled session, a legacy ScriptCat — one that declares no `peer`, see
+[ScriptCat instances](#scriptcat-instances) — answers the same `id`:
 
 ```json
 {
@@ -91,9 +92,11 @@ within `limits.authTimeoutMs`. Nonces are fresh for every connection.
 The extension stores the session key in extension-local storage. The daemon stores its copy in a user-only file.
 Disabling External Access deletes the extension copy and closes the connection, requiring enrollment again.
 
+Every handshake failure — including the instance failures below — closes the connection with 1008 and no reason.
+
 #### Browser instances
 
-An sctl Browser instance identifies itself in the authentication response; a response without `peer` is
+An sctl Browser instance identifies itself in the authentication response; a response without `peer` is a legacy
 ScriptCat. The instance ID is 32 lowercase hex digits, generated randomly when the extension is installed:
 
 ```json
@@ -114,6 +117,37 @@ verifies as another. An unknown `kind` or a malformed `instanceId` fails the han
 Each instance has its own session key, issued by its pairing; pairing a browser never touches ScriptCat's key.
 The daemon selects the key by `instanceId`, so a session handshake from an instance that is not paired — or that
 has been forgotten on the daemon side — fails like any other handshake failure.
+
+#### ScriptCat instances
+
+A current ScriptCat identifies itself the same way, with `"peer": {"kind": "scriptcat", "instanceId": "<32
+lowercase hex>"}`, one instance per ScriptCat installation. It uses `context.scriptcatSessionExt` /
+`context.scriptcatSessionDaemon` for sessions and `context.scriptcatPairExt` / `context.scriptcatPairDaemon` for
+pairing, with the same `instanceId` term, nonce order, key derivation and delivery as a browser instance. These
+contexts differ from the legacy ScriptCat and `browser*` contexts, so a MAC recorded for a ScriptCat instance never
+verifies for another instance, for a legacy ScriptCat, or for a browser instance. An unknown `kind`, a malformed
+`instanceId`, or a MAC that does not verify fails the handshake.
+
+Each ScriptCat instance has its own session key, issued by its pairing; pairing one never touches the legacy key,
+another ScriptCat instance's key, or any browser instance's key. A session handshake from a ScriptCat instance
+that is not paired fails, unless it is an upgrade takeover.
+
+**Upgrade takeover.** A ScriptCat that was paired as a legacy ScriptCat keeps the legacy key after it upgrades. When
+a ScriptCat instance whose `instanceId` is not paired sends a session handshake while `<dataDir>/pairing.key` exists,
+the daemon verifies its MAC with the legacy key under the `scriptcat*` session contexts above (never the legacy
+contexts). A MAC that does not verify fails the handshake and leaves `pairing.key` untouched. Once the instance's
+capabilities are accepted, the daemon registers the legacy key as that instance's key in `scriptcats.json`, then
+deletes `pairing.key` and closes a connected legacy ScriptCat. A name `CONFLICT` registers nothing and keeps
+`pairing.key`. From then on a legacy handshake does not verify, and a legacy connection that authenticated before the
+takeover but had not yet declared capabilities is closed when it does. If the registry write succeeds but the
+delete fails, the registration stands, the leftover file is treated as absent, and the delete is retried at the next
+daemon start and at every later handshake that reads the legacy key. Forgetting or re-pairing the instance that took
+the key over deletes such a leftover first and fails, changing nothing, while it still cannot be deleted: once the
+key left `scriptcats.json` the leftover would authenticate as the legacy key again.
+
+A ScriptCat that declares no `peer` is a legacy ScriptCat: it authenticates with the formulas at the top of this
+section and the single legacy key, and has no instance ID. Any number of ScriptCat instances and one legacy
+ScriptCat may be connected at once.
 
 ### 2.2 Hello and capabilities
 
@@ -144,10 +178,10 @@ The extension then declares the generated schema it uses and the business method
 
 The daemon registers the connection before it answers with an empty result, so business requests may follow that
 result immediately. A connection is usable only after this request is accepted.
-A new ScriptCat connection replaces the previous ScriptCat connection; a browser instance's new connection
-replaces only that instance's previous connection.
+A ScriptCat instance's or browser instance's new connection replaces only that instance's previous connection; a
+new legacy ScriptCat connection replaces only the previous legacy ScriptCat connection.
 
-A browser instance also declares its name and self-reported product details:
+A browser instance or ScriptCat instance also declares its name and self-reported product details:
 
 ```json
 "params": {
@@ -166,9 +200,10 @@ A browser instance also declares its name and self-reported product details:
 bytes. A missing or invalid `peer` closes the connection. On its first pairing an instance proposes its default
 name, the browser brand followed by `-` and the first four hex digits of its instance ID; renaming means
 reconnecting with the new name. The daemon's registry is authoritative: names are unique across every paired
-instance, online or offline. When another paired instance holds the name, the daemon answers the capabilities
-request with application error `CONFLICT`, keeps the instance's previous name, and closes the connection; a
-first pairing refused this way is not persisted.
+instance of the same kind, online or offline — browser and ScriptCat names are separate namespaces — and a ScriptCat
+instance may not take `scriptcat`, the name reserved for the legacy ScriptCat. When the name is taken, the daemon
+answers the capabilities request with application error `CONFLICT`, keeps the instance's previous name, and closes
+the connection; a first pairing refused this way is not persisted.
 
 ### 2.3 Liveness and shutdown
 
@@ -305,7 +340,7 @@ digest. Edit approval rechecks the staged digest and target identity before appl
 Tab titles and URLs, tab group titles, reading list titles, history titles and URLs, recently closed titles and URLs, download file names and URLs, cookie names and values, and bookmark titles and URLs are controlled by web pages, and extension names by their authors; `tabs.list`, `tabGroups.list`, `readingList.list`, `history.search`, `recent.list`, `downloads.list`, `cookies.list`, `cookies.get`, `cookies.set`, `bookmarks.list`, `bookmarks.search`, `extensions.list`, and `extensions.uninstall` mark
 their results with `contentTrust: "untrusted-page-content"` and the same handling rules apply. A list method
 declares a `mergeField`: the required array property in its result that holds the listed items, so results from
-several browser instances combine by concatenating that array. A list result may also declare a boolean `hasMore`,
+several instances of the method's peer combine by concatenating that array. A list result may also declare a boolean `hasMore`,
 meaning the instance has items it did not return. Methods without `mergeField` are never combined. A list method
 whose parameters declare `limit` returns at most that many items per instance: 100 when it is omitted, and a value
 above 1000 is rejected with `INVALID_REQUEST`.
@@ -407,36 +442,48 @@ still redirect a complete source file.
 ### 3.1 Routing and target selection
 
 The daemon routes each call by the method's `peer`, not by which methods a connection declared: `scripts.*`
-calls go to the ScriptCat connection, browser methods go to a browser instance. A connection must still have
-declared the method, otherwise the call fails with `METHOD_NOT_FOUND`.
+calls go to a ScriptCat instance, browser methods go to a browser instance. A connection must still have declared
+the method, otherwise the call fails with `METHOD_NOT_FOUND`.
 
-A browser call carries an optional target, either an instance name or an instance-ID prefix; the daemon resolves
-it because only the daemon knows which instances are online. A target is first matched against names exactly, and
-only if no name matches is it treated as an instance-ID prefix over every paired instance, online or offline.
+A call carries an optional target of its own peer kind: a browser target on a browser method, a ScriptCat target on
+a `scripts.*` method. A target is either an instance name or an instance-ID prefix; the daemon resolves it because
+only the daemon knows which instances are online. A target is first matched against names exactly, and only if no
+name matches is it treated as an instance-ID prefix over every paired instance of that kind, online or offline.
+Browser and ScriptCat names are separate namespaces.
 
-| Target | Result |
-|---|---|
-| none, no instance online | `NO_BROWSER_CONNECTED` |
-| none, exactly one instance online | that instance |
-| none, several online, method with `mergeField` | every online instance; results are combined |
-| none, several online, method without `mergeField` | `BROWSER_AMBIGUOUS`; the message lists the online instances |
-| matches no paired instance | `BROWSER_NOT_FOUND` |
-| ID prefix matches several paired instances | `BROWSER_AMBIGUOUS`; the message lists the matching instances |
-| matches one paired instance that is not connected | `BROWSER_OFFLINE` |
-| matches one online instance | that instance |
+A legacy ScriptCat ([§2.1](#21-authentication)) takes part as one instance under the reserved name `scriptcat`; it
+counts as paired while it is connected or `pairing.key` exists (an unparseable `pairing.key` still exists: it is
+listed offline and `forget scriptcat` deletes it). It has no instance ID, so it is selected only by
+that name and never by an ID prefix.
+
+The same table applies to both kinds; the codes differ:
+
+| Target | Browser method | `scripts.*` method |
+|---|---|---|
+| none, no instance online | `NO_BROWSER_CONNECTED` | unchanged from a single ScriptCat: `/control/call` answers `INTERNAL_ERROR` "extension not connected" |
+| none, exactly one instance online | that instance | that instance |
+| none, several online, method with `mergeField` | every online instance; results are combined | every online instance; results are combined |
+| none, several online, method without `mergeField` | `BROWSER_AMBIGUOUS`; the message lists the online instances | `SCRIPTCAT_AMBIGUOUS`; the message lists the online instances |
+| matches no paired instance | `BROWSER_NOT_FOUND` | `SCRIPTCAT_NOT_FOUND` |
+| ID prefix matches several paired instances | `BROWSER_AMBIGUOUS`; the message lists the matching instances | `SCRIPTCAT_AMBIGUOUS`; the message lists the matching instances |
+| matches one paired instance that is not connected | `BROWSER_OFFLINE` | `SCRIPTCAT_OFFLINE` |
+| matches one online instance | that instance | that instance |
 
 A combined call is sent to every online instance at once. The result is the first instance's result with its
 `mergeField` array replaced by the concatenation of every instance's array, in instance-name order, and each
-item gains a `browser` object naming its source: `{"id": "<instance ID>", "name": "<instance name>"}`. An
-instance that answers `NOT_FOUND` — for example, it has no window with the requested ID — contributes no items;
+item gains an object named after the method's peer kind that names its source: `browser` for browser methods,
+`scriptcat` for `scripts.list`, each `{"id": "<instance ID>", "name": "<instance name>"}`; a legacy ScriptCat's
+items carry `{"name": "scriptcat"}` without `id`. An instance that answers `NOT_FOUND` — for example, it has no window with the requested ID — contributes no items;
 the call fails with `NOT_FOUND` only when every instance answers it. Any other failing instance fails the whole
 call; partial results are never returned. A call routed to a single instance returns that instance's result
 unchanged. If any combined result carries `hasMore`, the combined result's `hasMore` is `true` when at least one
 instance answered `true`.
 
-A target on a `scripts.*` call is rejected with `INVALID_REQUEST`; otherwise `scripts.*` routing and its errors do
-not depend on browser instances. If the target connection closes while a call is in flight — for a combined
-call, any of its instances — the call is voided and the requester receives `OPERATION_EXPIRED`, as for ScriptCat.
+A browser target on a `scripts.*` call and a ScriptCat target on a browser method are rejected with
+`INVALID_REQUEST`; otherwise routing for one kind does not depend on instances of the other. If the target
+connection closes while a call is in flight — for a combined call, any of its instances — the call is voided and
+the requester receives `OPERATION_EXPIRED`. Write and source-disclosure approvals are raised and decided by the
+ScriptCat instance that received the request.
 
 ### 3.2 Internal methods
 
@@ -653,6 +700,16 @@ These codes are reserved for browser target selection failures ([§3.1](#31-rout
 | `BROWSER_NOT_FOUND` | the target matches no paired browser instance; `/control/browsers/forget` returns it too when the name or ID matches none |
 | `BROWSER_AMBIGUOUS` | the target instance-ID prefix matches more than one paired instance, or a method without `mergeField` was called without a target while several instances are online |
 
+These codes are reserved for ScriptCat target selection failures on `scripts.*` calls
+([§3.1](#31-routing-and-target-selection)); with no ScriptCat online and no target, the call keeps the
+`INTERNAL_ERROR` "extension not connected" answer instead:
+
+| Code | Meaning |
+|---|---|
+| `SCRIPTCAT_OFFLINE` | the target names a paired ScriptCat instance, or the legacy `scriptcat` while `pairing.key` exists, that is not connected |
+| `SCRIPTCAT_NOT_FOUND` | the target matches no paired ScriptCat instance |
+| `SCRIPTCAT_AMBIGUOUS` | the target instance-ID prefix matches more than one paired ScriptCat instance, or a `scripts.*` method without `mergeField` was called without a target while several ScriptCat instances are online |
+
 These codes are browser-only too:
 
 | Code | Meaning |
@@ -744,7 +801,8 @@ The sctl Browser extension gates its L2 methods the same way, in its own approva
 `protocol.json` annotates ownership: each method and each entry of `notifications` has one `peer` (`scriptcat`
 or `browser`), and each `sessionMethods` entry, each `errorCodes` entry and each `crypto.context` entry lists the
 `peers` that use it. The `browser*` context strings are reserved for browser-instance handshakes, so a MAC computed
-for one peer kind never verifies as the other; the pairing KDF strings are shared. A notification's name may not
+for one peer kind never verifies as the other, and the `scriptcat*` context strings are reserved for ScriptCat-instance
+handshakes, distinct from the legacy ScriptCat strings; the pairing KDF strings are shared. A notification's name may not
 start with `$` or reuse a method name, because both travel in the JSON-RPC `method` field. `internal` on a method is
 daemon-side metadata and does not reach the TypeScript output. The generator emits one set of bindings per peer:
 
@@ -756,12 +814,15 @@ daemon-side metadata and does not reach the TypeScript output. The generator emi
 
 The ScriptCat TypeScript must stay byte-identical to the copy in the paired ScriptCat revision, because ScriptCat
 declares every generated method as a capability and its conformance test compares the method and error-code
-lists exactly. Adding browser-owned definitions therefore never changes ScriptCat's files or `schemaVersion`.
+lists exactly. Adding browser-owned definitions therefore never changes ScriptCat's files or `schemaVersion`;
+a definition listing `scriptcat`, such as the `SCRIPTCAT_*` error codes, does, and lands together with a paired
+ScriptCat commit carrying the regenerated files.
 
 The generator rejects a method whose `level` is missing or not `L0`/`L1`/`L2`, an L2 method without a human gate
 (`blocking` is `none`) or a human-gated method that is not L2, an L1 method whose parameters do not declare the
-optional `confirm: {"const": true}`, a `mergeField` on a method that waits for a human, and a list result whose
-`hasMore` is not a boolean. The ScriptCat TypeScript does not carry `level`, so it stays byte-identical.
+optional `confirm: {"const": true}`, a `mergeField` on a method that waits for a human, a `mergeField` whose items
+already declare the property named after the method's peer (`browser` or `scriptcat`) that the merge adds, and a
+list result whose `hasMore` is not a boolean. `mergeField` does not reach the TypeScript output. The ScriptCat TypeScript does not carry `level`, so it stays byte-identical.
 
 Run `make protocol-generate` after editing `protocol.json`, and `make protocol-sync-scriptcat` to update the
 adjacent ScriptCat checkout. `make protocol-check` regenerates all artifacts and fails if the checked-in output

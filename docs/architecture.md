@@ -22,10 +22,11 @@ explicitly in the foreground or let the user's system service manager own its li
 (`internal/client/service`) writes that service definition and drives the manager's own commands; it talks to the
 daemon only through the health check and the control token, to tell whether the service's daemon came up.
 
-The daemon accepts two kinds of extension connection at once: exactly one active ScriptCat connection (a new
-one replaces the previous one), and any number of paired `sctl Browser` instances connecting simultaneously,
-each identified by its own instance ID. A call is routed by which peer kind owns its method (scripts.\* to
-ScriptCat, tabs.\*/windows.\* to a resolved browser instance) — see
+The daemon accepts two kinds of extension connection at once: ScriptCat — any number of paired ScriptCat
+instances, each identified by its own instance ID, plus at most one legacy ScriptCat connection that declares no
+instance ID (a new legacy connection replaces only the previous legacy one) — and any number of paired
+`sctl Browser` instances connecting simultaneously, each identified by its own instance ID. A call is routed by
+which peer kind owns its method (scripts.\* to ScriptCat, tabs.\*/windows.\* to a resolved browser instance) — see
 [protocol.md](./protocol.md#31-routing-and-target-selection). For ScriptCat's methods, the daemon approves no
 write on its own — it forwards the request and blocks until a human decides in the browser, and source reads
 go through the same disclosure gate. Browser control methods carry no such human gate by design: any
@@ -148,6 +149,7 @@ internal/cli/               # subcommand definitions; spans both sides, hence to
   get.go grep.go            #   read verbs
   edit.go write.go          #   write verbs (edit / install / enable / disable / delete)
   browsers.go               #   sctl browsers [list] / sctl browsers forget <name|id>
+  scriptcats.go             #   sctl scriptcats [list] / sctl scriptcats forget <name|id>
   tabs.go windows.go        #   sctl tabs list|open|close|activate, sctl windows list
   page*.go                  #   sctl page snapshot|click|hover|fill|type|press|select|upload|scroll|goto|back|forward|
                             #   reload|wait|screenshot|eval|dialog|detach (reach /control/page through dispatchPage)
@@ -170,9 +172,9 @@ internal/daemon/            # ── sctl serve side ──
   cdpendpoint/              #   raw CDP endpoint: per-browser endpoints, /cdp/ HTTP and WS, Host/Origin/secret checks,
                              #     expiry, hand-over to and from page, the per-client Hook and Browser
   auth/                     #   mutual HMAC handshake, enrollment-code derivation (HKDF), key delivery (AES-GCM)
-  store/                    #   persistence (repository role): ScriptCat's long-term key K, plus the
-                             #     browsers.json registry of paired sctl Browser instances and their own
-                             #     per-instance keys
+  store/                    #   persistence (repository role): the legacy ScriptCat's long-term key K, plus the
+                             #     browsers.json and scriptcats.json registries of paired sctl Browser and
+                             #     ScriptCat instances and their own per-instance keys (one shared implementation)
   ratelimit/                #   enrollment-attempt rate limiting
 
 internal/client/            # ── sctl mcp / CLI verb side ──

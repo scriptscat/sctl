@@ -31,6 +31,7 @@ func newEditCmd() *cobra.Command {
 		replace    []string
 		with       []string
 		replaceAll bool
+		scriptCat  string
 	)
 	cmd := &cobra.Command{
 		Use:   "edit [scripts|script|sc] <uuid>",
@@ -49,7 +50,7 @@ func newEditCmd() *cobra.Command {
 				return &ExitError{Code: exitError, Message: err.Error()}
 			}
 			input := mustInput(map[string]any{"uuid": uuid, "edits": edits})
-			return dispatchBlocking(cmd, "scripts.edit.request", input, func(result json.RawMessage) error {
+			return dispatchBlocking(cmd, "scripts.edit.request", scriptCat, input, func(result json.RawMessage) error {
 				if outputFormat == outputJSON {
 					return printResultJSON(result)
 				}
@@ -63,6 +64,7 @@ func newEditCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&replace, "replace", nil, "text to find; repeatable, each needs one --with (@path reads the value from a file, @@ escapes a literal leading @)")
 	cmd.Flags().StringArrayVar(&with, "with", nil, "replacement for the preceding --replace, empty to delete (same @path and @@ rules)")
 	cmd.Flags().BoolVar(&replaceAll, "replace-all", false, "replace every occurrence instead of requiring a unique match, for all edits of this call")
+	addScriptCatFlag(cmd, &scriptCat)
 	return cmd
 }
 

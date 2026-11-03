@@ -77,7 +77,7 @@ func cdpNoArgs(sub string) cobra.PositionalArgs {
 
 // dispatchCDP 是端点子命令的骨架:与 dispatchPage 相同的连接、取消与退出码映射,走 /control/cdp/*。
 func dispatchCDP(cmd *cobra.Command, path string, print func(json.RawMessage) error) error {
-	return dispatchWith(cmd, browserTarget, nil, canceledUnconfirmed, func(ctx context.Context, client *control.Client, _ func()) (control.CallResult, error) {
+	return dispatchWith(cmd, control.Target{Browser: browserTarget}, nil, canceledUnconfirmed, func(ctx context.Context, client *control.Client, _ func()) (control.CallResult, error) {
 		return client.CDP(ctx, path, control.CDPRequest{Browser: browserTarget})
 	}, func(result json.RawMessage) error {
 		if outputFormat == outputJSON {

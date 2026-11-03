@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/scriptscat/sctl/internal/daemon/store"
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
 	"github.com/scriptscat/sctl/internal/pkg/protocol/generated"
 	"github.com/scriptscat/sctl/internal/pkg/protocolschema"
@@ -30,8 +32,9 @@ type pendingCall struct {
 	approvalSignaled bool
 }
 
-// Call 按方法归属把一次 bridge action 转发给对端并阻塞等待应答:scripts.* 发给 ScriptCat,
-// 浏览器方法发给由 req.Browser 解析出的浏览器实例(见 resolveBrowsers)。write=true 的写调用可能挂起数分钟
+// Call 按方法归属把一次 bridge action 转发给对端并阻塞等待应答:scripts.* 发给由 req.ScriptCat 解析出的
+// ScriptCat 实例(见 resolveScriptCats),浏览器方法发给由 req.Browser 解析出的浏览器实例(见 resolveBrowsers);
+// 另一类对端的目标不适用于该方法,以 INVALID_REQUEST 拒绝。write=true 的写调用可能挂起数分钟
 // (等待用户在浏览器审批)。调用方 ctx 取消 / 超过 writeDecisionTTL / 对端断开时:
 //   - ctx 取消 / 超时:向对端发 $/cancelRequest 作废该操作,返回相应错误;
 //   - 对端断开:隐式作废全部在途请求,返回 ErrDisconnected。
@@ -40,30 +43,30 @@ func (s *Server) Call(ctx context.Context, req Request) (Response, error) {
 	if !ok {
 		return Response{}, &Error{Code: generated.ErrorCodeMethodNotFound, Message: "unknown method " + req.Action}
 	}
+	mergeable := action.MergeField != ""
+	var targets []instanceTarget
+	var err error
 	switch action.Peer {
 	case protocol.PeerScriptCat:
 		if req.Browser != "" {
 			return Response{}, &Error{Code: CodeInvalidRequest, Message: "a target browser does not apply to " + req.Action}
 		}
-		s.mu.Lock()
-		active := s.scriptCat
-		s.mu.Unlock()
-		if active == nil {
-			return Response{}, ErrNotConnected
-		}
-		return s.callConn(ctx, active, req)
+		targets, err = s.resolveScriptCats(req.ScriptCat, mergeable)
 	case protocol.PeerBrowser:
-		targets, err := s.resolveBrowsers(req.Browser, action.MergeField != "")
-		if err != nil {
-			return Response{}, err
+		if req.ScriptCat != "" {
+			return Response{}, &Error{Code: CodeInvalidRequest, Message: "a target ScriptCat does not apply to " + req.Action}
 		}
-		if len(targets) == 1 {
-			return s.callConn(ctx, targets[0].conn, req)
-		}
-		return s.callMerged(ctx, targets, req, action.MergeField)
+		targets, err = s.resolveBrowsers(req.Browser, mergeable)
 	default:
 		panic("bridge: method " + req.Action + " has no owning peer " + string(action.Peer))
 	}
+	if err != nil {
+		return Response{}, err
+	}
+	if len(targets) == 1 {
+		return s.callConn(ctx, targets[0].conn, req)
+	}
+	return s.callMerged(ctx, targets, req, action)
 }
 
 // callConn 把调用发给连接 c 并阻塞等待它的应答。
@@ -173,42 +176,99 @@ func (s *Server) handleRPCResponse(c *conn, message Message) {
 	pc.respCh <- Response{OK: false, Error: &Error{Code: domainCode, Message: message.Error.Message, OperationID: operationID}}
 }
 
-// browserTarget 是一次浏览器调用解析出的在线实例。
-type browserTarget struct {
+// instanceTarget 是一次调用的候选实例,conn 为 nil 表示已配对但不在线。id 为空的是老版 ScriptCat:
+// 它没有实例 ID,只能按保留名选中。
+type instanceTarget struct {
 	id   string
 	name string
 	conn *conn
 }
 
-// browserRef 是汇总结果里每一项附带的来源浏览器。
-type browserRef struct {
-	ID   string `json:"id"`
+// instanceRef 是汇总结果里每一项附带的来源实例;老版 ScriptCat 没有实例 ID,只带名称。
+type instanceRef struct {
+	ID   string `json:"id,omitempty"`
 	Name string `json:"name"`
 }
-
-// mergedItemBrowserField 是汇总结果里每一项新增的来源浏览器字段。
-const mergedItemBrowserField = "browser"
 
 // mergedHasMoreField 是列表结果里「还有未返回的条目」的布尔字段:任一实例还有更多,汇总结果就还有更多。
 const mergedHasMoreField = "hasMore"
 
-// resolveBrowsers 在 daemon 侧解析浏览器调用的目标,只有这里知道哪些实例在线。
-// target 为空时按在线实例数选择:没有在线实例报 NO_BROWSER_CONNECTED;恰好一个就用它;
-// 多个时列表类方法(mergeable)用全部在线实例,操作类方法报 BROWSER_AMBIGUOUS 并列出候选。
-// target 非空时先按名称精确匹配,再按实例 ID 前缀匹配。返回的目标按名称排序,汇总结果沿用这个顺序。
-func (s *Server) resolveBrowsers(target string, mergeable bool) ([]browserTarget, error) {
-	var registered []browserTarget
+// targetKind 是一类对端在目标选择中的用语与错误码。两类对端的选择规则相同,只有这些不同。
+type targetKind struct {
+	// one / many 是错误消息里这类实例的单数与复数称呼。
+	one, many string
+	// noneOnline 构造未指定目标且没有实例在线时的错误;每次新建,调用方拿到的 *Error 互不共享。
+	noneOnline                   func() error
+	offline, notFound, ambiguous string
+}
+
+var (
+	browserKind = targetKind{
+		one: "browser", many: "browsers",
+		noneOnline: func() error {
+			return &Error{Code: generated.ErrorCodeNoBrowserConnected, Message: "no browser connected"}
+		},
+		offline: generated.ErrorCodeBrowserOffline, notFound: generated.ErrorCodeBrowserNotFound, ambiguous: generated.ErrorCodeBrowserAmbiguous,
+	}
+	// 没有 ScriptCat 在线时沿用实例化之前的 ErrNotConnected,已有的请求方据此报告扩展未连接。
+	scriptCatKind = targetKind{
+		one: "ScriptCat", many: "ScriptCat instances",
+		noneOnline: func() error { return ErrNotConnected },
+		offline:    generated.ErrorCodeScriptcatOffline, notFound: generated.ErrorCodeScriptcatNotFound, ambiguous: generated.ErrorCodeScriptcatAmbiguous,
+	}
+)
+
+// resolveBrowsers 在 daemon 侧解析浏览器调用的目标,只有这里知道哪些实例在线;规则见 resolveTargets。
+func (s *Server) resolveBrowsers(target string, mergeable bool) ([]instanceTarget, error) {
+	var registered []instanceTarget
 	for _, inst := range s.browsers.List() {
-		registered = append(registered, browserTarget{id: inst.ID, name: inst.Name})
+		registered = append(registered, instanceTarget{id: inst.ID, name: inst.Name})
 	}
 	s.mu.Lock()
 	for i := range registered {
 		registered[i].conn = s.online[registered[i].id]
 	}
 	s.mu.Unlock()
+	return resolveTargets(browserKind, registered, target, mergeable)
+}
 
+// resolveScriptCats 解析 scripts.* 调用的目标 ScriptCat:已配对的新版实例,加上以保留名出现的老版 ScriptCat——
+// 它在线,或 pairing.key 存在(此时点名它得到 SCRIPTCAT_OFFLINE 而不是 SCRIPTCAT_NOT_FOUND)。
+// 老版没有实例 ID,因此不参与 ID 前缀匹配。规则见 resolveTargets。
+func (s *Server) resolveScriptCats(target string, mergeable bool) ([]instanceTarget, error) {
+	var registered []instanceTarget
+	for _, inst := range s.scriptcats.List() {
+		registered = append(registered, instanceTarget{id: inst.ID, name: inst.Name})
+	}
+	s.mu.Lock()
+	for i := range registered {
+		registered[i].conn = s.scriptCats[registered[i].id]
+	}
+	legacy := s.legacyScriptCat
+	s.mu.Unlock()
+
+	// 只有点名老版时才需要知道离线的老版是否已配对;其余调用不读 pairing.key,它损坏也不妨碍新版实例。
+	paired := legacy != nil
+	if !paired && target == store.ReservedScriptCatName {
+		var err error
+		if paired, err = s.legacyPaired(); err != nil {
+			return nil, err
+		}
+	}
+	if paired {
+		registered = append(registered, instanceTarget{name: store.ReservedScriptCatName, conn: legacy})
+		slices.SortFunc(registered, func(a, b instanceTarget) int { return strings.Compare(a.name, b.name) })
+	}
+	return resolveTargets(scriptCatKind, registered, target, mergeable)
+}
+
+// resolveTargets 从按名称排序的已配对实例 registered 中选出调用目标,汇总结果沿用这个顺序。
+// target 为空时按在线实例数选择:没有在线实例报 kind.noneOnline;恰好一个就用它;
+// 多个时列表类方法(mergeable)用全部在线实例,操作类方法报 kind.ambiguous 并列出候选。
+// target 非空时先按名称精确匹配,再按实例 ID 前缀匹配。
+func resolveTargets(kind targetKind, registered []instanceTarget, target string, mergeable bool) ([]instanceTarget, error) {
 	if target == "" {
-		var online []browserTarget
+		var online []instanceTarget
 		for _, t := range registered {
 			if t.conn != nil {
 				online = append(online, t)
@@ -216,44 +276,45 @@ func (s *Server) resolveBrowsers(target string, mergeable bool) ([]browserTarget
 		}
 		switch {
 		case len(online) == 0:
-			return nil, &Error{Code: generated.ErrorCodeNoBrowserConnected, Message: "no browser connected"}
+			return nil, kind.noneOnline()
 		case len(online) == 1 || mergeable:
 			return online, nil
 		default:
-			return nil, &Error{Code: generated.ErrorCodeBrowserAmbiguous, Message: "several browsers are online, choose a target browser: " + describeTargets(online)}
+			return nil, &Error{Code: kind.ambiguous, Message: "several " + kind.many + " are online, choose a target " + kind.one + ": " + describeTargets(online)}
 		}
 	}
 
-	matched, err := matchOneTarget(registered, target)
+	matched, err := matchOneTarget(kind, registered, target)
 	if err != nil {
 		return nil, err
 	}
 	if matched.conn == nil {
-		return nil, &Error{Code: generated.ErrorCodeBrowserOffline, Message: "browser " + describeTargets([]browserTarget{matched}) + " is not connected"}
+		return nil, &Error{Code: kind.offline, Message: kind.one + " " + describeTargets([]instanceTarget{matched}) + " is not connected"}
 	}
-	return []browserTarget{matched}, nil
+	return []instanceTarget{matched}, nil
 }
 
 // matchOneTarget 按 matchTarget 解析非空 target,要求恰好匹配一个已配对实例(在线与否)。
-func matchOneTarget(registered []browserTarget, target string) (browserTarget, error) {
+func matchOneTarget(kind targetKind, registered []instanceTarget, target string) (instanceTarget, error) {
 	matched := matchTarget(registered, target)
 	switch len(matched) {
 	case 0:
-		return browserTarget{}, &Error{Code: generated.ErrorCodeBrowserNotFound, Message: "no paired browser matches " + target}
+		return instanceTarget{}, &Error{Code: kind.notFound, Message: "no paired " + kind.one + " matches " + target}
 	case 1:
 		return matched[0], nil
 	}
-	return browserTarget{}, &Error{Code: generated.ErrorCodeBrowserAmbiguous, Message: "browser ID prefix " + target + " matches several paired browsers: " + describeTargets(matched)}
+	return instanceTarget{}, &Error{Code: kind.ambiguous, Message: kind.one + " ID prefix " + target + " matches several paired " + kind.many + ": " + describeTargets(matched)}
 }
 
 // matchTarget 返回 target 指向的已配对实例:名称精确匹配优先(名称也可能形如 ID 前缀),否则取实例 ID 前缀匹配的全部实例。
-func matchTarget(registered []browserTarget, target string) []browserTarget {
+// target 非空,没有实例 ID 的老版 ScriptCat 因此不会被前缀匹配选中。
+func matchTarget(registered []instanceTarget, target string) []instanceTarget {
 	for _, t := range registered {
 		if t.name == target {
-			return []browserTarget{t}
+			return []instanceTarget{t}
 		}
 	}
-	var byPrefix []browserTarget
+	var byPrefix []instanceTarget
 	for _, t := range registered {
 		if strings.HasPrefix(t.id, target) {
 			byPrefix = append(byPrefix, t)
@@ -262,19 +323,23 @@ func matchTarget(registered []browserTarget, target string) []browserTarget {
 	return byPrefix
 }
 
-func describeTargets(targets []browserTarget) string {
+func describeTargets(targets []instanceTarget) string {
 	parts := make([]string, len(targets))
 	for i, t := range targets {
-		parts[i] = t.name + " (" + t.id + ")"
+		parts[i] = t.name
+		if t.id != "" {
+			parts[i] += " (" + t.id + ")"
+		}
 	}
 	return strings.Join(parts, ", ")
 }
 
-// callMerged 把列表类调用并发发给每个目标,并把各结果的 mergeField 数组按目标顺序拼接。
+// callMerged 把列表类调用并发发给每个目标,并把各结果的 mergeField 数组按目标顺序拼接,每一项以方法所属的
+// 对端类型(browser / scriptcat)为字段名标上来源实例。
 // 回 NOT_FOUND 的目标(例如没有所请求窗口的浏览器)不贡献条目:窗口 ID 只在各自浏览器内有意义,
 // 只有全部目标都回 NOT_FOUND 时整次调用才是 NOT_FOUND。其余任一目标失败都使整次调用失败,不返回
 // 部分结果:按目标顺序取第一个传输错误,其次第一个对端错误。
-func (s *Server) callMerged(ctx context.Context, targets []browserTarget, req Request, mergeField string) (Response, error) {
+func (s *Server) callMerged(ctx context.Context, targets []instanceTarget, req Request, action protocol.Action) (Response, error) {
 	responses := make([]Response, len(targets))
 	errs := make([]error, len(targets))
 	var wg sync.WaitGroup
@@ -292,7 +357,7 @@ func (s *Server) callMerged(ctx context.Context, targets []browserTarget, req Re
 			return Response{}, err
 		}
 	}
-	var found []browserTarget
+	var found []instanceTarget
 	var results []Response
 	var notFound *Response
 	for i, resp := range responses {
@@ -311,17 +376,17 @@ func (s *Server) callMerged(ctx context.Context, targets []browserTarget, req Re
 	if len(results) == 0 {
 		return *notFound, nil
 	}
-	merged, err := mergeResults(found, results, mergeField)
+	merged, err := mergeResults(found, results, action.MergeField, string(action.Peer))
 	if err != nil {
 		return Response{}, err
 	}
 	return Response{OK: true, Result: merged}, nil
 }
 
-// mergeResults 以第一个结果为底,把各结果 mergeField 数组的每一项标上来源浏览器后拼接,
+// mergeResults 以第一个结果为底,把各结果 mergeField 数组的每一项在 tagField 下标上来源实例后拼接,
 // 结果带 hasMore 时对各实例取或。各项保持原始 JSON,不经数值往返。结果已按方法 schema 校验过,
-// mergeField 必是对象数组、hasMore 必是布尔值(protocolgen 保证);解析失败说明协议定义与此处假设不符。
-func mergeResults(targets []browserTarget, responses []Response, mergeField string) (json.RawMessage, error) {
+// mergeField 必是对象数组、项不声明 tagField、hasMore 必是布尔值(protocolgen 保证);解析失败说明协议定义与此处假设不符。
+func mergeResults(targets []instanceTarget, responses []Response, mergeField, tagField string) (json.RawMessage, error) {
 	var base map[string]json.RawMessage
 	if err := json.Unmarshal(responses[0].Result, &base); err != nil {
 		return nil, fmt.Errorf("merge %s: %w", mergeField, err)
@@ -329,7 +394,7 @@ func mergeResults(targets []browserTarget, responses []Response, mergeField stri
 	items := []map[string]json.RawMessage{}
 	hasMore, anyHasMore := false, false
 	for i, resp := range responses {
-		ref, err := json.Marshal(browserRef{ID: targets[i].id, Name: targets[i].name})
+		ref, err := json.Marshal(instanceRef{ID: targets[i].id, Name: targets[i].name})
 		if err != nil {
 			return nil, err
 		}
@@ -342,7 +407,7 @@ func mergeResults(targets []browserTarget, responses []Response, mergeField stri
 			return nil, fmt.Errorf("merge %s: %w", mergeField, err)
 		}
 		for _, item := range list {
-			item[mergedItemBrowserField] = ref
+			item[tagField] = ref
 			items = append(items, item)
 		}
 		if raw, ok := fields[mergedHasMoreField]; ok {

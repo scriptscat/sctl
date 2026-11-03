@@ -302,15 +302,11 @@ func validateDefinition(def definition) error {
 			return fmt.Errorf("rpc %q: %w", name, err)
 		}
 		if method.MergeField != "" {
-			// 只有浏览器方法会有多个同时在线的目标,daemon 也只为它们合并。
-			if method.Peer != protocol.PeerBrowser {
-				return fmt.Errorf("rpc %q: mergeField is only meaningful for browser methods", name)
-			}
 			// 汇总调用并发发给每个实例;bridge 把 $/approvalPending 交给调用方的回调时假定只有一个目标在等人工决定。
 			if method.Blocking != protocol.BlockingNone {
-				return fmt.Errorf("rpc %q: a method that waits for a human cannot be merged across browsers", name)
+				return fmt.Errorf("rpc %q: a method that waits for a human cannot be merged across instances", name)
 			}
-			if err := validateMergeField(def.Types[method.Result], method.MergeField); err != nil {
+			if err := validateMergeField(def.Types[method.Result], method.MergeField, method.Peer); err != nil {
 				return fmt.Errorf("rpc %q: %w", name, err)
 			}
 		}
@@ -399,8 +395,9 @@ func validateLevel(def definition, method method) error {
 const mergedHasMoreField = "hasMore"
 
 // validateMergeField 要求合并字段是结果类型中必填的对象数组属性,daemon 才能无条件地拼接各实例的列表;
-// 合并时每一项都会加上来源浏览器的 browser 字段,项本身不能已有同名属性。结果若声明 hasMore,它必须是布尔值。
-func validateMergeField(result json.RawMessage, field string) error {
+// 合并时每一项都会加上以对端类型命名的来源实例字段(browser / scriptcat),项本身不能已有同名属性。
+// 结果若声明 hasMore,它必须是布尔值。
+func validateMergeField(result json.RawMessage, field string, peer protocol.Peer) error {
 	schema := parseSchema(result)
 	if hasMore, ok := schema.Properties[mergedHasMoreField]; ok && parseSchema(hasMore).Type != "boolean" {
 		return fmt.Errorf("%s must be a boolean for the merge to combine it", mergedHasMoreField)
@@ -413,8 +410,8 @@ func validateMergeField(result json.RawMessage, field string) error {
 	if items.Type != "object" {
 		return fmt.Errorf("mergeField %q items must be objects", field)
 	}
-	if _, taken := items.Properties["browser"]; taken {
-		return fmt.Errorf("mergeField %q items must not declare the browser property the merge adds", field)
+	if _, taken := items.Properties[string(peer)]; taken {
+		return fmt.Errorf("mergeField %q items must not declare the %s property the merge adds", field, peer)
 	}
 	return nil
 }

@@ -79,8 +79,14 @@ func newBrowsersForgetCmd() *cobra.Command {
 }
 
 func printBrowsersTable(list []control.BrowserInfo) error {
+	return printInstancesTable(list, "(no paired browser instances)")
+}
+
+// printInstancesTable 打印 sctl browsers 与 sctl scriptcats 共用的实例表,list 为空时打印 empty。
+// 老版 ScriptCat 没有实例 ID,ID 列显示 -。
+func printInstancesTable(list []control.BrowserInfo, empty string) error {
 	if len(list) == 0 {
-		fmt.Fprintln(os.Stdout, "(no paired browser instances)")
+		fmt.Fprintln(os.Stdout, empty)
 		return nil
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
@@ -92,7 +98,11 @@ func printBrowsersTable(list []control.BrowserInfo) error {
 			status = "online"
 			connected = b.ConnectedAt.Local().Format(time.RFC3339)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", b.Name, b.ID, status, productLabel(b), b.ExtensionVersion, connected)
+		id := b.ID
+		if id == "" {
+			id = "-"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", b.Name, id, status, productLabel(b), b.ExtensionVersion, connected)
 	}
 	return tw.Flush()
 }

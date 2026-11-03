@@ -20,13 +20,15 @@ import (
 
 // 控制 API 路径。健康检查故意不鉴权(仅暴露「端口开着」这一威胁模型已接受的信息)。
 const (
-	PathHealth        = "/control/health"
-	PathCall          = "/control/call"
-	PathEnroll        = "/control/enroll"
-	PathStatus        = "/control/status"
-	PathBrowsers      = "/control/browsers"
-	PathBrowserForget = "/control/browsers/forget"
-	PathPage          = "/control/page"
+	PathHealth          = "/control/health"
+	PathCall            = "/control/call"
+	PathEnroll          = "/control/enroll"
+	PathStatus          = "/control/status"
+	PathBrowsers        = "/control/browsers"
+	PathBrowserForget   = "/control/browsers/forget"
+	PathScriptCats      = "/control/scriptcats"
+	PathScriptCatForget = "/control/scriptcats/forget"
+	PathPage            = "/control/page"
 	// 原始 CDP 端点:创建或查看、只查看、关闭。请求体都是 CDPRequest。
 	PathCDPEndpoint = "/control/cdp/endpoint"
 	PathCDPStatus   = "/control/cdp/status"
@@ -49,8 +51,10 @@ const CLIClientID = "sctl-cli"
 type CallRequest struct {
 	Action string `json:"action"`
 	// Browser 是浏览器方法的可选目标:实例名称或实例 ID 前缀,由 daemon 解析(docs/protocol.md §3.1)。
-	Browser string          `json:"browser,omitempty"`
-	Input   json.RawMessage `json:"input"`
+	Browser string `json:"browser,omitempty"`
+	// ScriptCat 是 scripts.* 方法的可选目标:ScriptCat 实例名称或实例 ID 前缀,由 daemon 解析(docs/protocol.md §3.1)。
+	ScriptCat string          `json:"scriptcat,omitempty"`
+	Input     json.RawMessage `json:"input"`
 	// ReportPending 请 daemon 在对端报告请求进入人工审批时先写出一行 CallResult{Pending: true},
 	// 结论随后另起一行。不带时响应体只有结论一行。
 	ReportPending bool `json:"reportPending,omitempty"`
@@ -69,8 +73,9 @@ type PageRequest struct {
 }
 
 // CallResult 是 /control/call 的响应体,映射桥接的 JSON-RPC result/error。
-// 列表类浏览器方法未指定目标且多个浏览器在线时,Result 是各实例结果按 mergeField 拼接后的汇总,
-// 该数组的每一项多一个 "browser": {"id","name"} 字段;其余情况 Result 是单个对端的原始结果。
+// 列表类方法未指定目标且多个同类实例在线时,Result 是各实例结果按 mergeField 拼接后的汇总,
+// 该数组的每一项多一个来源字段:浏览器方法是 "browser": {"id","name"},scripts.list 是
+// "scriptcat": {"id","name"}(老版 ScriptCat 没有 id);其余情况 Result 是单个对端的原始结果。
 type CallResult struct {
 	OK     bool            `json:"ok"`
 	Result json.RawMessage `json:"result,omitempty"`
@@ -105,6 +110,8 @@ type StatusResult struct {
 	SecurityCount int           `json:"securityCount"`
 	Security      []audit.Event `json:"security,omitempty"`
 	Browsers      []BrowserInfo `json:"browsers,omitempty"`
+	// ExtConnected 为 true 当且仅当 ScriptCats 中有实例在线;ScriptCats 逐个列出实例,含老版的保留名一行。
+	ScriptCats []ScriptCatInfo `json:"scriptcats,omitempty"`
 }
 
 // EnrollResult 是 /control/enroll 的响应体:打开接入窗口后返回展示形配对码。
@@ -127,6 +134,20 @@ type BrowserInfo struct {
 // BrowsersResult 是 /control/browsers 的响应体:全部已配对浏览器实例(在线与离线)。
 type BrowsersResult struct {
 	Browsers []BrowserInfo `json:"browsers"`
+}
+
+// ScriptCatInfo 是一个已配对 ScriptCat 实例的当前视图,字段与 BrowserInfo 相同。不带实例 ID 的老版 ScriptCat
+// 以保留名 scriptcat 出现,ID 为空,产品与版本为空。
+type ScriptCatInfo BrowserInfo
+
+// ScriptCatsResult 是 /control/scriptcats 的响应体:全部已配对 ScriptCat 实例(在线与离线)。
+type ScriptCatsResult struct {
+	ScriptCats []ScriptCatInfo `json:"scriptcats"`
+}
+
+// ForgetScriptCatRequest 是 /control/scriptcats/forget 的请求体:Ref 是实例名称、完整实例 ID,或老版的保留名 scriptcat。
+type ForgetScriptCatRequest struct {
+	Ref string `json:"ref"`
 }
 
 // ForgetBrowserRequest 是 /control/browsers/forget 的请求体:Ref 是实例名称或完整实例 ID。

@@ -30,9 +30,9 @@ const maxFullSourceResponseBytes = 64 * 1024
 var progressInterval = 10 * time.Second
 
 // BridgeCaller 抽象「向 daemon 转发 bridge action 调用、页面动作、原始 CDP 端点请求与查询浏览器列表」,便于测试注入桩。
-// browser 是浏览器方法的可选目标,其余方法传空串。
+// Call 的 target 只为浏览器方法填 Browser、只为 scripts.* 填 ScriptCat(见 control.Target)。
 type BridgeCaller interface {
-	Call(ctx context.Context, action, browser string, input json.RawMessage, onPending func()) (control.CallResult, error)
+	Call(ctx context.Context, action string, target control.Target, input json.RawMessage, onPending func()) (control.CallResult, error)
 	Page(ctx context.Context, req control.PageRequest) (control.CallResult, error)
 	CDP(ctx context.Context, path string, req control.CDPRequest) (control.CallResult, error)
 	Browsers(ctx context.Context) ([]control.BrowserInfo, error)
@@ -58,9 +58,10 @@ func New(d Deps) *mcp.Server {
 		if !ok || action.Internal {
 			continue
 		}
-		browser := action.Peer == protocol.PeerBrowser
-		if browser {
-			td.inputSchema = schemaWithOptionalBrowser(td.inputSchema, browserParamDescription(action))
+		if action.Peer == protocol.PeerBrowser {
+			td.inputSchema = schemaWithOptionalString(td.inputSchema, "browser", browserParamDescription(action))
+		} else {
+			td.inputSchema = schemaWithOptionalString(td.inputSchema, "scriptcat", scriptCatParamDescription(action))
 		}
 		registerTool(srv, td, action, d.Caller)
 	}
@@ -120,19 +121,19 @@ func validateArguments(name string, schema *jsonschema.Schema, arguments json.Ra
 	return nil
 }
 
-// splitBrowserParam 从已校验的工具参数中取出可选的 browser 目标并删掉它:它交给 daemon 选目标,
-// 不属于方法输入。其余字段保持原始 JSON。
-func splitBrowserParam(arguments json.RawMessage) (string, json.RawMessage, error) {
+// splitTargetParam 从已校验的工具参数中取出可选的目标参数 key(browser 或 scriptcat)并删掉它:它交给 daemon
+// 选目标,不属于方法输入。其余字段保持原始 JSON。
+func splitTargetParam(arguments json.RawMessage, key string) (string, json.RawMessage, error) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(arguments, &fields); err != nil {
 		return "", nil, err
 	}
-	browser, err := takeString(fields, "browser")
+	target, err := takeString(fields, key)
 	if err != nil {
 		return "", nil, err
 	}
 	rest, err := json.Marshal(fields)
-	return browser, rest, err
+	return target, rest, err
 }
 
 // takeString 取出并删掉 fields 里可选的字符串参数 key;缺省时返回空串。
@@ -162,13 +163,16 @@ func registerTool(srv *mcp.Server, td toolDef, action protocol.Action, caller Br
 		if err := validateArguments(td.name, schema, req.Params.Arguments); err != nil {
 			return nil, err
 		}
-		var browser string
+		// 目标实例属于路由而不是方法输入:browser 只属于浏览器方法,scriptcat 只属于其余的 scripts 方法。
+		var target control.Target
 		var err error
 		if browserMethod {
-			browser, req.Params.Arguments, err = splitBrowserParam(req.Params.Arguments)
-			if err != nil {
-				return nil, fmt.Errorf("split %s arguments: %w", td.name, err)
-			}
+			target.Browser, req.Params.Arguments, err = splitTargetParam(req.Params.Arguments, "browser")
+		} else {
+			target.ScriptCat, req.Params.Arguments, err = splitTargetParam(req.Params.Arguments, "scriptcat")
+		}
+		if err != nil {
+			return nil, fmt.Errorf("split %s arguments: %w", td.name, err)
 		}
 		if td.action == "scripts.source.get" {
 			var args map[string]any
@@ -183,7 +187,7 @@ func registerTool(srv *mcp.Server, td toolDef, action protocol.Action, caller Br
 				}
 			}
 		}
-		return handleCall(ctx, req, td.action, req.Params.Arguments, progressFor(action), browser, caller)
+		return handleCall(ctx, req, td.action, req.Params.Arguments, progressFor(action), target, caller)
 	})
 }
 
@@ -241,7 +245,7 @@ func progressFor(action protocol.Action) progressStart {
 
 // handleCall 把方法 action 的输入 input 转发到 daemon。桥接业务错误(拒绝/过期/scope 等)作为 IsError
 // 工具结果返回(模型可见并自我纠正);传输/取消错误作为协议级错误返回。
-func handleCall(ctx context.Context, req *mcp.CallToolRequest, action string, input json.RawMessage, progress progressStart, browser string, caller BridgeCaller) (*mcp.CallToolResult, error) {
+func handleCall(ctx context.Context, req *mcp.CallToolRequest, action string, input json.RawMessage, progress progressStart, target control.Target, caller BridgeCaller) (*mcp.CallToolResult, error) {
 	stop := func() {}
 	var onPending func()
 	switch progress {
@@ -251,7 +255,7 @@ func handleCall(ctx context.Context, req *mcp.CallToolRequest, action string, in
 		// 回调与 Call 在同一个 goroutine 里执行,可以直接替换 stop。
 		onPending = func() { stop = startProgress(ctx, req) }
 	}
-	res, err := caller.Call(ctx, action, browser, input, onPending)
+	res, err := caller.Call(ctx, action, target, input, onPending)
 	stop()
 	if err != nil {
 		return nil, err

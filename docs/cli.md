@@ -15,7 +15,8 @@ command line can use the skill in [`../skills/sctl/`](../skills/sctl/SKILL.md).
 | `sctl service install\|uninstall\|start\|stop\|restart\|enable\|disable\|status` | Run `sctl serve` in the background as a user service; see [Background service](#background-service-sctl-service). |
 | `sctl connect` | Open a one-time enrollment window for ScriptCat or sctl Browser. |
 | `sctl mcp [--name <label>]` | Serve ScriptCat and sctl Browser tools over stdio MCP. |
-| `sctl status` | Show daemon and extension connection status. |
+| `sctl status` | Show daemon status and every paired ScriptCat and sctl Browser instance with its online state. `-o json` keeps `extConnected` (true when any ScriptCat instance is online) and adds a `scriptcats` list. |
+| `sctl scriptcats [list]` / `sctl scriptcats forget <name\|id>` | List paired ScriptCat instances (name, ID, status, product, versions; a legacy ScriptCat appears as `scriptcat` with no ID while `pairing.key` exists), or forget one. Forgetting deletes its key and disconnects it; `forget scriptcat` deletes `pairing.key`. |
 
 ### ScriptCat scripts
 
@@ -94,6 +95,17 @@ control commands run immediately with no approval step (see [`threat-model.md`](
 `tabs`, `windows`, `groups`, `reading-list`, `bookmarks`, `history`, `browsing-data`, `recent`, `downloads`,
 `cookies`, `extensions`, `page`, `debug`, and `cdp` accept `--browser <name|id>` (or `SCTL_BROWSER`) to pick an
 instance when more than one is online.
+
+### Choosing a ScriptCat instance
+
+`get`, `grep`, `edit`, `install`, `enable`, `disable`, and `delete` accept `--scriptcat <name|id>` (or
+`SCTL_SCRIPTCAT`) to pick a paired ScriptCat instance (see `sctl scriptcats`); an explicit `--scriptcat` wins over the
+environment variable. These names are a separate namespace from `--browser`. With exactly one instance online no
+target is needed. With several online and no target, `get` lists scripts from every online instance and adds a
+`SCRIPTCAT` column naming each script's source instance, while the other verbs fail with `SCRIPTCAT_AMBIGUOUS`
+(exit code 3) and the hint `pass --scriptcat <name> or set SCTL_SCRIPTCAT`. `SCRIPTCAT_OFFLINE` and
+`SCRIPTCAT_NOT_FOUND` also exit with code 3. With a single instance the `get` table has no extra column. Matching
+rules are in [`protocol.md`](./protocol.md) §3.1.
 
 ### Exit codes
 

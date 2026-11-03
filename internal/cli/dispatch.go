@@ -16,17 +16,20 @@ import (
 // dispatch 是所有走桥接的动词的公共骨架:连上已有 daemon、以可被 Ctrl-C 取消的 ctx 发起
 // 阻塞调用,再把结果/错误映射为退出码。onOK 负责把成功结果打印出来。
 //
+// scriptCat 是 scripts 动词的可选目标实例(--scriptcat / SCTL_SCRIPTCAT,名称或实例 ID 前缀;空串交给 daemon
+// 按在线实例解析,见 docs/protocol.md §3.1)。
+//
 // Ctrl-C 会取消 ctx → 切断到 daemon 的连接 → daemon 向扩展发 $/cancelRequest 作废操作;此处映射为
 // exitVoided。桥接业务错误按 code 映射:USER_REJECTED→exitRejected,OPERATION_EXPIRED 与
 // DEBUGGER_DETACHED→exitVoided,其余→exitError。
-func dispatch(cmd *cobra.Command, action string, input json.RawMessage, onOK func(result json.RawMessage) error) error {
-	return dispatchAction(cmd, action, "", input, nil, canceledVoided, onOK)
+func dispatch(cmd *cobra.Command, action, scriptCat string, input json.RawMessage, onOK func(result json.RawMessage) error) error {
+	return dispatchAction(cmd, action, control.Target{ScriptCat: scriptCat}, input, nil, canceledVoided, onOK)
 }
 
 // dispatchBlocking 与 dispatch 相同,但用于写动词:调用前告知用户正在等待浏览器裁决。
 // ScriptCat 不报告请求何时进入审批,所以提示在发起调用时就打印(第 1 期行为)。
-func dispatchBlocking(cmd *cobra.Command, action string, input json.RawMessage, onOK func(result json.RawMessage) error) error {
-	return dispatchAction(cmd, action, "", input, &approvalWait{
+func dispatchBlocking(cmd *cobra.Command, action, scriptCat string, input json.RawMessage, onOK func(result json.RawMessage) error) error {
+	return dispatchAction(cmd, action, control.Target{ScriptCat: scriptCat}, input, &approvalWait{
 		place: func(context.Context, *control.Client) string { return "the browser" },
 	}, canceledVoided, onOK)
 }
@@ -35,14 +38,14 @@ func dispatchBlocking(cmd *cobra.Command, action string, input json.RawMessage, 
 // daemon 按在线实例解析,见 docs/protocol.md §3.1)。用于 L0/L1 浏览器方法命令:它们收到即执行,
 // 不做逐次人工审批,所以从不走 blocking 提示。
 func dispatchBrowser(cmd *cobra.Command, action, browser string, input json.RawMessage, onOK func(result json.RawMessage) error) error {
-	return dispatchAction(cmd, action, browser, input, nil, canceledUnconfirmed, onOK)
+	return dispatchAction(cmd, action, control.Target{Browser: browser}, input, nil, canceledUnconfirmed, onOK)
 }
 
 // dispatchBrowserApproval 用于 L2 浏览器方法:调用阻塞到目标浏览器实例的审批窗口里得出结论,提示点名这个实例。
 // 提示等扩展报告请求进入审批后才打印:审批前的校验失败不打开窗口,直接报错(docs/protocol.md §5)。
 // 取消会作废仍在等待审批的请求。
 func dispatchBrowserApproval(cmd *cobra.Command, action, browser string, input json.RawMessage, onOK func(result json.RawMessage) error) error {
-	return dispatchAction(cmd, action, browser, input, &approvalWait{
+	return dispatchAction(cmd, action, control.Target{Browser: browser}, input, &approvalWait{
 		place: func(ctx context.Context, c *control.Client) string {
 			return approvingBrowser(ctx, c, browser)
 		},
@@ -94,9 +97,9 @@ type approvalWait struct {
 }
 
 // wait 为 nil 表示调用不等待人工决定。
-func dispatchAction(cmd *cobra.Command, action, browser string, input json.RawMessage, wait *approvalWait, canceled string, onOK func(result json.RawMessage) error) error {
-	return dispatchWith(cmd, browser, wait, canceled, func(ctx context.Context, client *control.Client, onPending func()) (control.CallResult, error) {
-		return client.Call(ctx, action, browser, input, onPending)
+func dispatchAction(cmd *cobra.Command, action string, target control.Target, input json.RawMessage, wait *approvalWait, canceled string, onOK func(result json.RawMessage) error) error {
+	return dispatchWith(cmd, target, wait, canceled, func(ctx context.Context, client *control.Client, onPending func()) (control.CallResult, error) {
+		return client.Call(ctx, action, target, input, onPending)
 	}, onOK)
 }
 
@@ -107,14 +110,14 @@ func dispatchPage(cmd *cobra.Command, action string, input json.RawMessage, onOK
 	if err != nil {
 		return err
 	}
-	return dispatchWith(cmd, req.Browser, nil, canceledUnconfirmed, func(ctx context.Context, client *control.Client, _ func()) (control.CallResult, error) {
+	return dispatchWith(cmd, control.Target{Browser: req.Browser}, nil, canceledUnconfirmed, func(ctx context.Context, client *control.Client, _ func()) (control.CallResult, error) {
 		return client.Page(ctx, req)
 	}, onOK)
 }
 
 // dispatchWith 连上已有 daemon,以可被 Ctrl-C 取消的 ctx 发起 call,再把结果/错误映射为退出码。
 // call 收到的 onPending 只在 wait 要求等对端报告进入审批时非 nil。
-func dispatchWith(cmd *cobra.Command, browser string, wait *approvalWait, canceled string, call func(ctx context.Context, client *control.Client, onPending func()) (control.CallResult, error), onOK func(result json.RawMessage) error) error {
+func dispatchWith(cmd *cobra.Command, target control.Target, wait *approvalWait, canceled string, call func(ctx context.Context, client *control.Client, onPending func()) (control.CallResult, error), onOK func(result json.RawMessage) error) error {
 	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt)
 	defer stop()
 
@@ -152,9 +155,14 @@ func dispatchWith(cmd *cobra.Command, browser string, wait *approvalWait, cancel
 		}
 		return nil
 	}
-	// daemon 的候选列表对 CLI 与 MCP 通用;只有 CLI 知道目标写在 --browser 上。
-	if browser == "" && res.Error != nil && res.Error.Code == "BROWSER_AMBIGUOUS" {
-		return &ExitError{Code: exitError, Message: res.Error.Error() + "; pass --browser <name> or set SCTL_BROWSER"}
+	// daemon 的候选列表对 CLI 与 MCP 通用;只有 CLI 知道目标写在 --browser / --scriptcat 上。
+	if res.Error != nil {
+		switch {
+		case target.Browser == "" && res.Error.Code == "BROWSER_AMBIGUOUS":
+			return &ExitError{Code: exitError, Message: res.Error.Error() + "; pass --browser <name> or set SCTL_BROWSER"}
+		case target.ScriptCat == "" && res.Error.Code == "SCRIPTCAT_AMBIGUOUS":
+			return &ExitError{Code: exitError, Message: res.Error.Error() + "; pass --scriptcat <name> or set SCTL_SCRIPTCAT"}
+		}
 	}
 	return mapBridgeError(res.Error)
 }

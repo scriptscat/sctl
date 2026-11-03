@@ -24,7 +24,8 @@
       "effect": "read",
       "blocking": "none",
       "level": "L0",
-      "peer": "scriptcat"
+      "peer": "scriptcat",
+      "mergeField": "scripts"
     },
     "scripts.metadata.get": {
       "params": "ScriptUUIDParams",
@@ -3898,6 +3899,9 @@
     { "code": "RATE_LIMITED", "peers": ["scriptcat"] },
     { "code": "PAYLOAD_TOO_LARGE", "peers": ["scriptcat", "browser"] },
     { "code": "INTERNAL_ERROR", "peers": ["scriptcat", "browser"] },
+    { "code": "SCRIPTCAT_OFFLINE", "peers": ["scriptcat"] },
+    { "code": "SCRIPTCAT_NOT_FOUND", "peers": ["scriptcat"] },
+    { "code": "SCRIPTCAT_AMBIGUOUS", "peers": ["scriptcat"] },
     { "code": "NO_BROWSER_CONNECTED", "peers": ["browser"] },
     { "code": "BROWSER_OFFLINE", "peers": ["browser"] },
     { "code": "BROWSER_NOT_FOUND", "peers": ["browser"] },
@@ -3927,6 +3931,10 @@
       "sessionDaemon": { "value": "scriptcat-rpc-v1/daemon", "peers": ["scriptcat"] },
       "pairExt": { "value": "scriptcat-rpc-v1/pair-ext", "peers": ["scriptcat"] },
       "pairDaemon": { "value": "scriptcat-rpc-v1/pair-daemon", "peers": ["scriptcat"] },
+      "scriptcatSessionExt": { "value": "scriptcat-rpc-v1/instance-ext", "peers": ["scriptcat"] },
+      "scriptcatSessionDaemon": { "value": "scriptcat-rpc-v1/instance-daemon", "peers": ["scriptcat"] },
+      "scriptcatPairExt": { "value": "scriptcat-rpc-v1/instance-pair-ext", "peers": ["scriptcat"] },
+      "scriptcatPairDaemon": { "value": "scriptcat-rpc-v1/instance-pair-daemon", "peers": ["scriptcat"] },
       "pairKdfSalt": { "value": "scriptcat-rpc-v1/pair-salt", "peers": ["scriptcat", "browser"] },
       "pairKdfInfoMac": { "value": "scriptcat-rpc-v1/pair-mac", "peers": ["scriptcat", "browser"] },
       "pairKdfInfoEnc": { "value": "scriptcat-rpc-v1/pair-enc", "peers": ["scriptcat", "browser"] },

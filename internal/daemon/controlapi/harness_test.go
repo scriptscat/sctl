@@ -73,12 +73,13 @@ type cancelParams struct {
 
 // testHarness 承载一个运行中的 daemon(WS 面 + 控制 API)与用于对拍的密码学助手/存储。
 type testHarness struct {
-	srv      *bridge.Server
-	crypto   *auth.Crypto
-	keys     *store.KeyStore
-	browsers *store.BrowserRegistry
-	url      string
-	proto    *protocol.Protocol
+	srv        *bridge.Server
+	crypto     *auth.Crypto
+	keys       *store.KeyStore
+	browsers   *store.BrowserRegistry
+	scriptcats *store.ScriptCatRegistry
+	url        string
+	proto      *protocol.Protocol
 }
 
 func startTestServer(t *testing.T) *testHarness {
@@ -89,7 +90,9 @@ func startTestServer(t *testing.T) *testHarness {
 	keys := store.NewKeyStore(filepath.Join(dir, "pairing.key"))
 	browsers, err := store.LoadBrowserRegistry(filepath.Join(dir, "browsers.json"))
 	So(err, ShouldBeNil)
-	srv := bridge.NewServer(testVersion, p, keys, browsers, zap.NewNop())
+	scriptcats, err := store.LoadScriptCatRegistry(filepath.Join(dir, "scriptcats.json"))
+	So(err, ShouldBeNil)
+	srv := bridge.NewServer(testVersion, p, keys, browsers, scriptcats, zap.NewNop())
 	// daemon 首次校验帧时才编译 schema,这笔一次性开销在高负载下能拖过读消息的 3s 时限;先在时限外付掉。
 	So(protocolschema.ValidateWireFrame([]byte(`{"jsonrpc":"2.0","id":"warm-up","method":"$session.ping","params":{}}`)), ShouldBeNil)
 
@@ -105,12 +108,13 @@ func startTestServer(t *testing.T) *testHarness {
 	go func() { _ = srv.Serve(ctx, ln, mux) }()
 
 	return &testHarness{
-		srv:      srv,
-		crypto:   auth.NewCrypto(p),
-		keys:     keys,
-		browsers: browsers,
-		url:      "ws://" + ln.Addr().String() + "/",
-		proto:    p,
+		srv:        srv,
+		crypto:     auth.NewCrypto(p),
+		keys:       keys,
+		browsers:   browsers,
+		scriptcats: scriptcats,
+		url:        "ws://" + ln.Addr().String() + "/",
+		proto:      p,
 	}
 }
 
@@ -244,6 +248,35 @@ func (h *testHarness) connectBrowser(id, name string) *extClient {
 	e.writeRequest(methodCapabilities, capabilitiesID, map[string]any{
 		"schemaVersion": "1.0.0",
 		"methods":       browserMethods,
+		"peer":          map[string]any{"name": name},
+	})
+	reply := e.read()
+	So(reply.ID, ShouldEqual, capabilitiesID)
+	So(reply.Error, ShouldBeNil)
+	return e
+}
+
+// connectScriptCatInstance 配对并按线上协议连接一个新版 ScriptCat 实例,返回完成能力声明的连接。
+func (h *testHarness) connectScriptCatInstance(id, name string) *extClient {
+	key, err := auth.NewLongTermKey()
+	So(err, ShouldBeNil)
+	So(h.scriptcats.Pair(store.ScriptCatInstance{ID: id, Name: name, Key: key}), ShouldBeNil)
+	e := dial(h.url)
+	challenge := e.read()
+	So(challenge.Method, ShouldEqual, methodAuthenticate)
+	var cp authChallengePayload
+	So(json.Unmarshal(challenge.Params, &cp), ShouldBeNil)
+
+	nonceE, _ := auth.RandomNonceHex(h.proto.Crypto.NonceBytes)
+	mac := h.crypto.ScriptCatExtHMAC(auth.ModeSession, id, key, cp.NonceD, nonceE)
+	e.writeResult(challenge.ID, authResponsePayload{Mode: modeSession, NonceE: nonceE, HMAC: mac, Peer: &authPeerPayload{Kind: "scriptcat", InstanceID: id}})
+	So(e.read().Method, ShouldEqual, methodAuthenticated)
+	So(e.read().Method, ShouldEqual, methodHello)
+
+	capabilitiesID := uuid.NewString()
+	e.writeRequest(methodCapabilities, capabilitiesID, map[string]any{
+		"schemaVersion": "1.0.0",
+		"methods":       []string{"scripts.list", "scripts.metadata.get"},
 		"peer":          map[string]any{"name": name},
 	})
 	reply := e.read()

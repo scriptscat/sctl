@@ -38,14 +38,18 @@ type conn struct {
 	pingID    string
 	pingAck   chan struct{}
 
-	key          []byte // 握手确立的长期共享密钥(ScriptCat 的 K 或浏览器实例密钥)
+	key          []byte // 握手确立的长期共享密钥(老版 ScriptCat 的 K 或实例密钥)
 	capabilities map[string]struct{}
 
-	// kind 默认是 ScriptCat;认证响应声明浏览器身份并通过校验后才改为浏览器。
+	// kind 默认是 ScriptCat,认证响应声明的 peer 通过校验后取其类型。instanceID 为空
+	// 只可能是不声明 peer 的老版 ScriptCat;声明了 peer 的连接(浏览器或新版 ScriptCat)必有实例 ID。
 	kind       protocol.Peer
 	instanceID string
-	// paired 表示浏览器实例在本连接完成了首次配对,其登记在能力声明被接受时才落盘。
-	paired      bool
+	// paired 表示实例在本连接完成了首次配对,其登记在能力声明被接受时才落盘。
+	paired bool
+	// takeover 表示未登记的新版 ScriptCat 实例改用 pairing.key 的密钥做会话握手(升级接管),
+	// 接管在能力声明被接受时才落盘。
+	takeover    bool
 	peer        capabilitiesPeer
 	connectedAt time.Time
 }
@@ -95,7 +99,7 @@ func (c *conn) handshake() error {
 		return authFail(audit.TypeHandshakeFailed, audit.ReasonProtocol, "parse authentication response: %w", err)
 	}
 	if resp.Peer != nil {
-		if err := c.claimBrowser(*resp.Peer); err != nil {
+		if err := c.claimPeer(*resp.Peer); err != nil {
 			return err
 		}
 	}
@@ -110,54 +114,83 @@ func (c *conn) handshake() error {
 	}
 }
 
-// claimBrowser 在边界校验认证响应里声明的浏览器身份;通过后本连接按该实例选用密钥与 MAC 上下文。
-func (c *conn) claimBrowser(peer authPeer) error {
-	if peer.Kind != peerKindBrowser {
+// claimPeer 在边界校验认证响应里声明的实例身份;通过后本连接按该实例选用密钥与 MAC 上下文。
+// 声明了 peer 却不合法的连接不会退回老版 ScriptCat 身份。
+func (c *conn) claimPeer(peer authPeer) error {
+	var kind protocol.Peer
+	switch peer.Kind {
+	case peerKindBrowser:
+		kind = protocol.PeerBrowser
+	case peerKindScriptCat:
+		kind = protocol.PeerScriptCat
+	default:
 		return authFail(audit.TypeHandshakeFailed, audit.ReasonProtocol, "unknown peer kind")
 	}
 	if !instanceIDPattern.MatchString(peer.InstanceID) {
-		return authFail(audit.TypeHandshakeFailed, audit.ReasonProtocol, "malformed browser instance ID")
+		return authFail(audit.TypeHandshakeFailed, audit.ReasonProtocol, "malformed instance ID")
 	}
-	c.kind = protocol.PeerBrowser
+	c.kind = kind
 	c.instanceID = peer.InstanceID
 	return nil
 }
 
-// auditClient 是审计事件的客户端标注:浏览器实例标注为 browser:<实例 ID>,ScriptCat 留空。
+// isInstance 报告本连接是否声明了实例身份(浏览器实例或新版 ScriptCat);否则是老版 ScriptCat。
+func (c *conn) isInstance() bool { return c.instanceID != "" }
+
+// auditClient 是审计事件的客户端标注:实例标注为 <对端类型>:<实例 ID>,老版 ScriptCat 留空。
 func (c *conn) auditClient() string {
-	if c.kind == protocol.PeerBrowser {
-		return "browser:" + c.instanceID
+	if !c.isInstance() {
+		return ""
 	}
-	return ""
+	return string(c.kind) + ":" + c.instanceID
 }
 
-// extMACValid 按对端类型校验扩展应答的 HMAC;浏览器实例的 MAC 绑定其实例 ID。
+// extMACValid 按对端身份校验扩展应答的 HMAC;实例的 MAC 绑定其对端类型与实例 ID。
 func (c *conn) extMACValid(mode auth.Mode, key []byte, nonceD string, resp authResponseResult) bool {
-	if c.kind == protocol.PeerBrowser {
+	switch {
+	case !c.isInstance():
+		return c.srv.crypto.VerifyExtHMAC(mode, key, nonceD, resp.NonceE, resp.HMAC)
+	case c.kind == protocol.PeerBrowser:
 		return c.srv.crypto.VerifyBrowserExtHMAC(mode, c.instanceID, key, nonceD, resp.NonceE, resp.HMAC)
+	default:
+		return c.srv.crypto.VerifyScriptCatExtHMAC(mode, c.instanceID, key, nonceD, resp.NonceE, resp.HMAC)
 	}
-	return c.srv.crypto.VerifyExtHMAC(mode, key, nonceD, resp.NonceE, resp.HMAC)
 }
 
 func (c *conn) daemonMAC(mode auth.Mode, key []byte, nonceD, nonceE string) string {
-	if c.kind == protocol.PeerBrowser {
+	switch {
+	case !c.isInstance():
+		return c.srv.crypto.DaemonHMAC(mode, key, nonceD, nonceE)
+	case c.kind == protocol.PeerBrowser:
 		return c.srv.crypto.BrowserDaemonHMAC(mode, c.instanceID, key, nonceD, nonceE)
+	default:
+		return c.srv.crypto.ScriptCatDaemonHMAC(mode, c.instanceID, key, nonceD, nonceE)
 	}
-	return c.srv.crypto.DaemonHMAC(mode, key, nonceD, nonceE)
 }
 
-// sessionKey 取会话握手所用的长期密钥:ScriptCat 用 pairing.key,浏览器实例用登记表里的实例密钥。
+// sessionKey 取会话握手所用的长期密钥:老版 ScriptCat 用 pairing.key,实例用其登记表里的实例密钥。
+// 未登记的新版 ScriptCat 实例在 pairing.key 存在时改用它的密钥:这是升级前以老版身份配对的同一个 ScriptCat,
+// 免去重新配对;MAC 仍按 ScriptCat 实例上下文校验,老版录下的 MAC 不能借此通过。
 func (c *conn) sessionKey() ([]byte, error) {
-	if c.kind == protocol.PeerBrowser {
-		inst, ok := c.srv.browsers.Get(c.instanceID)
-		if !ok {
-			return nil, authFail(audit.TypeHandshakeFailed, audit.ReasonUnknownInstance, "browser instance is not paired")
+	if c.isInstance() {
+		if inst, ok := c.srv.registryFor(c.kind).Get(c.instanceID); ok {
+			return inst.Key, nil
 		}
-		return inst.Key, nil
+		if c.kind == protocol.PeerScriptCat {
+			key, ok, err := c.srv.legacyKey()
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				c.takeover = true
+				return key, nil
+			}
+		}
+		return nil, authFail(audit.TypeHandshakeFailed, audit.ReasonUnknownInstance, "%s instance is not paired", c.kind)
 	}
-	key, ok, err := c.srv.keys.Load()
+	key, ok, err := c.srv.legacyKey()
 	if err != nil {
-		return nil, fmt.Errorf("load long-term key: %w", err)
+		return nil, err
 	}
 	if !ok {
 		return nil, errors.New("not paired yet, no long-term key")
@@ -217,11 +250,11 @@ func (c *conn) handshakePairing(ctx context.Context, nonceD string, resp authRes
 	if err := c.sendNotificationCtx(ctx, methodAuthenticated, authenticatedParams{HMAC: okMAC, Key: &keyDelivery{Ciphertext: ct, IV: iv}}); err != nil {
 		return fmt.Errorf("send authenticated notification: %w", err)
 	}
-	// 下发成功后再落盘,避免下发失败却持久化了扩展拿不到的密钥。浏览器实例的密钥连同名称
-	// 一起写入登记表,名称随能力声明才到达,因此推迟到登记时;pairing.key 只属于 ScriptCat。
-	if c.kind == protocol.PeerBrowser {
+	// 下发成功后再落盘,避免下发失败却持久化了扩展拿不到的密钥。实例的密钥连同名称
+	// 一起写入登记表,名称随能力声明才到达,因此推迟到登记时;pairing.key 只属于老版 ScriptCat。
+	if c.isInstance() {
 		c.paired = true
-	} else if err := s.keys.Save(k); err != nil {
+	} else if err := s.saveLegacyKey(k); err != nil {
 		return fmt.Errorf("persist long-term key: %w", err)
 	}
 	c.key = k
@@ -334,9 +367,9 @@ func (c *conn) receiveCapabilities() (string, error) {
 	if payload.SchemaVersion != c.srv.proto.SchemaVersion {
 		return "", fmt.Errorf("incompatible protocol schema version %q", payload.SchemaVersion)
 	}
-	if c.kind == protocol.PeerBrowser {
+	if c.isInstance() {
 		if !validCapabilitiesPeer(payload.Peer) {
-			return "", errors.New("browser instance declared a missing or invalid peer")
+			return "", fmt.Errorf("%s instance declared a missing or invalid peer", c.kind)
 		}
 		c.peer = *payload.Peer
 	}

@@ -46,7 +46,7 @@ func TestLoadExposesMethodPeerAndListMergeField(t *testing.T) {
 		peer       Peer
 		mergeField string
 	}{
-		"scripts.list":         {PeerScriptCat, ""},
+		"scripts.list":         {PeerScriptCat, "scripts"},
 		"tabs.list":            {PeerBrowser, "tabs"},
 		"windows.list":         {PeerBrowser, "windows"},
 		"tabs.open":            {PeerBrowser, ""},

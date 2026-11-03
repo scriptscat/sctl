@@ -67,3 +67,11 @@ func printHasMoreUpTo(hasMore bool, maxLimit int) {
 		fmt.Fprintf(os.Stderr, "more items exist than shown; pass a larger --limit (at most %d) to see them\n", maxLimit)
 	}
 }
+
+// addScriptCatFlag 给一个 scripts 动词挂 --scriptcat,值写进 target;默认取自 SCTL_SCRIPTCAT(与 --browser/SCTL_BROWSER
+// 同一先例,见 tabs.go):环境变量在构建标志时读取,显式传入的 --scriptcat 优先于它。scripts 动词是顶层命令而不是
+// 一棵命令树,所以每个动词各持一个值。由 daemon 解析为具体的已配对实例(docs/protocol.md §3.1)。
+func addScriptCatFlag(cmd *cobra.Command, target *string) {
+	cmd.Flags().StringVar(target, "scriptcat", os.Getenv("SCTL_SCRIPTCAT"),
+		"target ScriptCat instance: name or instance-ID prefix (env: SCTL_SCRIPTCAT; an explicit --scriptcat wins)")
+}
