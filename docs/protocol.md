@@ -265,6 +265,8 @@ It is optional in the schema so that an unconfirmed call that reaches the extens
 | `scripts.toggle.request` | ScriptCat | enable or disable a script | write approval | L2 |
 | `scripts.delete.request` | ScriptCat | delete a script | write approval | L2 |
 | `scripts.edit.request` | ScriptCat | edit a script | write approval | L2 |
+| `scripts.run` | ScriptCat | run a background or scheduled script once | none | L0 |
+| `scripts.logs` | ScriptCat | read a script's log entries | none | L0 |
 | `tabs.list` | browser | list tabs, optionally in one window | none | L0 |
 | `tabs.open` | browser | open a URL in a new tab and return its tab ID | none | L0 |
 | `tabs.close` | browser | close one or more tabs | none | L0 |
@@ -438,6 +440,32 @@ larger, the extension returns `PAYLOAD_TOO_LARGE` before placing the source in a
 use `scripts.source.grep` and then request a `startLine`/`endLine` window. The budget does not apply when a line
 window is present. `sctl mcp` supplies this budget for whole-file reads, while the CLI omits it so an operator can
 still redirect a complete source file.
+
+`scripts.run` and `scripts.logs` are L0 and have no human gate; why that is accepted is in
+[threat-model.md](./threat-model.md#2-attack-surface-and-countermeasures). Among ScriptCat's methods,
+`effect: "write"` marks the approval-gated changes to installed scripts; running a script leaves its source and
+enabled state as they are, so `scripts.run` declares `effect: "read"`. `scripts.run` runs a background or scheduled
+script once through ScriptCat's own run path, the same one its editor's run button uses; a page script answers
+`INVALID_REQUEST` and an unknown UUID `NOT_FOUND`. Unless `wait` is `false`, ScriptCat answers when the run leaves
+the running state or when `timeoutMs` (default 60000) elapses. `timeoutMs` is at most 240000, and a larger value
+answers `INVALID_REQUEST`, so the answer arrives before the daemon expires the call after
+`limits.writeDecisionTtlMs`. `status` is `complete`, `error` with the error ScriptCat recorded in `error`, or
+`running` when the run has not finished in time, which is not a failure. With `wait: false` ScriptCat answers
+`running` as soon as it has accepted the run. `startedAt` and `endedAt` (absent while running) are integer
+milliseconds since the epoch, and `logs` holds the entries the script logged since the run started, oldest first:
+the newest 100, with `truncated: true` when more exist.
+
+`scripts.logs` returns, oldest first, the entries of ScriptCat's log whose label carries the script's UUID, excluding
+ScriptCat's own external-access audit records. `since` (integer milliseconds since the epoch) defaults to one hour
+before the call; `severity` keeps entries of that severity and above (`debug` < `info` < `warn` < `error`); `text`
+keeps entries whose message contains it, ignoring case; `limit` defaults to 100, and when more entries match the
+newest `limit` are returned with `truncated: true`. Rather than exceed `limits.maxFrameBytes`, ScriptCat drops whole
+entries and sets `truncated: true`. A log entry has `time` (integer milliseconds since the epoch), `severity`
+(ScriptCat's `trace` reports as `debug`), `message`, the source `component` such as `GM_log`, and `fields`, the
+label's remaining entries as `name` and a text `value` (non-string values JSON-encoded). Messages, errors, and fields
+are controlled by the script, so both results carry `contentTrust: "untrusted-user-script-log"` and the handling
+rules for user-script content above apply. A ScriptCat that predates these methods does not declare them, so a call
+to it fails with `METHOD_NOT_FOUND` ([§3.1](#31-routing-and-target-selection)).
 
 ### 3.1 Routing and target selection
 
@@ -814,9 +842,12 @@ daemon-side metadata and does not reach the TypeScript output. The generator emi
 
 The ScriptCat TypeScript must stay byte-identical to the copy in the paired ScriptCat revision, because ScriptCat
 declares every generated method as a capability and its conformance test compares the method and error-code
-lists exactly. Adding browser-owned definitions therefore never changes ScriptCat's files or `schemaVersion`;
-a definition listing `scriptcat`, such as the `SCRIPTCAT_*` error codes, does, and lands together with a paired
-ScriptCat commit carrying the regenerated files.
+lists exactly. Adding browser-owned definitions therefore never changes ScriptCat's files; a definition listing
+`scriptcat`, such as the `SCRIPTCAT_*` error codes or the `scripts.run` method, does, and lands together with a paired
+ScriptCat commit carrying the regenerated files. Neither changes `schemaVersion`: the daemon rejects a capabilities
+request whose `schemaVersion` differs from its own, so raising it would lock out every ScriptCat built before the
+change, while a ScriptCat that lacks a new method simply does not declare it and the call fails with
+`METHOD_NOT_FOUND`.
 
 The generator rejects a method whose `level` is missing or not `L0`/`L1`/`L2`, an L2 method without a human gate
 (`blocking` is `none`) or a human-gated method that is not L2, an L1 method whose parameters do not declare the
