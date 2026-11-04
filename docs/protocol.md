@@ -453,7 +453,10 @@ answers `INVALID_REQUEST`, so the answer arrives before the daemon expires the c
 `running` when the run has not finished in time, which is not a failure. With `wait: false` ScriptCat answers
 `running` as soon as it has accepted the run. `startedAt` and `endedAt` (absent while running) are integer
 milliseconds since the epoch, and `logs` holds the entries the script logged since the run started, oldest first:
-the newest 100, with `truncated: true` when more exist.
+the newest 100, with `truncated: true` when more exist. To stay within `limits.maxFrameBytes`, ScriptCat cuts an
+`error` longer than 16384 UTF-16 code units and ends it with `…`, then drops whole log entries as `scripts.logs`
+does. Because run-state changes carry no run id, ScriptCat triggers a second external run of the same script only
+after it has seen the earlier one start (or that one's wait has ended).
 
 `scripts.logs` returns, oldest first, the entries of ScriptCat's log whose label carries the script's UUID, excluding
 ScriptCat's own external-access audit records. `since` (integer milliseconds since the epoch) defaults to one hour
