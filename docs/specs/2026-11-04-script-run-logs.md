@@ -79,7 +79,8 @@ MCP `timeoutMs`）。返回：
 
 **前置条件：** 目标 ScriptCat 实例在线；脚本存在（任何类型，页面脚本的 `GM_log` 同样可读）。
 
-**动作与结果：** 返回 ScriptCat 日志中 `label.uuid` 等于该脚本的记录，oldest first。每条含时间、级别
+**动作与结果：** 返回 ScriptCat 日志中 `label.uuid` 等于该脚本的记录，但不含外部接入审计记录（它们也带 `uuid`，
+且每次 `logs` 调用自身就会产生一条），oldest first。每条含时间、级别
 （`debug`/`info`/`warn`/`error`）、消息、来源组件（如 `GM_log`）以及 ScriptCat 附带的结构化字段。过滤：
 
 - `--since <duration|RFC3339>`：只看此后的记录，默认最近 1 小时；
@@ -104,9 +105,10 @@ MCP `timeoutMs`）。返回：
 
 ## 兼容性
 
-- 新方法在 `protocol.json` 中定义（peer 为 `scriptcat`），重新生成两侧产物；因为 ScriptCat 把每个生成的方法都
-  声明为能力且一致性测试逐项比对（`docs/protocol.md` 生成产物一节），这会改变 ScriptCat 侧生成文件与
-  `schemaVersion`，必须与配对的 ScriptCat 版本一起落地。
+- 新方法在 `protocol.json` 中定义（peer 为 `scriptcat`），重新生成两侧产物；ScriptCat 侧生成文件改变，必须与配对的
+  ScriptCat 提交一起落地。`schemaVersion` **保持不变**：daemon 握手要求版本完全相等
+  （`internal/daemon/bridge/conn.go:367`），升版本会让旧 ScriptCat 连不上；新增 ScriptCat 侧定义不升版本的前例是
+  #16。`docs/protocol.md` 生成产物一节中“scriptcat 定义会改变 `schemaVersion`”的说法与此不符，一并更正。
 - 按 `docs/protocol.md` §3.1，未声明新方法的旧 ScriptCat 连接对这两个调用返回 `METHOD_NOT_FOUND`，CLI/MCP 据此
   提示升级 ScriptCat。
 - MCP 工具描述只描述能力，不包含任何脚本可控文本。
