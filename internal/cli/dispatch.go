@@ -182,7 +182,7 @@ func mapBridgeError(e *control.CallError) error {
 		// 与作废同类:命令被外部事件打断(用户关掉调试提示条、标签页关闭、浏览器断开),重试可能成功。
 		return &ExitError{Code: exitVoided, Message: terminalSafe(e.Error())}
 	default:
-		return &ExitError{Code: exitError, Message: terminalSafe(e.Error())}
+		return &ExitError{Code: exitError, Message: terminalSafe(e.Error()), BridgeCode: e.Code}
 	}
 }
 

@@ -1,6 +1,6 @@
 ---
 name: sctl
-description: "Drive the user's own running browser and ScriptCat from the terminal with the `sctl` CLI: list and organize tabs, windows, bookmarks, history, cookies, downloads and extensions; read and operate pages (accessibility snapshot, click, fill, screenshot, run JavaScript); inspect console errors and network requests; send raw CDP commands or hand a CDP endpoint to Playwright/Puppeteer; and view, search, install, edit, enable or delete ScriptCat userscripts. Use this skill whenever the user wants something done or looked at in their real browser — \"what tabs do I have open\", \"open this page and click…\", \"why is this page throwing errors\", \"which request is failing\", \"run my Playwright script against my logged-in browser\" — or mentions sctl, sctl Browser or ScriptCat, even if they never name the tool. Not for ordinary front-end coding that does not touch the user's browser, and not for developing the sctl repository itself."
+description: "Drive the user's own running browser and ScriptCat from the terminal with the `sctl` CLI: list and organize tabs, windows, bookmarks, history, cookies, downloads and extensions; read and operate pages (accessibility snapshot, click, fill, screenshot, run JavaScript); inspect console errors and network requests; send raw CDP commands or hand a CDP endpoint to Playwright/Puppeteer; and view, search, install, edit, enable, run or delete ScriptCat userscripts and read their logs. Use this skill whenever the user wants something done or looked at in their real browser — \"what tabs do I have open\", \"open this page and click…\", \"why is this page throwing errors\", \"which request is failing\", \"run my Playwright script against my logged-in browser\" — or mentions sctl, sctl Browser or ScriptCat, even if they never name the tool. Not for ordinary front-end coding that does not touch the user's browser, and not for developing the sctl repository itself."
 ---
 
 # sctl CLI
@@ -79,7 +79,7 @@ sctl browsers -o json  # paired sctl Browser instances: name, online, product
 
 | Exit code | Meaning |
 |---|---|
-| 0 | Success. Also: `grep` found nothing; `debug request --body` could not get the body and says why |
+| 0 | Success. Also: `grep` found nothing; `run` finished with `error` or `still running` (read its status line); `debug request --body` could not get the body and says why |
 | 1 | The user rejected the request in the browser |
 | 2 | Voided: approval timed out, Ctrl-C, the extension disconnected, or `DEBUGGER_DETACHED` — a retry may work |
 | 3 | Everything else: bad arguments, `NOT_FOUND`, daemon unreachable, any other error code |
@@ -93,7 +93,7 @@ sctl browsers -o json  # paired sctl Browser instances: name, online, product
 | See console errors, uncaught exceptions, network requests and their headers and bodies | `sctl debug …` | [references/page.md](references/page.md#debugging-sctl-debug) |
 | Do something no command covers, with one raw CDP command | `sctl cdp send` | [references/cdp.md](references/cdp.md) |
 | Run a Playwright or Puppeteer script against the user's browser, logins included | `sctl cdp endpoint` | [references/cdp.md](references/cdp.md#endpoint-for-playwright-and-puppeteer) |
-| List, read, search, install, edit, enable, disable or delete ScriptCat userscripts | `sctl get / grep / install / edit / enable / disable / delete` | [references/scriptcat.md](references/scriptcat.md) |
+| List, read, search, install, edit, enable, disable or delete ScriptCat userscripts; run a background script once; read a script's logs | `sctl get / grep / install / edit / enable / disable / delete / run / logs` | [references/scriptcat.md](references/scriptcat.md) |
 
 Prefer `page` commands for interaction: they wait for elements to be actionable, reach into cross-origin iframes
 through refs, and work on background tabs. Open a CDP endpoint only for a long scripted flow, an existing
