@@ -74,7 +74,7 @@ jobs:
     name: protocol schema and ScriptCat mirror
     runs-on: ubuntu-latest
     env:
-      SCRIPTCAT_REF: bc6f6bb41abd4521d34e67245cde9b6f41dea024
+      SCRIPTCAT_REF: 373a117c885cacfa12a53fb7cdcdb4036254b8b4
     steps:
       - uses: actions/checkout@v5
         with:
