@@ -712,7 +712,7 @@ func TestScriptsToolsForwardTheOptionalScriptCatArgument(t *testing.T) {
 			}
 			So(props, ShouldNotContainKey, "scriptcat")
 		}
-		So(found, ShouldEqual, 8)
+		So(found, ShouldEqual, 10)
 	})
 
 	Convey("scripts 工具把 scriptcat 参数作为目标转发,且不混入方法输入", t, func() {

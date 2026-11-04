@@ -19,6 +19,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v6"
 
+	"github.com/scriptscat/sctl/internal/cli/upgradehint"
 	"github.com/scriptscat/sctl/internal/client/control"
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
 )
@@ -187,8 +188,27 @@ func registerTool(srv *mcp.Server, td toolDef, action protocol.Action, caller Br
 				}
 			}
 		}
-		return handleCall(ctx, req, td.action, req.Params.Arguments, progressFor(action), target, caller)
+		progress := progressFor(action)
+		if td.noApprovalProgress {
+			progress = progressNever
+		}
+		res, err := handleCall(ctx, req, td.action, req.Params.Arguments, progress, target, caller)
+		if err == nil && td.upgradeHintOnMissing {
+			appendUpgradeHint(res)
+		}
+		return res, err
 	})
+}
+
+// appendUpgradeHint 给旧版 ScriptCat 的 METHOD_NOT_FOUND 错误结果附上升级提示(与 CLI 同一句话)。
+func appendUpgradeHint(res *mcp.CallToolResult) {
+	if !res.IsError || len(res.Content) != 1 {
+		return
+	}
+	text, ok := res.Content[0].(*mcp.TextContent)
+	if ok && strings.HasPrefix(text.Text, "METHOD_NOT_FOUND") {
+		text.Text += "\n" + upgradehint.Message
+	}
 }
 
 // registerBrowsersListTool 注册 browsers_list 工具,它不是 bridge action,由控制 API 提供。
