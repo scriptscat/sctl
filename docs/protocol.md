@@ -446,8 +446,11 @@ still redirect a complete source file.
 `effect: "write"` marks the approval-gated changes to installed scripts; running a script leaves its source and
 enabled state as they are, so `scripts.run` declares `effect: "read"`. `scripts.run` runs a background or scheduled
 script once through ScriptCat's own run path, the same one its editor's run button uses; a page script answers
-`INVALID_REQUEST` and an unknown UUID `NOT_FOUND`. Unless `wait` is `false`, ScriptCat answers when the run leaves
-the running state or when `timeoutMs` (default 60000) elapses. `timeoutMs` is at most 240000, and a larger value
+`INVALID_REQUEST` and an unknown UUID `NOT_FOUND`. A script whose `@run-in` does not match the ScriptCat instance's
+environment (normal or incognito), so that ScriptCat would not run it, also answers `INVALID_REQUEST` naming the
+mismatch, without triggering a run or waiting out the timeout. Unless `wait` is `false`, ScriptCat answers when the
+run leaves the running state or when `timeoutMs` (default 60000) elapses; that one deadline runs from receiving the
+request and covers any time spent queued behind an earlier run as well as the wait itself. `timeoutMs` is at most 240000, and a larger value
 answers `INVALID_REQUEST`, so the answer arrives before the daemon expires the call after
 `limits.writeDecisionTtlMs`. `status` is `complete`, `error` with the error ScriptCat recorded in `error`, or
 `running` when the run has not finished in time, which is not a failure. With `wait: false` ScriptCat answers
@@ -455,8 +458,11 @@ answers `INVALID_REQUEST`, so the answer arrives before the daemon expires the c
 milliseconds since the epoch, and `logs` holds the entries the script logged since the run started, oldest first:
 the newest 100, with `truncated: true` when more exist. To stay within `limits.maxFrameBytes`, ScriptCat cuts an
 `error` longer than 16384 UTF-16 code units and ends it with `…`, then drops whole log entries as `scripts.logs`
-does. Because run-state changes carry no run id, ScriptCat triggers a second external run of the same script only
-after it has seen the earlier one start (or that one's wait has ended).
+does. Because run-state changes carry no run id, a second external run of the same script that arrives before the
+earlier one has started is queued and triggered after it; with `wait: false` the run is not queued. A queued run
+that has not been triggered yet is dropped when its call is canceled or its connection closes. If a run is already in
+progress, ScriptCat stops it and starts the new one, and the late end of the stopped run is not reported as the
+result of the new run.
 
 `scripts.logs` returns, oldest first, the entries of ScriptCat's log whose label carries the script's UUID, excluding
 ScriptCat's own external-access audit records. `since` (integer milliseconds since the epoch) defaults to one hour

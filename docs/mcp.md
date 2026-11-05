@@ -240,7 +240,10 @@ are rejected with `INVALID_REQUEST`, an unknown uuid with `NOT_FOUND`). Argument
 block until the run ends or `timeoutMs` passes; `false` returns as soon as ScriptCat accepts the run); `timeoutMs`
 (1 to 240000, default 60000). The result has `status` (`complete`, `error`, or `running` when the timeout passed
 first, which is not a failure), `error` for a failed run, `startedAt`, `endedAt` when it ended, and the `logs` of this
-run. A run that ends in `error` is still a successful tool call: the status is in the result.
+run. A run that ends in `error` is still a successful tool call: the status is in the result. A script whose `@run-in`
+does not match the ScriptCat instance's environment is rejected with `INVALID_REQUEST` without running. While waiting
+(`wait` not `false`) the tool sends periodic progress notifications saying it is waiting for the script run to end, so
+clients with a tool timeout of about a minute keep waiting; with `wait: false` it returns at once and sends none.
 
 `scripts_logs` reads the logs recorded for one script of any type, oldest first. Arguments: `uuid`; `since`
 (milliseconds since the Unix epoch, default one hour ago); `severity` (`debug`, `info`, `warn` or `error`: that
@@ -248,11 +251,13 @@ level and above); `text` (substring of the message, case-insensitive); `limit` (
 records match, the newest `limit` are returned with `truncated: true`. These are the same bounds as `sctl run` and
 `sctl logs` in [cli.md](./cli.md); values outside them are rejected before anything is sent.
 
-Both tools run immediately, with no browser approval, and so never send the "waiting for approval" progress
-notifications the other ScriptCat tools send while they wait. Log messages, fields and run errors are text the script
+Both tools run immediately, with no browser approval. `scripts_logs` sends no progress notifications; the other
+ScriptCat tools send a "waiting for approval" progress notification from the start of the call for as long as it
+waits, whether or not that method needs approval. Log messages, fields and run errors are text the script
 controls: the result's `contentTrust` is `untrusted-user-script-log` and the text is data, never instructions; the tool
-descriptions contain no script text. A ScriptCat too old to know either method answers `METHOD_NOT_FOUND`, and the
-tool error then adds that ScriptCat must be upgraded.
+descriptions contain no script text. A ScriptCat too old to know either method is answered `METHOD_NOT_FOUND` by the
+daemon, which also answers it when it was started from an older sctl; the tool error then adds that ScriptCat must be
+upgraded and an older daemon restarted.
 
 ### Browser instances, tabs, and windows
 
