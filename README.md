@@ -106,29 +106,15 @@ Behavior, exit codes, and confirmations are in [`docs/cli.md`](./docs/cli.md).
 [`docs/mcp.md`](./docs/mcp.md).
 
 **Agent skill.** To have an agent drive the command line instead of MCP, install the skill in
-[`skills/sctl/`](./skills/sctl/SKILL.md) with either [`npx skills`](https://skills.sh/) or the
-[scriptscat/skills](https://github.com/scriptscat/skills) plugin marketplace; both can check for updates, so pick one,
-not both. `npx skills` installs into Claude Code, Codex, Cursor and other agents; `npx skills check -g` and
-`npx skills update -g` handle updates:
+[`skills/sctl/`](./skills/sctl/SKILL.md) with [`npx skills`](https://skills.sh/), which installs into Claude Code,
+Codex, Cursor and other agents:
 
 ```sh
 npx skills add scriptscat/sctl -g
 ```
 
-From the plugin marketplace:
-
-```text
-# Claude Code
-/plugin marketplace add scriptscat/skills
-/plugin install sctl@scriptcat
-
-# Codex
-codex plugin marketplace add scriptscat/skills
-codex plugin add sctl@scriptcat
-```
-
-The marketplace fetches `skills/` from this repository's `main` branch; `skills/.codex-plugin/plugin.json` is the
-manifest Codex needs. When working on the skill itself, link it from a clone instead so edits apply immediately:
+`npx skills check -g` checks for updates and `npx skills update -g` installs them. When working on the skill itself,
+link it from a clone instead so edits apply immediately:
 
 ```sh
 ln -s "$PWD/skills/sctl" ~/.claude/skills/sctl

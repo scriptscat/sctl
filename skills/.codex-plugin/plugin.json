@@ -1,8 +1,0 @@
-{
-  "name": "sctl",
-  "description": "Drive the user's running browser and ScriptCat from the terminal: tabs, pages, console, network, CDP, and installing, running and reading logs of userscripts.",
-  "homepage": "https://github.com/scriptscat/sctl/tree/main/skills/sctl",
-  "repository": "https://github.com/scriptscat/sctl",
-  "license": "GPL-3.0",
-  "skills": "./sctl"
-}
