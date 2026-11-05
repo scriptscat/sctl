@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/scriptscat/sctl/internal/cli/upgradehint"
+	"github.com/scriptscat/sctl/internal/client/control"
 )
 
 const (
@@ -19,6 +20,12 @@ const (
 	// 越界由两端各自拒绝,CLI 在发起调用之前就拒绝。
 	maxRunTimeout = 240 * time.Second
 	defaultSince  = "1h"
+
+	// canceledRun:scripts.run 一旦被 ScriptCat 接受就已在执行,Ctrl-C 撤不回;还没触发的排队中的本次运行会随取消被丢弃。
+	canceledRun = "canceled before the result arrived; the run may already be running in ScriptCat (a run that had not started yet is dropped)"
+
+	logsTruncatedHint    = "the logs are truncated: older or further records were left out; narrow them with --since, --level or --text"
+	runLogsTruncatedHint = "the logs of this run are truncated: older records were left out; run `sctl logs <uuid>` for the full record"
 )
 
 // scriptLogEntry 是 scripts.run / scripts.logs 返回的一条日志。消息、组件与字段值都来自脚本,
@@ -57,7 +64,7 @@ func newRunCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			uuid := stripResourceWord(args)[0]
 			if timeout < time.Millisecond || timeout > maxRunTimeout {
-				return &ExitError{Code: exitError, Message: fmt.Sprintf("invalid --timeout %s: must be between 1ms and %s", timeout, maxRunTimeout)}
+				return &ExitError{Code: exitError, Message: fmt.Sprintf("invalid --timeout %s: must be between 1ms and %ds", timeout, int(maxRunTimeout/time.Second))}
 			}
 			input := map[string]any{"uuid": uuid}
 			switch {
@@ -66,7 +73,7 @@ func newRunCmd() *cobra.Command {
 			case cmd.Flags().Changed("timeout"):
 				input["timeoutMs"] = timeout.Milliseconds()
 			}
-			return dispatch(cmd, "scripts.run", scriptCat, mustInput(input), func(result json.RawMessage) error {
+			return dispatchAction(cmd, "scripts.run", control.Target{ScriptCat: scriptCat}, mustInput(input), nil, canceledRun, func(result json.RawMessage) error {
 				if outputFormat == outputJSON {
 					return printResultJSON(result)
 				}
@@ -179,11 +186,15 @@ func printRunResult(result json.RawMessage) error {
 	case "running":
 		fmt.Fprintf(os.Stdout, "still running (started %s)\n", time.UnixMilli(r.StartedAt).Local().Format("15:04:05"))
 	case "error":
-		fmt.Fprintf(os.Stdout, "error%s: %s\n", took, terminalSafe(r.Error))
+		if r.Error == "" {
+			fmt.Fprintf(os.Stdout, "error%s\n", took)
+		} else {
+			fmt.Fprintf(os.Stdout, "error%s: %s\n", took, terminalSafe(r.Error))
+		}
 	default:
 		fmt.Fprintf(os.Stdout, "%s%s\n", terminalSafe(r.Status), took)
 	}
-	return printLogTable(r.Logs, r.Truncated)
+	return printLogTable(r.Logs, r.Truncated, runLogsTruncatedHint)
 }
 
 func printScriptLogs(result json.RawMessage) error {
@@ -194,11 +205,11 @@ func printScriptLogs(result json.RawMessage) error {
 	if err := json.Unmarshal(result, &r); err != nil {
 		return printResultJSON(result)
 	}
-	return printLogTable(r.Logs, r.Truncated)
+	return printLogTable(r.Logs, r.Truncated, logsTruncatedHint)
 }
 
 // printLogTable 以表格打印日志,时间按本地时区。每条一行:消息里的换行与控制字符经 terminalSafe 转义。
-func printLogTable(logs []scriptLogEntry, truncated bool) error {
+func printLogTable(logs []scriptLogEntry, truncated bool, truncatedHint string) error {
 	if len(logs) > 0 {
 		tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 		fmt.Fprintln(tw, "TIME\tLEVEL\tCOMPONENT\tMESSAGE")
@@ -221,7 +232,7 @@ func printLogTable(logs []scriptLogEntry, truncated bool) error {
 		fmt.Fprintln(os.Stdout, "no logs")
 	}
 	if truncated {
-		fmt.Fprintln(os.Stderr, "the logs are truncated: older or further records were left out; narrow them with --since, --level or --text")
+		fmt.Fprintln(os.Stderr, truncatedHint)
 	}
 	return nil
 }

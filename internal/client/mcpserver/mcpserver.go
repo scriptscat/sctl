@@ -188,9 +188,9 @@ func registerTool(srv *mcp.Server, td toolDef, action protocol.Action, caller Br
 				}
 			}
 		}
-		progress := progressFor(action)
-		if td.noApprovalProgress {
-			progress = progressNever
+		progress := progressPlan{start: progressFor(action), message: approvalMessage}
+		if td.progress != nil {
+			progress = td.progress(req.Params.Arguments)
 		}
 		res, err := handleCall(ctx, req, td.action, req.Params.Arguments, progress, target, caller)
 		if err == nil && td.upgradeHintOnMissing {
@@ -252,6 +252,14 @@ const (
 	progressOnPending
 )
 
+// progressPlan 是一次调用的 progress 计划;零值即不发。
+type progressPlan struct {
+	start   progressStart
+	message string
+}
+
+const approvalMessage = "Waiting for approval in the browser…"
+
 func progressFor(action protocol.Action) progressStart {
 	switch {
 	case action.Peer != protocol.PeerBrowser:
@@ -265,15 +273,15 @@ func progressFor(action protocol.Action) progressStart {
 
 // handleCall 把方法 action 的输入 input 转发到 daemon。桥接业务错误(拒绝/过期/scope 等)作为 IsError
 // 工具结果返回(模型可见并自我纠正);传输/取消错误作为协议级错误返回。
-func handleCall(ctx context.Context, req *mcp.CallToolRequest, action string, input json.RawMessage, progress progressStart, target control.Target, caller BridgeCaller) (*mcp.CallToolResult, error) {
+func handleCall(ctx context.Context, req *mcp.CallToolRequest, action string, input json.RawMessage, progress progressPlan, target control.Target, caller BridgeCaller) (*mcp.CallToolResult, error) {
 	stop := func() {}
 	var onPending func()
-	switch progress {
+	switch progress.start {
 	case progressAtCall:
-		stop = startProgress(ctx, req)
+		stop = startProgress(ctx, req, progress.message)
 	case progressOnPending:
 		// 回调与 Call 在同一个 goroutine 里执行,可以直接替换 stop。
-		onPending = func() { stop = startProgress(ctx, req) }
+		onPending = func() { stop = startProgress(ctx, req, progress.message) }
 	}
 	res, err := caller.Call(ctx, action, target, input, onPending)
 	stop()
@@ -288,7 +296,7 @@ func handleCall(ctx context.Context, req *mcp.CallToolRequest, action string, in
 
 // startProgress 若请求带 progressToken,则起一个 ticker 周期发 progress 通知,返回停止函数。
 // 无 token 时为 no-op。通知失败(客户端不接收)被忽略。
-func startProgress(ctx context.Context, req *mcp.CallToolRequest) func() {
+func startProgress(ctx context.Context, req *mcp.CallToolRequest, message string) func() {
 	token := req.Params.GetProgressToken()
 	if token == nil {
 		return func() {}
@@ -308,7 +316,7 @@ func startProgress(ctx context.Context, req *mcp.CallToolRequest) func() {
 				n++
 				_ = req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{
 					ProgressToken: token,
-					Message:       "Waiting for approval in the browser…",
+					Message:       message,
 					Progress:      n,
 				})
 			}

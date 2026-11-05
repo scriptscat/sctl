@@ -115,6 +115,32 @@ func TestRunCommand(t *testing.T) {
 			code, _, _, err := runCLIContext(ctx, strings.NewReader(""), "run", "u1")
 			So(code, ShouldEqual, exitVoided)
 			So(err, ShouldNotBeNil)
+			So(err.Error(), ShouldContainSubstring, "may already be running in ScriptCat")
+			So(err.Error(), ShouldNotContainSubstring, "voided")
+		})
+
+		Convey("--timeout 越界的报错用 240s,与帮助文字一致", func() {
+			stubDaemon(t, runResult("complete", ""))
+			code, _, _, err := runCLIResult(strings.NewReader(""), "run", "u1", "--timeout", "5m")
+			So(code, ShouldEqual, exitError)
+			So(err.Error(), ShouldContainSubstring, "240s")
+			So(err.Error(), ShouldNotContainSubstring, "4m0s")
+		})
+
+		Convey("出错但没有 error 文本:状态行没有悬空冒号", func() {
+			stubDaemon(t, runResult("error", `"endedAt":1730000000400,`))
+			code, out := runCLI("run", "u1")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldStartWith, "error in 400ms\n")
+		})
+
+		Convey("日志被截断:提示指向 sctl logs <uuid>,而不是 run 没有的筛选参数", func() {
+			stubDaemon(t, runResult("complete", `"endedAt":1730000001500,"truncated":true,`))
+			code, _, errOut := runCLICapture("run", "u1")
+			So(code, ShouldEqual, exitOK)
+			So(errOut, ShouldContainSubstring, "sctl logs <uuid>")
+			So(errOut, ShouldNotContainSubstring, "--since")
+			So(errOut, ShouldNotContainSubstring, "--level")
 		})
 
 		Convey("旧版 ScriptCat(METHOD_NOT_FOUND):退出码 3 并提示升级", func() {
@@ -122,6 +148,8 @@ func TestRunCommand(t *testing.T) {
 			code, _, _, err := runCLIResult(strings.NewReader(""), "run", "u1")
 			So(code, ShouldEqual, exitError)
 			So(err.Error(), ShouldContainSubstring, upgradehint.Message)
+			So(upgradehint.Message, ShouldContainSubstring, "upgrade ScriptCat")
+			So(upgradehint.Message, ShouldContainSubstring, "restart")
 		})
 
 		Convey("NOT_FOUND 不带升级提示", func() {
@@ -169,8 +197,11 @@ func TestLogsCommand(t *testing.T) {
 			code, _ := runCLI("logs", "u1", "--since", "2026-01-01T00:00:00Z")
 			So(code, ShouldEqual, exitOK)
 			So(inputMap(req.Input)["since"], ShouldEqual, float64(1767225600000))
+			before := time.Now().Add(-30 * time.Minute).UnixMilli()
 			code, _ = runCLI("logs", "u1", "--since", "30m")
+			after := time.Now().Add(-30 * time.Minute).UnixMilli()
 			So(code, ShouldEqual, exitOK)
+			So(int64(inputMap(req.Input)["since"].(float64)), ShouldBeBetweenOrEqual, before, after)
 		})
 
 		Convey("--level 映射为 severity,warning 是 warn 的别名;--text、--limit 下发", func() {
@@ -208,6 +239,17 @@ func TestLogsCommand(t *testing.T) {
 			code, _, errOut := runCLICapture("logs", "u1")
 			So(code, ShouldEqual, exitOK)
 			So(errOut, ShouldContainSubstring, "truncated")
+			So(errOut, ShouldContainSubstring, "--since")
+		})
+
+		Convey("component、fields 与 severity 里的控制字符经转义,不会原样到终端", func() {
+			stubDaemon(t, control.CallResult{OK: true, Result: json.RawMessage(
+				`{"truncated":false,"logs":[{"time":1730000000123,"severity":"in\u001b[31mfo","message":"m","component":"GM\u001b]0;x\u0007_log","fields":[{"name":"k\u001b[2J","value":"v\u001b[2J\nz"}]}]}`)})
+			code, out := runCLI("logs", "u1")
+			So(code, ShouldEqual, exitOK)
+			So(out, ShouldNotContainSubstring, "\x1b")
+			So(out, ShouldNotContainSubstring, "\x07")
+			So(out, ShouldContainSubstring, `\n`)
 		})
 
 		Convey("-o json 输出结果对象", func() {

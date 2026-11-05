@@ -3,7 +3,8 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
-	"sync/atomic"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -105,24 +106,24 @@ func TestScriptsRunAndLogsResultsAndDescriptions(t *testing.T) {
 	})
 }
 
-func TestScriptsRunAndLogsDoNotReportWaitingForApproval(t *testing.T) {
-	Convey("scripts_run / scripts_logs 不需要审批,阻塞期间不发审批 progress;其他 ScriptCat 工具保持原样", t, func() {
+func TestScriptsRunAndLogsProgress(t *testing.T) {
+	Convey("scripts_run 等待期间周期发 progress(文案不提审批);wait:false 与 scripts_logs 不发;其他 ScriptCat 工具保持原样", t, func() {
 		old := progressInterval
 		progressInterval = 10 * time.Millisecond
 		defer func() { progressInterval = old }()
 
-		var quiet atomic.Int32
-		clock := make(chan struct{}, 64)
-		block := make(chan struct{})
-		caller := &fakeCaller{block: block, entered: make(chan struct{}, 4), result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
+		var mu sync.Mutex
+		messages := map[string][]string{}
+		seen := make(chan string, 256)
+		caller := &fakeCaller{block: make(chan struct{}), entered: make(chan struct{}, 8), result: control.CallResult{OK: true, Result: json.RawMessage(`{}`)}}
 		opts := &mcp.ClientOptions{
 			ProgressNotificationHandler: func(_ context.Context, req *mcp.ProgressNotificationClientRequest) {
-				if tok, _ := req.Params.ProgressToken.(string); tok == "tok-run" || tok == "tok-logs" {
-					quiet.Add(1)
-					return
-				}
+				tok, _ := req.Params.ProgressToken.(string)
+				mu.Lock()
+				messages[tok] = append(messages[tok], req.Params.Message)
+				mu.Unlock()
 				select {
-				case clock <- struct{}{}:
+				case seen <- tok:
 				default:
 				}
 			},
@@ -142,20 +143,38 @@ func TestScriptsRunAndLogsDoNotReportWaitingForApproval(t *testing.T) {
 			return resCh
 		}
 		runRes := call("scripts_run", map[string]any{"uuid": runLogsUUID}, "tok-run")
+		noWaitRes := call("scripts_run", map[string]any{"uuid": runLogsUUID, "wait": false}, "tok-nowait")
 		logsRes := call("scripts_logs", map[string]any{"uuid": runLogsUUID}, "tok-logs")
 		toggleRes := call("scripts_toggle_request", map[string]any{"uuid": "x", "enable": true}, "tok-toggle")
-		for range 3 {
+		// 失败时也要放行 block,否则挂起的调用会拖住会话关闭。
+		reported := map[string]bool{}
+		deadline := time.After(2 * time.Second)
+		for !reported["tok-run"] || !reported["tok-toggle"] {
 			select {
-			case <-clock:
-			case <-time.After(5 * time.Second):
-				t.Fatal("the approval call reported no progress")
+			case tok := <-seen:
+				reported[tok] = true
+				continue
+			case <-deadline:
 			}
+			break
 		}
-		close(block)
-		So((<-runRes).IsError, ShouldBeFalse)
-		So((<-logsRes).IsError, ShouldBeFalse)
-		So((<-toggleRes).IsError, ShouldBeFalse)
-		So(quiet.Load(), ShouldEqual, 0)
+		time.Sleep(50 * time.Millisecond)
+		close(caller.block)
+		for _, ch := range []<-chan *mcp.CallToolResult{runRes, noWaitRes, logsRes, toggleRes} {
+			So((<-ch).IsError, ShouldBeFalse)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		So(reported["tok-toggle"], ShouldBeTrue)
+		So(reported["tok-run"], ShouldBeTrue)
+		So(messages["tok-nowait"], ShouldBeEmpty)
+		So(messages["tok-logs"], ShouldBeEmpty)
+		So(messages["tok-run"], ShouldNotBeEmpty)
+		for _, m := range messages["tok-run"] {
+			So(m, ShouldContainSubstring, "script run")
+			So(strings.ToLower(m), ShouldNotContainSubstring, "approval")
+		}
+		So(messages["tok-toggle"][0], ShouldEqual, "Waiting for approval in the browser…")
 	})
 }
 
