@@ -106,7 +106,15 @@ Behavior, exit codes, and confirmations are in [`docs/cli.md`](./docs/cli.md).
 [`docs/mcp.md`](./docs/mcp.md).
 
 **Agent skill.** To have an agent drive the command line instead of MCP, install the skill in
-[`skills/sctl/`](./skills/sctl/SKILL.md). For Claude Code, link it from a clone of this repository:
+[`skills/sctl/`](./skills/sctl/SKILL.md) with [`npx skills`](https://skills.sh/), which installs into Claude Code,
+Codex, Cursor and other agents:
+
+```sh
+npx skills add scriptscat/sctl -g
+```
+
+`npx skills check -g` checks for updates and `npx skills update -g` installs them. When working on the skill itself,
+link it from a clone instead so edits apply immediately:
 
 ```sh
 ln -s "$PWD/skills/sctl" ~/.claude/skills/sctl
