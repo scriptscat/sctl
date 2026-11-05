@@ -106,7 +106,21 @@ Behavior, exit codes, and confirmations are in [`docs/cli.md`](./docs/cli.md).
 [`docs/mcp.md`](./docs/mcp.md).
 
 **Agent skill.** To have an agent drive the command line instead of MCP, install the skill in
-[`skills/sctl/`](./skills/sctl/SKILL.md). For Claude Code, link it from a clone of this repository:
+[`skills/sctl/`](./skills/sctl/SKILL.md) from the [scriptscat/skills](https://github.com/scriptscat/skills) plugin
+marketplace, which also handles updates:
+
+```text
+# Claude Code
+/plugin marketplace add scriptscat/skills
+/plugin install sctl@scriptcat
+
+# Codex
+codex plugin marketplace add scriptscat/skills
+codex plugin add sctl@scriptcat
+```
+
+The marketplace fetches `skills/` from this repository's `main` branch; `skills/.codex-plugin/plugin.json` is the
+manifest Codex needs. When working on the skill itself, link it from a clone instead so edits apply immediately:
 
 ```sh
 ln -s "$PWD/skills/sctl" ~/.claude/skills/sctl
