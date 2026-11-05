@@ -29,6 +29,67 @@ func TestValidateMethodResultUsesTheDeclaredResultSchema(t *testing.T) {
 	}
 }
 
+func TestValidateWireFrameEnforcesScriptRunAndLogsParams(t *testing.T) {
+	t.Parallel()
+	const prefix = `{"jsonrpc":"2.0","id":"26d146ee-6d26-4bf6-9fe8-1e86d1582811","method":`
+	const uuid = `"uuid":"26d146ee-6d26-4bf6-9fe8-1e86d1582811"`
+	for name, frame := range map[string]string{
+		"run with defaults":         prefix + `"scripts.run","params":{"input":{` + uuid + `}}}`,
+		"run without waiting":       prefix + `"scripts.run","params":{"input":{` + uuid + `,"wait":false}}}`,
+		"run at the timeout bound":  prefix + `"scripts.run","params":{"input":{` + uuid + `,"timeoutMs":240000}}}`,
+		"logs with defaults":        prefix + `"scripts.logs","params":{"input":{` + uuid + `}}}`,
+		"logs with every filter":    prefix + `"scripts.logs","params":{"input":{` + uuid + `,"since":0,"severity":"warn","text":"fail","limit":1000}}}`,
+		"logs since an epoch in ms": prefix + `"scripts.logs","params":{"input":{` + uuid + `,"since":1793750400000}}}`,
+	} {
+		if err := protocolschema.ValidateWireFrame([]byte(frame)); err != nil {
+			t.Errorf("%s: valid frame rejected: %v", name, err)
+		}
+	}
+	for name, frame := range map[string]string{
+		"run without uuid":                          prefix + `"scripts.run","params":{"input":{}}}`,
+		"run with a zero timeout":                   prefix + `"scripts.run","params":{"input":{` + uuid + `,"timeoutMs":0}}}`,
+		"run whose timeout outlives the daemon cap": prefix + `"scripts.run","params":{"input":{` + uuid + `,"timeoutMs":300000}}}`,
+		"run with an unknown property":              prefix + `"scripts.run","params":{"input":{` + uuid + `,"retry":true}}}`,
+		"logs with an unknown severity":             prefix + `"scripts.logs","params":{"input":{` + uuid + `,"severity":"trace"}}}`,
+		"logs with a negative since":                prefix + `"scripts.logs","params":{"input":{` + uuid + `,"since":-1}}}`,
+		"logs with a zero limit":                    prefix + `"scripts.logs","params":{"input":{` + uuid + `,"limit":0}}}`,
+		"logs with a limit above 1000":              prefix + `"scripts.logs","params":{"input":{` + uuid + `,"limit":1001}}}`,
+	} {
+		if err := protocolschema.ValidateWireFrame([]byte(frame)); err == nil {
+			t.Errorf("%s: malformed frame was accepted", name)
+		}
+	}
+}
+
+func TestValidateMethodResultEnforcesScriptRunAndLogsResults(t *testing.T) {
+	t.Parallel()
+	const entry = `{"time":1793750400000,"severity":"info","message":"hi","component":"GM_log","fields":[{"name":"step","value":"1"}]}`
+	for name, tc := range map[string]struct{ method, result string }{
+		"run that completed":        {"scripts.run", `{"status":"complete","startedAt":1793750400000,"endedAt":1793750400100,"logs":[` + entry + `],"contentTrust":"untrusted-user-script-log"}`},
+		"run that failed":           {"scripts.run", `{"status":"error","error":"boom","startedAt":1793750400000,"endedAt":1793750400100,"logs":[],"truncated":false,"contentTrust":"untrusted-user-script-log"}`},
+		"run still going":           {"scripts.run", `{"status":"running","startedAt":1793750400000,"logs":[],"contentTrust":"untrusted-user-script-log"}`},
+		"logs with a minimal entry": {"scripts.logs", `{"logs":[{"time":1,"severity":"error","message":"x"}],"truncated":true,"contentTrust":"untrusted-user-script-log"}`},
+	} {
+		if err := protocolschema.ValidateMethodResult(tc.method, []byte(tc.result)); err != nil {
+			t.Errorf("%s: valid result rejected: %v", name, err)
+		}
+	}
+	for name, tc := range map[string]struct{ method, result string }{
+		"run with an unknown status":       {"scripts.run", `{"status":"failed","startedAt":1,"logs":[],"contentTrust":"untrusted-user-script-log"}`},
+		"run without startedAt":            {"scripts.run", `{"status":"running","logs":[],"contentTrust":"untrusted-user-script-log"}`},
+		"run marked as script source":      {"scripts.run", `{"status":"running","startedAt":1,"logs":[],"contentTrust":"untrusted-user-script-source"}`},
+		"logs without truncated":           {"scripts.logs", `{"logs":[],"contentTrust":"untrusted-user-script-log"}`},
+		"log entry using level":            {"scripts.logs", `{"logs":[{"time":1,"level":"info","message":"x"}],"truncated":false,"contentTrust":"untrusted-user-script-log"}`},
+		"log entry with an unknown level":  {"scripts.logs", `{"logs":[{"time":1,"severity":"trace","message":"x"}],"truncated":false,"contentTrust":"untrusted-user-script-log"}`},
+		"log field with a non-text value":  {"scripts.logs", `{"logs":[{"time":1,"severity":"info","message":"x","fields":[{"name":"n","value":1}]}],"truncated":false,"contentTrust":"untrusted-user-script-log"}`},
+		"log entry with a text time stamp": {"scripts.logs", `{"logs":[{"time":"2026-11-04","severity":"info","message":"x"}],"truncated":false,"contentTrust":"untrusted-user-script-log"}`},
+	} {
+		if err := protocolschema.ValidateMethodResult(tc.method, []byte(tc.result)); err == nil {
+			t.Errorf("%s: malformed result was accepted", name)
+		}
+	}
+}
+
 func TestValidateWireFrameEnforcesBrowserTabSchemas(t *testing.T) {
 	t.Parallel()
 	const prefix = `{"jsonrpc":"2.0","id":"26d146ee-6d26-4bf6-9fe8-1e86d1582811","method":`

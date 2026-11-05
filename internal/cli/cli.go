@@ -57,6 +57,9 @@ const (
 type ExitError struct {
 	Code    int
 	Message string
+	// BridgeCode 是引发该错误的桥接错误码(如 METHOD_NOT_FOUND),非桥接错误为空;
+	// 命令据此对特定错误码追加提示,而不必解析 Message。
+	BridgeCode string
 }
 
 func (e *ExitError) Error() string { return e.Message }
@@ -116,6 +119,8 @@ func NewRootCmd() *cobra.Command {
 		newGetCmd(),
 		newGrepCmd(),
 		newEditCmd(),
+		newRunCmd(),
+		newLogsCmd(),
 		newInstallCmd(),
 		newToggleCmd(true),
 		newToggleCmd(false),

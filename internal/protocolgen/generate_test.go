@@ -167,8 +167,8 @@ func TestGenerateProducesStronglyTypedRPCContracts(t *testing.T) {
 // 这两个摘要是生成给 ScriptCat 的文件的逐字节身份,必须与 ScriptCat 固定版本(CI 的 SCRIPTCAT_REF)
 // 里的副本一致;只有 ScriptCat 协议真的变化(如新增 ScriptCat 实例握手上下文)并同步到 ScriptCat 时才允许改动。
 const (
-	scriptCatProtocolSHA256   = "3d901cbd9f024c0a15d703dd3b6f00e0a68aa9eef58f32931ffc30e14081b249"
-	scriptCatValidatorsSHA256 = "2b55453161a593907759c4be7d9a2caa09f71aed7155b3c840f93d33d04896bb"
+	scriptCatProtocolSHA256   = "532fdb47211644319fb8d6014eb90958d7171eef9a243fa2dcc946b51619e309"
+	scriptCatValidatorsSHA256 = "c8700643309596f674217f6bd1853834498bc6689376877aef3ebdec79daad0d"
 )
 
 func TestGenerateKeepsScriptCatTypeScriptByteIdenticalWhenBrowserMethodsExist(t *testing.T) {
@@ -192,6 +192,71 @@ func TestGenerateKeepsScriptCatTypeScriptByteIdenticalWhenBrowserMethodsExist(t 
 		if got := hex.EncodeToString(sum[:]); got != want {
 			t.Errorf("ScriptCat %s sha256 = %s, want the paired ScriptCat copy %s", name, got, want)
 		}
+	}
+}
+
+func TestGenerateGivesScriptCatUngatedRunAndLogsMethods(t *testing.T) {
+	t.Parallel()
+
+	out := t.TempDir()
+	browserOut := t.TempDir()
+	if err := protocolgen.Generate(filepath.Join("..", "pkg", "protocol"), out, browserOut); err != nil {
+		t.Fatalf("generate protocol contracts: %v", err)
+	}
+	goSource := strings.Join(strings.Fields(readFile(t, filepath.Join(out, "protocol.generated.go"))), " ")
+	for _, want := range []string{
+		`MethodScriptsRun Method = "scripts.run"`,
+		`MethodScriptsLogs Method = "scripts.logs"`,
+		// ScriptCat 把 effect 为 write 的方法当作需审批的写操作;运行与读日志都不门控(spec 设计决策 1)。
+		`{Params: "ScriptsRunParams", Result: "ScriptsRunResult", Scope: "scripts:run", Effect: "read", Blocking: "none", Level: "L0", Peer: "scriptcat", MergeField: "", Internal: false}`,
+		`{Params: "ScriptsLogsParams", Result: "ScriptsLogsResult", Scope: "scripts:logs:read", Effect: "read", Blocking: "none", Level: "L0", Peer: "scriptcat", MergeField: "", Internal: false}`,
+		"type ScriptsRunParams struct",
+		"TimeoutMs *int `json:\"timeoutMs,omitempty\"`",
+		"Wait *bool `json:\"wait,omitempty\"`",
+		"type ScriptsLogsParams struct",
+		"Severity *string `json:\"severity,omitempty\"`",
+		"Since *int `json:\"since,omitempty\"`",
+		"type ScriptsLogsResult struct",
+		"Truncated bool `json:\"truncated\"`",
+	} {
+		if !strings.Contains(goSource, want) {
+			t.Errorf("generated Go does not contain %q", want)
+		}
+	}
+
+	typescript := readFile(t, filepath.Join(out, "protocol.generated.ts"))
+	for _, want := range []string{
+		`"scripts.run": { params: ScriptsRunParams; result: ScriptsRunResult };`,
+		`"scripts.logs": { params: ScriptsLogsParams; result: ScriptsLogsResult };`,
+		"  \"scripts.run\": {\n    params: \"ScriptsRunParams\",\n    result: \"ScriptsRunResult\",\n    scope: \"scripts:run\",\n    effect: \"read\",\n    blocking: \"none\",\n  },\n",
+		"  \"scripts.logs\": {\n    params: \"ScriptsLogsParams\",\n    result: \"ScriptsLogsResult\",\n    scope: \"scripts:logs:read\",\n    effect: \"read\",\n    blocking: \"none\",\n  },\n",
+		`status: "complete" | "error" | "running";`,
+		`contentTrust: "untrusted-user-script-log";`,
+		`severity: "debug" | "info" | "warn" | "error";`,
+		`fields?: Array<{ name: string; value: string; }>;`,
+	} {
+		if !strings.Contains(typescript, want) {
+			t.Errorf("ScriptCat TypeScript does not contain %q", want)
+		}
+	}
+
+	validators := readFile(t, filepath.Join(out, "validators.generated.ts"))
+	for _, want := range []string{
+		`"scripts.run": validateScriptsRunParams,`,
+		`"scripts.logs": validateScriptsLogsParams,`,
+		`"scripts.run": validateScriptsRunResult,`,
+		`"scripts.logs": validateScriptsLogsResult,`,
+		`value["timeoutMs"] >= 1`,
+		`value["limit"] >= 1`,
+		`value["since"] >= 0`,
+	} {
+		if !strings.Contains(validators, want) {
+			t.Errorf("ScriptCat validators do not contain %q", want)
+		}
+	}
+
+	if browser := readFile(t, filepath.Join(browserOut, "protocol.generated.ts")); strings.Contains(browser, "scripts.run") || strings.Contains(browser, "ScriptsLogs") {
+		t.Error("browser TypeScript contains the ScriptCat-owned run or logs method")
 	}
 }
 

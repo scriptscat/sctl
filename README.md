@@ -10,14 +10,15 @@ extension for tabs, browser data, page automation, and debugging.
 <p align="center"><img src="./docs/images/architecture.svg" alt="sctl architecture: the CLI, AI clients and Playwright reach sctl serve, which talks to ScriptCat and sctl Browser over WebSocket" width="860"></p>
 
 Who decides: ScriptCat stays the authority for its scripts, so reading source and every write wait for approval
-in the browser. Browser control, page automation, debugging, and raw CDP run immediately, by design; only
-deleting bookmarks and uninstalling an extension wait for approval, and other destructive commands need `--yes`.
+in the browser. Running a background or scheduled script once, reading script logs, browser control, page
+automation, debugging, and raw CDP run immediately, by design; only deleting bookmarks and uninstalling an extension
+wait for approval, and other destructive commands need `--yes`.
 Read [`docs/threat-model.md`](./docs/threat-model.md) before exposing sctl to anything you do not trust.
 
 ## Features
 
 - **ScriptCat userscripts** — list, read metadata and source (line windows, search), install, edit by content
-  anchors, enable, disable, delete.
+  anchors, enable, disable, delete; run a background or scheduled script once and read script logs.
 - **Tabs and windows** — list, open, close, activate, move, pin, mute, reload, duplicate, and group tabs across
   one or more paired browsers.
 - **Browser data** — bookmarks, reading list, history, recently closed tabs, downloads, cookies, browsing data,
@@ -120,7 +121,7 @@ browser's logins; see [`docs/cli.md`](./docs/cli.md#endpoint-for-playwright-and-
 |---|---|
 | `sctl serve` / `connect` / `status` / `mcp` | Run the daemon, pair an extension, show connection status, serve MCP over stdio. |
 | `sctl service` | Run the daemon in the background as a user service (launchd, systemd, Task Scheduler). |
-| `sctl get` / `grep` / `install` / `edit` / `enable` / `disable` / `delete` | Manage ScriptCat userscripts. |
+| `sctl get` / `grep` / `install` / `edit` / `enable` / `disable` / `delete` / `run` / `logs` | Manage ScriptCat userscripts, run a background or scheduled script once, and read script logs. |
 | `sctl scriptcats` | List paired ScriptCat instances, or forget one. |
 | `sctl browsers` | List paired sctl Browser instances, or forget one. |
 | `sctl tabs` / `windows` / `groups` | Tabs, windows, and tab groups. |

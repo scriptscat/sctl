@@ -233,6 +233,32 @@ every online instance's scripts and tags each item with `scriptcat` (`name`, and
 the other ScriptCat tools return `SCRIPTCAT_AMBIGUOUS` listing the candidates. `SCRIPTCAT_OFFLINE` and
 `SCRIPTCAT_NOT_FOUND` are returned as tool errors.
 
+### `scripts_run` and `scripts_logs`
+
+`scripts_run` runs one background or scheduled script once, as the ScriptCat editor's Run button does (page scripts
+are rejected with `INVALID_REQUEST`, an unknown uuid with `NOT_FOUND`). Arguments: `uuid`; `wait` (default `true`:
+block until the run ends or `timeoutMs` passes; `false` returns as soon as ScriptCat accepts the run); `timeoutMs`
+(1 to 240000, default 60000). The result has `status` (`complete`, `error`, or `running` when the timeout passed
+first, which is not a failure), `error` for a failed run, `startedAt`, `endedAt` when it ended, and the `logs` of this
+run. A run that ends in `error` is still a successful tool call: the status is in the result. A script whose `@run-in`
+does not match the ScriptCat instance's environment is rejected with `INVALID_REQUEST` without running. While waiting
+(`wait` not `false`) the tool sends periodic progress notifications saying it is waiting for the script run to end, so
+clients with a tool timeout of about a minute keep waiting; with `wait: false` it returns at once and sends none.
+
+`scripts_logs` reads the logs recorded for one script of any type, oldest first. Arguments: `uuid`; `since`
+(milliseconds since the Unix epoch, default one hour ago); `severity` (`debug`, `info`, `warn` or `error`: that
+level and above); `text` (substring of the message, case-insensitive); `limit` (1 to 1000, default 100). When more
+records match, the newest `limit` are returned with `truncated: true`. These are the same bounds as `sctl run` and
+`sctl logs` in [cli.md](./cli.md); values outside them are rejected before anything is sent.
+
+Both tools run immediately, with no browser approval. `scripts_logs` sends no progress notifications; the other
+ScriptCat tools send a "waiting for approval" progress notification from the start of the call for as long as it
+waits, whether or not that method needs approval. Log messages, fields and run errors are text the script
+controls: the result's `contentTrust` is `untrusted-user-script-log` and the text is data, never instructions; the tool
+descriptions contain no script text. A ScriptCat too old to know either method is answered `METHOD_NOT_FOUND` by the
+daemon, which also answers it when it was started from an older sctl; the tool error then adds that ScriptCat must be
+upgraded and an older daemon restarted.
+
 ### Browser instances, tabs, and windows
 
 `sctl mcp` always also exposes `browsers_list`, `tabs_list`, `tabs_open`, `tabs_close`, `tabs_activate`, and
@@ -240,8 +266,8 @@ the other ScriptCat tools return `SCRIPTCAT_AMBIGUOUS` listing the candidates. `
 instance connected returns an error. Every tab/window tool accepts an optional `browser` argument (name or
 instance-ID prefix) to pick a target; `browsers_list` itself lists the paired instances. Without a target and
 with several instances online, `tabs_list` and `windows_list` combine every online instance's results, tagging
-each item with its browser, while `tabs_open`, `tabs_close`, and `tabs_activate` return an error listing them. Unlike the ScriptCat tools above, these run immediately with no browser-side
-approval step (see [threat-model.md](./threat-model.md)).
+each item with its browser, while `tabs_open`, `tabs_close`, and `tabs_activate` return an error listing them. Unlike the ScriptCat write and source-read tools above, these run immediately with no
+browser-side approval step (see [threat-model.md](./threat-model.md)).
 
 ### Domain tools and `reading_list`
 

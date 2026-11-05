@@ -659,6 +659,54 @@ type ScriptsListResult struct {
 	} `json:"scripts"`
 }
 
+type ScriptsLogsParams struct {
+	Limit    *int    `json:"limit,omitempty"`
+	Severity *string `json:"severity,omitempty"`
+	Since    *int    `json:"since,omitempty"`
+	Text     *string `json:"text,omitempty"`
+	UUID     string  `json:"uuid"`
+}
+
+type ScriptsLogsResult struct {
+	ContentTrust string `json:"contentTrust"`
+	Logs         []struct {
+		Component *string `json:"component,omitempty"`
+		Fields    []struct {
+			Name  string `json:"name"`
+			Value string `json:"value"`
+		} `json:"fields,omitempty"`
+		Message  string `json:"message"`
+		Severity string `json:"severity"`
+		Time     int    `json:"time"`
+	} `json:"logs"`
+	Truncated bool `json:"truncated"`
+}
+
+type ScriptsRunParams struct {
+	TimeoutMs *int   `json:"timeoutMs,omitempty"`
+	UUID      string `json:"uuid"`
+	Wait      *bool  `json:"wait,omitempty"`
+}
+
+type ScriptsRunResult struct {
+	ContentTrust string  `json:"contentTrust"`
+	EndedAt      *int    `json:"endedAt,omitempty"`
+	Error        *string `json:"error,omitempty"`
+	Logs         []struct {
+		Component *string `json:"component,omitempty"`
+		Fields    []struct {
+			Name  string `json:"name"`
+			Value string `json:"value"`
+		} `json:"fields,omitempty"`
+		Message  string `json:"message"`
+		Severity string `json:"severity"`
+		Time     int    `json:"time"`
+	} `json:"logs"`
+	StartedAt int    `json:"startedAt"`
+	Status    string `json:"status"`
+	Truncated *bool  `json:"truncated,omitempty"`
+}
+
 type ScriptsSourceGetParams struct {
 	EndLine   *int   `json:"endLine,omitempty"`
 	MaxBytes  *int   `json:"maxBytes,omitempty"`
@@ -917,7 +965,9 @@ const (
 	MethodScriptsEditRequest    Method = "scripts.edit.request"
 	MethodScriptsInstallRequest Method = "scripts.install.request"
 	MethodScriptsList           Method = "scripts.list"
+	MethodScriptsLogs           Method = "scripts.logs"
 	MethodScriptsMetadataGet    Method = "scripts.metadata.get"
+	MethodScriptsRun            Method = "scripts.run"
 	MethodScriptsSourceGet      Method = "scripts.source.get"
 	MethodScriptsSourceGrep     Method = "scripts.source.grep"
 	MethodScriptsToggleRequest  Method = "scripts.toggle.request"
@@ -1000,7 +1050,9 @@ var Methods = map[string]MethodMetadata{
 	"scripts.edit.request":    {Params: "ScriptsEditParams", Result: "ScriptMutationResult", Scope: "scripts:edit:request", Effect: "write", Blocking: "approval", Level: "L2", Peer: "scriptcat", MergeField: "", Internal: false},
 	"scripts.install.request": {Params: "ScriptsInstallParams", Result: "ScriptMutationResult", Scope: "scripts:install:request", Effect: "write", Blocking: "approval", Level: "L2", Peer: "scriptcat", MergeField: "", Internal: false},
 	"scripts.list":            {Params: "ScriptsListParams", Result: "ScriptsListResult", Scope: "scripts:list", Effect: "read", Blocking: "none", Level: "L0", Peer: "scriptcat", MergeField: "scripts", Internal: false},
+	"scripts.logs":            {Params: "ScriptsLogsParams", Result: "ScriptsLogsResult", Scope: "scripts:logs:read", Effect: "read", Blocking: "none", Level: "L0", Peer: "scriptcat", MergeField: "", Internal: false},
 	"scripts.metadata.get":    {Params: "ScriptUUIDParams", Result: "ScriptMetadata", Scope: "scripts:metadata:read", Effect: "read", Blocking: "none", Level: "L0", Peer: "scriptcat", MergeField: "", Internal: false},
+	"scripts.run":             {Params: "ScriptsRunParams", Result: "ScriptsRunResult", Scope: "scripts:run", Effect: "read", Blocking: "none", Level: "L0", Peer: "scriptcat", MergeField: "", Internal: false},
 	"scripts.source.get":      {Params: "ScriptsSourceGetParams", Result: "ScriptSource", Scope: "scripts:source:read", Effect: "read", Blocking: "disclosure", Level: "L2", Peer: "scriptcat", MergeField: "", Internal: false},
 	"scripts.source.grep":     {Params: "ScriptsSourceGrepParams", Result: "ScriptSourceGrepResult", Scope: "scripts:source:read", Effect: "read", Blocking: "disclosure", Level: "L2", Peer: "scriptcat", MergeField: "", Internal: false},
 	"scripts.toggle.request":  {Params: "ScriptsToggleParams", Result: "ScriptsToggleResult", Scope: "scripts:toggle:request", Effect: "write", Blocking: "approval", Level: "L2", Peer: "scriptcat", MergeField: "", Internal: false},

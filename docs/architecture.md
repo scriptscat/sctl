@@ -148,6 +148,8 @@ internal/cli/               # subcommand definitions; spans both sides, hence to
   connect.go status.go version.go
   get.go grep.go            #   read verbs
   edit.go write.go          #   write verbs (edit / install / enable / disable / delete)
+  scriptlogs.go             #   sctl run / sctl logs (run a background or scheduled script once, read script logs)
+  upgradehint/              #   upgrade-ScriptCat hint text shared with the MCP server
   browsers.go               #   sctl browsers [list] / sctl browsers forget <name|id>
   scriptcats.go             #   sctl scriptcats [list] / sctl scriptcats forget <name|id>
   tabs.go windows.go        #   sctl tabs list|open|close|activate, sctl windows list

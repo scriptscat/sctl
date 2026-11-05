@@ -8,13 +8,14 @@ sctl 让命令行、AI 客户端和脚本控制你正在使用的浏览器。单
 
 <p align="center"><img src="./images/architecture.zh-CN.svg" alt="sctl 架构：命令行、AI 客户端与 Playwright 连接 sctl serve，sctl serve 通过 WebSocket 连接 ScriptCat 与 sctl Browser" width="860"></p>
 
-谁说了算：脚本的控制权仍在 ScriptCat，读取源码和所有写操作都要在浏览器里批准。浏览器控制、页面自动化、调试和原始
-CDP 按设计立即执行；只有删除书签和卸载扩展需要批准，其他破坏性命令需要 `--yes`。把 sctl 暴露给任何不可信的对象之前，
-请先读[威胁模型](./threat-model.md)（英文）。
+谁说了算：脚本的控制权仍在 ScriptCat，读取源码和所有写操作都要在浏览器里批准。运行一次后台/定时脚本、读取脚本日志、
+浏览器控制、页面自动化、调试和原始 CDP 按设计立即执行；只有删除书签和卸载扩展需要批准，其他破坏性命令需要 `--yes`。
+把 sctl 暴露给任何不可信的对象之前，请先读[威胁模型](./threat-model.md)（英文）。
 
 ## 功能
 
-- **ScriptCat 用户脚本**：列出，读取元数据与源码（按行读取、搜索），安装，基于内容锚点编辑，启用、禁用、删除。
+- **ScriptCat 用户脚本**：列出，读取元数据与源码（按行读取、搜索），安装，基于内容锚点编辑，启用、禁用、删除；
+  运行一次后台/定时脚本，读取脚本日志。
 - **标签页与窗口**：在一个或多个已配对的浏览器上列出、打开、关闭、激活、移动、固定、静音、刷新、复制标签页，
   以及管理标签组。
 - **浏览器数据**：书签、阅读列表、历史记录、最近关闭、下载、Cookie、浏览数据和扩展。
@@ -110,7 +111,7 @@ ln -s "$PWD/skills/sctl" ~/.claude/skills/sctl
 |---|---|
 | `sctl serve` / `connect` / `status` / `mcp` | 运行 daemon、配对扩展、查看连接状态、通过 stdio 提供 MCP。 |
 | `sctl service` | 以用户服务的形式在后台运行 daemon（launchd、systemd、任务计划程序）。 |
-| `sctl get` / `grep` / `install` / `edit` / `enable` / `disable` / `delete` | 管理 ScriptCat 用户脚本。 |
+| `sctl get` / `grep` / `install` / `edit` / `enable` / `disable` / `delete` / `run` / `logs` | 管理 ScriptCat 用户脚本，运行一次后台/定时脚本，读取脚本日志。 |
 | `sctl scriptcats` | 列出已配对的 ScriptCat 实例，或忘记其中一个。 |
 | `sctl browsers` | 列出已配对的 sctl Browser 实例，或忘记其中一个。 |
 | `sctl tabs` / `windows` / `groups` | 标签页、窗口和标签组。 |
