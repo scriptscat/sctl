@@ -4,7 +4,7 @@
 
 > Status: Approved
 > Owner: sctl maintainers（ScriptCat 侧实现由 ScriptCat maintainers 配合）
-> Last updated: 2026-11-04
+> Last updated: 2026-11-05
 
 **目标：** 代理和用户能用 `sctl run <uuid>` 让一个后台或定时脚本立即运行一次并拿到本次结果，用
 `sctl logs <uuid>` 读取某个脚本的运行日志（含 `GM_log`）；MCP 提供同样的能力和同样的权限。
@@ -53,7 +53,8 @@
 后台或定时脚本；脚本是否启用不影响能否运行（与编辑器“运行”一致）。
 
 **动作：** 请求 ScriptCat 立即运行一次该脚本。若该脚本此刻已有一次运行在进行，沿用 ScriptCat 现有行为：先停止
-旧运行再开始新运行。
+旧运行再开始新运行；被停止的旧运行之后才结束时，它的结束状态不得被当成本次运行的结果。同一脚本的上一次外部运行
+尚未开始时，本次排在它之后触发，排队时间计入本次的超时（超时从收到请求起算，整个调用不超过所给的超时）。
 
 **结果（默认等待）：** 阻塞直到本次运行离开 running 状态，或到达超时（默认 60 秒，`--timeout <duration>`，
 MCP `timeoutMs`）。返回：
@@ -63,17 +64,23 @@ MCP `timeoutMs`）。返回：
 - `startedAt`、`endedAt`（未结束则无）；
 - `logs`：本次运行开始后该脚本产生的日志，最多 100 条、oldest first，格式同 `logs`。
 
-**结果（`--no-wait`，MCP `wait: false`）：** 运行已被 ScriptCat 接受即返回 `status: running` 与 `startedAt`。
+**结果（`--no-wait`，MCP `wait: false`）：** 运行已被 ScriptCat 接受即返回 `status: running` 与 `startedAt`，不排队等待
+同一脚本的其他外部运行。
 
 **失败：**
 
 - 脚本不存在 → `NOT_FOUND`（退出码 3）。
 - 页面脚本 → `INVALID_REQUEST`（退出码 3），消息说明只有后台/定时脚本可以运行。
+- 脚本的 `@run-in` 与该 ScriptCat 实例的运行环境（普通 / 隐身）不符、ScriptCat 不会运行它 → `INVALID_REQUEST`（退出码 3），
+  消息说明 run-in 不符；不触发运行，也不等待超时。维护者决定（2026-11-05）。否决：等满超时返回 `running` —— 会把
+  “根本没运行”报成“仍在运行”。
 - 等待期间 ScriptCat 断开 → 退出码 2（作废），与其他阻塞调用一致。
-- Ctrl-C → 退出码 2；已触发的运行不被撤回（ScriptCat 侧继续执行）。
+- Ctrl-C → 退出码 2；已触发的运行不被撤回（ScriptCat 侧继续执行），提示文字不得说操作已作废；仍在排队、尚未触发的
+  本次运行随调用取消或断开而放弃，不再触发。
 - ScriptCat 不支持该方法（旧版本）→ `METHOD_NOT_FOUND`（退出码 3），CLI 提示升级 ScriptCat。
 
-人类可读输出：一行状态（含耗时或“仍在运行”），随后是本次日志表格。`-o json` 输出上述结构。
+人类可读输出：一行状态（含耗时或“仍在运行”），随后是本次日志表格。`-o json` 输出上述结构。MCP `scripts_run` 在等待
+期间照常周期发送进度通知以免客户端超时，文案说明在等待脚本运行结束、不提审批。
 
 ## 读取日志：`sctl logs <uuid>` / MCP `scripts_logs`
 
@@ -91,6 +98,7 @@ MCP `timeoutMs`）。返回：
 响应总大小受 `limits.maxFrameBytes` 约束；超限时按条截断并标注 `truncated: true`，不报错。
 
 **失败：** 脚本不存在 → `NOT_FOUND`；旧版 ScriptCat → `METHOD_NOT_FOUND` 并提示升级；无匹配记录 → 空列表，退出 0。
+脚本写入的、无法 JSON 编码的日志字段（如 BigInt、循环引用）以字符串形式返回，不得让整次查询失败。
 
 日志保留期由 ScriptCat 现有日志清理设置决定，sctl 不改变它。
 
