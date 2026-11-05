@@ -96,7 +96,15 @@ sctl get                      # ScriptCat 脚本
 daemon。客户端配置、工具参考和故障排查见 [`mcp.md`](./mcp.md)（英文）。
 
 **Agent skill。** 想让 AI agent 直接使用命令行而不是 MCP，可以安装 [`skills/sctl/`](../skills/sctl/SKILL.md) 里的
-skill。通过 [scriptscat/skills](https://github.com/scriptscat/skills) 插件市场安装，之后可以检查更新：
+skill。用 [`npx skills`](https://skills.sh/) 或 [scriptscat/skills](https://github.com/scriptscat/skills) 插件市场安装，
+两种都能检查更新，任选一种即可。`npx skills` 可以装进 Claude Code、Codex、Cursor 等代理，用 `npx skills check -g` 检查更新、
+`npx skills update -g` 更新：
+
+```sh
+npx skills add scriptscat/sctl -g
+```
+
+用插件市场：
 
 ```text
 # Claude Code
