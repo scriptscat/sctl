@@ -1,6 +1,7 @@
 import { HandlerError, type HandlerRegistry, type RpcHandler } from "@/background/registry";
 import { needs } from "./api";
 import { listLimit, takePage } from "./list";
+import { requireValidUrl } from "./targets";
 
 // chrome 的历史时间戳是带小数的毫秒；协议用整数，四舍五入不影响排序意义。
 function toMillis(time: number | undefined): number {
@@ -14,14 +15,6 @@ function requireOrderedRange(startTime: number | undefined, endTime: number | un
 }
 
 // chrome 对格式不对的 URL 只笼统地拒绝；多个 URL 的删除先全部校验，任何一个不合法都不删除。
-function requireUrl(url: string): void {
-  try {
-    new URL(url);
-  } catch {
-    throw new HandlerError("INVALID_REQUEST", `${url} is not a valid URL`);
-  }
-}
-
 const handleSearch: RpcHandler<"history.search"> = async (params) => {
   const limit = listLimit(params.limit);
   requireOrderedRange(params.startTime, params.endTime);
@@ -54,7 +47,7 @@ const handleSearch: RpcHandler<"history.search"> = async (params) => {
 
 const handleVisits: RpcHandler<"history.visits"> = async (params) => {
   const limit = listLimit(params.limit);
-  requireUrl(params.url);
+  requireValidUrl(params.url);
   const visits = await chrome.history.getVisits({ url: params.url });
   visits.sort((a, b) => toMillis(b.visitTime) - toMillis(a.visitTime));
   const page = takePage(visits, limit);
@@ -66,7 +59,7 @@ const handleVisits: RpcHandler<"history.visits"> = async (params) => {
 
 const handleRemove: RpcHandler<"history.remove"> = async (params) => {
   const urls = [...new Set(params.urls)];
-  urls.forEach(requireUrl);
+  urls.forEach(requireValidUrl);
   for (const url of urls) {
     await chrome.history.deleteUrl({ url });
   }

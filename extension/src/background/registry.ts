@@ -16,6 +16,10 @@ export class HandlerError extends Error {
   }
 }
 
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 // 方法的破坏级别（docs/protocol.md §3）；L1 要求入参带 confirm: true。
 export type MethodLevel = "L0" | "L1" | "L2";
 

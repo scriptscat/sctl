@@ -808,6 +808,16 @@ describe("debugger relay", () => {
       });
     });
 
+    it("answers INVALID_REQUEST with Chrome's reason when Chrome refuses to open the endpoint's URL", async () => {
+      tabsCreate.mockRejectedValue(new Error("Chrome refuses this URL"));
+
+      expect(await registry.dispatch("debugger.open", { url: "javascript:alert(1)" })).toEqual({
+        ok: false,
+        code: "INVALID_REQUEST",
+        message: "Chrome refuses this URL",
+      });
+    });
+
     it("answers NOT_FOUND and leaves no endpoint mark when Chrome lists no target for the tab it opened", async () => {
       dbg.getTargets.mockResolvedValue([]);
 

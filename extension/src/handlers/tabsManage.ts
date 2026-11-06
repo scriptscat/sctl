@@ -1,5 +1,6 @@
 import type { HandlerRegistry, RpcHandler } from "@/background/registry";
-import { requireAllTabs, requireTab, requireWindow } from "./targets";
+import { openRefused } from "./fileAccess";
+import { requireAllTabs, requireTab, requireValidUrl, requireWindow } from "./targets";
 
 async function requireAllWindows(windowIds: number[]): Promise<number[]> {
   const unique = [...new Set(windowIds)];
@@ -51,10 +52,17 @@ const handleDuplicate: RpcHandler<"tabs.duplicate"> = async (params) => {
 };
 
 const handleWindowsOpen: RpcHandler<"windows.open"> = async (params) => {
-  const win = await chrome.windows.create({
-    ...(params.urls === undefined || params.urls.length === 0 ? {} : { url: params.urls }),
-    ...(params.state === undefined ? {} : { state: params.state }),
-  });
+  const urls = params.urls ?? [];
+  urls.forEach(requireValidUrl);
+  let win: chrome.windows.Window | undefined;
+  try {
+    win = await chrome.windows.create({
+      ...(urls.length === 0 ? {} : { url: urls }),
+      ...(params.state === undefined ? {} : { state: params.state }),
+    });
+  } catch (error) {
+    throw await openRefused(urls, error);
+  }
   return { windowId: win!.id! };
 };
 

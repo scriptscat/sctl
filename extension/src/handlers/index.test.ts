@@ -315,6 +315,26 @@ describe("browser method handlers", () => {
       expect(chromeMock.tabs.create).not.toHaveBeenCalled();
     });
 
+    it("rejects a URL that is not absolute without opening a tab", async () => {
+      expect(await registry.dispatch("tabs.open", { url: "notaurl" })).toEqual({
+        ok: false,
+        code: "INVALID_REQUEST",
+        message: "notaurl is not a valid URL",
+      });
+      expect(chromeMock.tabs.create).not.toHaveBeenCalled();
+    });
+
+    it("answers INVALID_REQUEST with Chrome's reason when Chrome refuses to open the URL", async () => {
+      chromeMock.windows.getLastFocused.mockResolvedValue(fakeWindow({ id: 5, focused: true }));
+      chromeMock.tabs.create.mockRejectedValue(new Error("Chrome refuses this URL"));
+
+      expect(await registry.dispatch("tabs.open", { url: "javascript:alert(1)" })).toEqual({
+        ok: false,
+        code: "INVALID_REQUEST",
+        message: "Chrome refuses this URL",
+      });
+    });
+
     it("tells how to allow file URLs when a file:// URL is refused because sctl Browser lacks file access", async () => {
       chromeMock.windows.getLastFocused.mockResolvedValue(fakeWindow({ id: 5, focused: true }));
       chromeMock.tabs.create.mockRejectedValue(new Error("Cannot navigate to a file URL without local file access."));

@@ -1,8 +1,15 @@
-import { type ApprovalHandler, HandlerError, type HandlerRegistry, type RpcHandler } from "@/background/registry";
+import {
+  type ApprovalHandler,
+  errorMessage,
+  HandlerError,
+  type HandlerRegistry,
+  type RpcHandler,
+} from "@/background/registry";
 import { needs, needsForApproval } from "./api";
 import type { BookmarksListResult } from "@/protocol/generated/protocol.generated";
 import type { BookmarkRemovalDetail, BookmarkRemovalEntry, BookmarkRemovalItem } from "@/shared/approvals";
 import { listLimit, takePage } from "./list";
+import { requireValidUrl } from "./targets";
 
 type Node = chrome.bookmarks.BookmarkTreeNode;
 type WireNode = BookmarksListResult["nodes"][number];
@@ -80,11 +87,13 @@ async function requireIndex(folderId: string, index: number | undefined): Promis
   }
 }
 
-function requireValidUrl(url: string): void {
+// 不给文件夹时 index 无法预先比对（默认文件夹「其他书签」在各浏览器的 ID 不同），越界由 chrome 拒绝；
+// 走到 create 的输入都已校验过，chrome 仍拒绝就是 index 这类调用方的输入问题，带着它的原话作为 INVALID_REQUEST 返回。
+async function createBookmark(details: chrome.bookmarks.CreateDetails): Promise<Node> {
   try {
-    new URL(url);
-  } catch {
-    throw new HandlerError("INVALID_REQUEST", `${url} is not a valid URL`);
+    return await chrome.bookmarks.create(details);
+  } catch (error) {
+    throw new HandlerError("INVALID_REQUEST", errorMessage(error));
   }
 }
 
@@ -176,7 +185,7 @@ const handleAdd: RpcHandler<"bookmarks.add"> = async (params) => {
     await requireDestination(params.folder);
     await requireIndex(params.folder, params.index);
   }
-  const created = await chrome.bookmarks.create({
+  const created = await createBookmark({
     // 不给 parentId 时 chrome 放进「其他书签」，与 spec 的默认一致，不依赖各浏览器不同的内置 ID。
     ...(params.folder === undefined ? {} : { parentId: params.folder }),
     title: params.title ?? params.url,
@@ -191,7 +200,7 @@ const handleMkdir: RpcHandler<"bookmarks.mkdir"> = async (params) => {
     await requireDestination(params.folder);
     await requireIndex(params.folder, params.index);
   }
-  const created = await chrome.bookmarks.create({
+  const created = await createBookmark({
     ...(params.folder === undefined ? {} : { parentId: params.folder }),
     title: params.title,
     ...(params.index === undefined ? {} : { index: params.index }),

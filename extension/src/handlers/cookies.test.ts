@@ -190,6 +190,39 @@ describe("cookies handlers", () => {
       });
     });
 
+    it("rejects a SameSite=None cookie that is not Secure, which Chrome refuses without saying why", async () => {
+      const outcome = await registry.dispatch("cookies.set", {
+        url: "https://example.com/",
+        name: "sid",
+        value: "1",
+        sameSite: "no_restriction",
+      });
+
+      expect(outcome).toMatchObject({ ok: false, code: "INVALID_REQUEST" });
+      expect(!outcome.ok && outcome.message).toMatch(/no_restriction.*secure/i);
+      expect(cookies.set).not.toHaveBeenCalled();
+    });
+
+    it("rejects a domain that does not cover the URL's host, and passes on the host or a parent domain", async () => {
+      const outcome = await registry.dispatch("cookies.set", {
+        url: "https://a.example.com/",
+        name: "sid",
+        value: "1",
+        domain: "other.com",
+      });
+      expect(outcome).toMatchObject({ ok: false, code: "INVALID_REQUEST" });
+      expect(!outcome.ok && outcome.message).toContain("a.example.com");
+      expect(cookies.set).not.toHaveBeenCalled();
+
+      cookies.set.mockResolvedValue(cookie("sid", { value: "1" }));
+      for (const domain of ["a.example.com", "example.com", ".example.com", "EXAMPLE.com"]) {
+        expect(
+          await registry.dispatch("cookies.set", { url: "https://a.example.com/", name: "sid", value: "1", domain }),
+        ).toMatchObject({ ok: true });
+      }
+      expect(cookies.set).toHaveBeenCalledTimes(4);
+    });
+
     it("surfaces Chrome's rejection reason as INVALID_REQUEST, whether it throws or resolves null", async () => {
       cookies.set.mockRejectedValueOnce(new Error("Failed to parse or set cookie named sid."));
       const thrown = await registry.dispatch("cookies.set", { url: "https://example.com/", name: "sid", value: "1" });

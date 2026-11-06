@@ -9,6 +9,15 @@ export async function requireTab(tabId: number): Promise<chrome.tabs.Tab> {
   }
 }
 
+// 只接受绝对网址：chrome.tabs.create 等把 "example" 这样的相对写法解析到扩展自己的页面下，打开的是扩展的 404 页面。
+export function requireValidUrl(url: string): void {
+  try {
+    new URL(url);
+  } catch {
+    throw new HandlerError("INVALID_REQUEST", `${url} is not a valid URL`);
+  }
+}
+
 export async function requireWindow(windowId: number): Promise<chrome.windows.Window> {
   try {
     return await chrome.windows.get(windowId);

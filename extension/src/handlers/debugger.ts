@@ -1,7 +1,7 @@
 import type { StorageLike } from "@/background/controller";
-import { HandlerError, type RpcHandler } from "@/background/registry";
+import { errorMessage, HandlerError, type RpcHandler } from "@/background/registry";
 import type { NotificationMethod, NotificationParams, RpcResult } from "@/protocol/generated/protocol.generated";
-import { explainFileAccessRefusal } from "./fileAccess";
+import { explainFileAccessRefusal, openRefused } from "./fileAccess";
 import { requireTab } from "./targets";
 
 // 守护进程持有 5 分钟的权威超时；这里只是扩展侧的兜底，防止守护进程失联后调试器提示条一直挂着。
@@ -156,8 +156,7 @@ export class DebuggerRelay {
         active: params.background !== true,
       });
     } catch (error) {
-      await explainFileAccessRefusal(params.url, "INVALID_REQUEST");
-      throw error;
+      throw await openRefused([params.url], error);
     }
     const tabId = tab.id!;
     this.owned.add(tabId);
@@ -471,8 +470,4 @@ function toTabInfo(target: chrome.debugger.TargetInfo): TabInfo[] {
     return [];
   }
   return [{ tabId: target.tabId, targetId: target.id, title: target.title, url: target.url }];
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
