@@ -1,6 +1,7 @@
 import type { StorageLike } from "@/background/controller";
 import { HandlerError, type RpcHandler } from "@/background/registry";
 import type { NotificationMethod, NotificationParams, RpcResult } from "@/protocol/generated/protocol.generated";
+import { explainFileAccessRefusal } from "./fileAccess";
 import { requireTab } from "./targets";
 
 // 守护进程持有 5 分钟的权威超时；这里只是扩展侧的兜底，防止守护进程失联后调试器提示条一直挂着。
@@ -94,6 +95,8 @@ export class DebuggerRelay {
         // 命令执行期间 onDetach 已经把标签页移出，说明是分离打断了命令，而不是命令本身出错。
         throw new HandlerError("DEBUGGER_DETACHED", "the debugger detached while the command was running");
       }
+      // Page.navigate 这类导航命令用 url 参数给目标地址，没有文件访问权限时 Chrome 拒绝导航到 file://。
+      await explainFileAccessRefusal(params.params?.url, "INVALID_REQUEST");
       // CDP 命令错误（未知方法、参数不合法、上下文已失效）是调用方给出的请求有问题，带着 CDP 的原话返回。
       throw new HandlerError("INVALID_REQUEST", errorMessage(error));
     }
@@ -145,11 +148,17 @@ export class DebuggerRelay {
   // 为端点打开标签页并立即标为端点占用：端点随后才附加，中间不会被任何兜底计时误伤。
   readonly open: RpcHandler<"debugger.open"> = async (params) => {
     const lastFocused = await chrome.windows.getLastFocused();
-    const tab = await chrome.tabs.create({
-      url: params.url,
-      windowId: lastFocused.id!,
-      active: params.background !== true,
-    });
+    let tab: chrome.tabs.Tab;
+    try {
+      tab = await chrome.tabs.create({
+        url: params.url,
+        windowId: lastFocused.id!,
+        active: params.background !== true,
+      });
+    } catch (error) {
+      await explainFileAccessRefusal(params.url, "INVALID_REQUEST");
+      throw error;
+    }
     const tabId = tab.id!;
     this.owned.add(tabId);
     this.persist();
@@ -305,10 +314,11 @@ export class DebuggerRelay {
   }
 
   private async attach(tabId: number): Promise<void> {
-    await requireTab(tabId);
+    const tab = await requireTab(tabId);
     try {
       await chrome.debugger.attach({ tabId }, "1.3");
     } catch (error) {
+      await explainFileAccessRefusal(tab.url, "PAGE_NOT_AUTOMATABLE");
       throw new HandlerError("PAGE_NOT_AUTOMATABLE", errorMessage(error));
     }
     this.armIdle(tabId);

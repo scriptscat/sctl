@@ -5,6 +5,7 @@ import { registerCookiesHandlers } from "./cookies";
 import type { DebuggerRelay } from "./debugger";
 import { registerDownloadsHandlers } from "./downloads";
 import { registerExtensionsHandlers } from "./extensions";
+import { explainFileAccessRefusal } from "./fileAccess";
 import { registerHistoryHandlers } from "./history";
 import { registerReadingListHandlers } from "./readingList";
 import { registerRecentlyClosedHandlers } from "./recentlyClosed";
@@ -43,7 +44,13 @@ const handleTabsOpen: RpcHandler<"tabs.open"> = async (params) => {
     const lastFocused = await chrome.windows.getLastFocused();
     windowId = lastFocused.id!;
   }
-  const tab = await chrome.tabs.create({ url: params.url, windowId, active: params.background !== true });
+  let tab: chrome.tabs.Tab;
+  try {
+    tab = await chrome.tabs.create({ url: params.url, windowId, active: params.background !== true });
+  } catch (error) {
+    await explainFileAccessRefusal(params.url, "INVALID_REQUEST");
+    throw error;
+  }
   return { tabId: tab.id! };
 };
 

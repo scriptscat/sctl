@@ -39,6 +39,8 @@ interface ChromeMock {
     update: Mock<WindowsUpdateFn>;
     getAll: Mock<WindowsGetAllFn>;
   };
+  extension: { isAllowedFileSchemeAccess: Mock<() => Promise<boolean>> };
+  runtime: { id: string };
 }
 
 function fakeTab(overrides: Partial<chrome.tabs.Tab> & { id: number; windowId: number }): chrome.tabs.Tab {
@@ -81,6 +83,8 @@ function createChromeMock(): ChromeMock {
       update: vi.fn<WindowsUpdateFn>(),
       getAll: vi.fn<WindowsGetAllFn>(),
     },
+    extension: { isAllowedFileSchemeAccess: vi.fn<() => Promise<boolean>>().mockResolvedValue(true) },
+    runtime: { id: "sctlbrowserid" },
   };
 }
 
@@ -309,6 +313,20 @@ describe("browser method handlers", () => {
 
       expect(outcome).toEqual({ ok: false, code: "NOT_FOUND", message: expect.stringContaining("404") as unknown });
       expect(chromeMock.tabs.create).not.toHaveBeenCalled();
+    });
+
+    it("tells how to allow file URLs when a file:// URL is refused because sctl Browser lacks file access", async () => {
+      chromeMock.windows.getLastFocused.mockResolvedValue(fakeWindow({ id: 5, focused: true }));
+      chromeMock.tabs.create.mockRejectedValue(new Error("Cannot navigate to a file URL without local file access."));
+      chromeMock.extension.isAllowedFileSchemeAccess.mockResolvedValue(false);
+
+      expect(await registry.dispatch("tabs.open", { url: "file:///tmp/a.html" })).toEqual({
+        ok: false,
+        code: "INVALID_REQUEST",
+        message: expect.stringMatching(
+          /Allow access to file URLs.*chrome:\/\/extensions\/\?id=sctlbrowserid/,
+        ) as unknown,
+      });
     });
   });
 

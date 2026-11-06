@@ -761,7 +761,7 @@ These codes are reserved for page automation on a browser instance:
 | `STALE_REF` | an element reference is no longer valid, or belongs to another tab's snapshot |
 | `TIMEOUT` | an automatic wait or an explicit wait condition did not hold in time |
 | `TARGET_AMBIGUOUS` | a selector matches more than one element |
-| `PAGE_NOT_AUTOMATABLE` | Chrome refuses to attach the debugger to the page, for example a `chrome://` page or another extension's page |
+| `PAGE_NOT_AUTOMATABLE` | Chrome refuses to attach the debugger to the page, for example a `chrome://` page or another extension's page, or a `file://` page while the extension's "Allow access to file URLs" is off; in that last case the message says how to turn it on instead of carrying Chrome's reason, and `tabs.open`, `debugger.open` and a `debugger.send` whose `url` parameter is a `file://` URL answer `INVALID_REQUEST` with the same message |
 | `PAGE_HIDDEN` | the operation cannot complete on a background tab even with focus emulation |
 | `DEBUGGER_DETACHED` | the debugger detached while a page command was running |
 | `DIALOG_OPEN` | an unhandled JavaScript dialog blocks the page |
