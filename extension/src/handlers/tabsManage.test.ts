@@ -26,7 +26,10 @@ describe("tab and window management handlers", () => {
   };
   let registry: HandlerRegistry;
 
+  const isAllowedFileSchemeAccess = vi.fn();
+
   beforeEach(() => {
+    isAllowedFileSchemeAccess.mockResolvedValue(true);
     known.clear();
     known.set(1, tab(1, 10));
     known.set(2, tab(2, 10));
@@ -46,7 +49,12 @@ describe("tab and window management handlers", () => {
     win.remove.mockResolvedValue(undefined);
     Object.values(tabs).forEach((fn) => fn.mockClear());
     Object.values(win).forEach((fn) => fn.mockClear());
-    vi.stubGlobal("chrome", { tabs, windows: win });
+    vi.stubGlobal("chrome", {
+      tabs,
+      windows: win,
+      extension: { isAllowedFileSchemeAccess },
+      runtime: { id: "sctlbrowserid" },
+    });
     registry = new HandlerRegistry();
     registerAllHandlers(registry);
   });
@@ -158,6 +166,38 @@ describe("tab and window management handlers", () => {
       await registry.dispatch("windows.open", {});
 
       expect(win.create).toHaveBeenCalledWith({});
+    });
+
+    it("rejects a URL that is not absolute without opening a window", async () => {
+      expect(await registry.dispatch("windows.open", { urls: ["https://a.example/", "notaurl"] })).toEqual({
+        ok: false,
+        code: "INVALID_REQUEST",
+        message: "notaurl is not a valid URL",
+      });
+      expect(win.create).not.toHaveBeenCalled();
+    });
+
+    it("answers INVALID_REQUEST with Chrome's reason when Chrome refuses to open a URL", async () => {
+      win.create.mockRejectedValueOnce(new Error("Chrome refuses this URL"));
+
+      expect(await registry.dispatch("windows.open", { urls: ["javascript:alert(1)"] })).toEqual({
+        ok: false,
+        code: "INVALID_REQUEST",
+        message: "Chrome refuses this URL",
+      });
+    });
+
+    it("tells how to allow file URLs when a file:// URL is refused because sctl Browser lacks file access", async () => {
+      win.create.mockRejectedValueOnce(new Error("Chrome refuses this URL"));
+      isAllowedFileSchemeAccess.mockResolvedValue(false);
+
+      expect(await registry.dispatch("windows.open", { urls: ["https://a.example/", "file:///tmp/a.html"] })).toEqual({
+        ok: false,
+        code: "INVALID_REQUEST",
+        message: expect.stringMatching(
+          /Allow access to file URLs.*chrome:\/\/extensions\/\?id=sctlbrowserid/,
+        ) as unknown,
+      });
     });
   });
 

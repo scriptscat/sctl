@@ -618,7 +618,7 @@ func TestManagerAttachUnresponsive(t *testing.T) {
 			})
 		}
 
-		Convey("页面命令:错误说明可能有遗留的弹框、可用 page reload 或 page goto 恢复;断开调试器,下一条命令从头附加", func() {
+		Convey("页面命令:错误说明可能是浏览器休眠了标签页或有遗留的弹框、可用 page reload 或 page goto 恢复;断开调试器,下一条命令从头附加", func() {
 			hangOn("Runtime.enable")
 			start := time.Now()
 			_, err := probe(m, Request{TabID: tabRef(3), Timeout: time.Minute})
@@ -626,6 +626,7 @@ func TestManagerAttachUnresponsive(t *testing.T) {
 			So(time.Since(start), ShouldBeLessThan, 5*time.Second)
 			So(err.Error(), ShouldContainSubstring, "tab 3")
 			So(err.Error(), ShouldContainSubstring, "JS dialog")
+			So(err.Error(), ShouldContainSubstring, "discarded")
 			So(err.Error(), ShouldContainSubstring, "page reload")
 			So(err.Error(), ShouldContainSubstring, "page goto")
 			So(cdp.detachCalls(), ShouldResemble, [][]int{{3}})

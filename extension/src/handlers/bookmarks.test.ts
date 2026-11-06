@@ -307,6 +307,21 @@ describe("bookmark handlers", () => {
       expect(bookmarks.create).not.toHaveBeenCalled();
     });
 
+    it("answers INVALID_REQUEST with Chrome's reason when Chrome refuses an index in the default folder", async () => {
+      bookmarks.create.mockRejectedValue(new Error("Index out of bounds."));
+
+      for (const [method, params] of [
+        ["bookmarks.add", { url: "https://a.example/", index: 9999 }],
+        ["bookmarks.mkdir", { title: "x", index: 9999 }],
+      ] as const) {
+        expect(await registry.dispatch(method, params)).toEqual({
+          ok: false,
+          code: "INVALID_REQUEST",
+          message: "Index out of bounds.",
+        });
+      }
+    });
+
     it("returns NOT_FOUND when the target folder does not exist", async () => {
       expect(await registry.dispatch("bookmarks.add", { url: "https://a.example/", folder: "999" })).toMatchObject({
         ok: false,

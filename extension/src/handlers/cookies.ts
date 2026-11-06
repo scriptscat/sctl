@@ -1,7 +1,8 @@
 import { HandlerError, type HandlerRegistry, type RpcHandler } from "@/background/registry";
 import { needs } from "./api";
-import type { CookiesListResult } from "@/protocol/generated/protocol.generated";
+import type { CookiesListResult, RpcParams } from "@/protocol/generated/protocol.generated";
 import { listLimit, takePage } from "./list";
+import { requireValidUrl } from "./targets";
 
 type CookieItem = CookiesListResult["items"][number];
 
@@ -81,7 +82,26 @@ const handleGet: RpcHandler<"cookies.get"> = async (params) => {
   return { contentTrust: "untrusted-page-content", cookie: toItem(await requireCookie(params.url, params.name)) };
 };
 
+// Chrome 对这两种 Cookie 只说 "Failed to parse or set cookie named …"，不说原因；规则是确定的，先在这里说清楚。
+function requireSettableCookie(params: RpcParams<"cookies.set">): void {
+  if (params.sameSite === "no_restriction" && params.secure !== true) {
+    throw new HandlerError("INVALID_REQUEST", "a cookie with SameSite no_restriction (None) must also be secure");
+  }
+  if (params.domain !== undefined) {
+    requireValidUrl(params.url);
+    const host = new URL(params.url).hostname.toLowerCase();
+    const domain = params.domain.toLowerCase().replace(/^\./, "");
+    if (host !== domain && !host.endsWith(`.${domain}`)) {
+      throw new HandlerError(
+        "INVALID_REQUEST",
+        `cookie domain ${params.domain} does not cover the URL's host ${host}: use the host or one of its parent domains`,
+      );
+    }
+  }
+}
+
 const handleSet: RpcHandler<"cookies.set"> = async (params) => {
+  requireSettableCookie(params);
   const details: chrome.cookies.SetDetails = { url: params.url, name: params.name, value: params.value };
   if (params.domain !== undefined) {
     details.domain = params.domain;

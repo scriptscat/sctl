@@ -1,6 +1,7 @@
 import { HandlerError, type HandlerRegistry, type RpcHandler } from "@/background/registry";
 import { needs } from "./api";
 import { listLimit, takePage } from "./list";
+import { requireValidUrl } from "./targets";
 
 // chrome 的下载开始时间是 ISO 字符串；协议用毫秒整数。
 function startMillis(item: chrome.downloads.DownloadItem): number {
@@ -14,14 +15,6 @@ function requireRelativeFilename(filename: string): void {
   const escapes = filename.split(/[/\\]/).includes("..");
   if (absolute || escapes) {
     throw new HandlerError("INVALID_REQUEST", "filename must be a relative path without .. segments");
-  }
-}
-
-function requireUrl(url: string): void {
-  try {
-    new URL(url);
-  } catch {
-    throw new HandlerError("INVALID_REQUEST", `${url} is not a valid URL`);
   }
 }
 
@@ -72,7 +65,7 @@ const handleList: RpcHandler<"downloads.list"> = async (params) => {
 };
 
 const handleStart: RpcHandler<"downloads.start"> = async (params) => {
-  requireUrl(params.url);
+  requireValidUrl(params.url);
   const options: chrome.downloads.DownloadOptions = {
     url: params.url,
     // 从不覆盖已有文件，也从不弹出另存为对话框。

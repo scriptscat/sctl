@@ -45,6 +45,7 @@ describe("debugger relay", () => {
   let tabsGet: ReturnType<typeof vi.fn>;
   let tabsCreate: ReturnType<typeof vi.fn>;
   let tabsRemove: ReturnType<typeof vi.fn>;
+  let fileAccess: ReturnType<typeof vi.fn>;
   let notices: Notice[];
   let relay: DebuggerRelay;
   let registry: HandlerRegistry;
@@ -61,10 +62,13 @@ describe("debugger relay", () => {
     tabsGet = vi.fn().mockResolvedValue({ id: 5 });
     tabsCreate = vi.fn().mockResolvedValue({ id: 9 });
     tabsRemove = vi.fn().mockResolvedValue(undefined);
+    fileAccess = vi.fn().mockResolvedValue(true);
     vi.stubGlobal("chrome", {
       debugger: dbg,
       tabs: { get: tabsGet, create: tabsCreate, remove: tabsRemove },
       windows: { getLastFocused: vi.fn().mockResolvedValue({ id: 3 }) },
+      extension: { isAllowedFileSchemeAccess: fileAccess },
+      runtime: { id: "sctlbrowserid" },
     });
     notices = [];
     store = memoryStore();
@@ -149,6 +153,52 @@ describe("debugger relay", () => {
 
       expect((await registry.dispatch("debugger.send", { tabId: 5, method: "Page.enable" })).ok).toBe(true);
       expect(dbg.attach).toHaveBeenCalledTimes(2);
+    });
+
+    it("answers PAGE_NOT_AUTOMATABLE telling how to allow file URLs when a file:// tab is refused because sctl Browser lacks file access", async () => {
+      tabsGet.mockResolvedValue({ id: 5, url: "file:///tmp/a.html" });
+      dbg.attach.mockRejectedValue(new Error("Cannot attach to this target."));
+      fileAccess.mockResolvedValue(false);
+
+      expect(await registry.dispatch("debugger.send", { tabId: 5, method: "Page.enable" })).toEqual({
+        ok: false,
+        code: "PAGE_NOT_AUTOMATABLE",
+        message: expect.stringMatching(
+          /Allow access to file URLs.*chrome:\/\/extensions\/\?id=sctlbrowserid/,
+        ) as unknown,
+      });
+    });
+
+    it("keeps Chrome's reason when a file:// tab is refused although sctl Browser has file access", async () => {
+      tabsGet.mockResolvedValue({ id: 5, url: "file:///tmp/a.html" });
+      dbg.attach.mockRejectedValue(new Error("Cannot attach to this target."));
+
+      expect(await registry.dispatch("debugger.send", { tabId: 5, method: "Page.enable" })).toEqual({
+        ok: false,
+        code: "PAGE_NOT_AUTOMATABLE",
+        message: "Cannot attach to this target.",
+      });
+    });
+
+    it("answers INVALID_REQUEST telling how to allow file URLs when navigating to a file:// URL is refused for lack of file access", async () => {
+      dbg.sendCommand.mockRejectedValue(
+        new Error('{"code":-32000,"message":"Navigating to local URL is not allowed"}'),
+      );
+      fileAccess.mockResolvedValue(false);
+
+      expect(
+        await registry.dispatch("debugger.send", {
+          tabId: 5,
+          method: "Page.navigate",
+          params: { url: "file:///tmp/a.html" },
+        }),
+      ).toEqual({
+        ok: false,
+        code: "INVALID_REQUEST",
+        message: expect.stringMatching(
+          /Allow access to file URLs.*chrome:\/\/extensions\/\?id=sctlbrowserid/,
+        ) as unknown,
+      });
     });
 
     it("surfaces a CDP command error as INVALID_REQUEST with the CDP message", async () => {
@@ -743,6 +793,29 @@ describe("debugger relay", () => {
         result: { tabId: 9, targetId: "T9" },
       });
       expect(tabsCreate).toHaveBeenCalledWith({ url: "about:blank", windowId: 3, active: false });
+    });
+
+    it("answers INVALID_REQUEST telling how to allow file URLs when opening a file:// URL is refused for lack of file access", async () => {
+      tabsCreate.mockRejectedValue(new Error("Cannot navigate to a file URL without local file access."));
+      fileAccess.mockResolvedValue(false);
+
+      expect(await registry.dispatch("debugger.open", { url: "file:///tmp/a.html" })).toEqual({
+        ok: false,
+        code: "INVALID_REQUEST",
+        message: expect.stringMatching(
+          /Allow access to file URLs.*chrome:\/\/extensions\/\?id=sctlbrowserid/,
+        ) as unknown,
+      });
+    });
+
+    it("answers INVALID_REQUEST with Chrome's reason when Chrome refuses to open the endpoint's URL", async () => {
+      tabsCreate.mockRejectedValue(new Error("Chrome refuses this URL"));
+
+      expect(await registry.dispatch("debugger.open", { url: "javascript:alert(1)" })).toEqual({
+        ok: false,
+        code: "INVALID_REQUEST",
+        message: "Chrome refuses this URL",
+      });
     });
 
     it("answers NOT_FOUND and leaves no endpoint mark when Chrome lists no target for the tab it opened", async () => {

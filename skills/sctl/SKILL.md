@@ -134,9 +134,9 @@ sctl page detach --tab $TAB
 | `TARGET_AMBIGUOUS` | `--selector` matched several elements: use a snapshot ref or a stricter selector |
 | `TIMEOUT` | The message names the last unmet condition (obscured, hidden, disabled…): fix that, or raise `--timeout` |
 | `DIALOG_OPEN` | A JS dialog is open: `sctl page dialog accept|dismiss --tab <id>` (its text is page content) |
-| `PAGE_UNRESPONSIVE` | The debugger could not attach, often because of a dialog left behind: `sctl page reload` or `page goto` recovers the tab |
+| `PAGE_UNRESPONSIVE` | The debugger could not attach, often because the browser put the tab to sleep or a dialog was left behind: `sctl page reload` or `page goto` recovers the tab |
 | `PAGE_HIDDEN` | A background tab produced no screenshot: retry with `--activate` |
-| `PAGE_NOT_AUTOMATABLE` | `chrome://` pages, extension pages and the Chrome Web Store cannot be attached |
+| `PAGE_NOT_AUTOMATABLE` | `chrome://` pages, extension pages and the Chrome Web Store cannot be attached. A `file://` page fails too while sctl Browser's "Allow access to file URLs" is off (the store-install default); the message says so, and only the user can turn it on in the extension's details page |
 | `NAVIGATION_FAILED` | A network error such as a refused connection. HTTP 404/500 are not failures; the status is reported |
 | `DEBUGGER_DETACHED` (exit 2) | The user cancelled the infobar, the tab closed or the browser disconnected: retry if it still makes sense |
 | `ENDPOINT_CONNECTED` | A Playwright/Puppeteer client holds this browser: disconnect it or run `sctl cdp close` |

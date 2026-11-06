@@ -5,10 +5,11 @@ import { registerCookiesHandlers } from "./cookies";
 import type { DebuggerRelay } from "./debugger";
 import { registerDownloadsHandlers } from "./downloads";
 import { registerExtensionsHandlers } from "./extensions";
+import { openRefused } from "./fileAccess";
 import { registerHistoryHandlers } from "./history";
 import { registerReadingListHandlers } from "./readingList";
 import { registerRecentlyClosedHandlers } from "./recentlyClosed";
-import { requireTab, requireWindow } from "./targets";
+import { requireTab, requireValidUrl, requireWindow } from "./targets";
 import { registerTabGroupHandlers } from "./tabGroups";
 import { registerTabsManageHandlers } from "./tabsManage";
 
@@ -34,6 +35,7 @@ const handleTabsList: RpcHandler<"tabs.list"> = async (params) => {
 };
 
 const handleTabsOpen: RpcHandler<"tabs.open"> = async (params) => {
+  requireValidUrl(params.url);
   let windowId: number;
   if (params.windowId !== undefined) {
     await requireWindow(params.windowId);
@@ -43,7 +45,12 @@ const handleTabsOpen: RpcHandler<"tabs.open"> = async (params) => {
     const lastFocused = await chrome.windows.getLastFocused();
     windowId = lastFocused.id!;
   }
-  const tab = await chrome.tabs.create({ url: params.url, windowId, active: params.background !== true });
+  let tab: chrome.tabs.Tab;
+  try {
+    tab = await chrome.tabs.create({ url: params.url, windowId, active: params.background !== true });
+  } catch (error) {
+    throw await openRefused([params.url], error);
+  }
   return { tabId: tab.id! };
 };
 

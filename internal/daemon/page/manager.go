@@ -682,7 +682,8 @@ func pageUnresponsiveError(tabID int, waited time.Duration) *Error {
 	return &Error{
 		Code: generated.ErrorCodePageUnresponsive,
 		Message: fmt.Sprintf("tab %d did not answer the debugger within %s while sctl was attaching: the page is not responding, "+
-			"possibly because of a JS dialog left open after an earlier debugger detached, which no new debugger session can see or handle; "+
+			"possibly because the browser discarded the tab to save memory (a sleeping tab) or because of a JS dialog left open "+
+			"after an earlier debugger detached, which no new debugger session can see or handle; "+
 			"run page reload or page goto on the tab to recover", tabID, waited),
 	}
 }

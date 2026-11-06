@@ -360,7 +360,9 @@ The tab and window management methods (`tabs.move`, `tabs.pin`, `tabs.unpin`, `t
 all-or-nothing for several IDs: every tab or window is checked first, and an unknown one answers `NOT_FOUND` with
 nothing changed. `tabs.move` without `index` (or with `-1`) moves to the end of the window and answers `NOT_FOUND`
 for an unknown target `windowId`. A window `state` other than `normal`, `minimized`, `maximized`, or `fullscreen`
-answers `INVALID_REQUEST`, as does an `index` below -1.
+answers `INVALID_REQUEST`, as does an `index` below -1. `tabs.open` and `windows.open` answer `INVALID_REQUEST` for a
+URL that is not absolute, without opening anything, and for a URL Chrome refuses to open (such as a `javascript:` URL),
+with Chrome's reason.
 
 The tab group methods (`tabGroups.*`) are L0 and need the `tabGroups` permission. `tabs.list` items carry `groupId`
 (`-1` when the tab is in no group). `tabGroups.list` marks its result `contentTrust: "untrusted-page-content"`
@@ -404,7 +406,9 @@ for a session cookie), `secure`, `httpOnly`, `sameSite` (`no_restriction`, `lax`
 `partitionTopLevelSite` for a partitioned cookie; it accepts `url` or `domain` (mutually exclusive, else `INVALID_REQUEST`; `domain`
 includes subdomains), `name` and `limit`, and reports `hasMore`. `cookies.get` answers `NOT_FOUND` when no cookie matches, and prefers
 a non-partitioned cookie over a partitioned one of the same name. `cookies.set` without `expires` creates a session cookie; a cookie
-Chrome refuses to store answers `INVALID_REQUEST` carrying Chrome's reason. `cookies.remove` and `cookies.clear` are L1: `remove`
+Chrome refuses to store answers `INVALID_REQUEST` carrying Chrome's reason. `sameSite` `no_restriction` without `secure`, and a `domain`
+that is neither the URL's host nor one of its parent domains, answer `INVALID_REQUEST` naming the rule instead, because Chrome's reason
+for both does not say why. `cookies.remove` and `cookies.clear` are L1: `remove`
 deletes the one cookie `cookies.get` would return for the same `url` and `name` and answers `NOT_FOUND` when nothing matches, `clear` takes exactly one of `domain` (with subdomains) and `all: true` (else
 `INVALID_REQUEST`), and both return `deleted`, the number of cookies removed; partitioned cookies are removed with their own
 partition key.
@@ -761,11 +765,11 @@ These codes are reserved for page automation on a browser instance:
 | `STALE_REF` | an element reference is no longer valid, or belongs to another tab's snapshot |
 | `TIMEOUT` | an automatic wait or an explicit wait condition did not hold in time |
 | `TARGET_AMBIGUOUS` | a selector matches more than one element |
-| `PAGE_NOT_AUTOMATABLE` | Chrome refuses to attach the debugger to the page, for example a `chrome://` page or another extension's page |
+| `PAGE_NOT_AUTOMATABLE` | Chrome refuses to attach the debugger to the page, for example a `chrome://` page or another extension's page, or a `file://` page while the extension's "Allow access to file URLs" is off; in that last case the message says how to turn it on instead of carrying Chrome's reason, and `tabs.open`, `windows.open`, `debugger.open` and a `debugger.send` whose `url` parameter is a `file://` URL answer `INVALID_REQUEST` with the same message |
 | `PAGE_HIDDEN` | the operation cannot complete on a background tab even with focus emulation |
 | `DEBUGGER_DETACHED` | the debugger detached while a page command was running |
 | `DIALOG_OPEN` | an unhandled JavaScript dialog blocks the page |
-| `PAGE_UNRESPONSIVE` | the page did not answer within 5 seconds while the debugger was being attached, possibly because of a JavaScript dialog left open after an earlier debugger detached; reloading or navigating the page recovers it |
+| `PAGE_UNRESPONSIVE` | the page did not answer within 5 seconds while the debugger was being attached, possibly because the browser discarded the tab to save memory or because of a JavaScript dialog left open after an earlier debugger detached; reloading or navigating the page recovers it |
 | `EVAL_ERROR` | an evaluated expression threw in the page |
 | `NAVIGATION_FAILED` | a navigation failed with a network error |
 | `ENDPOINT_CONNECTED` | a raw CDP endpoint client is connected and owns the browser's tabs, so sctl's own page, debug and `cdp send` commands are refused until it disconnects |
