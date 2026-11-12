@@ -7,7 +7,6 @@ package daemon
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"net/http"
 
@@ -26,19 +25,19 @@ import (
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
 )
 
-// daemonComponent 实现 cago 的 ComponentCancel:Start 拉起 WS server,
+// daemonComponent 实现 cago 的 ComponentCancel:Start 在已绑定的 listener 上拉起 WS server,
 // server 意外退出时通过 cancel 终止整个应用。
 type daemonComponent struct {
 	version  string
-	address  string
 	srv      *bridge.Server
 	listener net.Listener
 }
 
 // Component 返回桥接 daemon 组件,注册到 cago 应用(用 RegistryCancel)。
-// version 注入 hello 消息的 daemonVersion。
-func Component(version, address string) *daemonComponent {
-	return &daemonComponent{version: version, address: address}
+// version 注入 hello 消息的 daemonVersion。ln 由调用方先绑定好:cago 把组件启动失败当作 panic,
+// 而地址被占是用户常遇到的情况,要由 serve 在启动组件前报成能看懂的错误。
+func Component(version string, ln net.Listener) *daemonComponent {
+	return &daemonComponent{version: version, listener: ln}
 }
 
 func (b *daemonComponent) Start(ctx context.Context, cfg *configs.Config) error {
@@ -50,9 +49,6 @@ func (b *daemonComponent) StartCancel(ctx context.Context, cancel context.Cancel
 	if err != nil {
 		logger.Ctx(ctx).Error("failed to load the embedded protocol", zap.Error(err))
 		return err
-	}
-	if b.address == "" {
-		b.address = defaultAddress(p.Transport.DefaultPort)
 	}
 	keys := store.NewKeyStore(paths.KeyFile())
 	browsers, err := store.LoadBrowserRegistry(paths.BrowsersFile())
@@ -71,13 +67,7 @@ func (b *daemonComponent) StartCancel(ctx context.Context, cancel context.Cancel
 		logger.Ctx(ctx).Warn("failed to retire a pairing.key left over from a ScriptCat takeover", zap.Error(err))
 	}
 
-	// 同步 net.Listen 使绑定失败在启动阶段即暴露(cago 会 panic,符合 fail-fast 约定)。
-	ln, err := net.Listen("tcp", b.address)
-	if err != nil {
-		logger.Ctx(ctx).Error("failed to bind the websocket listener", zap.String("address", b.address), zap.Error(err))
-		return err
-	}
-	b.listener = ln
+	ln := b.listener
 	logger.Ctx(ctx).Info("bridge daemon is listening", zap.String("address", ln.Addr().String()), zap.String("jsonrpc", p.JSONRPCVersion))
 
 	// 绑定成功后(端口竞态胜出者才走到这里)再生成并落盘控制令牌,避免失败方覆盖胜出者的令牌。
@@ -125,8 +115,4 @@ func (b *daemonComponent) StartCancel(ctx context.Context, cancel context.Cancel
 
 func (b *daemonComponent) CloseHandle() {
 	logger.Default().Info("bridge daemon stopped")
-}
-
-func defaultAddress(port int) string {
-	return fmt.Sprintf("127.0.0.1:%d", port)
 }
