@@ -68,8 +68,9 @@ func listenError(ctx context.Context, address string, err error) error {
 			"an sctl daemon is already running at %s, so there is nothing to start; `sctl status` shows it, and `sctl service status` tells whether it is the background service",
 			address)}
 	}
+	// 原始错误放最后:Windows 的系统错误文字自带句号结尾,后面再接提示读起来是断的。
 	return &ExitError{Code: exitError, Message: fmt.Sprintf(
-		"%v; free that address or pick another with --listen-address", err)}
+		"cannot listen on %s (free it or pick another address with --listen-address): %v", address, err)}
 }
 
 // emptyConfigSource 是一个「无任何键」的 cago 配置源:所有 Scan 保持零值并返回 nil,
