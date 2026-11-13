@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -19,12 +20,16 @@ func newStatusCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			client, err := control.Connect(ctx)
-			if err != nil {
+			// 只有连不上才算没在运行;连得上却读不到令牌时要把原因报出来,否则用户会去再起一个 serve。
+			if errors.Is(err, control.ErrDaemonUnreachable) {
 				if outputFormat == outputJSON {
 					return printValueJSON(control.StatusResult{})
 				}
 				fmt.Fprintln(os.Stdout, "daemon is not running")
 				return nil
+			}
+			if err != nil {
+				return &ExitError{Code: exitError, Message: err.Error()}
 			}
 			st, err := client.Status(ctx)
 			if err != nil {

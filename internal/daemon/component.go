@@ -26,19 +26,48 @@ import (
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
 )
 
-// daemonComponent 实现 cago 的 ComponentCancel:Start 拉起 WS server,
+// daemonComponent 实现 cago 的 ComponentCancel:Start 在已绑定的 listener 上拉起 WS server,
 // server 意外退出时通过 cancel 终止整个应用。
 type daemonComponent struct {
-	version  string
-	address  string
+	protocol *protocol.Protocol
 	srv      *bridge.Server
+	token    string
 	listener net.Listener
 }
 
-// Component 返回桥接 daemon 组件,注册到 cago 应用(用 RegistryCancel)。
-// version 注入 hello 消息的 daemonVersion。
-func Component(version, address string) *daemonComponent {
-	return &daemonComponent{version: version, address: address}
+// New 在 ln 已绑定之后准备桥接 daemon:加载登记表、写出控制令牌,返回注册到 cago 应用(用 RegistryCancel)的组件。
+// version 注入 hello 消息的 daemonVersion。会失败的步骤都在这里而不在 StartCancel:cago 把组件启动失败当作
+// panic,用户只会看到一屏 goroutine 栈;在这里失败,serve 能报出是哪个文件出了问题。
+func New(ctx context.Context, version string, ln net.Listener) (*daemonComponent, error) {
+	p, err := protocol.Load()
+	if err != nil {
+		return nil, fmt.Errorf("load the embedded protocol: %w", err)
+	}
+	keys := store.NewKeyStore(paths.KeyFile())
+	browsers, err := store.LoadBrowserRegistry(paths.BrowsersFile())
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", paths.BrowsersFile(), err)
+	}
+	scriptcats, err := store.LoadScriptCatRegistry(paths.ScriptCatsFile())
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", paths.ScriptCatsFile(), err)
+	}
+	srv := bridge.NewServer(version, p, keys, browsers, scriptcats, logger.Ctx(ctx))
+	// 上次接管没删成的 pairing.key 在这里补删;仍删不掉不阻止启动,老版握手照样不成立,下次检查再删。
+	if err := srv.RetireTakenOverPairingKey(); err != nil {
+		logger.Ctx(ctx).Warn("failed to retire a pairing.key left over from a ScriptCat takeover", zap.Error(err))
+	}
+
+	// 绑定成功后(端口竞态胜出者才走到这里)再生成并落盘控制令牌,避免失败方覆盖胜出者的令牌。
+	// 令牌先于 server goroutine 就绪:前端一旦看到 /control/health 200,令牌文件必已写好。
+	token, err := control.NewControlToken()
+	if err != nil {
+		return nil, err
+	}
+	if err := control.WriteControlToken(token); err != nil {
+		return nil, fmt.Errorf("write the control token %s: %w", paths.ControlTokenFile(), err)
+	}
+	return &daemonComponent{protocol: p, srv: srv, token: token, listener: ln}, nil
 }
 
 func (b *daemonComponent) Start(ctx context.Context, cfg *configs.Config) error {
@@ -46,51 +75,8 @@ func (b *daemonComponent) Start(ctx context.Context, cfg *configs.Config) error 
 }
 
 func (b *daemonComponent) StartCancel(ctx context.Context, cancel context.CancelFunc, _ *configs.Config) error {
-	p, err := protocol.Load()
-	if err != nil {
-		logger.Ctx(ctx).Error("failed to load the embedded protocol", zap.Error(err))
-		return err
-	}
-	if b.address == "" {
-		b.address = defaultAddress(p.Transport.DefaultPort)
-	}
-	keys := store.NewKeyStore(paths.KeyFile())
-	browsers, err := store.LoadBrowserRegistry(paths.BrowsersFile())
-	if err != nil {
-		logger.Ctx(ctx).Error("failed to load the browser instance registry", zap.Error(err))
-		return err
-	}
-	scriptcats, err := store.LoadScriptCatRegistry(paths.ScriptCatsFile())
-	if err != nil {
-		logger.Ctx(ctx).Error("failed to load the ScriptCat instance registry", zap.Error(err))
-		return err
-	}
-	b.srv = bridge.NewServer(b.version, p, keys, browsers, scriptcats, logger.Ctx(ctx))
-	// 上次接管没删成的 pairing.key 在这里补删;仍删不掉不阻止启动,老版握手照样不成立,下次检查再删。
-	if err := b.srv.RetireTakenOverPairingKey(); err != nil {
-		logger.Ctx(ctx).Warn("failed to retire a pairing.key left over from a ScriptCat takeover", zap.Error(err))
-	}
-
-	// 同步 net.Listen 使绑定失败在启动阶段即暴露(cago 会 panic,符合 fail-fast 约定)。
-	ln, err := net.Listen("tcp", b.address)
-	if err != nil {
-		logger.Ctx(ctx).Error("failed to bind the websocket listener", zap.String("address", b.address), zap.Error(err))
-		return err
-	}
-	b.listener = ln
+	p, ln, token := b.protocol, b.listener, b.token
 	logger.Ctx(ctx).Info("bridge daemon is listening", zap.String("address", ln.Addr().String()), zap.String("jsonrpc", p.JSONRPCVersion))
-
-	// 绑定成功后(端口竞态胜出者才走到这里)再生成并落盘控制令牌,避免失败方覆盖胜出者的令牌。
-	// 令牌先于 server goroutine 就绪:前端一旦看到 /control/health 200,令牌文件必已写好。
-	token, err := control.NewControlToken()
-	if err != nil {
-		logger.Ctx(ctx).Error("failed to generate the control token", zap.Error(err))
-		return err
-	}
-	if err := control.WriteControlToken(token); err != nil {
-		logger.Ctx(ctx).Error("failed to write the control token", zap.Error(err))
-		return err
-	}
 
 	// 控制 API、原始 CDP 端点与扩展 WS 面同 listener、独立路径:mux 在此组装,bridge 只认根路径。
 	// 页面自动化组件经 bridge 收发 CDP 中转,并作为 bridge 的浏览器监听者接收调试器通知与实例断开。
@@ -125,8 +111,4 @@ func (b *daemonComponent) StartCancel(ctx context.Context, cancel context.Cancel
 
 func (b *daemonComponent) CloseHandle() {
 	logger.Default().Info("bridge daemon stopped")
-}
-
-func defaultAddress(port int) string {
-	return fmt.Sprintf("127.0.0.1:%d", port)
 }

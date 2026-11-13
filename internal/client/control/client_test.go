@@ -4,12 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	. "github.com/smartystreets/goconvey/convey"
+
+	"github.com/scriptscat/sctl/internal/pkg/paths"
 )
 
 func TestDialDoesNotStartDaemon(t *testing.T) {
@@ -20,6 +25,106 @@ func TestDialDoesNotStartDaemon(t *testing.T) {
 		_, err := Dial(context.Background())
 
 		So(errors.Is(err, ErrDaemonUnreachable), ShouldBeTrue)
+	})
+}
+
+// acceptAndClose 起一个连上就断的监听:像别的程序占着地址,或本机安全软件截下连接后直接断开。
+func acceptAndClose(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	So(err, ShouldBeNil)
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+	return ln.Addr().String()
+}
+
+func TestDialSomethingElseListening(t *testing.T) {
+	Convey("地址上有程序在监听、却不像 sctl daemon 那样回答健康检查时,不说 daemon 没在运行", t, func() {
+		Convey("连上就断(被拦截或不是 HTTP)", func() {
+			address := acceptAndClose(t)
+			SetAddress(address)
+			t.Cleanup(func() { SetAddress("") })
+
+			_, err := Dial(context.Background())
+
+			So(errors.Is(err, ErrDaemonUnreachable), ShouldBeFalse)
+			So(errors.Is(err, ErrNotSctlDaemon), ShouldBeTrue)
+			So(err.Error(), ShouldContainSubstring, "something is listening at "+address)
+			So(err.Error(), ShouldContainSubstring, "security software")
+		})
+
+		Convey("回答了 HTTP 但不是健康检查的 200(比如代理返回的错误页)", func() {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				http.Error(w, "bad gateway", http.StatusBadGateway)
+			}))
+			t.Cleanup(srv.Close)
+			SetAddress(strings.TrimPrefix(srv.URL, "http://"))
+			t.Cleanup(func() { SetAddress("") })
+
+			_, err := Dial(context.Background())
+
+			So(errors.Is(err, ErrNotSctlDaemon), ShouldBeTrue)
+			So(err.Error(), ShouldContainSubstring, "502")
+		})
+
+		Convey("Healthy 照旧只回答是或否", func() {
+			SetAddress(acceptAndClose(t))
+			t.Cleanup(func() { SetAddress("") })
+
+			So(Healthy(context.Background()), ShouldBeFalse)
+		})
+	})
+}
+
+func TestDialDaemonRunningWithoutToken(t *testing.T) {
+	Convey("daemon 能连上、但本数据目录里没有控制令牌时,说明 daemon 在运行并指向 --data-dir,不当成不可达", t, func() {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		t.Cleanup(srv.Close)
+		address := strings.TrimPrefix(srv.URL, "http://")
+		SetAddress(address)
+		t.Cleanup(func() { SetAddress("") })
+		dir := t.TempDir()
+		paths.SetDataDir(dir)
+		t.Cleanup(func() { paths.SetDataDir("") })
+
+		_, err := Dial(context.Background())
+
+		So(err, ShouldNotBeNil)
+		So(errors.Is(err, ErrDaemonUnreachable), ShouldBeFalse)
+		So(err.Error(), ShouldContainSubstring, "a daemon is running at "+address)
+		So(err.Error(), ShouldContainSubstring, filepath.Join(dir, "control.token"))
+		So(err.Error(), ShouldContainSubstring, "--data-dir")
+		So(err.Error(), ShouldNotContainSubstring, "not ready")
+	})
+}
+
+func TestUnauthorizedPointsAtDataDir(t *testing.T) {
+	Convey("控制令牌被拒(多半是别的 daemon 留下的旧令牌)时,错误指出令牌文件并指向 --data-dir", t, func() {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		}))
+		t.Cleanup(srv.Close)
+		dir := t.TempDir()
+		paths.SetDataDir(dir)
+		t.Cleanup(func() { paths.SetDataDir("") })
+		c := &Client{http: srv.Client(), base: srv.URL, controlToken: "stale"}
+
+		_, err := c.Status(context.Background())
+
+		So(err, ShouldNotBeNil)
+		So(err.Error(), ShouldContainSubstring, "invalid control token")
+		So(err.Error(), ShouldContainSubstring, filepath.Join(dir, "control.token"))
+		So(err.Error(), ShouldContainSubstring, "--data-dir")
 	})
 }
 
