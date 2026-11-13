@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,6 +42,32 @@ func TestStatusDaemonRunningWithoutToken(t *testing.T) {
 
 		So(code, ShouldEqual, exitOK)
 		So(out, ShouldContainSubstring, "daemon is not running")
+	})
+}
+
+func TestStatusSomethingElseListening(t *testing.T) {
+	Convey("地址上有程序在监听、却不像 sctl daemon 那样回答时,status 不说没在运行,退出码 3 并提示可能被拦截", t, func() {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		So(err, ShouldBeNil)
+		t.Cleanup(func() { _ = ln.Close() })
+		go func() {
+			for {
+				conn, err := ln.Accept()
+				if err != nil {
+					return
+				}
+				_ = conn.Close()
+			}
+		}()
+		t.Setenv("SCTL_BRIDGE_ADDR", ln.Addr().String())
+		t.Setenv("SCTL_DATA_DIR", t.TempDir())
+
+		code, out, _, err := runCLIResult(strings.NewReader(""), "status")
+
+		So(code, ShouldEqual, exitError)
+		So(out, ShouldNotContainSubstring, "not running")
+		So(err.Error(), ShouldContainSubstring, "something is listening at "+ln.Addr().String())
+		So(err.Error(), ShouldContainSubstring, "security software")
 	})
 }
 

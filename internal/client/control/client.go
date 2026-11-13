@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"time"
 
@@ -16,6 +17,10 @@ import (
 
 // ErrDaemonUnreachable 表示当前没有可连接的 daemon。serve 的生命周期由用户或外部服务管理器负责。
 var ErrDaemonUnreachable = errors.New("cannot connect to the sctl daemon; start it with `sctl serve`")
+
+// ErrNotSctlDaemon 表示地址上有程序在监听,却不像 sctl daemon 那样回答健康检查:可能是别的程序占着地址,
+// 也可能是本机的代理或安全软件截下了本地连接(#20 里 Windows 上的 AdGuard 就是这样)。
+var ErrNotSctlDaemon = errors.New("does not answer as an sctl daemon")
 
 // otherDataDirHint 解释令牌读不到或对不上的常见原因:daemon 的数据目录和本进程的不是同一个。
 const otherDataDirHint = "it was probably started with a different --data-dir or SCTL_DATA_DIR"
@@ -51,8 +56,8 @@ func dial(ctx context.Context) (*Client, error) {
 		return nil, err
 	}
 	c := &Client{http: &http.Client{}, base: "http://" + address}
-	if !c.healthOK(ctx) {
-		return nil, ErrDaemonUnreachable
+	if err := c.probe(ctx, address); err != nil {
+		return nil, err
 	}
 	// daemon 先写令牌再开始回答健康检查,所以这里读不到不是"还没就绪"。
 	tok, err := ReadControlToken()
@@ -96,31 +101,53 @@ func Healthy(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	return (&Client{http: &http.Client{}, base: base}).healthOK(ctx)
+	return (&Client{http: &http.Client{}, base: base}).health(ctx) == nil
 }
 
-func (c *Client) healthOK(ctx context.Context) bool {
+// Probe 检查配置的地址上有没有 sctl daemon,不读控制令牌。没有程序在监听时返回 ErrDaemonUnreachable;
+// 有程序在监听却不像 sctl daemon 那样回答时,返回包装 ErrNotSctlDaemon 的错误。
+func Probe(ctx context.Context) error {
+	address, err := Address()
+	if err != nil {
+		return err
+	}
+	return (&Client{http: &http.Client{}, base: "http://" + address}).probe(ctx, address)
+}
+
+// probe 先做健康检查;没通过时再直接连一次地址,区分 daemon 没在运行和地址上的程序不回答。只看连不连得上,
+// 不比对系统错误码:Windows 上拒绝连接的错误码与 syscall.ECONNREFUSED 对不上。
+func (c *Client) probe(ctx context.Context, address string) error {
+	healthErr := c.health(ctx)
+	if healthErr == nil {
+		return nil
+	}
+	conn, err := (&net.Dialer{Timeout: time.Second}).DialContext(ctx, "tcp", address)
+	if err != nil {
+		return ErrDaemonUnreachable
+	}
+	// 只是探测能不能连上,关闭失败不影响结论。
+	_ = conn.Close()
+	return fmt.Errorf("something is listening at %s but %w (%w); another program may hold this address, or a proxy or security software may be intercepting local connections: let sctl bypass it, or pick another address with --listen-address",
+		address, ErrNotSctlDaemon, healthErr)
+}
+
+func (c *Client) health(ctx context.Context) error {
 	reqCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, c.base+PathHealth, nil)
 	if err != nil {
-		return false
+		return err
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return false
+		return err
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body)
-	return resp.StatusCode == http.StatusOK
-}
-
-// Health 显式做一次健康检查(供 status 等命令使用)。
-func (c *Client) Health(ctx context.Context) error {
-	if c.healthOK(ctx) {
-		return nil
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("health check returned %s", resp.Status)
 	}
-	return ErrDaemonUnreachable
+	return nil
 }
 
 func (c *Client) newRequest(ctx context.Context, method, path string, body []byte) (*http.Request, error) {

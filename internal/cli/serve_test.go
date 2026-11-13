@@ -51,6 +51,8 @@ func TestServeAddressInUse(t *testing.T) {
 			So(err.Error(), ShouldNotContainSubstring, "already running")
 			So(err.Error(), ShouldContainSubstring, ln.Addr().String())
 			So(err.Error(), ShouldContainSubstring, "--listen-address")
+			// 占着地址的也可能是一个回答被截下的 sctl daemon(#20 里 Windows 上的 AdGuard)。
+			So(err.Error(), ShouldContainSubstring, "security software")
 		})
 	})
 }

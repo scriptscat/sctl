@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 
@@ -68,12 +69,17 @@ func newServeCmd() *cobra.Command {
 }
 
 // listenError 说明 serve 为什么绑定不了地址。能回答健康检查的是另一个 sctl daemon——装了 sctl service 后
-// 它多半就是服务起的那个,用户要的 daemon 其实已经在跑了。
+// 它多半就是服务起的那个,用户要的 daemon 其实已经在跑了。占着地址却不回答的,可能是别的程序,也可能是
+// 回答被本机安全软件截下的 sctl daemon。
 func listenError(ctx context.Context, address string, err error) error {
-	if control.Healthy(ctx) {
+	probeErr := control.Probe(ctx)
+	if probeErr == nil {
 		return &ExitError{Code: exitError, Message: fmt.Sprintf(
 			"an sctl daemon is already running at %s, so there is nothing to start; `sctl status` shows it, and `sctl service status` tells whether it is the background service",
 			address)}
+	}
+	if errors.Is(probeErr, control.ErrNotSctlDaemon) {
+		return &ExitError{Code: exitError, Message: fmt.Sprintf("cannot listen on %s: %v", address, probeErr)}
 	}
 	// 地址格式已在入口校验过,到这里多半是被占用或没有权限(比如 Windows 保留给 Hyper-V 的端口段)。
 	// 原始错误放最后:Windows 的系统错误文字自带句号结尾,后面再接提示读起来是断的。

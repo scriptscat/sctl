@@ -585,6 +585,7 @@ client sees, and what the endpoint does not support are in [cli.md](./cli.md#end
 | Symptom | Check |
 |---|---|
 | MCP process exits immediately or reports that the daemon is unreachable | Start `sctl serve` first. Requester commands never auto-start it. |
+| `something is listening at … but does not answer as an sctl daemon`, or `status` reports a problem while `sctl serve` sits at "sctl is starting..." | A proxy or security software is intercepting local connections (on Windows, AdGuard has been reported to do this; macOS was unaffected): exclude the sctl executable from it. Otherwise another program holds the address: stop it, or move sctl to another one with `--listen-address`. |
 | Control-channel authentication fails | Confirm that `serve`, CLI commands, and the MCP process resolve to the same absolute data directory; check both `SCTL_DATA_DIR` and any explicit `--data-dir`, then restart the MCP client. |
 | `status` says the extension is not connected | Enable External Access in ScriptCat. If it has never been enrolled or was revoked, run `connect` and enter a new one-time code. |
 | Tools do not appear in the AI client | Use the absolute sctl executable path, validate the client's JSON/TOML syntax, and reload the client. Check stderr and `<data-dir>/logs/`. |
