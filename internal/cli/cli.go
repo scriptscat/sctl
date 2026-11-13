@@ -7,8 +7,11 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 
 	"github.com/spf13/cobra"
 
@@ -73,6 +76,9 @@ func NewRootCmd() *cobra.Command {
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			paths.SetDataDir(dataDir)
+			if err := validateListenAddress(listenAddress); err != nil {
+				return err
+			}
 			control.SetAddress(listenAddress)
 			// 服务管理器托管的 serve 只写文件日志,见 internal/pkg/logging。
 			logging.Setup(logLevel, !serveAsService)
@@ -154,5 +160,25 @@ func printValueJSON(v any) error {
 		return err
 	}
 	fmt.Fprintln(os.Stdout, string(b))
+	return nil
+}
+
+// validateListenAddress 在入口拒绝不是 host:port 的 --listen-address:否则 serve 报的是绑定失败,
+// 客户端命令则一律当成 daemon 没在运行。端口 0 让 serve 随机绑定,客户端无从得知,同样拒绝。
+func validateListenAddress(address string) error {
+	if address == "" {
+		return nil
+	}
+	_, port, err := net.SplitHostPort(address)
+	if err == nil {
+		var n uint64
+		n, err = strconv.ParseUint(port, 10, 16)
+		if err == nil && n == 0 {
+			err = errors.New("port must be between 1 and 65535")
+		}
+	}
+	if err != nil {
+		return &ExitError{Code: exitError, Message: fmt.Sprintf("invalid --listen-address %q: want host:port such as 127.0.0.1:8643 (%v)", address, err)}
+	}
 	return nil
 }

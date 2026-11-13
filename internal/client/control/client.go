@@ -10,11 +10,15 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/scriptscat/sctl/internal/pkg/paths"
 	"github.com/scriptscat/sctl/internal/pkg/protocol"
 )
 
 // ErrDaemonUnreachable 表示当前没有可连接的 daemon。serve 的生命周期由用户或外部服务管理器负责。
 var ErrDaemonUnreachable = errors.New("cannot connect to the sctl daemon; start it with `sctl serve`")
+
+// otherDataDirHint 解释令牌读不到或对不上的常见原因:daemon 的数据目录和本进程的不是同一个。
+const otherDataDirHint = "it was probably started with a different --data-dir or SCTL_DATA_DIR"
 
 var configuredAddress string
 
@@ -42,17 +46,18 @@ func Connect(ctx context.Context) (*Client, error) {
 }
 
 func dial(ctx context.Context) (*Client, error) {
-	base, err := resolveBaseURL()
+	address, err := Address()
 	if err != nil {
 		return nil, err
 	}
-	c := &Client{http: &http.Client{}, base: base}
+	c := &Client{http: &http.Client{}, base: "http://" + address}
 	if !c.healthOK(ctx) {
 		return nil, ErrDaemonUnreachable
 	}
+	// daemon 先写令牌再开始回答健康检查,所以这里读不到不是"还没就绪"。
 	tok, err := ReadControlToken()
 	if err != nil {
-		return nil, fmt.Errorf("read control token (daemon not ready?): %w", err)
+		return nil, fmt.Errorf("a daemon is running at %s, but its control token cannot be read (%w); %s", address, err, otherDataDirHint)
 	}
 	c.controlToken = tok
 	return c, nil
@@ -328,7 +333,8 @@ func (c *Client) Enroll(ctx context.Context) (string, error) {
 func statusError(resp *http.Response) error {
 	msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 	if resp.StatusCode == http.StatusUnauthorized {
-		return fmt.Errorf("control channel authentication failed (invalid control token): %s", bytes.TrimSpace(msg))
+		return fmt.Errorf("control channel authentication failed (invalid control token): %s; the token in %s does not belong to the running daemon; %s",
+			bytes.TrimSpace(msg), paths.ControlTokenFile(), otherDataDirHint)
 	}
 	return fmt.Errorf("control request failed with %d: %s", resp.StatusCode, bytes.TrimSpace(msg))
 }

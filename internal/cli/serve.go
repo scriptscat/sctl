@@ -49,8 +49,15 @@ func newServeCmd() *cobra.Command {
 				logger.Ctx(ctx).Error("failed to bind the listen address", zap.String("address", address), zap.Error(err))
 				return listenError(ctx, address, err)
 			}
+			comp, err := daemon.New(ctx, Version, ln)
+			if err != nil {
+				logger.Ctx(ctx).Error("failed to start the daemon", zap.Error(err))
+				// 起不来就把地址放开;关闭失败不改变要报的错。
+				_ = ln.Close()
+				return &ExitError{Code: exitError, Message: "cannot start the daemon: " + err.Error()}
+			}
 			return cago.New(ctx, cfg).
-				RegistryCancel(daemon.Component(Version, ln)).
+				RegistryCancel(comp).
 				Start()
 		},
 	}
@@ -68,9 +75,10 @@ func listenError(ctx context.Context, address string, err error) error {
 			"an sctl daemon is already running at %s, so there is nothing to start; `sctl status` shows it, and `sctl service status` tells whether it is the background service",
 			address)}
 	}
+	// 地址格式已在入口校验过,到这里多半是被占用或没有权限(比如 Windows 保留给 Hyper-V 的端口段)。
 	// 原始错误放最后:Windows 的系统错误文字自带句号结尾,后面再接提示读起来是断的。
 	return &ExitError{Code: exitError, Message: fmt.Sprintf(
-		"cannot listen on %s (free it or pick another address with --listen-address): %v", address, err)}
+		"cannot listen on %s (pick another address with --listen-address, or stop the program holding it): %v", address, err)}
 }
 
 // emptyConfigSource 是一个「无任何键」的 cago 配置源:所有 Scan 保持零值并返回 nil,

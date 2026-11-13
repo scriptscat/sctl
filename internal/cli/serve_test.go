@@ -3,6 +3,7 @@ package cli
 import (
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -50,6 +51,62 @@ func TestServeAddressInUse(t *testing.T) {
 			So(err.Error(), ShouldNotContainSubstring, "already running")
 			So(err.Error(), ShouldContainSubstring, ln.Addr().String())
 			So(err.Error(), ShouldContainSubstring, "--listen-address")
+		})
+	})
+}
+
+// freeAddress 返回一个此刻没人占用的本机地址。
+func freeAddress(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	So(err, ShouldBeNil)
+	address := ln.Addr().String()
+	So(ln.Close(), ShouldBeNil)
+	return address
+}
+
+func TestServeStartupFailures(t *testing.T) {
+	Convey("sctl serve 绑定地址之后起不来", t, func() {
+		dir := t.TempDir()
+		t.Setenv("SCTL_DATA_DIR", dir)
+		address := freeAddress(t)
+		t.Setenv("SCTL_BRIDGE_ADDR", address)
+
+		Convey("browsers.json 损坏时退出码 3,指出是哪个文件,并放开监听地址", func() {
+			path := filepath.Join(dir, "browsers.json")
+			So(os.WriteFile(path, []byte("{broken"), 0o600), ShouldBeNil)
+
+			code, _, errOut, err := runCLIResult(strings.NewReader(""), "serve")
+
+			So(code, ShouldEqual, exitError)
+			So(errOut, ShouldNotContainSubstring, "panic")
+			So(err.Error(), ShouldContainSubstring, path)
+			ln, lerr := net.Listen("tcp", address)
+			So(lerr, ShouldBeNil)
+			So(ln.Close(), ShouldBeNil)
+		})
+
+		Convey("scriptcats.json 损坏时退出码 3,指出是哪个文件", func() {
+			path := filepath.Join(dir, "scriptcats.json")
+			So(os.WriteFile(path, []byte("x"), 0o600), ShouldBeNil)
+
+			code, _, errOut, err := runCLIResult(strings.NewReader(""), "serve")
+
+			So(code, ShouldEqual, exitError)
+			So(errOut, ShouldNotContainSubstring, "panic")
+			So(err.Error(), ShouldContainSubstring, path)
+		})
+
+		Convey("控制令牌写不进数据目录时退出码 3,指出令牌文件", func() {
+			// 令牌路径被一个目录占着:写入一定失败,root 运行也一样。
+			path := filepath.Join(dir, "control.token")
+			So(os.MkdirAll(filepath.Join(path, "x"), 0o700), ShouldBeNil)
+
+			code, _, errOut, err := runCLIResult(strings.NewReader(""), "serve")
+
+			So(code, ShouldEqual, exitError)
+			So(errOut, ShouldNotContainSubstring, "panic")
+			So(err.Error(), ShouldContainSubstring, path)
 		})
 	})
 }

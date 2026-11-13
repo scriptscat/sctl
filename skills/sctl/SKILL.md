@@ -52,6 +52,9 @@ sctl browsers -o json  # paired sctl Browser instances: name, online, product
 - **Cannot reach the daemon:** it is not running. Ask the user to start it (`sctl serve` in a terminal,
   `sctl service start` when they installed the background service, or `sctl service install` to set one up). Do not start one yourself in the background: it dies with your session
   and can fight the user's service for the port.
+- **`a daemon is running at …, but its control token cannot be read` or `invalid control token`:** the daemon is
+  running with a different data directory. Run commands with the `--data-dir` / `SCTL_DATA_DIR` it was started with;
+  do not start another daemon.
 - **`NO_BROWSER_CONNECTED`:** no browser is paired or it is closed. Pairing needs the user: they install sctl Browser
   from the Chrome Web Store or Microsoft Edge Add-ons if needed, run `sctl connect`, and type the one-time code into
   the sctl Browser popup.

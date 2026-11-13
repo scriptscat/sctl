@@ -32,7 +32,7 @@ func WriteControlToken(token string) error {
 	return fsutil.WriteFileAtomic(path, []byte(token), 0o600)
 }
 
-// ReadControlToken 读取控制令牌。文件不存在返回 os.ErrNotExist,调用方据此判断 daemon 未就绪。
+// ReadControlToken 读取控制令牌。文件不存在返回 os.ErrNotExist。
 func ReadControlToken() (string, error) {
 	raw, err := os.ReadFile(paths.ControlTokenFile())
 	if err != nil {
