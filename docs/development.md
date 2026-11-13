@@ -116,6 +116,9 @@ golangci-lint fmt ./...   # gofmt + goimports (with this repo's prefix grouping)
 golangci-lint run ./...
 ```
 
+Both commands skip `e2e/scratch/`, where git-ignored one-shot verification scripts live (see
+[`verification.md`](./verification.md)), so leftovers there do not fail the local run.
+
 When bumping the version, update `GOLANGCI_LINT_VERSION` in `.github/workflows/test.yaml` to match.
 
 Use the global `--data-dir <path>` flag or `SCTL_DATA_DIR` environment variable to override the data directory

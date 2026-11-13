@@ -30,6 +30,10 @@ linters:
           disabled: true
   exclusions:
     generated: lax
+    # 一次性验证脚本,不进版本库(见 docs/verification.md);不排除的话,本地留着的脚本会让提交前的
+    # `golangci-lint run ./...` 失败,而 CI 上看不到它们。
+    paths:
+      - e2e/scratch
     presets:
       - comments
       - common-false-positives
@@ -46,6 +50,9 @@ formatters:
   enable:
     - gofmt
     - goimports
+  exclusions:
+    paths:
+      - e2e/scratch
   settings:
     goimports:
       local-prefixes:
